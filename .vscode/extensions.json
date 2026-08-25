@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "redhat.vscode-yaml",
+    "ms-azuretools.vscode-containers",
+    "docker.docker",
+    "ms-vscode-remote.remote-ssh",
+    "eamodio.gitlens"
+  ]
+}
