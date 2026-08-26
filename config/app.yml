@@ -1,0 +1,7 @@
+elasticsearch:
+  raw_index: raw-logs
+  normalized_index: normalized-events
+  alert_index: security-alerts
+
+application:
+  polling_interval: 5
