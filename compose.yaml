@@ -1,0 +1,44 @@
+services:
+  # Elasticsearch 서비스 실행 구문
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.2
+    container_name: cloud-soc-elasticsearch
+
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false #나중에 true로 바꿔서 보안 적용
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+
+    ports:
+      - "127.0.0.1:9200:9200"
+
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fs http://localhost:9200/_cluster/health || exit 1"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+# Kibana 서비스 실행 구문
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.5.2
+    container_name: cloud-soc-kibana
+
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+
+    ports:
+      - "127.0.0.1:5601:5601"
+
+volumes:
+  elasticsearch-data:
