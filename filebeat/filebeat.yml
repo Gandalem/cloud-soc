@@ -1,0 +1,144 @@
+# ============================================================
+# Cloud SOC - Filebeat 설정
+#
+# 역할:
+# Ubuntu의 /var/log/auth.log를 읽어서
+# Elasticsearch raw-logs 인덱스로 전송한다.
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 1. 로그 입력 설정
+# ------------------------------------------------------------
+
+filebeat.inputs:
+
+  - type: filestream
+
+    # 각 filestream 입력을 구분하기 위한 고유 ID
+    id: oci-ubuntu-auth
+
+    enabled: true
+
+    paths:
+      - /var/log/auth.log
+
+      # CONFIG:
+      # 현재 OCI Ubuntu 22.04의 SSH 인증 로그 경로다.
+      #
+      # TODO:
+      # 다른 기업/서버에서는 로그 경로가 달라질 수 있으므로
+      # 추후 별도의 회사별 설정 구조로 분리할 예정이다.
+
+
+# ------------------------------------------------------------
+# 2. Cloud SOC 식별 정보 추가
+# ------------------------------------------------------------
+
+processors:
+
+  - add_fields:
+      target: organization
+      fields:
+
+        # CONFIG:
+        # 현재 개발용 OCI 서버 식별자
+        id: "oci-dev"
+
+        # TODO:
+        # 추후 회사별 organization.id 값으로 변경
+        # 예:
+        # company-a
+        # company-b
+
+
+  - add_fields:
+      target: labels
+      fields:
+
+        # 이 로그가 어떤 종류인지 표시
+        log_source: "linux_auth"
+
+
+# ------------------------------------------------------------
+# 3. Elasticsearch 출력 설정
+# ------------------------------------------------------------
+
+output.elasticsearch:
+
+  hosts:
+    - "http://127.0.0.1:19200"
+
+    # TEST:
+    # 현재는 SSH Reverse Tunnel을 사용한다.
+    #
+    # OCI 127.0.0.1:19200
+    #       ↓
+    # SSH Tunnel
+    #       ↓
+    # Windows 127.0.0.1:9200
+    #       ↓
+    # Elasticsearch
+    #
+    # TODO:
+    # AWS 배포 후 실제 Cloud SOC 주소로 변경한다.
+    #
+    # 예:
+    # https://soc.example.com:9200
+
+
+  # Filebeat에서 들어오는 원본 로그 저장 위치
+  index: "raw-logs-%{[agent.version]}-%{+yyyy.MM.dd}"
+
+  # TODO:
+  # 추후 Index Lifecycle Policy를 적용해서
+  # 오래된 로그 자동 삭제/보관 정책을 구성한다.
+
+
+# ------------------------------------------------------------
+# 4. Index Lifecycle Management
+# ------------------------------------------------------------
+
+setup.ilm.enabled: false
+
+# TEST:
+# 현재 MVP에서는 인덱스 구조를 직접 확인하기 위해
+# ILM을 비활성화한다.
+#
+# TODO:
+# 최종 AWS 환경에서는 로그 보존 기간을 정하고
+# ILM 적용을 검토한다.
+
+
+# ------------------------------------------------------------
+# 5. Elasticsearch Index Template
+# ------------------------------------------------------------
+
+setup.template.name: "raw-logs"
+
+setup.template.pattern: "raw-logs-*"
+
+
+# ------------------------------------------------------------
+# 6. 로그 출력 수준
+# ------------------------------------------------------------
+
+logging.level: info
+
+
+# ------------------------------------------------------------
+# SECURITY
+# ------------------------------------------------------------
+#
+# 현재 개발환경 Elasticsearch는 인증 기능이 비활성화되어 있다.
+#
+# SECURITY:
+# AWS 최종 배포 전 반드시 아래 항목을 적용한다.
+#
+# - Elasticsearch 인증 활성화
+# - TLS 적용
+# - Filebeat API Key 사용
+# - 최소 권한 계정
+# - Elasticsearch 9200 인터넷 직접 공개 금지
+#
+# 실제 비밀번호/API Key는 이 파일이나 GitHub에 저장하지 않는다.
