@@ -120,6 +120,8 @@ VS Code로 프로젝트를 열면 Workspace Recommended Extensions를 설치합�
 
 # 프로젝트 구조
 
+아래 트리는 목표 구조를 포함합니다. `tests/`는 아직 Git에 추적된 테스트가 없으며, `.env`와 샘플 로그는 로컬에서 준비합니다. 현재 구현과 미구현의 구분은 [데이터 요구사항 및 Gap Analysis](docs/dashboard_data_requirements.md)를 기준으로 확인합니다.
+
 ```text
 Cloud-SOC/
 │
@@ -129,6 +131,9 @@ Cloud-SOC/
 ├─ config/
 │
 ├─ docs/
+│  ├─ dashboard_requirements.md
+│  ├─ dashboard_data_requirements.md
+│  ├─ dashboard_implementation_plan.md
 │  ├─ 클라우드 보안관제(4조).docx
 │  └─ 클라우드_보안관제_MVP_구현계획.docx
 │
@@ -461,18 +466,36 @@ chore: update development environment
 
 # 현재 진행 상태
 
-현재 프로젝트는 **초기 개발환경 및 구조 구성 단계**입니다.
+2026-09-10 확인 기준, **SSH 인증 로그의 수집·정규화·탐지·경보 저장 경로가 구현된 1차 MVP**입니다. 저장 데이터와 기본 Kibana 대시보드는 확인했지만, 지속 수집의 건강도와 조사/분석가 워크플로까지 완성된 상태는 아닙니다.
 
 - [x] GitHub 저장소 생성
 - [x] 기본 프로젝트 디렉터리 구성
 - [x] Git 연동
+- [x] VS Code 권장 Extension 설정
+- [x] 로컬 Python 가상환경 구성
+- [x] Elasticsearch / Kibana 구성 및 응답 확인
+- [x] Filebeat 기반 SSH 원본 로그 저장
+- [x] Linux auth.log Parser 및 ECS 기반 Normalizer 구현
+- [x] YAML Rule Loader 및 AUTH-001 Threshold / Time Window / Group By / Cooldown 구현
+- [x] `security-alerts` 저장 및 기본 Kibana 대시보드
+- [x] SOC 업무 화면·데이터 Gap Analysis·구현 계획 문서 작성
 - [ ] 팀 개발환경 통일
-- [ ] VS Code 권장 Extension 구성
-- [ ] Python 가상환경 구성
-- [ ] Elasticsearch / Kibana 구축
-- [ ] SSH 로그 수집
-- [ ] 첫 번째 Parser 구현
-- [ ] 첫 번째 Detection Rule 구현
+- [ ] 10,000건 조회 한도 해소 및 증분 처리/복구 검증
+- [ ] 경보 근거 문서·원본·Host/User 연결
+- [ ] 분석 상태·담당자·판단·메모 저장
+- [ ] Entity Investigation 및 Data Source Health
+- [ ] 자동 회귀 테스트 및 Kibana 설정 export
+- [ ] 업무 요구에 따른 OCI Audit 연동
+
+## SOC 업무 화면 설계
+
+앞으로는 분석가의 업무 흐름을 먼저 정의하고 필요한 데이터와 로그 소스를 역산합니다. SSH Brute Force는 첫 번째 탐지 사례이며 프로젝트 전체 범위가 아닙니다.
+
+- [화면 요구사항](docs/dashboard_requirements.md): SOC Operations, Alert Investigation, Entity Investigation, Data Source Health.
+- [데이터 요구사항 및 Gap Analysis](docs/dashboard_data_requirements.md): 현재 코드/실제 필드, 패널별 데이터, 모델 보강 사항.
+- [단계별 구현 계획](docs/dashboard_implementation_plan.md): 재사용할 코드, 수정/신설 파일, 테스트 및 완료 기준.
+
+새 문서는 구현 전 검토안입니다. 기존 DOCX는 과거 계획 자료로 보존하며, 그 안의 웹 로그·근태/권한 관리 등 현재 코드와 다른 범위를 이번 SIEM 구현 기준에 자동 포함하지 않습니다.
 
 ---
 
