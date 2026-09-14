@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="Cloud SOC 조사 화면 프로토타입. 모든 근거는 합성 데이터이며 입력은 저장되지 않습니다.">
+  <title>사건 조사 | Cloud SOC 프로토타입</title>
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script src="demo-data.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body data-page="workbench">
+  <a class="skip-link" href="#main">본문으로 이동</a>
+  <div id="app-shell"></div>
+  <main id="main" class="main-content workbench-main" tabindex="-1">
+    <a class="back-link" id="back-link" href="index.html"><span data-icon="arrow-left"></span>관제 현황으로 돌아가기</a>
+    <section id="incident-heading" aria-label="데모 조사 요약"></section>
+    <div class="workbench-frame">
+      <div class="tab-list workbench-tabs" role="tablist" aria-label="조사 항목">
+        <button id="tab-overview" role="tab" aria-selected="true" aria-controls="workbench-panel" data-workbench-tab="overview">개요</button>
+        <button id="tab-timeline" role="tab" aria-selected="false" aria-controls="workbench-panel" tabindex="-1" data-workbench-tab="timeline">시간 흐름</button>
+        <button id="tab-evidence" role="tab" aria-selected="false" aria-controls="workbench-panel" tabindex="-1" data-workbench-tab="evidence">탐지 근거</button>
+        <button id="tab-raw" role="tab" aria-selected="false" aria-controls="workbench-panel" tabindex="-1" data-workbench-tab="raw">원본 이벤트</button>
+        <button id="tab-entities" role="tab" aria-selected="false" aria-controls="workbench-panel" tabindex="-1" data-workbench-tab="entities">관련 대상</button>
+        <button id="tab-work" role="tab" aria-selected="false" aria-controls="workbench-panel" tabindex="-1" data-workbench-tab="work">분석 기록</button>
+      </div>
+      <section id="workbench-panel" class="workbench-surface" role="tabpanel" aria-labelledby="tab-overview" tabindex="0"></section>
+    </div>
+    <footer class="page-footer"><span>데모 근거 · 실제 보안 이벤트 아님</span><span>입력은 현재 페이지에만 유지되며 저장되지 않습니다.</span></footer>
+  </main>
+  <noscript><p class="noscript">이 정적 프로토타입의 조사 화면에는 JavaScript가 필요합니다. 백엔드 연결은 없습니다.</p></noscript>
+</body>
+</html>

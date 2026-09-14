@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="Cloud SOC A단계 정적 화면 프로토타입. 데모 데이터만 사용하며 백엔드 연결은 없습니다.">
+  <title>관제 현황 | Cloud SOC 프로토타입</title>
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script src="demo-data.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body data-page="mission">
+  <a class="skip-link" href="#main">본문으로 이동</a>
+  <div id="app-shell"></div>
+  <main id="main" class="main-content" tabindex="-1">
+    <div class="page-heading"><div><p class="eyebrow">보안 관제 업무 공간</p><h1>관제 현황</h1></div><p class="page-description">지금 어떤 일을 봐야 하는가?</p></div>
+    <section class="confidence panel" aria-label="데모 데이터 신뢰도" id="confidence"></section>
+    <section class="kpi-grid" aria-label="데모 사건 집계" id="kpis"></section>
+    <section class="queue panel" aria-labelledby="queue-heading">
+      <div class="queue-heading"><h2 id="queue-heading">분석 업무 목록</h2><span class="micro-label">데모 데이터 · 실제 보안 이벤트 아님</span></div>
+      <div class="tab-list queue-tabs" role="tablist" aria-label="업무 유형">
+        <button id="tab-incidents" role="tab" aria-selected="true" aria-controls="queue-panel" data-queue-tab="incidents">사건 <span id="incidents-count"></span></button>
+        <button id="tab-alerts" role="tab" aria-selected="false" aria-controls="queue-panel" tabindex="-1" data-queue-tab="alerts">미분류 경보 <span id="alerts-count"></span></button>
+      </div>
+      <div class="filter-bar">
+        <label class="search-field"><span data-icon="search"></span><input id="queue-search" type="search" placeholder="사건 검색..." aria-label="업무 검색"></label>
+        <label class="sr-only" for="priority-filter">중요도 필터</label><select id="priority-filter"><option value="all">전체 중요도</option><option value="Critical">긴급</option><option value="High">높음</option><option value="Medium">보통</option><option value="Low">낮음</option></select>
+        <label class="sr-only" for="status-filter">상태 필터</label><select id="status-filter"><option value="all">전체 상태</option><option value="New">신규</option><option value="Investigating">조사 중</option><option value="Triage">초기 분류</option><option value="Escalated">상위 이관</option><option value="Closed">종결</option></select>
+        <label class="sr-only" for="time-filter">기간 필터</label><select id="time-filter"><option value="all">전체 기간</option><option value="60">최근 1시간</option><option value="1440">최근 24시간</option></select>
+        <button class="icon-button" id="refresh-demo" aria-label="데모 화면 새로고침" title="데모 화면만 다시 표시"><span data-icon="refresh"></span></button>
+        <button class="quiet-button" id="more-filters" aria-expanded="false" aria-controls="extra-filters"><span data-icon="filter"></span>추가 필터</button>
+      </div>
+      <div id="extra-filters" class="extra-filters" hidden>
+        <label>담당자<select id="owner-filter"><option value="all">전체 담당자</option><option value="unassigned">미배정</option><option value="analyst01">분석가 01</option><option value="analyst02">분석가 02</option></select></label>
+        <label>분야<select id="domain-filter"><option value="all">전체 분야</option><option value="Authentication">인증</option><option value="Cloud">클라우드</option><option value="Host">호스트</option></select></label>
+        <button class="quiet-button" id="clear-filters">필터 초기화</button>
+      </div>
+      <div id="queue-panel" role="tabpanel" aria-labelledby="tab-incidents" tabindex="0">
+        <div class="table-scroll" id="queue-table-wrap"><table class="queue-table"><caption class="sr-only">데모 분석 업무 목록. 항목을 선택하면 해당 조사 화면이 열립니다.</caption><thead><tr><th>중요도</th><th id="queue-title-column">사건</th><th>조사 이유</th><th>상태</th><th>관련 대상</th><th>담당자</th><th>경과</th><th><span class="sr-only">열기</span></th></tr></thead><tbody id="queue-rows"></tbody></table></div>
+        <div id="queue-state" hidden></div>
+      </div>
+      <div class="queue-footer"><span id="queue-result" role="status"></span><span>중요도 우선 · 오래된 업무 우선 <span class="divider">|</span> 경과: 데모 기준 시각</span></div>
+    </section>
+    <section class="context-grid" aria-label="데모 참고 차트">
+      <article class="panel chart-card"><div class="panel-title"><h2>경보 추이 <span>(최근 24시간)</span></h2><span class="micro-label">데모 시각화</span></div><div id="trend-chart" class="chart-body"></div></article>
+      <article class="panel chart-card"><div class="panel-title"><h2>주요 탐지 규칙</h2><span class="micro-label">데모 시각화</span></div><div id="rule-chart" class="chart-body"></div></article>
+      <article class="panel chart-card"><div class="panel-title"><h2>주요 출발지 IP</h2><span class="micro-label">데모 시각화</span></div><div id="ip-chart" class="chart-body"></div></article>
+    </section>
+    <footer class="page-footer"><span>Cloud SOC Mini SIEM <span class="divider">/</span> A-2단계</span><span>화면 검토용 샘플 · 수집, 탐지, 조회 API 미연결</span></footer>
+  </main>
+  <noscript><p class="noscript">이 정적 프로토타입의 탭과 데모 표시는 JavaScript가 필요합니다. 백엔드 연결은 없습니다.</p></noscript>
+</body>
+</html>
