@@ -11,6 +11,7 @@ usage() {
         '  --prepare-only     Install dependencies and prepare state; do not start the SOC stack' \
         '  --yes              Confirm host changes (admin password still requires a terminal)' \
         '  --help             Show this help' \
+        'Ubuntu Server 22.04, 24.04 and 26.04 LTS (amd64/arm64, systemd).' \
         'Existing server state is never overwritten. No firewall rules are changed.'
 }
 
@@ -57,7 +58,8 @@ show_plan() {
         "Public host: ${HOST:-<prompt required>}" \
         "Local bind IP: ${BIND_IP:-<prompt; blank selects 127.0.0.1>}" \
         "State: $STATE" \
-        '1. Require Ubuntu 22.04, systemd, root, >=6 GiB RAM and >=10 GiB free disk.' \
+        "Ubuntu release/suite: ${UBUNTU_VERSION:-<checked at install>} / ${UBUNTU_SUITE:-<checked at install>}" \
+        '1. Require Ubuntu 22.04/24.04/26.04 LTS, systemd, root, >=6 GiB RAM and >=10 GiB free disk.' \
         '2. Reject existing state/stack, occupied TCP 443/5601/9200, nonlocal bind IP.' \
         '3. Install missing ca-certificates, curl, git, python3 and openssl using APT.' \
         '4. Reuse a running local Docker + Compose plugin, or install Docker CE from its official signed APT repository.' \
@@ -73,15 +75,34 @@ show_plan() {
         'No agent installation, packet capture, firewall changes, package removal or data deletion.'
 }
 
+check_ubuntu_release() {
+    [ "${ID:-}" = ubuntu ] || die "Ubuntu Server is required (detected ID: ${ID:-unknown}). Derivative distributions are not supported."
+    UBUNTU_VERSION=${VERSION_ID:-}
+    # Match Docker's supported LTS releases; never use jammy packages on a newer OS.
+    # Review this list against https://docs.docker.com/engine/install/ubuntu/ when adding releases.
+    case "$UBUNTU_VERSION" in
+        22.04) EXPECTED_SUITE=jammy ;;
+        24.04) EXPECTED_SUITE=noble ;;
+        26.04) EXPECTED_SUITE=resolute ;;
+        *) die "Ubuntu ${UBUNTU_VERSION:-unknown} is not supported by this installer. Use Ubuntu 22.04, 24.04 or 26.04 LTS. Older, interim and unvalidated future releases are not automatically installed." ;;
+    esac
+    UBUNTU_SUITE=${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}
+    [ "$UBUNTU_SUITE" = "$EXPECTED_SUITE" ] || die "Ubuntu $UBUNTU_VERSION must use codename $EXPECTED_SUITE, not '${UBUNTU_SUITE:-missing}'. Check /etc/os-release; no repository was changed."
+    if [ -n "${VERSION_CODENAME:-}" ] && [ "$VERSION_CODENAME" != "$EXPECTED_SUITE" ]; then
+        die 'Conflicting Ubuntu codenames in /etc/os-release; no repository was changed.'
+    fi
+}
+
 check_platform() {
     [ "$(id -u)" = 0 ] || die 'Run with sudo on the Ubuntu server.'
     [ -f /etc/os-release ] || die 'Missing /etc/os-release.'
+    ID= VERSION_ID= VERSION_CODENAME= UBUNTU_CODENAME=
     # This file is part of the trusted, root-managed operating system.
     . /etc/os-release
-    [ "$ID" = ubuntu ] && [ "$VERSION_ID" = 22.04 ] || die 'Only Ubuntu 22.04 is supported.'
+    check_ubuntu_release
     [ -d /run/systemd/system ] || die 'A running systemd host is required, not a container/chroot.'
     for tool in apt-get dpkg-query dpkg ip ss sysctl flock awk df stat mktemp systemctl; do
-        has_command "$tool" || die "Missing base Ubuntu tool: $tool. Use a standard Ubuntu 22.04 server image."
+        has_command "$tool" || die "Missing base Ubuntu tool: $tool. Use a standard supported Ubuntu Server image."
     done
     ARCH=$(dpkg --print-architecture)
     case "$ARCH" in amd64|arm64) ;; *) die 'Only amd64 and arm64 are supported.' ;; esac
@@ -129,8 +150,9 @@ check_docker_stack() {
 }
 
 render_docker_source() {
+    case "${UBUNTU_SUITE:-}" in jammy|noble|resolute) ;; *) die 'Validate the Ubuntu release before generating the Docker repository.' ;; esac
     printf '%s\n' 'Types: deb' 'URIs: https://download.docker.com/linux/ubuntu' \
-        'Suites: jammy' 'Components: stable' "Architectures: $ARCH" "Signed-By: $KEY_FILE"
+        "Suites: $UBUNTU_SUITE" 'Components: stable' "Architectures: $ARCH" "Signed-By: $KEY_FILE"
 }
 
 check_repository() {
@@ -282,6 +304,7 @@ finish() {
 
 main() {
     HOST= BIND_IP= DRY_RUN=no PREPARE_ONLY=no YES=no TEMP= STAGE=arguments
+    UBUNTU_VERSION= UBUNTU_SUITE=
     APT_ROOT=/etc/apt
     KEY_FILE=$APT_ROOT/keyrings/cloud-soc-docker.asc
     SOURCE_FILE=$APT_ROOT/sources.list.d/cloud-soc-docker.sources

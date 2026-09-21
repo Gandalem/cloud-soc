@@ -1,4 +1,4 @@
-# Ubuntu 22.04 중앙 서버 설치
+# Ubuntu LTS 중앙 서버 설치
 
 이 구성은 **단일 노드 졸업작품·실습용**입니다. Elasticsearch, Kibana, 에이전트 배포 포털을 함께 실행합니다. 저장소 루트의 `compose.yaml`은 기존 로컬 개발용으로 유지하며, 아래에서는 항상 `deploy/server/compose.yaml`을 지정합니다.
 
@@ -18,7 +18,7 @@ AWS EC2에 처음 배포하고 Windows PC에서 검증하는 경우에는 [AWS U
 
 ## 빠른 설치: Git + sh (권장)
 
-**새 Ubuntu 22.04 서버**에서 먼저 아래 네트워크 제한을 준비한 뒤 사용합니다. Windows PC에서 실행하는 스크립트가 아닙니다. 기존 설치의 업그레이드·재설치 도구도 아닙니다.
+**새 Ubuntu 22.04·24.04·26.04 LTS 서버**에서 먼저 아래 네트워크 제한을 준비한 뒤 사용합니다. Windows PC에서 실행하는 스크립트가 아닙니다. 기존 설치의 업그레이드·재설치 도구도 아닙니다.
 
 ```bash
 # git이 없을 때만 실행: 저장소를 받으려면 Git 자체는 먼저 필요합니다.
@@ -36,9 +36,9 @@ sudo sh deploy/server/install-ubuntu.sh
 
 | 자동 처리 | 조건·제약 |
 | --- | --- |
-| 사전 검사 | Ubuntu 22.04 + systemd, amd64/arm64, root, 대화형 터미널, RAM 6GiB 이상, 체크아웃 디스크 여유 10GiB 이상 |
+| 사전 검사 | Ubuntu 22.04·24.04·26.04 LTS + systemd, amd64/arm64, root, 대화형 터미널, RAM 6GiB 이상, 체크아웃 디스크 여유 10GiB 이상 |
 | 필수 패키지 | 누락된 `ca-certificates`, `curl`, `git`, `python3`, `openssl`만 APT 설치. 전체 시스템 업그레이드 없음 |
-| Docker | 기존 로컬 Docker·Compose는 실행 가능한 경우 재사용. 없으면 공식 서명 APT 저장소의 Docker CE·Compose 플러그인 설치·데몬 활성화 |
+| Docker | 기존 로컬 Docker·Compose는 실행 가능한 경우 재사용. 없으면 OS 코드명에 맞는 공식 서명 APT 저장소의 Docker CE·Compose 플러그인 설치·데몬 활성화 |
 | 기존 설정 보호 | 충돌하는 Docker 패키지/저장소, 기존 `state/server`, 중앙 컨테이너·볼륨, 사용 중인 443·5601·9200, 비로컬 바인딩 IP는 중단 |
 | 커널 | `vm.max_map_count`가 낮으면 1048576으로 올리고 `/etc/sysctl.d/90-cloud-soc.conf`에 저장. 이미 높은 값은 낮추지 않음 |
 | 인증서·서비스 | `prepare.py` 재사용, 공개 CA의 DER 사본 추가, Compose 빌드·기동, bootstrap 종료 코드와 로컬 TLS/HTTP 응답 확인 |
@@ -49,6 +49,29 @@ APT가 결정하는 Docker 버전은 고정하지 않으며 기존 엔진을 자
 
 자동 설치가 완료되면 아래 2~3절을 반복하지 말고 [AWS 가이드 6절](../../docs/aws_windows_e2e_test.md#6-windows에-ca-공개-인증서-전달신뢰)에서 Windows 신뢰 등록과 실제 수집 검증을 이어갑니다. 수동 설치를 원하는 경우에만 아래 1~3절을 진행합니다.
 
+### Ubuntu 버전 범위
+
+`/etc/os-release`의 `ID=ubuntu`, `VERSION_ID`, `UBUNTU_CODENAME` 또는 `VERSION_CODENAME`을 함께 확인합니다. 다음은 **중앙 설치기의 분기 지원 범위**이며 버전별 실제 EC2 설치 완료를 뜻하지 않습니다.
+
+| Ubuntu | Docker APT suite |
+| --- | --- |
+| 22.04 LTS | `jammy` |
+| 24.04 LTS | `noble` |
+| 26.04 LTS | `resolute` |
+
+기준은 2026-09-21 확인한 [Docker 공식 지원 목록](https://docs.docker.com/engine/install/ubuntu/#os-requirements)입니다. 코드명 누락·불일치, 파생 배포판, 목록 밖의 구버전·중간 릴리스·미검토 신버전은 설치 전에 중단합니다. Ubuntu Pro 적용 여부와 Docker 지원은 별개이며, 모든 Ubuntu 버전을 무조건 허용하거나 다른 버전의 저장소로 대체하지 않습니다. [Ubuntu 지원 기간](https://ubuntu.com/about/release-cycle)
+
+**Ubuntu 로그/네트워크 에이전트는 이번 변경 대상이 아닙니다.** 해당 설치기는 여전히 Ubuntu 22.04 대상으로 유지하며 Windows 에이전트 동작에도 변경이 없습니다.
+
+이전 버전의 `Only Ubuntu 22.04 is supported` 오류로 중단한 서버는 해당 실행에서 패키지·인증서가 생성되기 전 상태입니다. 저장소의 로컬 변경을 먼저 확인하고 수정본을 받은 뒤 다시 실행할 수 있습니다. Git 갱신이 충돌로 중단되면 강제로 덮어쓰지 않습니다.
+
+```bash
+git status --short
+git pull --ff-only origin main
+cat /etc/os-release
+sudo sh deploy/server/install-ubuntu.sh
+```
+
 ### 실패·재시도
 
 첫 오류와 `Stopped during:` 단계를 확인하세요. 설치된 패키지와 생성된 상태는 자동 롤백하거나 지우지 않습니다. `state/server`가 없는 패키지 설치 단계 실패는 원인을 해결한 뒤 재실행할 수 있습니다. 다른 Docker 저장소·부분 설치 패키지가 감지되면 관리자가 먼저 정리 여부를 판단해야 합니다.
@@ -57,7 +80,7 @@ APT가 결정하는 Docker 버전은 고정하지 않으며 기존 엔진을 자
 
 ## 1. 준비 (수동 설치)
 
-- Ubuntu 22.04 서버, Docker Engine와 Compose v2, Git, Python 3, OpenSSL이 필요합니다. Python 패키지는 컨테이너 안에 설치되므로 호스트 가상환경은 필요 없습니다.
+- 위 목록의 Ubuntu LTS 서버, Docker Engine와 Compose v2, Git, Python 3, OpenSSL이 필요합니다. Python 패키지는 컨테이너 안에 설치되므로 호스트 가상환경은 필요 없습니다.
 - 소규모 실습의 시작점으로 메모리 8GB와 여유 디스크를 권장합니다. 실제 필요량은 수집량에 따라 측정해야 합니다. 현재 ES 힙은 1GB, 컨테이너 한도는 ES 2GB/Kibana 1GB입니다.
 - 관리자와 에이전트가 실제 접근할 DNS 또는 IPv4 하나를 정합니다. 예시 `soc.example.com`, 서버 내부 IP `10.0.0.10`을 그대로 사용하지 말고 실제 값으로 바꿉니다. IPv6는 이 설치기에서 지원하지 않습니다.
 - 모든 대상 서버에서 공식 Elastic 배포처로 HTTPS 다운로드가 가능해야 합니다. Windows 네트워크 수집에는 승인된 Npcap을 별도로 준비합니다.
@@ -205,6 +228,6 @@ sudo docker compose --env-file state/server/compose.env -f deploy/server/compose
 node --test prototype/tests/logs.test.cjs deploy/agents/tests/installers.test.cjs deploy/agents/tests/network.test.cjs deploy/server/tests/install-ubuntu.test.cjs deploy/server/tests/guides.test.cjs
 ```
 
-중앙 `sh` 설치기 테스트는 POSIX 구문, dry-run, 입력 검증, 기존 상태·저장소·포트 보호, 모의 APT/Docker·커널·TLS 준비 확인을 검사합니다. 실제 패키지 설치·다운로드·서비스 기동은 하지 않습니다.
+중앙 `sh` 설치기 테스트는 POSIX 구문, dry-run, Ubuntu 버전·코드명별 저장소 선택과 불일치 차단, 입력 검증, 기존 상태·저장소·포트 보호, 모의 APT/Docker·커널·TLS 준비 확인을 검사합니다. 실제 패키지 설치·다운로드·서비스 기동은 하지 않습니다.
 
 **실제 AWS Ubuntu에서 이미지 빌드·기동·인증서·API 키·문서 수신을 통합 검증하지 못했습니다.** Compose 정적 검사, 오프라인 테스트와 테스트 서버의 브라우저 동작을 검증했습니다. 운영 전에는 실제 서버에서 기동·Windows 에이전트·Kibana 수신까지 확인해야 합니다.

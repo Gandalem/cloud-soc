@@ -2,13 +2,13 @@
 
 Cloud SOC는 Elasticsearch·Kibana와 Python 탐지 엔진을 사용하는 보안관제 프로젝트입니다. **Ubuntu 중앙 관리 서버의 웹 화면에서 OS별 설치 파일을 생성·다운로드하고, 각 서버에서 로그·선택적 네트워크 수집기를 설치**할 수 있습니다.
 
-> **중앙 서버를 처음 만들려면 [Ubuntu 22.04 + Docker Compose 중앙 서버 가이드](deploy/server/README.md)부터 진행하세요.** 루트 `compose.yaml`은 로컬 개발용 HTTP 구성, `deploy/server/compose.yaml`은 HTTPS·인증을 적용한 중앙 서버 구성입니다. 둘을 혼용하지 않습니다.
+> **중앙 서버를 처음 만들려면 [Ubuntu LTS + Docker Compose 중앙 서버 가이드](deploy/server/README.md)부터 진행하세요.** 루트 `compose.yaml`은 로컬 개발용 HTTP 구성, `deploy/server/compose.yaml`은 HTTPS·인증을 적용한 중앙 서버 구성입니다. 둘을 혼용하지 않습니다.
 
 **AWS 인스턴스에 설치하고 현재 Windows PC에서 실제 수집을 시험하려면 [AWS Ubuntu + Windows 실제 수집 테스트](docs/aws_windows_e2e_test.md)를 순서대로 진행하세요.** EC2·보안그룹·인증서·패키지 설치와 고유 테스트 로그의 Kibana 검색까지 다룹니다.
 
 ### Git으로 받아 중앙 서버 자동 설치
 
-**새 Ubuntu 22.04 서버의 SSH 터미널**에서 실행합니다. 먼저 AWS 보안그룹의 22·443·5601·9200 접근을 승인된 IP로 제한하세요. 메모리 8GiB 이상을 권장하며, 설치기는 최소 6GiB RAM·10GiB 여유 디스크를 확인합니다.
+**새 Ubuntu 22.04·24.04·26.04 LTS 서버의 SSH 터미널**에서 실행합니다. 먼저 AWS 보안그룹의 22·443·5601·9200 접근을 승인된 IP로 제한하세요. 메모리 8GiB 이상을 권장하며, 설치기는 최소 6GiB RAM·10GiB 여유 디스크를 확인합니다.
 
 ```bash
 # git이 없는 새 서버에서만 먼저 실행
@@ -22,6 +22,8 @@ sudo sh deploy/server/install-ubuntu.sh
 ```
 
 실행 전 `deploy/server/install-ubuntu.sh`를 검토하세요. 스크립트는 **누락된 필수 패키지 → Docker·Compose → 커널 설정 → 인증서·비밀번호 준비 → 중앙 서비스 기동 → 로컬 HTTPS 확인**을 진행합니다. 공인 IP/도메인, EC2 프라이빗 IP, 설치 승인(`INSTALL`), 포털 비밀번호를 순서대로 입력합니다. 패키지·컨테이너 다운로드에 인터넷 연결이 필요합니다.
+
+Ubuntu 버전·코드명을 확인해 Docker 저장소를 `jammy`/`noble`/`resolute`로 선택합니다. 모든 과거·미래 버전의 호환성을 보장하지 않으며, 현재 설치 대상 외 버전은 변경 전에 중단합니다. 범위는 [Docker 공식 Ubuntu 지원 목록](https://docs.docker.com/engine/install/ubuntu/#os-requirements)에 맞췄습니다. **중앙 서버 지원 확대이며 Ubuntu 에이전트 설치기는 별도로 22.04만 지원합니다.**
 
 기존 서버 상태·중앙 볼륨·포트 충돌은 자동 삭제하거나 덮어쓰지 않습니다. `--dry-run`은 계획 출력만 하며 설치 가능 여부를 검증하지 않습니다. 완료 후 [가이드 6절](docs/aws_windows_e2e_test.md#6-windows에-ca-공개-인증서-전달신뢰)부터 Windows 인증서 신뢰·에이전트 설치·실제 로그 수신을 확인하세요. **PC 에이전트와 AWS 보안그룹은 이 스크립트가 자동 설치·변경하지 않습니다.**
 
@@ -45,6 +47,7 @@ sudo sh deploy/server/install-ubuntu.sh
 | 구성 요소 | 버전 또는 조건 |
 | --- | --- |
 | Elasticsearch / Kibana | Compose에 고정된 9.5.2 |
+| 중앙 서버 설치기 | Ubuntu 22.04·24.04·26.04 LTS + systemd, amd64/arm64. 버전별 설치 분기 지원, 실제 서버 검증은 별도 |
 | Ubuntu 수집기 | Ubuntu 22.04 + systemd, x86_64 또는 ARM64, Filebeat 9.5.2 |
 | Windows 수집기 | Windows x86_64, 64비트 관리자 PowerShell, Filebeat 9.5.2 (`winlog` + 파일 입력) |
 | Python 개발환경 | Python 3.10 이상, `venv`, `requirements.txt` |

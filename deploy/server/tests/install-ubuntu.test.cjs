@@ -42,6 +42,7 @@ KEY_FILE=$APT_ROOT/keyrings/cloud-soc-docker.asc
 SOURCE_FILE=$APT_ROOT/sources.list.d/cloud-soc-docker.sources
 SYSCTL_FILE=$ROOT/sysctl.conf
 HOST=soc.example.invalid BIND_IP=10.0.0.5 ARCH=amd64 TEMP=
+UBUNTU_VERSION=22.04 UBUNTU_SUITE=jammy
 forbidden() { die "Unexpected live operation: $*"; }
 apt-get() { forbidden apt-get "$@"; }
 curl() { forbidden curl "$@"; }
@@ -66,6 +67,45 @@ test('POSIX sh syntax, LF checkout and help', () => {
   assert.ok(!source.includes('\r'), 'Keep the installer LF-only');
   ok(run(['-n', script]));
   assert.match(ok(run([script, '--help'])), /--prepare-only/);
+});
+
+for (const [version, suite] of [['22.04', 'jammy'], ['24.04', 'noble'], ['26.04', 'resolute']]) {
+  test(`Ubuntu ${version} selects only its own Docker repository (${suite})`, () => {
+    for (const arch of ['amd64', 'arm64']) {
+      const output = ok(fixture(`
+ID=ubuntu VERSION_ID=${quote(version)} VERSION_CODENAME=${quote(suite)} UBUNTU_CODENAME=${quote(suite)} ARCH=${quote(arch)}
+check_ubuntu_release
+render_docker_source
+`));
+      assert.match(output, new RegExp(`^Suites: ${suite}$`, 'm'));
+      assert.match(output, new RegExp(`^Architectures: ${arch}$`, 'm'));
+      if (suite !== 'jammy') assert.doesNotMatch(output, /jammy/);
+    }
+  });
+}
+
+test('Ubuntu codename fallback is validated, not replaced with jammy', () => {
+  const output = ok(fixture('ID=ubuntu VERSION_ID=24.04 VERSION_CODENAME=noble; unset UBUNTU_CODENAME; check_ubuntu_release; render_docker_source'));
+  assert.match(output, /Suites: noble/);
+  fail(fixture('ID=ubuntu VERSION_ID=24.04; unset VERSION_CODENAME UBUNTU_CODENAME; check_ubuntu_release'), /codename noble/);
+  fail(fixture('ID=ubuntu VERSION_ID=24.04 VERSION_CODENAME=jammy UBUNTU_CODENAME=noble; check_ubuntu_release'), /Conflicting Ubuntu codenames/);
+  fail(fixture('ID=ubuntu VERSION_ID=24.04 VERSION_CODENAME=noble UBUNTU_CODENAME=jammy; check_ubuntu_release'), /codename noble/);
+  fail(fixture('unset UBUNTU_SUITE; render_docker_source'), /Validate the Ubuntu release/);
+});
+
+test('unsupported releases and non-Ubuntu distributions stop before mutation', () => {
+  for (const version of ['18.04', '20.04', '23.10', '24.10', '25.04', '25.10', '99.04', '']) {
+    const result = fixture(`
+ID=ubuntu VERSION_ID=${quote(version)} VERSION_CODENAME=noble UBUNTU_CODENAME=noble
+check_ubuntu_release
+install_packages
+`);
+    fail(result, /not supported by this installer/);
+    assert.doesNotMatch(result.stderr, /Unexpected live operation/);
+  }
+  for (const id of ['debian', 'linuxmint', 'pop', '']) {
+    fail(fixture(`ID=${quote(id)} ID_LIKE=ubuntu VERSION_ID=24.04 VERSION_CODENAME=noble; check_ubuntu_release`), /Ubuntu Server is required/);
+  }
 });
 
 test('dry-run does not require root, OS validation, network or state writes', () => {
@@ -163,6 +203,17 @@ test('Docker repository conflicts and altered managed sources are preserved', ()
   assert.match(output, /URIs: https:\/\/download.docker.com\/linux\/ubuntu/);
   assert.match(output, /Suites: jammy/);
   assert.match(output, /Signed-By:/);
+});
+
+test('old managed jammy repository on a newer Ubuntu is not silently replaced', () => {
+  fail(fixture(`
+render_docker_source > "$SOURCE_FILE"
+printf 'key' > "$KEY_FILE"
+stat() { printf '0:644'; }
+UBUNTU_SUITE=noble
+trap 'grep -q "Suites: jammy" "$SOURCE_FILE" || exit 99' 0
+check_repository
+`), /differs/);
 });
 
 test('new Docker install uses verified HTTPS key transport and explicit signed APT source', () => {

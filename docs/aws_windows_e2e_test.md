@@ -34,7 +34,7 @@ AWS 콘솔에서 다음 조건의 신규 실습 인스턴스를 만듭니다. �
 | 설정 | 이번 테스트 기준 |
 | --- | --- |
 | 이름 | `cloud-soc-lab` |
-| OS | Canonical의 Ubuntu Server **22.04 LTS**, x86_64/amd64 |
+| OS | Canonical의 Ubuntu Server **22.04·24.04·26.04 LTS 중 하나**, x86_64/amd64 |
 | 메모리/CPU | 시작 구성으로 8GiB / 2vCPU, 예: `t3.large` |
 | 디스크 | 암호화된 gp3 50GiB를 실습 시작점으로 사용, 수집량에 따라 조정 |
 | 네트워크 | 인터넷 게이트웨이 경로가 있는 퍼블릭 서브넷, 접속 가능한 공인 IPv4 |
@@ -79,7 +79,7 @@ ssh -i $KeyPath "ubuntu@$ServerHost"
 
 ## 3. Git + sh 자동 설치 (권장)
 
-**Ubuntu SSH**, 신규 Ubuntu 22.04 서버에서 실행합니다. 위 보안그룹을 먼저 제한하세요. Git으로 받은 파일을 검토하고 `sh` 스크립트가 누락된 패키지와 Docker·Compose를 설치하도록 합니다. 저장소 복제 자체에 필요한 Git만 먼저 준비합니다.
+**Ubuntu SSH**, 신규 Ubuntu 22.04·24.04·26.04 LTS 서버에서 실행합니다. 위 보안그룹을 먼저 제한하세요. Git으로 받은 파일을 검토하고 `sh` 스크립트가 누락된 패키지와 Docker·Compose를 설치하도록 합니다. 저장소 복제 자체에 필요한 Git만 먼저 준비합니다.
 
 ```bash
 cd /home/ubuntu
@@ -95,6 +95,8 @@ sudo sh deploy/server/install-ubuntu.sh
 ```
 
 이미 체크아웃이 있다면 새로 복제하지 말고 기존 변경을 보존하세요. `less`는 확인 후 `q`로 닫습니다. `git rev-parse HEAD` 결과는 실제 테스트한 버전으로 기록합니다. 예전 커밋으로 전환하면 새 설치기가 없을 수 있습니다.
+
+예전 설치기의 `Only Ubuntu 22.04 is supported` 오류만 발생했다면 사전 검사에서 멈춘 것입니다. [중앙 서버의 버전별 안내](../deploy/server/README.md#ubuntu-버전-범위)에 따라 `git status --short`로 변경을 확인하고 `git pull --ff-only origin main`으로 수정본을 받으세요. `/etc/os-release`에서 버전·코드명을 확인해 22.04=`jammy`, 24.04=`noble`, 26.04=`resolute` 저장소를 선택합니다. 임의로 버전 검사만 삭제하거나 다른 배포판의 저장소를 사용하지 않습니다.
 
 | 입력 순서 | 넣을 값 |
 | --- | --- |
@@ -115,7 +117,7 @@ EC2 공인 IP는 보통 NAT 주소라서 바인딩 값으로 사용할 수 없�
 
 이하 3-A·4·5절은 자동 설치를 사용하지 않는 경우에만 실행합니다. 두 경로를 연속으로 실행하지 않습니다.
 
-**Ubuntu SSH**, 신규 Ubuntu 22.04 기준입니다. Docker가 이미 있으면 먼저 버전과 기존 컨테이너를 확인하고 재설치 부분은 건너뜁니다. 충돌 패키지나 기존 데이터를 자동 삭제하지 않습니다.
+**Ubuntu SSH**, 위 지원 목록의 신규 Ubuntu LTS 기준입니다. Docker가 이미 있으면 먼저 버전과 기존 컨테이너를 확인하고 재설치 부분은 건너뜁니다. 충돌 패키지나 기존 데이터를 자동 삭제하지 않습니다.
 
 ```bash
 lsb_release -ds
@@ -135,7 +137,7 @@ sudo chmod a+r /etc/apt/keyrings/docker.asc
 sudo tee /etc/apt/sources.list.d/docker.sources > /dev/null <<EOF
 Types: deb
 URIs: https://download.docker.com/linux/ubuntu
-Suites: jammy
+Suites: $(. /etc/os-release && printf '%s' "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
 Components: stable
 Architectures: $(dpkg --print-architecture)
 Signed-By: /etc/apt/keyrings/docker.asc
@@ -504,6 +506,8 @@ organization.id : "school-lab" and type : "tls"
 
 | 증상 | 먼저 확인할 것 |
 | --- | --- |
+| `Only Ubuntu 22.04 is supported` | 구버전 중앙 설치기. 로컬 변경 확인 후 Git 갱신, 실제 OS는 `cat /etc/os-release`로 확인 |
+| `Ubuntu ... is not supported by this installer` 또는 코드명 불일치 | 22.04·24.04·26.04 LTS와 올바른 코드명인지 확인. 검사 우회·`jammy` 강제 지정 금지 |
 | `127.0.0.1:8766`, `preview-*`, `soc.example.invalid`가 보임 | 옛 미리보기. 실제 AWS HTTPS 포털과 거기서 만든 새 패키지 사용 |
 | 포털에서 `Failed to fetch` | 동일 AWS 주소의 포털/gateway 상태, 클라이언트 네트워크, 인증서, 서버 로그. 임시 Python 서버 재실행으로 해결하지 않음 |
 | 모든 `Test-NetConnection`이 실패 | 현재 공인 IP/32, 보안그룹·다른 그룹의 규칙, 서브넷/IGW, NACL, 인스턴스 실행 여부 |
