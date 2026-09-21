@@ -1,0 +1,101 @@
+.log-scope-note { display: flex; gap: 10px; padding: 13px 16px; margin-bottom: 17px; border: 1px solid #385166; border-left: 3px solid #71a4cc; background: #192c3b; color: #a6bdd0; border-radius: 4px; }
+.log-scope-note .icon { margin-top: 2px; }
+.log-scope-note p { font-size: 11px; line-height: 1.8; }
+.log-scope-note strong { color: #d2e3ee; font-weight: 500; }
+.log-coverage { border: 1px solid #344c5b; border-radius: 4px; padding: 12px 16px; margin-bottom: 17px; background: #182b38; color: #a6bdd0; font-size: 11px; line-height: 1.8; }
+.log-coverage summary { color: #d2e3ee; cursor: pointer; }
+.log-coverage summary span { display: inline-block; color: #8aa5b9; margin-left: 12px; font-size: 10px; }
+.log-coverage > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 16px; margin: 14px 0; }
+.log-coverage h2 { color: #b9d7ef; font-size: 12px; margin-bottom: 6px; }
+.log-workspace { min-width: 0; overflow: hidden; }
+.log-list-heading { display: flex; justify-content: space-between; gap: 16px; padding: 18px 18px 0; }
+.log-list-heading p { font-size: 11px; color: #9eb6c9; margin-top: 7px; line-height: 1.7; }
+.log-list-heading .micro-label { text-align: right; padding-top: 2px; }
+.log-filters { padding: 16px 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: end; border-bottom: 1px solid #344c5b; }
+.log-filters label { display: grid; gap: 6px; font-size: 10px; color: #a8bfd0; flex: 1 0 115px; }
+.log-filters .log-search { flex-basis: 100%; }
+.log-filters input, .log-filters select { width: 100%; min-width: 0; height: 34px; padding: 6px 10px; color: #e0edf5; background: #142633; border-color: #395365; }
+.log-filters input::placeholder { color: #7899b0; }
+.log-filters .quiet-button { min-height: 34px; font-size: 11px; padding: 7px 12px; }
+.log-metrics { display: flex; flex-wrap: wrap; gap: 12px 25px; padding: 15px 18px; border-bottom: 1px solid #344c5b; background: #1b303f; }
+.log-metrics > span { display: inline-flex; align-items: baseline; gap: 12px; color: #a4bdcf; font-size: 11px; }
+.log-metrics strong { color: #e2eef7; font-size: 17px; font-weight: 500; }
+.log-metrics > span:nth-child(3) strong { color: #ebcc88; }
+.log-metrics > span:nth-child(4) strong { color: #efa5a2; }
+.log-metrics small { margin-left: auto; align-self: center; color: #819bad; font-size: 9px; }
+.log-table-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 10px 18px; color: #8aa5b9; background: #132530; font-size: 10px; }
+.log-table-toolbar > span:first-child { color: #a7cce6; }
+.log-sheet-scroll { max-height: 560px; overflow: auto; scrollbar-color: #496578 #15232e; }
+.log-sheet { min-width: 2300px; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+.log-sheet th { position: sticky; top: 0; z-index: 3; background: #253d4e; border-bottom: 1px solid #52697a; border-right: 1px solid #3b5363; font-size: 10px; white-space: nowrap; padding: 0; color: #bed1e0; }
+.log-sheet th button { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 12px 9px; background: transparent; color: inherit; border: none; border-radius: 0; font-size: inherit; }
+.log-sheet th button:hover { background: #33536a; }
+.log-sheet th[aria-sort="ascending"], .log-sheet th[aria-sort="descending"] { color: #92d0fc; }
+.log-sheet td { height: 37px; padding: 8px 9px; font-size: 11px; border-bottom: 1px solid #2c424f; border-right: 1px solid #2b404e; color: #c0d1dd; background: #182b38; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-sheet tr:nth-child(even) td { background: #1c303e; }
+.log-sheet tr:hover td, .log-sheet tr:focus-within td { background: #2a485d; }
+.log-sheet tr[data-log-id] { cursor: pointer; }
+.log-sheet .log-row-number { position: sticky; left: 0; width: 44px; text-align: center; color: #7798ae; background: #142633; z-index: 1; font-size: 10px; }
+.log-sheet .log-col-id { position: sticky; left: 44px; width: 147px; z-index: 1; box-shadow: 2px 0 0 #496477; }
+.log-sheet thead .log-row-number, .log-sheet thead .log-col-id { z-index: 5; background: #253d4e; }
+.log-sheet .log-col-ingestedAt { width: 132px; }
+.log-sheet .log-col-environment { width: 76px; }
+.log-sheet .log-col-platform { width: 105px; }
+.log-sheet .log-col-os { width: 175px; }
+.log-sheet .log-col-origin { width: 250px; }
+.log-sheet .log-col-source { width: 135px; }
+.log-sheet .log-col-parse { width: 130px; }
+.log-sheet .log-col-target { width: 235px; }
+.log-sheet .log-col-user { width: 155px; }
+.log-sheet .log-col-ip { width: 143px; }
+.log-sheet .log-col-action { width: 160px; }
+.log-sheet .log-col-outcome { width: 85px; }
+.log-sheet .log-col-message { width: 310px; }
+.log-sheet .mono { font-size: 11px; }
+.log-row-open { background: transparent; border: none; padding: 0; border-radius: 0; color: #a2d9fb; font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; text-decoration: underline; text-decoration-color: #42617a; text-underline-offset: 3px; }
+.log-row-open:hover { background: transparent; color: #fff; }
+.log-env { font-size: 10px; color: #b7cede; }
+.parse-parsed { color: #b5d9ca; background: #294b46; }
+.parse-partial { color: #ffe0a1; background: #615133; }
+.parse-failed { color: #ffc1b8; background: #653b41; }
+.log-outcome-failure { color: #eaa29f; }
+.log-outcome-unknown { color: #8c9fb0; }
+.log-pagination { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 18px; border-top: 1px solid #405765; color: #a5bdce; font-size: 10px; }
+.log-pagination > div { display: flex; align-items: center; gap: 10px; }
+.log-pagination label { display: inline-flex; align-items: center; gap: 7px; }
+.log-pagination select { background: #1c3445; color: #cbddeb; padding: 5px; font-size: 10px; }
+.log-pagination button { padding: 6px 12px; font-size: 11px; }
+.log-detail-dialog { position: fixed; inset: 0 0 0 auto; margin: 0; width: min(700px, calc(100vw - 24px)); max-width: none; height: 100dvh; max-height: none; padding: 25px; color: #243c52; color-scheme: light; background: #f1f5fa; border: 0; border-left: 1px solid #859fb5; overflow-y: auto; }
+.log-detail-dialog::backdrop { background: #07141dc2; }
+.log-detail-heading { display: flex; align-items: start; justify-content: space-between; gap: 15px; border-bottom: 1px solid #d1dee9; padding-bottom: 18px; }
+.log-detail-heading h2 { font-size: 21px; margin: 8px 0; font-family: "Cascadia Mono", Consolas, monospace; }
+.log-detail-heading p { font-size: 11px; color: #59748d; line-height: 1.8; }
+.log-detail-heading button { padding: 7px 12px; font-size: 11px; }
+.log-detail-dialog button { color: #30506d; background: #e5edf5; border-color: #c3d3e1; }
+.log-detail-status { margin: 20px 0; display: flex; gap: 10px; align-items: start; }
+.log-detail-status p { color: #536c84; font-size: 12px; line-height: 1.8; }
+.log-detail-status .badge { margin-top: 3px; }
+.log-detail-dialog .reason-table { table-layout: fixed; }
+.log-detail-dialog .reason-table th { width: 38%; }
+.log-detail-dialog .reason-table th, .log-detail-dialog .reason-table td { overflow-wrap: anywhere; padding-block: 12px; }
+.log-detail-dialog .raw-subtabs { gap: 0; }
+.log-detail-dialog .raw-subtabs button { flex: 1; padding-inline: 8px; }
+.log-detail-footnote { font-size: 11px; line-height: 1.8; color: #657c91; border-top: 1px solid #d1dee9; padding-top: 16px; margin-top: 25px; }
+.log-detail-empty { padding: 28px 12px; text-align: center; color: #5b7389; }
+.log-detail-empty p { margin-top: 12px; font-size: 12px; line-height: 1.8; }
+@media (max-width: 980px) { .log-list-heading { flex-wrap: wrap; } .log-metrics { gap: 12px 20px; } }
+@media (max-width: 720px) {
+  .log-scope-note { padding: 10px; }
+  .log-filters { padding: 12px; gap: 10px; }
+  .log-filters label { flex-basis: calc(50% - 10px); }
+  .log-filters .log-search { flex-basis: 100%; }
+  .log-metrics { display: grid; grid-template-columns: 1fr 1fr; padding: 12px; gap: 12px; }
+  .log-metrics > span { justify-content: space-between; gap: 5px; font-size: 10px; }
+  .log-metrics strong { font-size: 15px; }
+  .log-metrics small { grid-column: 1 / -1; margin-left: 0; }
+  .log-pagination { flex-wrap: wrap; padding: 12px; }
+  .log-pagination > div { flex-wrap: wrap; gap: 7px; }
+  .log-detail-dialog { padding: 18px 12px; }
+  .log-detail-heading h2 { font-size: 18px; }
+  .log-detail-status { flex-direction: column; }
+}

@@ -1,0 +1,109 @@
+name: cloud-soc-central
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.2
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "true"
+      xpack.security.http.ssl.key: certs/server.key
+      xpack.security.http.ssl.certificate: certs/server.crt
+      xpack.security.http.ssl.certificate_authorities: certs/ca.crt
+      xpack.security.transport.ssl.enabled: "true"
+      xpack.security.transport.ssl.verification_mode: certificate
+      xpack.security.transport.ssl.key: certs/server.key
+      xpack.security.transport.ssl.certificate: certs/server.crt
+      xpack.security.transport.ssl.certificate_authorities: certs/ca.crt
+      ELASTIC_PASSWORD_FILE: /run/secrets/elastic_password
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+    secrets: [elastic_password]
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+      - ${SOC_STATE_DIR:?Run prepare.py first}/tls:/usr/share/elasticsearch/config/certs:ro
+    ports: ["${SOC_BIND_IP:-127.0.0.1}:9200:9200"]
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s --cacert config/certs/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  bootstrap:
+    build:
+      context: ../..
+      dockerfile: deploy/server/Dockerfile
+    command: ["python", "/app/deploy/server/bootstrap.py"]
+    restart: "no"
+    depends_on:
+      elasticsearch: {condition: service_healthy}
+    environment:
+      SOC_CA_FILE: /run/certs/ca.crt
+      SOC_INTERNAL_ES_URL: https://elasticsearch:9200
+    secrets: [elastic_password, kibana_password, issuer_password, analyst_password]
+    volumes: ["${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro"]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+
+  portal:
+    build:
+      context: ../..
+      dockerfile: deploy/server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+    environment:
+      SOC_PUBLIC_URL: https://${SOC_PUBLIC_HOST:?Run prepare.py first}
+      SOC_ELASTIC_ENDPOINT: https://${SOC_PUBLIC_HOST}:9200
+      SOC_INTERNAL_ES_URL: https://elasticsearch:9200
+      SOC_ADMIN_USER: admin
+      SOC_ADMIN_HASH_FILE: /run/secrets/admin_hash
+      SOC_ISSUER_PASSWORD_FILE: /run/secrets/issuer_password
+      SOC_CA_FILE: /run/certs/ca.crt
+      SOC_STATE_DIR: /data
+    secrets: [admin_hash, issuer_password]
+    volumes:
+      - ${SOC_STATE_DIR}/portal:/data
+      - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.5.2
+    restart: unless-stopped
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+    volumes:
+      - ${SOC_STATE_DIR}/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+      - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+    mem_limit: 1g
+
+  gateway:
+    image: caddy:2.11.4-alpine
+    restart: unless-stopped
+    depends_on: [portal, kibana]
+    environment:
+      SOC_PUBLIC_HOST: ${SOC_PUBLIC_HOST}
+    ports:
+      - "${SOC_BIND_IP:-127.0.0.1}:443:443"
+      - "${SOC_BIND_IP:-127.0.0.1}:5601:5601"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${SOC_STATE_DIR}/tls:/certs:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    security_opt: ["no-new-privileges:true"]
+
+secrets:
+  elastic_password: {file: "${SOC_STATE_DIR}/secrets/elastic_password"}
+  kibana_password: {file: "${SOC_STATE_DIR}/secrets/kibana_password"}
+  issuer_password: {file: "${SOC_STATE_DIR}/secrets/issuer_password"}
+  analyst_password: {file: "${SOC_STATE_DIR}/secrets/analyst_password"}
+  admin_hash: {file: "${SOC_STATE_DIR}/secrets/admin_hash"}
+volumes:
+  es-data:
+  caddy-data:
+  caddy-config:

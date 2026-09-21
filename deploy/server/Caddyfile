@@ -1,0 +1,16 @@
+{
+    auto_https off
+    admin off
+}
+
+https://{$SOC_PUBLIC_HOST} {
+    tls /certs/server.crt /certs/server.key
+    header Strict-Transport-Security "max-age=31536000"
+    reverse_proxy portal:8000
+}
+
+https://{$SOC_PUBLIC_HOST}:5601 {
+    tls /certs/server.crt /certs/server.key
+    header Strict-Transport-Security "max-age=31536000"
+    reverse_proxy kibana:5601
+}

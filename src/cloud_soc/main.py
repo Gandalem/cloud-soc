@@ -1,510 +1,287 @@
 import argparse
+from dataclasses import dataclass
 import hashlib
 import json
+import logging
 import time
 from typing import Any
 
-from elasticsearch import Elasticsearch
+from elasticsearch import ApiError, ConnectionError, ConnectionTimeout, Elasticsearch
 
-from cloud_soc.detection.engine import (
-    run_detection_from_elasticsearch,
-)
-from cloud_soc.elastic.client import (
-    create_elasticsearch_client,
-)
+from cloud_soc.detection.engine import run_detection_from_elasticsearch
+from cloud_soc.elastic.client import create_elasticsearch_client
+from cloud_soc.elastic.pagination import IncompleteSearchError
 from cloud_soc.elastic.repository import (
+    ProvenanceMappingError,
     ensure_normalized_index,
+    ensure_provenance_mapping,
     ensure_security_alerts_index,
     fetch_raw_events,
     save_normalized_event,
     save_security_alert,
 )
-from cloud_soc.normalizers.ecs import (
-    normalize_linux_auth_event,
-)
-from cloud_soc.parsers.linux_auth import (
-    parse_linux_auth_line,
-)
-
-
-# ============================================================
-# CONFIG
-# ============================================================
+from cloud_soc.normalizers.ecs import normalize_linux_auth_event
+from cloud_soc.normalizers.time_context import parse_utc_offset, raw_time_context
+from cloud_soc.parsers.linux_auth import parse_linux_auth_line
 
 RAW_INDEX_PATTERN = "raw-logs-*"
-
 NORMALIZED_INDEX = "normalized-events"
-
 ALERT_INDEX = "security-alerts"
+LOGGER = logging.getLogger(__name__)
 
-DEFAULT_ORGANIZATION_ID = "oci-dev"
+
+@dataclass
+class ProcessingStats:
+    created: int = 0
+    existing: int = 0
+    unsupported: int = 0
+    invalid: int = 0
+
+
+@dataclass
+class PipelineStats:
+    raw: ProcessingStats
+    alerts_created: int = 0
+    normalized_invalid: int = 0
+
+    @property
+    def has_errors(self) -> bool:
+        return bool(self.raw.invalid or self.normalized_invalid)
 
 
 def make_stable_id(*values: str) -> str:
-    """
-    같은 데이터를 처리했을 때 항상 같은 Elasticsearch ID를 만든다.
-
-    이것이 필요한 이유:
-
-    프로그램 실행 1회
-        → 로그 저장
-
-    프로그램 실행 2회
-        → 같은 로그를 또 저장
-
-    같은 상황에서 문서가 계속 복제되는 것을 방지한다.
-
-    TODO:
-    추후 checkpoint 시스템을 추가하면
-    처리 효율도 함께 개선한다.
-    """
-
-    joined = "|".join(values)
-
-    return hashlib.sha256(
-        joined.encode("utf-8")
-    ).hexdigest()
+    # Preserve existing normalized document IDs; do not reindex old data implicitly.
+    return hashlib.sha256("|".join(values).encode("utf-8")).hexdigest()
 
 
-def build_security_alert(
-    detection: dict[str, Any],
-) -> dict[str, Any]:
-    """
-    Detection Engine 결과를 security-alerts에
-    저장할 문서 형태로 변환한다.
-    """
-
-    alert_config = detection.get(
-        "alert",
-        {},
-    )
-
-    group = detection.get(
-        "group",
-        {},
-    )
-
-    source_ip = group.get(
-        "source.ip"
-    )
-
-    document: dict[str, Any] = {
-        # 탐지를 발생시킨 마지막 이벤트 시간
-        "@timestamp": detection["window_end"],
-
-        "event": {
-            "kind": "alert",
-
-            "category": [
-                alert_config.get(
-                    "category",
-                    "authentication",
-                )
-            ],
-        },
-
-        "rule": {
-            "id": detection["rule_id"],
-            "name": detection["rule_name"],
-        },
-
-        "organization": {
-            # CONFIG:
-            # 현재는 OCI 서버 한 대이므로 고정값.
-            #
-            # TODO:
-            # 다중 회사 지원 시 이벤트의 organization.id를
-            # Detection 결과까지 전달하도록 변경한다.
-            "id": DEFAULT_ORGANIZATION_ID,
-        },
-
-        "cloud_soc": {
-            "alert_title": alert_config.get(
-                "title",
-                detection["rule_name"],
-            ),
-
-            "severity": detection["severity"],
-
-            "event_count": detection["event_count"],
-
-            "threshold": detection["threshold"],
-
-            "time_window_seconds": (
-                detection["time_window_seconds"]
-            ),
-
-            "window_start": detection["window_start"],
-
-            "window_end": detection["window_end"],
-        },
-
-        "message": alert_config.get(
-            "message",
-            detection["rule_name"],
-        ),
-
-        "tags": alert_config.get(
-            "tags",
-            [],
-        ),
-
-        "mitre": detection.get(
-            "mitre",
-            {},
-        ),
+def make_alert_id(detection: dict[str, Any]) -> str:
+    identity = {
+        "rule_id": detection["rule_id"],
+        "rule_version": detection["rule_version"],
+        "group": detection["group"],
+        "window_start": detection["window_start"],
+        "window_end": detection["window_end"],
+        "evidence": detection["evidence"],
     }
+    return hashlib.sha256(json.dumps(
+        identity, sort_keys=True, ensure_ascii=True, separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
 
-    if source_ip:
-        document["source"] = {
-            "ip": source_ip,
-        }
 
+def build_security_alert(detection: dict[str, Any]) -> dict[str, Any]:
+    alert = detection.get("alert", {})
+    organization_id = detection["organization_id"]
+    if (not isinstance(organization_id, str) or not organization_id.strip()
+            or detection["group"].get("organization.id") != organization_id):
+        raise ValueError("Detection organization scope is missing or inconsistent")
+    document = {
+        "@timestamp": detection["window_end"],
+        "event": {"kind": "alert", "category": [alert.get("category", "authentication")]},
+        "rule": {"id": detection["rule_id"], "name": detection["rule_name"]},
+        "organization": {"id": organization_id},
+        "cloud_soc": {
+            "alert_title": alert.get("title", detection["rule_name"]),
+            "severity": detection["severity"],
+            "event_count": detection["event_count"],
+            "threshold": detection["threshold"],
+            "time_window_seconds": detection["time_window_seconds"],
+            "window_start": detection["window_start"],
+            "window_end": detection["window_end"],
+            # Stored in _source only: do not dynamically map arbitrary rule values.
+            "provenance": {
+                "schema_version": 1,
+                "engine_version": detection["engine_version"],
+                "rule_version": detection["rule_version"],
+                "rule_snapshot": detection["rule_snapshot"],
+                "evidence": detection["evidence"],
+                "evidence_status": detection["evidence_status"],
+            },
+        },
+        "message": alert.get("message", detection["rule_name"]),
+        "tags": alert.get("tags", []),
+        "mitre": detection.get("mitre", {}),
+    }
+    if source_ip := detection["group"].get("source.ip"):
+        document["source"] = {"ip": source_ip}
     return document
 
 
-def process_raw_logs(
-    client: Elasticsearch,
-) -> tuple[int, int]:
-    """
-    raw-logs
-        ↓
-    Parser
-        ↓
-    ECS Normalizer
-        ↓
-    normalized-events
-    """
+def refresh_complete(client: Elasticsearch, index: str) -> None:
+    response = client.indices.refresh(index=index)
+    if response.get("_shards", {}).get("failed", 0):
+        raise IncompleteSearchError(f"Index refresh was incomplete: {index}")
 
-    raw_events = fetch_raw_events(
-        client=client,
-        index_pattern=RAW_INDEX_PATTERN,
-    )
 
-    processed_count = 0
-    skipped_count = 0
-
-    for raw_event in raw_events:
-
-        source = raw_event["_source"]
-
-        # ----------------------------------------------------
-        # Filebeat에서 지정한 로그 종류 확인
-        # ----------------------------------------------------
-
-        labels = source.get(
-            "labels",
-            {},
-        )
-
-        if not isinstance(labels, dict):
-            skipped_count += 1
-            continue
-
-        if labels.get("log_source") != "linux_auth":
-            skipped_count += 1
-            continue
-
-        # ----------------------------------------------------
-        # 원본 auth.log 문자열
-        # ----------------------------------------------------
-
-        message = source.get(
-            "message"
-        )
-
-        if not isinstance(message, str):
-            skipped_count += 1
-            continue
-
-        # ----------------------------------------------------
-        # Parser
-        # ----------------------------------------------------
-
-        parsed_event = parse_linux_auth_line(
-            message
-        )
-
-        if parsed_event is None:
-            skipped_count += 1
-            continue
-
-        # ----------------------------------------------------
-        # organization.id
-        # ----------------------------------------------------
-
-        organization = source.get(
-            "organization",
-            {},
-        )
-
-        if isinstance(organization, dict):
-            organization_id = organization.get(
-                "id",
-                DEFAULT_ORGANIZATION_ID,
+def process_raw_logs(client: Elasticsearch, *, source_timezone: str = "UTC") -> ProcessingStats:
+    # Complete the read before writes, so a partial search cannot look successful.
+    raw_events = fetch_raw_events(client=client, index_pattern=RAW_INDEX_PATTERN)
+    stats = ProcessingStats()
+    for hit in raw_events:
+        try:
+            source = hit["_source"]
+            if not isinstance(source, dict):
+                raise ValueError("Raw _source must be an object")
+            labels = source.get("labels", {})
+            if not isinstance(labels, dict) or labels.get("log_source") != "linux_auth":
+                stats.unsupported += 1
+                continue
+            message = source.get("message")
+            if not isinstance(message, str):
+                raise ValueError("linux_auth message must be a string")
+            parsed = parse_linux_auth_line(message)
+            if parsed is None:
+                stats.unsupported += 1
+                continue
+            organization = source.get("organization")
+            if not isinstance(organization, dict):
+                raise ValueError("Missing organization object")
+            organization_id = organization.get("id")
+            reference, zone, time_metadata = raw_time_context(
+                source, default_timezone=source_timezone,
             )
+            normalized = normalize_linux_auth_event(
+                parsed, organization_id=organization_id,
+                reference_time=reference, source_timezone=zone,
+            )
+            normalized.setdefault("cloud_soc", {})["provenance"] = {
+                "schema_version": 1,
+                "raw": {"index": hit["_index"], "id": hit["_id"]},
+                "time": time_metadata,
+            }
+            normalized_id = make_stable_id(hit["_index"], hit["_id"])
+        except (KeyError, TypeError, ValueError) as error:
+            stats.invalid += 1
+            # References are sufficient to investigate; avoid echoing raw log content.
+            LOGGER.error("Invalid raw document index=%r id=%r (%s)",
+                         hit.get("_index"), hit.get("_id"), type(error).__name__)
+            continue
+
+        # Infrastructure failures must propagate, not masquerade as malformed input.
+        response = save_normalized_event(
+            client=client, index_name=NORMALIZED_INDEX, event=normalized,
+            document_id=normalized_id, refresh=False, index_prepared=True,
+        )
+        if response["result"] == "created":
+            stats.created += 1
         else:
-            organization_id = (
-                DEFAULT_ORGANIZATION_ID
-            )
+            stats.existing += 1
+    if stats.created or stats.existing:
+        refresh_complete(client, NORMALIZED_INDEX)
+    return stats
 
-        # ----------------------------------------------------
-        # ECS Normalizer
-        # ----------------------------------------------------
 
-        normalized_event = (
-            normalize_linux_auth_event(
-                parsed_event,
-                organization_id=organization_id,
-            )
-        )
-
-        # ----------------------------------------------------
-        # 중복 저장 방지 ID
-        #
-        # raw index + raw document ID를 이용하므로
-        # 같은 raw 로그를 다시 읽어도 같은 ID가 만들어진다.
-        # ----------------------------------------------------
-
-        normalized_id = make_stable_id(
-            raw_event["_index"],
-            raw_event["_id"],
-        )
-
-        save_normalized_event(
-            client=client,
-            index_name=NORMALIZED_INDEX,
-            event=normalized_event,
-            document_id=normalized_id,
-
-            # 여러 문서를 저장한 뒤 한 번만 refresh한다.
-            refresh=False,
-        )
-
-        processed_count += 1
-
-    if processed_count > 0:
-        client.indices.refresh(
-            index=NORMALIZED_INDEX,
-        )
-
-    return (
-        processed_count,
-        skipped_count,
+def process_detections(client: Elasticsearch, *, rejected: list[dict[str, Any]]) -> int:
+    detections = run_detection_from_elasticsearch(
+        client=client, index_name=NORMALIZED_INDEX, rejected=rejected,
     )
-
-
-def process_detections(
-    client: Elasticsearch,
-) -> int:
-    """
-    normalized-events
-        ↓
-    Detection Engine
-        ↓
-    security-alerts
-    """
-
-    detections = (
-        run_detection_from_elasticsearch(
-            client=client,
-            index_name=NORMALIZED_INDEX,
-        )
-    )
-
+    created = 0
     for detection in detections:
-
-        alert_document = build_security_alert(
-            detection
-        )
-
-        # 같은 Detection 결과를 다시 처리해도
-        # 같은 Alert ID가 만들어진다.
-        alert_id = make_stable_id(
-            "alert",
-            detection["rule_id"],
-
-            json.dumps(
-                detection["group"],
-                ensure_ascii=False,
-                sort_keys=True,
-            ),
-
-            detection["window_start"],
-            detection["window_end"],
-        )
-
         response = save_security_alert(
-            client=client,
-            index_name=ALERT_INDEX,
-            alert=alert_document,
-            document_id=alert_id,
-            refresh=False,
+            client=client, index_name=ALERT_INDEX, alert=build_security_alert(detection),
+            document_id=make_alert_id(detection), refresh=False, index_prepared=True,
         )
-
-        print()
-        print("🚨 Security Alert")
-        print(
-            "Rule:",
-            detection["rule_id"],
-            detection["rule_name"],
-        )
-        print(
-            "Severity:",
-            detection["severity"],
-        )
-        print(
-            "Group:",
-            detection["group"],
-        )
-        print(
-            "Event Count:",
-            detection["event_count"],
-        )
-        print(
-            "Elasticsearch:",
-            response["result"],
-        )
-
+        if response["result"] == "created":
+            created += 1
     if detections:
-        client.indices.refresh(
-            index=ALERT_INDEX,
-        )
+        refresh_complete(client, ALERT_INDEX)
+    for reference in rejected:
+        LOGGER.error("Invalid normalized document index=%r id=%r",
+                     reference.get("index"), reference.get("document_id"))
+    return created
 
-    return len(detections)
+
+def prepare_indices(client: Elasticsearch, *, apply_mappings: bool = False) -> None:
+    ensure_normalized_index(client=client, index_name=NORMALIZED_INDEX)
+    ensure_security_alerts_index(client=client, index_name=ALERT_INDEX)
+    for index in (NORMALIZED_INDEX, ALERT_INDEX):
+        ensure_provenance_mapping(client, index, apply=apply_mappings)
 
 
-def run_pipeline_once(
-    client: Elasticsearch,
-) -> None:
-    """
-    Cloud SOC 1차 MVP 전체 파이프라인을 한 번 실행한다.
-    """
-
-    ensure_normalized_index(
-        client=client,
-        index_name=NORMALIZED_INDEX,
-    )
-
-    ensure_security_alerts_index(
-        client=client,
-        index_name=ALERT_INDEX,
-    )
-
-    normalized_count, skipped_count = (
-        process_raw_logs(
-            client
-        )
-    )
-
-    detection_count = process_detections(
-        client
-    )
-
-    print()
-    print("=" * 60)
-    print("Cloud SOC MVP 처리 완료")
-    print("=" * 60)
-
+def run_pipeline_once(client: Elasticsearch, *, source_timezone: str = "UTC") -> PipelineStats:
+    prepare_indices(client)
+    raw = process_raw_logs(client, source_timezone=source_timezone)
+    rejected: list[dict[str, Any]] = []
+    alerts_created = process_detections(client, rejected=rejected)
+    stats = PipelineStats(raw, alerts_created, len(rejected))
     print(
-        f"정규화 처리: {normalized_count}"
+        f"Pipeline {'DEGRADED' if stats.has_errors else 'OK'}: "
+        f"normalized_created={raw.created} existing={raw.existing} "
+        f"unsupported={raw.unsupported} raw_invalid={raw.invalid} "
+        f"normalized_invalid={len(rejected)} alerts_created={alerts_created}"
+    )
+    return stats
+
+
+def is_transient_error(error: Exception) -> bool:
+    return isinstance(error, (ConnectionError, ConnectionTimeout)) or (
+        isinstance(error, ApiError) and error.status_code in (429, 502, 503, 504)
     )
 
-    print(
-        f"지원하지 않는 로그: {skipped_count}"
-    )
 
-    print(
-        f"탐지 결과: {detection_count}"
-    )
-
-
-def main() -> None:
-    """
-    기본:
-        파이프라인 1회 실행
-
-    --watch:
-        일정 간격으로 계속 실행
-
-    TEST:
-    MVP 데모에서는 --watch 모드를 사용한다.
-
-    TODO:
-    운영 단계에서는 Polling 대신
-    checkpoint / queue / streaming 구조를 검토한다.
-    """
-
+def main() -> int:
     parser = argparse.ArgumentParser()
-
-    parser.add_argument(
-        "--watch",
-        action="store_true",
-        help="Cloud SOC 파이프라인을 반복 실행",
-    )
-
-    parser.add_argument(
-        "--interval",
-        type=int,
-        default=5,
-        help="반복 실행 간격(초)",
-    )
-
+    parser.add_argument("--watch", action="store_true", help="Repeat pipeline batches")
+    parser.add_argument("--interval", type=int, default=5, help="Seconds between batches")
+    parser.add_argument("--source-timezone", default="UTC", help="Fallback syslog timezone: UTC or +09:00")
+    parser.add_argument("--prepare-lineage-mappings", action="store_true",
+                        help="Explicitly add provenance mappings, then exit without processing logs")
     args = parser.parse_args()
-
-    client = create_elasticsearch_client()
-
+    if args.interval < 1:
+        parser.error("--interval must be positive")
+    if args.watch and args.prepare_lineage_mappings:
+        parser.error("--prepare-lineage-mappings cannot be combined with --watch")
     try:
+        parse_utc_offset(args.source_timezone)
+    except ValueError as error:
+        parser.error(str(error))
 
-        if not args.watch:
-            run_pipeline_once(
-                client
-            )
-            return
-
-        print(
-            "Cloud SOC 실시간 MVP 시작"
-        )
-
-        print(
-            f"처리 간격: {args.interval}초"
-        )
-
-        print(
-            "종료: Ctrl + C"
-        )
-
-        while True:
-
-            run_pipeline_once(
-                client
-            )
-
-            time.sleep(
-                max(
-                    args.interval,
-                    1,
-                )
-            )
-
+    client = None
+    exit_code = 0
+    try:
+        client = create_elasticsearch_client()
+        if args.prepare_lineage_mappings:
+            prepare_indices(client, apply_mappings=True)
+            print("Provenance mappings prepared; no log documents were processed.")
+        else:
+            consecutive_failures = 0
+            while True:
+                try:
+                    stats = run_pipeline_once(client, source_timezone=args.source_timezone)
+                except Exception as error:
+                    consecutive_failures += 1
+                    if (not args.watch or not is_transient_error(error)
+                            or consecutive_failures >= 3):
+                        raise
+                    delay = min(args.interval * (2 ** (consecutive_failures - 1)), 60)
+                    LOGGER.warning("Transient %s; retry %d/2 in %ds",
+                                   type(error).__name__, consecutive_failures, delay)
+                    time.sleep(delay)
+                    continue
+                consecutive_failures = 0
+                if not args.watch:
+                    exit_code = 2 if stats.has_errors else 0
+                    break
+                if stats.has_errors:
+                    LOGGER.error("Batch degraded; rejected documents remain in raw/normalized indices")
+                time.sleep(args.interval)
     except KeyboardInterrupt:
-        print()
-        print(
-            "Cloud SOC 종료"
-        )
-
+        exit_code = 130
     except Exception as error:
-        print()
-        print(
-            "Cloud SOC 처리 중 오류 발생"
-        )
-        print(
-            f"오류 내용: {error}"
-        )
-
+        if isinstance(error, ProvenanceMappingError):
+            LOGGER.error("%s", error)
+        # Avoid dumping ES request bodies, which may contain sensitive source logs.
+        LOGGER.error("Pipeline failed (%s). Check connectivity, index permissions, rules, "
+                     "and docs/pipeline_reliability.md before retrying.", type(error).__name__)
+        exit_code = 1
     finally:
-        client.close()
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                LOGGER.error("Elasticsearch client cleanup failed")
+                exit_code = 1
+    return exit_code
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -1,6 +1,52 @@
 from typing import Any
 
-from elasticsearch import Elasticsearch
+from elasticsearch import ConflictError, Elasticsearch
+
+from cloud_soc.elastic.pagination import fetch_all_hits
+
+
+PROVENANCE_MAPPING = {"type": "object", "enabled": False}
+
+
+class ProvenanceMappingError(RuntimeError):
+    """An existing index requires explicit, non-destructive schema preparation."""
+
+
+def ensure_provenance_mapping(
+    client: Elasticsearch, index_name: str, *, apply: bool = False,
+) -> None:
+    """Inspect existing mappings; additions require an explicit setup command."""
+    mappings = client.indices.get_mapping(index=index_name)
+    missing = []
+    for concrete_index, definition in mappings.items():
+        field = (definition.get("mappings", {}).get("properties", {})
+                 .get("cloud_soc", {}).get("properties", {}).get("provenance"))
+        if field is None:
+            missing.append(concrete_index)
+        elif field.get("enabled") is not False:
+            raise ProvenanceMappingError(f"{concrete_index}: incompatible cloud_soc.provenance mapping")
+    if missing and not apply:
+        raise ProvenanceMappingError(
+            "Missing provenance mapping. Review docs/pipeline_reliability.md, then run "
+            "python -m cloud_soc.main --prepare-lineage-mappings"
+        )
+    for concrete_index in missing:
+        client.indices.put_mapping(index=concrete_index, properties={
+            "cloud_soc": {"properties": {"provenance": PROVENANCE_MAPPING}},
+        })
+
+
+def save_immutable_document(
+    client: Elasticsearch, *, index_name: str, document: dict[str, Any],
+    document_id: str, refresh: bool | str,
+) -> dict[str, Any]:
+    """Retries keep the original evidence instead of overwriting old documents."""
+    try:
+        return client.create(
+            index=index_name, id=document_id, document=document, refresh=refresh,
+        )
+    except ConflictError:
+        return {"result": "existing", "_index": index_name, "_id": document_id}
 
 
 # ============================================================
@@ -151,6 +197,7 @@ NORMALIZED_EVENTS_MAPPING = {
         # Cloud SOC 프로젝트 전용 필드
         "cloud_soc": {
             "properties": {
+                "provenance": PROVENANCE_MAPPING,
                 "authentication_method": {
                     "type": "keyword",
                 },
@@ -224,6 +271,8 @@ def save_normalized_event(
     index_name: str = "normalized-events",
     document_id: str | None = None,
     refresh: bool | str = "wait_for",
+    *,
+    index_prepared: bool = False,
 ) -> dict[str, Any]:
     """
     ECS 정규화 이벤트를 저장한다.
@@ -233,10 +282,15 @@ def save_normalized_event(
     같은 로그가 중복 저장되는 것을 방지한다.
     """
 
-    ensure_normalized_index(
-        client=client,
-        index_name=index_name,
-    )
+    if not index_prepared:
+        ensure_normalized_index(client=client, index_name=index_name)
+        ensure_provenance_mapping(client, index_name)
+
+    if document_id is not None:
+        return save_immutable_document(
+            client, index_name=index_name, document=event,
+            document_id=document_id, refresh=refresh,
+        )
 
     return save_document(
         client=client,
@@ -313,6 +367,7 @@ SECURITY_ALERTS_MAPPING = {
 
         "cloud_soc": {
             "properties": {
+                "provenance": PROVENANCE_MAPPING,
                 "alert_title": {
                     "type": "keyword",
                 },
@@ -395,15 +450,22 @@ def save_security_alert(
     index_name: str = "security-alerts",
     document_id: str | None = None,
     refresh: bool | str = "wait_for",
+    *,
+    index_prepared: bool = False,
 ) -> dict[str, Any]:
     """
     Detection Engine에서 발생한 Alert를 저장한다.
     """
 
-    ensure_security_alerts_index(
-        client=client,
-        index_name=index_name,
-    )
+    if not index_prepared:
+        ensure_security_alerts_index(client=client, index_name=index_name)
+        ensure_provenance_mapping(client, index_name)
+
+    if document_id is not None:
+        return save_immutable_document(
+            client, index_name=index_name, document=alert,
+            document_id=document_id, refresh=refresh,
+        )
 
     return save_document(
         client=client,
@@ -417,18 +479,9 @@ def save_security_alert(
 def fetch_raw_events(
     client: Elasticsearch,
     index_pattern: str = "raw-logs-*",
-    max_events: int = 10000,
+    page_size: int = 1000,
 ) -> list[dict[str, Any]]:
-    """
-    Filebeat가 저장한 raw-logs를 가져온다.
-
-    TEST / MVP:
-    현재는 최대 10,000건을 가져온다.
-
-    TODO:
-    운영 단계에서는 checkpoint/search_after 방식으로
-    새 로그만 처리하도록 변경한다.
-    """
+    """Read every raw hit in one PIT snapshot, including hits beyond 10,000."""
 
     # 아직 Filebeat 로그가 하나도 없다면 빈 목록 반환
     if not client.indices.exists(
@@ -436,28 +489,4 @@ def fetch_raw_events(
     ):
         return []
 
-    response = client.search(
-        index=index_pattern,
-        size=max_events,
-
-        query={
-            "match_all": {},
-        },
-
-        sort=[
-            {
-                "@timestamp": {
-                    "order": "asc",
-                },
-            },
-        ],
-    )
-
-    return [
-        {
-            "_id": hit["_id"],
-            "_index": hit["_index"],
-            "_source": hit["_source"],
-        }
-        for hit in response["hits"]["hits"]
-    ]
+    return fetch_all_hits(client, index=index_pattern, page_size=page_size)

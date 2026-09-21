@@ -1,0 +1,76 @@
+{
+  "packetbeat.interfaces": {
+    "device": "__DEVICE__",
+    "type": "pcap",
+    "snaplen": 65535,
+    "auto_promisc_mode": false
+  },
+  "packetbeat.npcap.never_install": true,
+  "packetbeat.shutdown_timeout": "5s",
+  "packetbeat.flows": {
+    "enabled": true,
+    "timeout": "30s",
+    "period": "10s",
+    "enable_delta_flow_reports": false
+  },
+  "packetbeat.protocols": [
+    {
+      "type": "dns",
+      "ports": [53],
+      "include_authorities": false,
+      "include_additionals": false,
+      "send_request": false,
+      "send_response": false
+    },
+    {
+      "type": "tls",
+      "ports": [443, 465, 636, 853, 993, 995, 8443, 8883, 9243],
+      "send_certificates": false,
+      "include_raw_certificates": false,
+      "include_detailed_fields": false,
+      "send_request": false,
+      "send_response": false
+    }
+  ],
+  "processors": [
+    {"add_host_metadata": {}},
+    {"add_fields": {"target": "organization", "fields": {"id": "__ORGANIZATION__"}}},
+    {"add_fields": {"target": "labels", "fields": {
+      "log_source": "network_packetbeat",
+      "collection_mode": "metadata_only",
+      "flow_counters": "cumulative",
+      "sensor_platform": "__PLATFORM__"
+    }}},
+    {"include_fields": {"fields": [
+      "@timestamp", "ecs.version", "agent.id", "agent.ephemeral_id", "agent.name", "agent.type", "agent.version",
+      "host.id", "host.name", "host.ip", "host.os.name", "host.os.version", "organization.id", "labels",
+      "event.kind", "event.category", "event.type", "event.dataset", "event.action", "event.outcome",
+      "event.start", "event.end", "event.duration", "event.created",
+      "source.ip", "source.port", "source.mac", "source.bytes", "source.packets",
+      "destination.ip", "destination.port", "destination.mac", "destination.bytes", "destination.packets",
+      "network.bytes", "network.packets", "network.transport", "network.protocol", "network.type", "network.direction", "network.community_id",
+      "flow.id", "flow.final", "flow.vlan",
+      "dns.id", "dns.type", "dns.op_code", "dns.response_code", "dns.question.name", "dns.question.type", "dns.question.class", "dns.resolved_ip",
+      "tls.version", "tls.version_protocol", "tls.cipher", "tls.established", "tls.resumed", "tls.client.server_name"
+    ]}}
+  ],
+  "output.elasticsearch": {
+    "hosts": ["__ENDPOINT__"],
+    "api_key": "${CLOUD_SOC_NETWORK_API_KEY}",
+    "ssl.certificate_authorities": ["__CA_PATH__"],
+    "ssl.verification_mode": "full",
+    "index": "soc-network-__PLATFORM__-9.5.2-%{+yyyy.MM.dd}",
+    "timeout": 30
+  },
+  "setup.ilm.enabled": false,
+  "setup.template.enabled": false,
+  "logging.level": "info",
+  "logging.to_files": true,
+  "logging.to_stderr": false,
+  "logging.to_syslog": false,
+  "logging.to_eventlog": false,
+  "logging.files.rotateeverybytes": 10485760,
+  "logging.files.keepfiles": 7,
+  "logging.files.permissions": "0600",
+  "queue.disk": {"max_size": "1GB"}
+}

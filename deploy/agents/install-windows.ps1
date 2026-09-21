@@ -5,24 +5,29 @@ param(
     [Parameter(Mandatory = $true)][string]$CaPath,
     [Parameter(Mandatory = $true)][string]$Organization,
     [string[]]$AdditionalChannel = @(),
+    [string[]]$AdditionalLogRoot = @(),
     [switch]$DryRun
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $Version = '9.5.2'
-$ServiceName = 'cloud-soc-winlogbeat'
+$ServiceName = 'cloud-soc-filebeat'
+$DiscoveryTask = 'Cloud-SOC-Discovery'
+. (Join-Path $PSScriptRoot 'discover-windows.ps1')
 $Root = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Cloud-SOC-Agent'
-$BeatHome = Join-Path $Root "winlogbeat-$Version-windows-x86_64"
-$Exe = Join-Path $BeatHome 'winlogbeat.exe'
-$ConfigPath = Join-Path $Root 'winlogbeat.yml'
+$BeatHome = Join-Path $Root "filebeat-$Version-windows-x86_64"
+$Exe = Join-Path $BeatHome 'filebeat.exe'
+$ConfigPath = Join-Path $Root 'filebeat.yml'
 $DataPath = Join-Path $Root 'data'
 $LogsPath = Join-Path $Root 'logs'
-$Hash = '8f56374c2eac0897bf3ad916fbc592a4269b5105cb252607342d1e7cac66bb836c6f45b711f7c5f9bda230244a423c4ccee1eec8a3eaba50517291622f7d99df'
+$Hash = 'cdb07ad1e39e7c65cefcd7c71e1dfcfa4f92b00daafc132c78490e3e04f664f67403cdb925c5873a8441058d6de08d29790bf6776748edc63582f50174c508c8'
 $Channels = @('Application', 'Security', 'System') + $AdditionalChannel
+$LogRoots = @(Get-DefaultLogRoots) + $AdditionalLogRoot
 $CommonArgs = @('--path.home', $BeatHome, '--path.config', $Root, '--path.data', $DataPath, '--path.logs', $LogsPath, '-c', $ConfigPath)
 $ServiceCreated = $false
 $RootCreated = $false
+$TaskCreated = $false
 
 function Assert-Arguments {
     if ($Endpoint -cnotmatch '^https://([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?)(:([0-9]{1,5}))?/?\z') {
@@ -39,16 +44,15 @@ function Assert-Arguments {
         $seen[$channel] = $true
     }
     if ($Root -match '["\r\n${}]') { throw 'Unsupported Program Files path.' }
+    foreach ($path in $LogRoots) { $null = Assert-LogRoot $path }
 }
 
 function Get-AgentConfig {
-    $eventLogs = @($Channels | ForEach-Object { @{ name = $_; include_xml = $true; ignore_missing_channel = $false } })
     return @{
-        'winlogbeat.event_logs' = $eventLogs
+        'filebeat.config.inputs' = @{ enabled = $true; path = (Join-Path $Root 'inputs\*.yml'); 'reload.enabled' = $true; 'reload.period' = '10s' }
         processors = @(
             @{ add_host_metadata = @{} },
-            @{ add_fields = @{ target = 'organization'; fields = @{ id = $Organization } } },
-            @{ add_fields = @{ target = 'labels'; fields = @{ log_source = 'windows_event' } } }
+            @{ add_fields = @{ target = 'organization'; fields = @{ id = $Organization } } }
         )
         'output.elasticsearch' = @{
             hosts = @($Endpoint.TrimEnd('/'))
@@ -61,15 +65,18 @@ function Get-AgentConfig {
         'setup.ilm.enabled' = $false
         'setup.template.enabled' = $false
         'logging.level' = 'info'
+        'logging.to_files' = $true
+        'logging.to_eventlog' = $false
         'queue.disk' = @{ max_size = '1GB' }
     }
 }
 
 function Assert-NoInstallation {
-    foreach ($name in @($ServiceName, 'winlogbeat', 'filebeat', 'elastic-agent')) {
+    foreach ($name in @($ServiceName, 'cloud-soc-winlogbeat', 'winlogbeat', 'filebeat', 'elastic-agent')) {
         if (Get-Service -Name $name -ErrorAction SilentlyContinue) { throw "Existing service: $name. No automatic replacement is allowed." }
     }
-    foreach ($path in @($Root, (Join-Path $env:ProgramFiles 'Winlogbeat'), (Join-Path $env:ProgramFiles 'Winlogbeat-Data'), (Join-Path $env:ProgramFiles 'Elastic'), (Join-Path $env:ProgramData 'winlogbeat'))) {
+    if (Get-ScheduledTask -TaskName $DiscoveryTask -ErrorAction SilentlyContinue) { throw 'Existing discovery task; no automatic replacement.' }
+    foreach ($path in @($Root, (Join-Path $env:ProgramFiles 'Filebeat'), (Join-Path $env:ProgramFiles 'Filebeat-Data'), (Join-Path $env:ProgramData 'filebeat'), (Join-Path $env:ProgramFiles 'Winlogbeat'), (Join-Path $env:ProgramFiles 'Winlogbeat-Data'), (Join-Path $env:ProgramFiles 'Elastic'), (Join-Path $env:ProgramData 'winlogbeat'))) {
         if (Test-Path -LiteralPath $path) { throw "Existing installation or partial state: $path. Review it manually." }
     }
     foreach ($name in @('winlogbeat', 'filebeat', 'elastic-agent')) {
@@ -85,7 +92,7 @@ function Assert-ArchiveHash([string]$Path, [string]$Expected) {
 
 function Invoke-Beat([string[]]$BeatArguments) {
     & $Exe @CommonArgs @BeatArguments
-    if ($LASTEXITCODE -ne 0) { throw "Winlogbeat $($BeatArguments -join ' ') failed (exit $LASTEXITCODE)." }
+    if ($LASTEXITCODE -ne 0) { throw "Filebeat $($BeatArguments -join ' ') failed (exit $LASTEXITCODE)." }
 }
 
 function Set-ProtectedDirectory([string]$Path) {
@@ -101,12 +108,29 @@ function Set-ProtectedDirectory([string]$Path) {
     Set-Acl -LiteralPath $Path -AclObject $acl
 }
 
+function Test-DiscoveryTask {
+    $started = (Get-Date).AddSeconds(-1)
+    $deadline = (Get-Date).AddMinutes(5)
+    Start-ScheduledTask -TaskName $DiscoveryTask
+    do {
+        Start-Sleep -Seconds 1
+        $info = Get-ScheduledTaskInfo -TaskName $DiscoveryTask
+        $task = Get-ScheduledTask -TaskName $DiscoveryTask
+        if ($info.LastRunTime -ge $started -and $task.State -ne 'Running') {
+            if ($info.LastTaskResult -ne 0) { throw "Discovery task failed (exit $($info.LastTaskResult)); inspect execution policy and source access." }
+            return
+        }
+    } while ((Get-Date) -lt $deadline)
+    throw 'Discovery task did not finish successfully within five minutes.'
+}
+
 try {
     Assert-Arguments
     $config = Get-AgentConfig | ConvertTo-Json -Depth 12
     if ($DryRun) {
         $config
-        [Console]::Error.WriteLine('DRY RUN: no download, writes, key prompt, OS/source checks, network or service changes.')
+        [Console]::Error.WriteLine('DRY RUN: automatic active event channels + recursive text log discovery every minute. No source inventory in this preview; generated on the server.')
+        [Console]::Error.WriteLine('No download, writes, key prompt, OS/source checks, network or service changes.')
         exit 0
     }
     if (-not [Environment]::Is64BitOperatingSystem -or -not [Environment]::Is64BitProcess -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Use 64-bit PowerShell on Windows x86_64.' }
@@ -114,22 +138,23 @@ try {
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run PowerShell as Administrator (not required for -DryRun).' }
     Assert-NoInstallation
     if (-not (Test-Path -LiteralPath $CaPath -PathType Leaf)) { throw 'CA certificate file does not exist.' }
-    foreach ($channel in $Channels) {
-        $log = Get-WinEvent -ListLog $channel
-        if (-not $log.IsEnabled) { throw "Event channel disabled: $channel. This installer does not enable channels or audit policies." }
-    }
+    $null = Get-SourceDiscovery -LogRoots $LogRoots -RequiredChannels $Channels
 
     # New-Item without -Force fails if another installer created the directory first.
     New-Item -ItemType Directory -Path $Root | Out-Null
     $RootCreated = $true
     Set-ProtectedDirectory $Root
-    foreach ($path in @($DataPath, $LogsPath)) { New-Item -ItemType Directory -Path $path | Out-Null }
-    $package = "winlogbeat-$Version-windows-x86_64.zip"
+    foreach ($path in @($DataPath, $LogsPath, (Join-Path $Root 'inputs'))) { New-Item -ItemType Directory -Path $path | Out-Null }
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'discover-windows.ps1') -Destination $Root
+    $settings = @{ log_roots = @($LogRoots); required_channels = @($Channels) } | ConvertTo-Json -Depth 8
+    Write-DiscoveryFile (Join-Path $Root 'discovery-settings.json') $settings
+    Update-SourceDiscovery -Root $Root -LogRoots $LogRoots -RequiredChannels $Channels
+    $package = "filebeat-$Version-windows-x86_64.zip"
     $archive = Join-Path $Root $package
     $oldTls = [Net.ServicePointManager]::SecurityProtocol
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        Invoke-WebRequest -UseBasicParsing -Uri "https://artifacts.elastic.co/downloads/beats/winlogbeat/$package" -OutFile $archive -TimeoutSec 600 -MaximumRedirection 0
+        Invoke-WebRequest -UseBasicParsing -Uri "https://artifacts.elastic.co/downloads/beats/filebeat/$package" -OutFile $archive -TimeoutSec 600 -MaximumRedirection 0
     } finally {
         [Net.ServicePointManager]::SecurityProtocol = $oldTls
     }
@@ -137,7 +162,7 @@ try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::OpenRead($archive)
     try {
-        $prefix = "winlogbeat-$Version-windows-x86_64/"
+        $prefix = "filebeat-$Version-windows-x86_64/"
         foreach ($entry in $zip.Entries) {
             if (-not $entry.FullName.StartsWith($prefix, [StringComparison]::Ordinal) -or $entry.FullName -match '(^|/)\.\.(/|$)|[\\:]') { throw 'Unexpected archive path.' }
         }
@@ -155,16 +180,25 @@ try {
 
     # Quote every path and use the same data/keystore path for preflight and service.
     $command = '"{0}" --environment=windows_service --path.home "{1}" --path.config "{2}" --path.data "{3}" --path.logs "{4}" -c "{5}" -E logging.files.redirect_stderr=true' -f $Exe, $BeatHome, $Root, $DataPath, $LogsPath, $ConfigPath
-    New-Service -Name $ServiceName -DisplayName 'Cloud SOC Winlogbeat' -BinaryPathName $command -StartupType Manual | Out-Null
+    New-Service -Name $ServiceName -DisplayName 'Cloud SOC Filebeat' -BinaryPathName $command -StartupType Manual | Out-Null
     $ServiceCreated = $true
     Start-Service -Name $ServiceName
     (Get-Service -Name $ServiceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
     Start-Sleep -Seconds 3
     if ((Get-Service -Name $ServiceName).Status -ne 'Running') { throw 'Service did not remain running.' }
     Set-Service -Name $ServiceName -StartupType Automatic
+    # Respect the machine's existing PowerShell execution policy; never bypass it.
+    $action = New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument ('-NoProfile -NonInteractive -File "{0}" -Refresh' -f (Join-Path $Root 'discover-windows.ps1'))
+    $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    $taskSettings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -StartWhenAvailable
+    Register-ScheduledTask -TaskName $DiscoveryTask -Action $action -Trigger $trigger -Principal $principal -Settings $taskSettings | Out-Null
+    $TaskCreated = $true
+    Test-DiscoveryTask
     Write-Host 'Service active; TLS/auth connection test passed. Document ingestion is NOT yet verified. Check soc-host-raw-windows-* in Kibana.'
     exit 0
 } catch {
+    if ($TaskCreated) { Disable-ScheduledTask -TaskName $DiscoveryTask -ErrorAction Continue | Out-Null }
     if ($ServiceCreated) {
         Stop-Service -Name $ServiceName -ErrorAction Continue
         Set-Service -Name $ServiceName -StartupType Disabled -ErrorAction Continue

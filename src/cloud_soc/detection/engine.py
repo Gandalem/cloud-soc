@@ -1,10 +1,36 @@
 from collections import defaultdict, deque
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+import hashlib
+import json
 from typing import Any
 
 from elasticsearch import Elasticsearch
 
 from cloud_soc.detection.rule_loader import load_rules
+from cloud_soc.elastic.pagination import fetch_all_hits
+
+
+ENGINE_VERSION = "threshold-v2"
+
+
+def event_fingerprint(event: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(
+        event, sort_keys=True, ensure_ascii=True, separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
+
+
+def event_evidence(event: dict[str, Any]) -> dict[str, Any]:
+    meta = event.get("_cloud_soc_meta", {})
+    raw = get_field_value(event, "cloud_soc.provenance.raw")
+    normalized = {"index": meta.get("index"), "id": meta.get("document_id")}
+    complete = all(isinstance(value, str) and value for value in normalized.values())
+    complete = bool(complete and isinstance(raw, dict)
+                    and all(isinstance(raw.get(key), str) and raw[key] for key in ("index", "id")))
+    return {
+        "normalized": normalized, "raw": deepcopy(raw),
+        "event_hash": event_fingerprint(event), "complete": complete,
+    }
 
 
 def get_field_value(
@@ -176,18 +202,11 @@ def parse_event_timestamp(
 
     parsed = datetime.fromisoformat(value)
 
-    # timezone 정보가 없는 데이터가 들어온 경우
-    # UTC로 간주한다.
-    #
-    # SECURITY / 데이터 무결성:
-    # 운영환경에서는 timezone 없는 이벤트 자체를
-    # 별도로 기록하는 것도 고려한다.
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(
-            tzinfo=timezone.utc
-        )
+    # Reject ambiguous timestamps instead of silently assuming UTC.
+    if parsed.utcoffset() is None:
+        raise ValueError("@timestamp must contain a timezone")
 
-    return parsed
+    return parsed.astimezone(timezone.utc)
 
 
 def build_group_key(
@@ -218,7 +237,7 @@ def build_group_key(
 
         # 그룹 기준 값이 없는 이벤트는
         # Threshold 계산에서 제외한다.
-        if value is None:
+        if value is None or not isinstance(value, (str, int, float, bool)):
             return None
 
         values.append(value)
@@ -258,7 +277,10 @@ def detect_rule(
         .get("seconds", 0)
     )
 
-    group_by = rule["group_by"]
+    # Organization scope is mandatory even when a rule omits it.
+    group_by = list(dict.fromkeys(["organization.id", *rule["group_by"]]))
+    rule_snapshot = deepcopy(rule)
+    rule_version = event_fingerprint({"engine": ENGINE_VERSION, "rule": rule_snapshot})
 
     # --------------------------------------------------------
     # 1. Rule 조건과 일치하는 이벤트를 그룹별로 저장
@@ -270,6 +292,10 @@ def detect_rule(
     ] = defaultdict(list)
 
     for event in events:
+
+        organization_id = get_field_value(event, "organization.id")
+        if not isinstance(organization_id, str) or not organization_id.strip():
+            continue
 
         if not event_matches_rule(
             event,
@@ -312,9 +338,7 @@ def detect_rule(
     for group_key, group_events in grouped_events.items():
 
         # 반드시 시간순으로 처리한다.
-        group_events.sort(
-            key=lambda item: item[0]
-        )
+        group_events.sort(key=lambda item: (item[0], event_fingerprint(item[1])))
 
         # Sliding Window
         window: deque[
@@ -395,6 +419,11 @@ def detect_rule(
                 ),
 
                 "group": group_values,
+                "organization_id": group_values["organization.id"],
+                "rule_version": rule_version,
+                "rule_snapshot": deepcopy(rule_snapshot),
+                "engine_version": ENGINE_VERSION,
+                "evidence": [event_evidence(item[1]) for item in window],
 
                 "event_count": len(window),
 
@@ -425,6 +454,11 @@ def detect_rule(
                 ),
             }
 
+            detection["evidence_status"] = (
+                "complete" if all(item["complete"] for item in detection["evidence"])
+                else "incomplete_legacy"
+            )
+
             detections.append(detection)
 
             last_alert_time = timestamp
@@ -435,12 +469,26 @@ def detect_rule(
 def detect_events(
     events: list[dict[str, Any]],
     rules: list[dict[str, Any]],
+    *,
+    rejected: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """
     여러 Rule을 모든 정규화 이벤트에 적용한다.
     """
 
     detections: list[dict[str, Any]] = []
+    valid_events = []
+    for event in events:
+        try:
+            parse_event_timestamp(event)
+            organization_id = get_field_value(event, "organization.id")
+            if not isinstance(organization_id, str) or not organization_id.strip():
+                raise ValueError("Missing organization.id")
+        except (ValueError, TypeError):
+            if rejected is not None:
+                rejected.append(event.get("_cloud_soc_meta", {}))
+            continue
+        valid_events.append(event)
 
     for rule in rules:
 
@@ -451,7 +499,7 @@ def detect_events(
             continue
 
         rule_detections = detect_rule(
-            events,
+            valid_events,
             rule,
         )
 
@@ -466,50 +514,21 @@ def fetch_normalized_events(
     client: Elasticsearch,
     *,
     index_name: str = "normalized-events",
-    max_events: int = 10000,
+    page_size: int = 1000,
 ) -> list[dict[str, Any]]:
-    """
-    Elasticsearch normalized-events에서
-    정규화 이벤트를 가져온다.
-
-    TEST / MVP:
-    현재는 최대 10,000건을 메모리에 가져온다.
-
-    TODO:
-    실제 운영 단계에서는:
-    - search_after
-    - checkpoint
-    - Elasticsearch aggregation
-    - streaming 처리
-    등을 이용하도록 변경한다.
-    """
-
-    response = client.search(
-        index=index_name,
-        size=max_events,
-
-        query={
-            "match_all": {},
-        },
-
-        sort=[
-            {
-                "@timestamp": {
-                    "order": "asc",
-                }
-            }
-        ],
-    )
+    """Read the complete PIT snapshot and retain exact document references."""
+    hits = fetch_all_hits(client, index=index_name, page_size=page_size)
 
     events: list[dict[str, Any]] = []
 
-    for hit in response["hits"]["hits"]:
+    for hit in hits:
 
-        source = hit["_source"]
+        source = deepcopy(hit["_source"])
 
         # Elasticsearch 문서 ID도 나중에
         # Alert 증거 추적에 사용할 수 있도록 보존한다.
         source["_cloud_soc_meta"] = {
+            "index": hit["_index"],
             "document_id": hit["_id"],
         }
 
@@ -522,6 +541,7 @@ def run_detection_from_elasticsearch(
     client: Elasticsearch,
     *,
     index_name: str = "normalized-events",
+    rejected: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """
     normalized-events를 가져와서
@@ -538,6 +558,7 @@ def run_detection_from_elasticsearch(
     return detect_events(
         events,
         rules,
+        rejected=rejected,
     )
 
 
@@ -607,6 +628,7 @@ if __name__ == "__main__":
                 "user": {
                     "name": "test-user",
                 },
+                "organization": {"id": "test-org"},
             }
         )
 

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="환경별 로그와 파싱 필드를 표로 검토하는 정적 데모입니다. 실제 수집기와 파서는 연결되지 않았습니다.">
+  <title>통합 로그 | Cloud SOC 프로토타입</title>
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="logs.css">
+  <script src="logs-data.js" defer></script>
+  <script src="logs.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body data-page="logs">
+  <a class="skip-link" href="#main">본문으로 이동</a>
+  <div id="app-shell"></div>
+  <main id="main" class="main-content logs-main" tabindex="-1">
+    <div class="page-heading"><div><p class="eyebrow">로그 탐색 · 읽기 전용</p><h1>통합 로그</h1></div><p class="page-description">여러 환경의 로그를 하나의 목록에서 확인</p></div>
+    <div class="log-scope-note"><span data-icon="info"></span><p><strong>수집 목표: Windows·Linux의 OS·보안·서비스·애플리케이션 로그.</strong> 전체 로그는 실제 생성되고 접근 권한과 수집 설정이 확인된 채널·파일·저널 범위입니다. 현재는 합성 데이터이며, 실제 수집기·파서·조회 API는 미연결입니다.</p></div>
+    <details class="log-coverage"><summary>Windows · Linux 수집 대상 보기 <span>설계 범위 · 실제 지원 완료 아님</span></summary><div><section><h2>Windows</h2><p>이벤트 채널: Security, System, Application, PowerShell, Defender, Sysmon 및 추가 채널</p><p>서비스·파일: IIS, 방화벽, DNS, 작업 스케줄러, 응용 프로그램 및 사용자 지정 로그</p></section><section><h2>Linux</h2><p>OS·보안: 인증/SSH/sudo, syslog/messages, journald, 커널, auditd, cron, 방화벽</p><p>서비스·파일: 웹 서버, 데이터베이스, 컨테이너, 응용 프로그램 및 사용자 지정 로그</p></section></div><p>기록 설정·권한·서비스 설치 여부에 따라 수집 가능 범위가 달라집니다. 등록한 소스의 누락·권한 오류도 별도로 확인해야 하며, 파싱되지 않은 원문도 보존하는 방향입니다.</p></details>
+    <section class="panel log-workspace" aria-labelledby="log-list-title">
+      <div class="log-list-heading"><div><h2 id="log-list-title">전체 로그 목록</h2><p>경보 여부와 관계없이 일반 로그·오류·파싱 실패를 함께 확인합니다.</p></div><span class="micro-label">데모 데이터 · 실제 수집 로그 아님</span></div>
+      <form id="log-filters" class="log-filters" role="search" aria-label="통합 로그 검색">
+        <label class="log-search">로그 검색<input id="log-search" type="search" placeholder="IP, 사용자, 호스트, 메시지, 원문 검색" autocomplete="off"></label>
+        <label>환경<select id="log-environment"><option value="all">전체 환경</option></select></label>
+        <label>운영체제<select id="log-os"><option value="all">전체 운영체제</option></select></label>
+        <label>플랫폼<select id="log-platform"><option value="all">전체 플랫폼</option></select></label>
+        <label>로그 소스<select id="log-source"><option value="all">전체 소스</option></select></label>
+        <label>파싱 상태<select id="log-parse"><option value="all">전체 상태</option><option value="parsed">파싱 완료</option><option value="partial">일부 필드 누락</option><option value="failed">파싱 실패</option></select></label>
+        <label>이벤트 결과<select id="log-outcome"><option value="all">전체 결과</option><option value="success">성공</option><option value="failure">실패</option><option value="unknown">미확인</option></select></label>
+        <label>수집 기간<select id="log-period"><option value="all">전체 기간</option><option value="60">최근 1시간</option><option value="180">최근 3시간</option></select></label>
+        <button type="button" id="log-reset" class="quiet-button">필터 초기화</button>
+      </form>
+      <div id="log-metrics" class="log-metrics" aria-label="현재 검색 범위의 데모 로그 집계"></div>
+      <div class="log-table-toolbar"><span>엑셀형 목록 · 읽기 전용</span><span>열 제목으로 정렬 · 행 선택 시 상세 열기 · 가로 스크롤로 나머지 필드 확인</span></div>
+      <div id="log-state" hidden></div>
+      <div class="table-scroll log-sheet-scroll" id="log-sheet-scroll" tabindex="0" aria-label="로그 표 가로·세로 스크롤 영역">
+        <table class="log-sheet"><caption class="sr-only">데모 통합 로그 목록. 로그 ID 버튼으로 원문과 파싱 필드를 확인할 수 있습니다.</caption><thead id="log-columns"></thead><tbody id="log-rows"></tbody></table>
+      </div>
+      <div class="log-pagination"><span id="log-result" role="status"></span><div><label>페이지당<select id="log-page-size"><option value="10">10행</option><option value="25" selected>25행</option><option value="50">50행</option></select></label><button id="log-prev" type="button">이전</button><span id="log-page-label"></span><button id="log-next" type="button">다음</button></div></div>
+    </section>
+    <footer class="page-footer"><span>데모 기준: 2026-09-21 12:00 KST · 기간 필터는 수집 시각 기준</span><span>파싱 완료 ≠ 안전 판정 · 경보 탐지와 로그 조회는 별개</span></footer>
+  </main>
+  <dialog id="log-detail-dialog" class="log-detail-dialog" aria-labelledby="log-detail-title">
+    <div class="log-detail-heading"><div><p class="eyebrow">데모 로그 상세 · 저장·편집 불가</p><h2 id="log-detail-title"></h2><p id="log-detail-context"></p></div><button id="log-detail-close" type="button" aria-label="로그 상세 닫기">닫기</button></div>
+    <div id="log-detail-status" class="log-detail-status"></div>
+    <div class="tab-list raw-subtabs" role="tablist" aria-label="로그 상세 보기">
+      <button id="log-tab-fields" type="button" role="tab" aria-selected="true" aria-controls="log-detail-content" data-log-tab="fields">파싱 필드</button>
+      <button id="log-tab-raw" type="button" role="tab" aria-selected="false" aria-controls="log-detail-content" tabindex="-1" data-log-tab="raw">원문 로그</button>
+      <button id="log-tab-source" type="button" role="tab" aria-selected="false" aria-controls="log-detail-content" tabindex="-1" data-log-tab="source">수집 정보</button>
+    </div>
+    <section id="log-detail-content" role="tabpanel" aria-labelledby="log-tab-fields" tabindex="0"></section>
+    <p class="log-detail-footnote">운영 데이터가 아닙니다. 필드와 원문은 고정 합성 예시이며 실제 파서를 실행한 결과가 아닙니다.</p>
+  </dialog>
+  <noscript><p class="noscript">통합 로그 데모를 보려면 JavaScript가 필요합니다. 실제 로그 수집은 수행하지 않습니다.</p></noscript>
+</body>
+</html>

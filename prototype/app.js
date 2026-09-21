@@ -105,10 +105,11 @@
     showDialog(name, message);
   }
   function shell() {
-    const menus = [["관제 현황", "grid", "mission", "index.html"], ["사건 조사", "search", "workbench", "workbench.html"], ["관련 대상", "entity"], ["위협 헌팅", "hunt"], ["탐지 범위", "coverage"], ["시스템 상태", "health"], ["Kibana", "kibana"], ["설정", "settings"]];
+    const menus = [["관제 현황", "grid", "mission", "index.html"], ["통합 로그", "file", "logs", "logs.html"], ["사건 조사", "search", "workbench", "workbench.html"], ["관련 대상", "entity"], ["위협 헌팅", "hunt"], ["탐지 범위", "coverage"], ["시스템 상태", "health"], ["Kibana", "kibana"], ["에이전트 설치 파일", "settings", "agents", "agents.html"]];
+    const workspaceTitle = { mission: "관제 현황", workbench: "사건 조사", logs: "통합 로그" }[page];
     $("#app-shell").innerHTML = `
-      <header class="app-header"><a class="brand" href="index.html" aria-label="Cloud SOC 관제 현황"><img src="assets/mark.svg" alt=""><span>Cloud SOC</span></a><span class="workspace-label">${page === "mission" ? "관제 현황" : "사건 조사"}</span><div class="header-context"><span class="environment">환경: <strong>운영</strong> <span class="demo-env">(데모)</span></span><span class="timezone">UTC+9 / 서울</span><time class="header-clock" id="ui-clock" title="현재 화면 표시 시각이며 이벤트 시각이 아닙니다"></time><button class="avatar" data-placeholder="데모 사용자" aria-label="데모 사용자 정보">${icon("user")}</button></div></header>
-      <aside class="sidebar" aria-label="업무 메뉴"><p class="nav-caption">보안 분석 업무 공간</p><nav>${menus.map(([label, symbol, targetPage, href], index) => `${index === 6 ? '<div class="nav-separator"></div>' : ''}${href ? `<a class="nav-item ${page === targetPage ? "active" : ""}" ${page === targetPage ? 'aria-current="page"' : ''} href="${href}" aria-label="${label}" title="${label}">${icon(symbol)}<span class="nav-text">${label}</span></a>` : `<button class="nav-item" data-placeholder="${label}" aria-label="${label}" title="${label}">${icon(symbol)}<span class="nav-text">${label}</span></button>`}`).join("")}</nav><div class="sidebar-footer"><strong>Cloud SOC Mini SIEM</strong>A단계 / 정적 프로토타입<br>수집 데이터 미연결</div></aside>
+      <header class="app-header"><a class="brand" href="index.html" aria-label="Cloud SOC 관제 현황"><img src="assets/mark.svg" alt=""><span>Cloud SOC</span></a><span class="workspace-label">${workspaceTitle}</span><div class="header-context"><span class="environment">환경: <strong>${page === "logs" ? "다중 환경" : "운영"}</strong> <span class="demo-env">(데모)</span></span><span class="timezone">UTC+9 / 서울</span><time class="header-clock" id="ui-clock" title="현재 화면 표시 시각이며 이벤트 시각이 아닙니다"></time><button class="avatar" data-placeholder="데모 사용자" aria-label="데모 사용자 정보">${icon("user")}</button></div></header>
+      <aside class="sidebar" aria-label="업무 메뉴"><p class="nav-caption">보안 분석 업무 공간</p><nav>${menus.map(([label, symbol, targetPage, href]) => `${symbol === "kibana" ? '<div class="nav-separator"></div>' : ''}${href ? `<a class="nav-item ${page === targetPage ? "active" : ""}" ${page === targetPage ? 'aria-current="page"' : ''} href="${href}" aria-label="${label}" title="${label}">${icon(symbol)}<span class="nav-text">${label}</span></a>` : `<button class="nav-item" data-placeholder="${label}" aria-label="${label}" title="${label}">${icon(symbol)}<span class="nav-text">${label}</span></button>`}`).join("")}</nav><div class="sidebar-footer"><strong>Cloud SOC Mini SIEM</strong>A단계 / 정적 프로토타입<br>수집 데이터 미연결</div></aside>
       <div class="prototype-banner" aria-label="프로토타입 안내"><strong>A단계 화면 프로토타입</strong><span>데모 데이터</span><span class="connection">백엔드 미연결</span><label class="demo-control">데모 상태<select id="demo-state">${Object.entries(states).map(([value, [label]]) => `<option value="${value}" ${value === demoState ? "selected" : ""}>${label}</option>`).join("")}</select></label></div>
       <dialog class="dialog" id="prototype-dialog" aria-labelledby="dialog-title" aria-describedby="dialog-message"><div class="dialog-header"><div><p class="dialog-tag">A단계 프로토타입</p><h2 id="dialog-title"></h2></div><button class="icon-button" data-close-dialog aria-label="안내 창 닫기">${icon("close")}</button></div><p id="dialog-message"></p><div class="dialog-footer"><button data-close-dialog>닫기</button></div></dialog><div id="toast" class="toast" role="status" hidden></div>`;
     const clock = () => { $("#ui-clock").textContent = timeLabel(new Date(), true); $("#ui-clock").dateTime = new Date().toISOString(); };
@@ -116,7 +117,9 @@
     setInterval(clock, 1000);
     $("#demo-state").addEventListener("change", (event) => {
       demoState = event.target.value;
-      if (page === "mission") renderMission(); else renderWorkbench();
+      if (page === "mission") renderMission();
+      else if (page === "logs") window.CloudSocLogView.render(demoState);
+      else renderWorkbench();
     });
     document.addEventListener("click", (event) => {
       const placeholderButton = event.target.closest("[data-placeholder]");
@@ -371,5 +374,9 @@
   }
 
   shell();
-  if (page === "mission") initMission(); else initWorkbench();
+  if (page === "mission") initMission();
+  else if (page === "logs") {
+    window.CloudSocLogView.init({ escapeHtml, stateCard, bindStateReset });
+    window.CloudSocLogView.render(demoState);
+  } else initWorkbench();
 })();

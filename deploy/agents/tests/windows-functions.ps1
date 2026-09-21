@@ -9,6 +9,7 @@ if ($errors.Count) { throw ($errors | Out-String) }
 # Load only function definitions, never the top-level installer or service actions.
 $functions = $ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $false)
 foreach ($definition in $functions) { . ([ScriptBlock]::Create($definition.Extent.Text)) }
+. (Join-Path $PSScriptRoot '../discover-windows.ps1')
 
 function Assert-Throws([scriptblock]$Action, [string]$Pattern) {
     try { & $Action } catch {
@@ -23,6 +24,7 @@ $Organization = 'school'
 $CaPath = 'C:\certs\ca.crt'
 $Root = 'C:\Program Files\Cloud-SOC-Agent'
 $Channels = @('Application', 'Security', 'System')
+$LogRoots = @(Get-DefaultLogRoots)
 Assert-Arguments
 $Endpoint = "https://soc.example.invalid`n"
 Assert-Throws { Assert-Arguments } 'HTTPS'
@@ -47,7 +49,9 @@ if (($CalledArgs -join '|') -ne '--path.data|C:\Program Files\Cloud-SOC-Agent\da
 function Mock-Beat { $global:LASTEXITCODE = 0 }
 Invoke-Beat -BeatArguments @('test', 'config')
 
-$ServiceName = 'cloud-soc-winlogbeat'
+$ServiceName = 'cloud-soc-filebeat'
+$DiscoveryTask = 'Cloud-SOC-Discovery'
+function Get-ScheduledTask { param($TaskName, $ErrorAction) }
 function Get-Service { param($Name, $ErrorAction) if ($Name -eq 'winlogbeat') { @{ Name = $Name } } }
 Assert-Throws { Assert-NoInstallation } 'Existing service'
 function Get-Service { param($Name, $ErrorAction) }
@@ -71,3 +75,12 @@ foreach ($rule in $rules) {
     if ($rule.InheritanceFlags -ne 'ContainerInherit,ObjectInherit') { throw 'Child files would not inherit the protected ACL.' }
 }
 Write-Output 'PowerShell parser and isolated validation/checksum/native-error/existing-install/ACL tests passed.'
+
+# A registered task alone is not proof that policy permits the helper to run.
+function Start-ScheduledTask { param($TaskName) }
+function Start-Sleep { param($Seconds) }
+function Get-ScheduledTaskInfo { param($TaskName) @{ LastRunTime = (Get-Date); LastTaskResult = 1 } }
+function Get-ScheduledTask { param($TaskName) @{ State = 'Ready' } }
+Assert-Throws { Test-DiscoveryTask } 'Discovery task failed'
+function Get-ScheduledTaskInfo { param($TaskName) @{ LastRunTime = (Get-Date); LastTaskResult = 0 } }
+Test-DiscoveryTask

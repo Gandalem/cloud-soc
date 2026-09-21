@@ -1,0 +1,61 @@
+{
+  "index_patterns": ["soc-network-*"],
+  "priority": 210,
+  "_meta": {
+    "description": "Cloud SOC Packetbeat metadata intake. Separate from host logs and SSH detection; retention must be provisioned by an administrator."
+  },
+  "template": {
+    "settings": {"number_of_shards": 1, "number_of_replicas": 1},
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "@timestamp": {"type": "date"},
+        "type": {"type": "keyword"},
+        "ecs": {"properties": {"version": {"type": "keyword"}}},
+        "organization": {"properties": {"id": {"type": "keyword"}}},
+        "labels": {"properties": {
+          "log_source": {"type": "keyword"},
+          "collection_mode": {"type": "keyword"},
+          "flow_counters": {"type": "keyword"},
+          "sensor_platform": {"type": "keyword"}
+        }},
+        "agent": {"properties": {
+          "id": {"type": "keyword"}, "ephemeral_id": {"type": "keyword"},
+          "name": {"type": "keyword"}, "type": {"type": "keyword"}, "version": {"type": "keyword"}
+        }},
+        "host": {"properties": {
+          "id": {"type": "keyword"}, "name": {"type": "keyword"}, "ip": {"type": "ip"},
+          "os": {"properties": {"name": {"type": "keyword"}, "version": {"type": "keyword"}}}
+        }},
+        "event": {"properties": {
+          "kind": {"type": "keyword"}, "category": {"type": "keyword"}, "type": {"type": "keyword"},
+          "dataset": {"type": "keyword"}, "action": {"type": "keyword"}, "outcome": {"type": "keyword"},
+          "start": {"type": "date"}, "end": {"type": "date"}, "created": {"type": "date"}, "duration": {"type": "long"}
+        }},
+        "source": {"properties": {
+          "ip": {"type": "ip"}, "port": {"type": "long"}, "mac": {"type": "keyword"},
+          "bytes": {"type": "long"}, "packets": {"type": "long"}
+        }},
+        "destination": {"properties": {
+          "ip": {"type": "ip"}, "port": {"type": "long"}, "mac": {"type": "keyword"},
+          "bytes": {"type": "long"}, "packets": {"type": "long"}
+        }},
+        "network": {"properties": {
+          "bytes": {"type": "long"}, "packets": {"type": "long"}, "transport": {"type": "keyword"},
+          "protocol": {"type": "keyword"}, "type": {"type": "keyword"}, "direction": {"type": "keyword"}, "community_id": {"type": "keyword"}
+        }},
+        "flow": {"properties": {"id": {"type": "keyword"}, "final": {"type": "boolean"}, "vlan": {"type": "long"}}},
+        "dns": {"properties": {
+          "id": {"type": "keyword"}, "type": {"type": "keyword"}, "op_code": {"type": "keyword"},
+          "response_code": {"type": "keyword"}, "resolved_ip": {"type": "ip"},
+          "question": {"properties": {"name": {"type": "keyword", "ignore_above": 1024}, "type": {"type": "keyword"}, "class": {"type": "keyword"}}}
+        }},
+        "tls": {"properties": {
+          "version": {"type": "keyword"}, "version_protocol": {"type": "keyword"}, "cipher": {"type": "keyword"},
+          "established": {"type": "boolean"}, "resumed": {"type": "boolean"},
+          "client": {"properties": {"server_name": {"type": "keyword", "ignore_above": 1024}}}
+        }}
+      }
+    }
+  }
+}

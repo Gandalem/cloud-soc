@@ -1,4 +1,4 @@
-from datetime import datetime, timezone, tzinfo
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Any
 
 
@@ -33,32 +33,27 @@ def parse_syslog_timestamp(
     reference_time의 연도를 이용해서 보완한다.
     """
 
-    if reference_time is None:
-        reference_time = datetime.now(timezone.utc)
-
-    # Syslog 시간 문자열에는 연도가 없으므로
-    # reference_time의 연도를 앞에 붙인다.
-    parsed = datetime.strptime(
-        f"{reference_time.year} {timestamp_raw}",
-        "%Y %b %d %H:%M:%S",
-    )
-
-    parsed = parsed.replace(tzinfo=source_timezone)
-
-    # TEST / 안정성 처리:
-    #
-    # 예를 들어 현재 날짜가 2027-01-01인데
-    # 로그가 "Dec 31 23:59:00"이면
-    # 단순히 현재 연도(2027)를 붙이면 미래 로그가 된다.
-    #
-    # 그런 경우 이전 연도로 보정한다.
-    if parsed > reference_time.astimezone(source_timezone):
-        if (
-            parsed - reference_time.astimezone(source_timezone)
-        ).days > 1:
-            parsed = parsed.replace(year=parsed.year - 1)
-
-    return parsed
+    if reference_time is None or reference_time.utcoffset() is None:
+        raise ValueError("A stable, timezone-aware reference_time is required")
+    local_reference = reference_time.astimezone(source_timezone)
+    # English syslog months must not depend on the Windows process locale.
+    months = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()
+    month, day, clock = timestamp_raw.split()
+    month_number = months.index(month) + 1
+    hour, minute, second = (int(part) for part in clock.split(":"))
+    candidates = []
+    for year in (local_reference.year - 1, local_reference.year, local_reference.year + 1):
+        try:
+            candidate = datetime(
+                year, month_number, int(day), hour, minute, second, tzinfo=source_timezone,
+            )
+        except ValueError:
+            continue
+        if candidate <= local_reference + timedelta(days=1):
+            candidates.append(candidate)
+    if not candidates:
+        raise ValueError("Invalid syslog date near the raw reference year")
+    return max(candidates)
 
 
 def normalize_linux_auth_event(
@@ -113,6 +108,12 @@ def normalize_linux_auth_event(
             + ", ".join(missing_fields)
         )
 
+    if not isinstance(organization_id, str) or not organization_id.strip():
+        raise ValueError("organization.id must be a non-empty string")
+    port = parsed_event["source_port"]
+    if type(port) is not int or not 0 <= port <= 65535:
+        raise ValueError("source.port must be between 0 and 65535")
+
     # --------------------------------------------------------
     # timestamp 변환
     # --------------------------------------------------------
@@ -129,7 +130,7 @@ def normalize_linux_auth_event(
 
     ecs_event: dict[str, Any] = {
         # ECS에서 @timestamp는 이벤트가 실제 발생한 시간이다.
-        "@timestamp": event_time.isoformat(),
+        "@timestamp": event_time.astimezone(timezone.utc).isoformat(),
 
         # ECS 버전
         "ecs": {
