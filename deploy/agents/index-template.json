@@ -1,0 +1,26 @@
+{
+  "index_patterns": ["soc-host-raw-*"],
+  "priority": 200,
+  "_meta": {
+    "description": "Minimal isolated host intake mappings. Not a full ECS/Beats template or a retention policy."
+  },
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 1
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": { "type": "date" },
+        "message": { "type": "match_only_text" },
+        "organization": { "properties": { "id": { "type": "keyword" } } },
+        "labels": { "type": "object", "dynamic": true },
+        "host": { "properties": { "name": { "type": "keyword" }, "ip": { "type": "ip" } } },
+        "agent": { "properties": { "id": { "type": "keyword" }, "type": { "type": "keyword" }, "version": { "type": "keyword" } } },
+        "event": { "properties": { "code": { "type": "keyword" }, "original": { "type": "keyword", "index": false, "doc_values": false } } },
+        "winlog": { "properties": { "channel": { "type": "keyword" }, "event_id": { "type": "keyword" } } },
+        "log": { "properties": { "file": { "properties": { "path": { "type": "keyword" } } } } }
+      }
+    }
+  }
+}

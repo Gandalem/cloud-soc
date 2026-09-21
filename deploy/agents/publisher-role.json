@@ -1,0 +1,9 @@
+{
+  "cluster": ["monitor"],
+  "indices": [
+    {
+      "names": ["soc-host-raw-*"],
+      "privileges": ["auto_configure", "create_doc"]
+    }
+  ]
+}
