@@ -135,6 +135,55 @@ class ServerPreparationTests(unittest.TestCase):
                 prepare.prepare("soc.example.test", "10.0.0.5", self.state, PASSWORD)
         self.assertFalse(self.state.exists())
 
+    def test_generated_elastic_secret_has_allowed_mode_and_shared_container_owner(self):
+        def fake_openssl(command, **_kwargs):
+            for option in ("-keyout", "-out"):
+                if option in command:
+                    Path(command[command.index(option) + 1]).write_text("synthetic certificate", encoding="ascii")
+
+        output = io.StringIO()
+        with patch.object(prepare.shutil, "which", return_value="openssl"), \
+                patch.object(prepare.subprocess, "run", side_effect=fake_openssl), \
+                patch.object(prepare, "password_hash", return_value="SYNTHETIC_HASH"), \
+                patch.object(prepare.secrets, "token_urlsafe", return_value="SYNTHETIC_CREDENTIAL"), \
+                patch.object(prepare.os, "umask"), \
+                patch.object(prepare.os, "chown", create=True) as chown, \
+                patch.object(Path, "chmod", autospec=True) as chmod, redirect_stdout(output):
+            prepare.prepare("soc.example.test", "10.0.0.5", self.state, PASSWORD)
+
+        secret = self.state / "secrets/elastic_password"
+        chown.assert_any_call(secret, 1000, 0)
+        modes = [call.args[1] for call in chmod.call_args_list if call.args[0] == secret]
+        self.assertEqual(modes, [0o400])
+        self.assertIn(modes[0], (0o400, 0o440, 0o600, 0o640))
+        self.assertEqual(secret.read_text(encoding="utf-8"), "SYNTHETIC_CREDENTIAL")
+        owner_uid, owner_gid = next(call.args[1:] for call in chown.call_args_list if call.args[0] == secret)
+        for uid, gid in ((1000, 0), (1000, 1000)):
+            read_bit = 0o400 if uid == owner_uid else 0o040 if gid == owner_gid else 0o004
+            self.assertTrue(modes[0] & read_bit)
+        self.assertEqual(modes[0] & 0o077, 0)
+        for name in ("kibana_password", "issuer_password", "analyst_password", "admin_hash"):
+            chmod.assert_any_call(self.state / "secrets" / name, 0o644)
+        chmod.assert_any_call(self.state / "tls", 0o750)
+        chown.assert_any_call(self.state / "portal", 1000, 1000)
+        self.assertNotIn("SYNTHETIC_CREDENTIAL", output.getvalue())
+        self.assertNotIn("SYNTHETIC_HASH", output.getvalue())
+        self.assertNotIn(PASSWORD, output.getvalue())
+
+    def test_elastic_secret_ownership_failure_preserves_state_without_weakening_mode(self):
+        with patch.object(prepare.shutil, "which", return_value="openssl"), \
+                patch.object(prepare, "password_hash", return_value="SYNTHETIC_HASH"), \
+                patch.object(prepare.os, "umask"), \
+                patch.object(prepare.os, "chown", create=True, side_effect=PermissionError("denied")), \
+                patch.object(Path, "chmod", autospec=True) as chmod, \
+                patch.object(prepare.subprocess, "run") as openssl:
+            with self.assertRaises(PermissionError):
+                prepare.prepare("soc.example.test", "10.0.0.5", self.state, PASSWORD)
+        self.assertTrue((self.state / "secrets/elastic_password").is_file())
+        chmod.assert_not_called()
+        openssl.assert_not_called()
+        self.assertFalse((self.state / "compose.env").exists())
+
     def test_known_validation_error_is_actionable(self):
         error = prepare.PreparationError("Existing server state is never overwritten; review it manually")
         code, output, _prompt, _action = self.run_main([PASSWORD, PASSWORD], error)

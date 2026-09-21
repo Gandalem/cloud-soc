@@ -219,6 +219,8 @@ df -h /
 
 SSH를 닫아도 `-d`로 실행한 중앙 컨테이너는 유지됩니다. 테스트용 Python 미리보기 프로세스와 다릅니다.
 
+Elasticsearch가 재시작을 반복하며 `ELASTIC_PASSWORD_FILE`의 실제 권한이 `644`라는 오류를 출력하면 [기존 비밀번호 파일 권한 복구](../deploy/server/README.md#기존-설치의-elasticsearch-비밀번호-파일-권한-복구)를 진행합니다. 해당 파일만 소유자 `1000:0`·권한 `0400`으로 맞추고 Compose로 다시 기동합니다. 인증서 준비나 전체 설치기를 다시 실행하지 않습니다.
+
 ## 6. Windows에 CA 공개 인증서 전달·신뢰
 
 브라우저와 서버 사이에 HTTPS가 필요합니다. 사설 CA는 Windows가 원래 신뢰하지 않으므로 **자신이 만든 CA인지 확인한 다음** 신뢰 등록합니다. 등록하면 이 CA가 발급한 인증서를 해당 Windows 사용자가 신뢰하게 되므로, 다른 사람이 준 CA를 확인 없이 등록하지 않습니다.
@@ -506,6 +508,7 @@ organization.id : "school-lab" and type : "tls"
 
 | 증상 | 먼저 확인할 것 |
 | --- | --- |
+| `ELASTIC_PASSWORD_FILE ... actually has: 644`, ES 재시작 반복 | [권한 복구 절차](../deploy/server/README.md#기존-설치의-elasticsearch-비밀번호-파일-권한-복구)로 해당 파일만 `1000:0`·`0400` 적용. 기존 비밀번호·인증서·볼륨 보존 |
 | `Only Ubuntu 22.04 is supported` | 구버전 중앙 설치기. 로컬 변경 확인 후 Git 갱신, 실제 OS는 `cat /etc/os-release`로 확인 |
 | `Ubuntu ... is not supported by this installer` 또는 코드명 불일치 | 22.04·24.04·26.04 LTS와 올바른 코드명인지 확인. 검사 우회·`jammy` 강제 지정 금지 |
 | 비밀번호 입력 직후 `Preparation failed (ValueError)` | 구버전은 검증 오류를 숨김. `sudo ls -ld state/server`로 폴더 존재 여부 확인. 없으면 Git 갱신 후 재시도, 있으면 보존·검토 |

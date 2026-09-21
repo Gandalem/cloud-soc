@@ -85,9 +85,14 @@ def prepare(host, bind_ip, state, password):
     for name, value in {**credentials, "admin_hash": admin_hash}.items():
         path = state / "secrets" / name
         path.write_text(value, encoding="utf-8")
-        # Container bind-mounted secret files need to be readable by non-root users.
-        # Their host parent remains root-only (0700), and only required files mount.
-        path.chmod(0o644)
+        if name == "elastic_password":
+            # ES rejects world-readable password files. ES and bootstrap share uid
+            # 1000 (but not their primary gid), so owner-only read works for both.
+            os.chown(path, 1000, 0)
+            path.chmod(0o400)
+        else:
+            # Only required files mount; the host parent remains root-only (0700).
+            path.chmod(0o644)
 
     def openssl(*args):
         subprocess.run(["openssl", *map(str, args)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)

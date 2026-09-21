@@ -142,6 +142,10 @@ sudo python3 deploy/server/prepare.py --host soc.example.com --bind-ip 10.0.0.10
 
 상태 루트와 `secrets/` 부모는 root 전용입니다. 컨테이너에 필요한 개별 파일만 읽기 전용으로 마운트합니다. 이 권한을 완화하거나 `state/server` 전체를 에이전트에 복사하지 않습니다. Docker 관리자 자체는 호스트 root와 동등한 권한으로 취급합니다.
 
+`secrets/elastic_password`는 **UID:GID `1000:0`, 권한 `0400`**으로 생성합니다. Elasticsearch의 `ELASTIC_PASSWORD_FILE`은 `0644`를 거부합니다. ES(`1000:0`)와 초기화 컨테이너(`1000:1000`)의 UID가 같으므로 두 서비스 모두 소유자 읽기 권한으로 접근하며, 호스트의 부모 디렉터리는 계속 root 전용입니다. [Elasticsearch 컨테이너 사용자](https://www.elastic.co/docs/deploy-manage/deploy/self-managed/install-elasticsearch-docker-configure#mounting-elasticsearch-configuration-files)
+
+Compose의 파일 기반 secret은 호스트 파일을 bind-mount하므로 YAML에 `uid`, `gid`, `mode`만 적는 것으로 호스트 파일 권한이 교정되지 않습니다. [Docker Compose 파일 기반 secret 제약](https://docs.docker.com/reference/compose-file/services/#secrets)
+
 ### CA 신뢰
 
 준비 명령이 출력한 CA 파일 SHA-256을 인증된 별도 경로로 전달합니다. 관리자 PC에는 `tls/ca.crt` **한 파일만** 안전하게 전달하고, 해당 파일 해시를 대조한 뒤 조직이 승인한 절차로 신뢰 저장소에 등록합니다. 에이전트는 설치 묶음의 CA 파일로 서버를 검증합니다.
@@ -160,6 +164,30 @@ sudo docker compose --env-file state/server/compose.env -f deploy/server/compose
 ```
 
 ES 정상 기동 후 `bootstrap`이 계정·템플릿을 준비하고 **종료 코드 0**으로 끝나야 포털과 Kibana가 시작됩니다. 이 초기화 컨테이너는 계속 실행되는 서비스가 아닙니다. 실패하면 원인을 고친 뒤 같은 `up -d --build` 명령으로 재시도하며 데이터 볼륨을 삭제하지 않습니다.
+
+### 기존 설치의 Elasticsearch 비밀번호 파일 권한 복구
+
+로그에 `ELASTIC_PASSWORD_FILE ... must have file permissions 400, 440, 600 or 640 ... actually has: 644`가 있으면 구버전 준비 스크립트가 만든 파일 권한이 원인입니다. **비밀번호 길이·내용·OOM 문제와 무관한 이 오류**는 아래처럼 기존 파일 하나의 소유자·권한만 교정합니다. `git pull`은 이미 생성된 파일의 권한을 바꾸지 않습니다.
+
+Ubuntu SSH의 기존 `cloud-soc` 디렉터리에서 실행합니다. 기본 Docker(UID 재매핑 없음)와 현재 프로젝트의 기본 컨테이너 UID `1000` 기준입니다. 각 명령이 성공한 경우에만 다음 명령으로 진행하며, 대상이 없거나 디렉터리/심볼릭 링크이면 중단하고 먼저 검토합니다.
+
+```bash
+sudo stat -c '%F %u:%g %a %n' state/server/secrets/elastic_password
+sudo chown 1000:0 -- state/server/secrets/elastic_password
+sudo chmod 0400 -- state/server/secrets/elastic_password
+sudo stat -c '%u:%g %a %n' state/server/secrets/elastic_password
+sudo docker compose --env-file state/server/compose.env -f deploy/server/compose.yaml restart elasticsearch
+sudo docker compose --env-file state/server/compose.env -f deploy/server/compose.yaml up -d
+sudo docker compose --env-file state/server/compose.env -f deploy/server/compose.yaml ps -a
+```
+
+두 번째 `stat` 출력의 앞부분은 `1000:0 400`이어야 합니다. 파일 내용을 출력하거나 비밀번호·CA·데이터 볼륨을 재생성하지 않습니다. `chown -R`, `chmod -R`, `chmod 777`, `prepare.py` 재실행, `down -v`는 사용하지 않습니다. 소유자가 root인 채 `chmod 600`만 적용하면 UID `1000`의 컨테이너가 읽지 못하므로 소유자도 함께 맞춰야 합니다.
+
+ES가 `healthy`, bootstrap이 `Exited (0)`, 나머지 서비스가 실행 중인지 확인합니다. 실패하면 최근 오류만 확인하고 키·비밀번호는 공유하지 않습니다.
+
+```bash
+sudo docker compose --env-file state/server/compose.env -f deploy/server/compose.yaml logs --since 5m --tail 100 elasticsearch bootstrap
+```
 
 | 접속 주소 (실제 host로 교체) | 계정 |
 | --- | --- |

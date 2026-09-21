@@ -230,6 +230,18 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(services["bootstrap"]["restart"], "no")
         self.assertEqual(compose["name"], "cloud-soc-central")
 
+    def test_elastic_password_owner_matches_bootstrap_and_is_not_exposed_to_portal(self):
+        import yaml
+
+        services = yaml.safe_load((ROOT / "deploy/server/compose.yaml").read_text())["services"]
+        self.assertIn("elastic_password", services["elasticsearch"]["secrets"])
+        self.assertIn("elastic_password", services["bootstrap"]["secrets"])
+        self.assertNotIn("elastic_password", services["portal"]["secrets"])
+        self.assertEqual(services["elasticsearch"].get("user", "1000:0").split(":")[0], "1000")
+        dockerfile = (ROOT / "deploy/server/Dockerfile").read_text()
+        image_user = [line.split()[1] for line in dockerfile.splitlines() if line.startswith("USER ")][-1]
+        self.assertEqual(services["bootstrap"].get("user", image_user).split(":")[0], "1000")
+
 
 if __name__ == "__main__":
     unittest.main()
