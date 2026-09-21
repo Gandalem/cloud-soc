@@ -11,20 +11,48 @@ import re
 import secrets
 import shutil
 import subprocess
+import sys
+import warnings
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
+class PreparationError(ValueError):
+    """A static, user-safe validation message; never include credentials here."""
+
+
 def validate_host(host):
     if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?", host):
-        raise ValueError("Use a DNS hostname or IPv4 address, without a scheme, port or path")
+        raise PreparationError("Use a DNS hostname or IPv4 address, without a scheme, port or path")
     try:
         ipaddress.IPv4Address(host)
         return "IP:" + host
     except ValueError:
         if all(char in "0123456789." for char in host) or any(not label or len(label) > 63 or label.startswith("-") or label.endswith("-") for label in host.split(".")):
-            raise ValueError("Invalid DNS hostname or IPv4 address")
+            raise PreparationError("Invalid DNS hostname or IPv4 address")
         return "DNS:" + host
+
+
+def validate_password(password):
+    if len(password) < 16:
+        raise PreparationError("Use a portal administrator password with at least 16 characters")
+
+
+def read_admin_password():
+    # getpass must not fall back to echoing the password through piped stdin.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", getpass.GetPassWarning)
+        for _ in range(3):
+            password = getpass.getpass("Portal admin password (16+ characters): ")
+            try:
+                validate_password(password)
+            except PreparationError as error:
+                print(f"{error}. Please try again.", file=sys.stderr)
+                continue
+            if password == getpass.getpass("Confirm password: "):
+                return password
+            print("Passwords do not match. Please enter both again.", file=sys.stderr)
+    raise PreparationError("Password entry failed after 3 attempts; no server state was created by this attempt")
 
 
 def password_hash(password):
@@ -35,20 +63,26 @@ def password_hash(password):
 
 def prepare(host, bind_ip, state, password):
     san = validate_host(host)
-    ipaddress.IPv4Address(bind_ip)
+    try:
+        ipaddress.IPv4Address(bind_ip)
+    except ValueError:
+        raise PreparationError("Use a valid server-local IPv4 for --bind-ip") from None
+    if state.is_symlink():
+        raise PreparationError("Server state must not be a symlink; review it manually")
     state = state.resolve()
-    if state.exists() or state.is_symlink():
-        raise ValueError("Existing server state is never overwritten; review it manually")
-    if len(password) < 16:
-        raise ValueError("Use a portal administrator password with at least 16 characters")
+    if state.exists():
+        raise PreparationError("Existing server state is never overwritten; review it manually")
+    validate_password(password)
     if not shutil.which("openssl"):
-        raise ValueError("Install OpenSSL before preparing certificates")
+        raise PreparationError("Install OpenSSL before preparing certificates")
+    # A hashing failure should not leave an empty state directory blocking a retry.
+    admin_hash = password_hash(password)
     os.umask(0o077)
     state.mkdir(parents=True, mode=0o700)
     for name in ("tls", "private", "secrets", "portal"):
         (state / name).mkdir(mode=0o700)
     credentials = {name: secrets.token_urlsafe(36) for name in ("elastic_password", "kibana_password", "issuer_password", "analyst_password")}
-    for name, value in {**credentials, "admin_hash": password_hash(password)}.items():
+    for name, value in {**credentials, "admin_hash": admin_hash}.items():
         path = state / "secrets" / name
         path.write_text(value, encoding="utf-8")
         # Container bind-mounted secret files need to be readable by non-root users.
@@ -94,11 +128,17 @@ def main():
     args = parser.parse_args()
     if os.name != "posix" or os.geteuid() != 0:
         parser.error("Run with sudo on the Ubuntu central server")
-    password = getpass.getpass("Portal admin password (16+ characters): ")
-    if password != getpass.getpass("Confirm password: "):
-        parser.error("Passwords do not match")
     try:
+        password = read_admin_password()
         prepare(args.host, args.bind_ip, args.state, password)
+    except PreparationError as error:
+        parser.exit(1, f"Preparation failed: {error}. Existing/partial state was not removed.\n")
+    except getpass.GetPassWarning:
+        parser.exit(1, "Secure password input is unavailable. Use an interactive SSH terminal; do not pipe passwords.\n")
+    except EOFError:
+        parser.exit(1, "Password input ended. No server state was created by this attempt.\n")
+    except KeyboardInterrupt:
+        parser.exit(130, "Preparation interrupted. Existing/partial state was not removed.\n")
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"Preparation failed ({type(error).__name__}). Protected partial state is retained; no automatic overwrite.\n")
 

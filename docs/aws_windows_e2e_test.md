@@ -508,6 +508,8 @@ organization.id : "school-lab" and type : "tls"
 | --- | --- |
 | `Only Ubuntu 22.04 is supported` | 구버전 중앙 설치기. 로컬 변경 확인 후 Git 갱신, 실제 OS는 `cat /etc/os-release`로 확인 |
 | `Ubuntu ... is not supported by this installer` 또는 코드명 불일치 | 22.04·24.04·26.04 LTS와 올바른 코드명인지 확인. 검사 우회·`jammy` 강제 지정 금지 |
+| 비밀번호 입력 직후 `Preparation failed (ValueError)` | 구버전은 검증 오류를 숨김. 16자 이상인지 확인하고 `sudo ls -ld state/server`로 폴더 존재 여부 확인. 없으면 Git 갱신 후 재시도, 있으면 보존·검토 |
+| `at least 16 characters` 또는 `Passwords do not match` | 16자 이상 새 비밀번호와 동일한 확인값 재입력. 최대 3회까지 가능하며 입력 내용은 화면에 표시되지 않음 |
 | `127.0.0.1:8766`, `preview-*`, `soc.example.invalid`가 보임 | 옛 미리보기. 실제 AWS HTTPS 포털과 거기서 만든 새 패키지 사용 |
 | 포털에서 `Failed to fetch` | 동일 AWS 주소의 포털/gateway 상태, 클라이언트 네트워크, 인증서, 서버 로그. 임시 Python 서버 재실행으로 해결하지 않음 |
 | 모든 `Test-NetConnection`이 실패 | 현재 공인 IP/32, 보안그룹·다른 그룹의 규칙, 서브넷/IGW, NACL, 인스턴스 실행 여부 |
