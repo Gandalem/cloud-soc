@@ -103,7 +103,7 @@ sudo sh deploy/server/install-ubuntu.sh
 | `Public DNS/IPv4` | Windows PC에서 접근하는 고정 공인 IPv4 또는 도메인. `https://`·포트 제외 |
 | `Local bind IPv4` | EC2의 기본 **프라이빗 IPv4**. 직전에 출력되는 인터페이스 주소에도 존재해야 함 |
 | 변경 승인 | 보안그룹과 설치 계획 확인 후 `INSTALL` |
-| 관리자 비밀번호 | 포털 `admin`용 16자 이상 비밀번호를 두 번 입력 |
+| 관리자 비밀번호 | 포털 `admin`용 비밀번호를 두 번 입력. 길이·문자 조합 제한 없음, 빈 값은 불가 |
 
 EC2 공인 IP는 보통 NAT 주소라서 바인딩 값으로 사용할 수 없습니다. 바인딩을 공란으로 두면 `127.0.0.1`만 사용하여 원격 접속이 안 됩니다. 이후 에이전트 패키지의 관리 서버 주소는 이때 정한 공개 주소로 자동 설정됩니다.
 
@@ -186,7 +186,7 @@ read -r -p '이 EC2 인터페이스에 있는 기본 프라이빗 IPv4: ' BIND_I
 sudo python3 deploy/server/prepare.py --host "$PUBLIC_HOST" --bind-ip "$BIND_IP"
 ```
 
-여기서 **포털 `admin` 비밀번호를 16자 이상으로 두 번 입력**합니다. `https://`, 포트, 경로는 주소 입력에 넣지 않습니다. 이후 에이전트 설치 파일에는 `https://PUBLIC_HOST:9200`이 자동으로 포함됩니다. 패키지를 만들 때 주소를 다시 입력하는 방식이 아닙니다.
+여기서 **포털 `admin` 비밀번호를 두 번 동일하게 입력**합니다. 길이·문자 조합 제한은 없고 빈 값은 허용하지 않습니다. `https://`, 포트, 경로는 주소 입력에 넣지 않습니다. 이후 에이전트 설치 파일에는 `https://PUBLIC_HOST:9200`이 자동으로 포함됩니다. 패키지를 만들 때 주소를 다시 입력하는 방식이 아닙니다.
 
 `state/server/`가 이미 있으면 준비 명령은 중단합니다. 오류가 났다고 상태 폴더를 지우거나 CA를 새로 만들지 말고, 처음 실패한 단계를 확인합니다. 이미 사용 중인 CA·계정·DB를 재생성하면 기존 설치가 깨질 수 있습니다.
 
@@ -508,8 +508,8 @@ organization.id : "school-lab" and type : "tls"
 | --- | --- |
 | `Only Ubuntu 22.04 is supported` | 구버전 중앙 설치기. 로컬 변경 확인 후 Git 갱신, 실제 OS는 `cat /etc/os-release`로 확인 |
 | `Ubuntu ... is not supported by this installer` 또는 코드명 불일치 | 22.04·24.04·26.04 LTS와 올바른 코드명인지 확인. 검사 우회·`jammy` 강제 지정 금지 |
-| 비밀번호 입력 직후 `Preparation failed (ValueError)` | 구버전은 검증 오류를 숨김. 16자 이상인지 확인하고 `sudo ls -ld state/server`로 폴더 존재 여부 확인. 없으면 Git 갱신 후 재시도, 있으면 보존·검토 |
-| `at least 16 characters` 또는 `Passwords do not match` | 16자 이상 새 비밀번호와 동일한 확인값 재입력. 최대 3회까지 가능하며 입력 내용은 화면에 표시되지 않음 |
+| 비밀번호 입력 직후 `Preparation failed (ValueError)` | 구버전은 검증 오류를 숨김. `sudo ls -ld state/server`로 폴더 존재 여부 확인. 없으면 Git 갱신 후 재시도, 있으면 보존·검토 |
+| `password must not be empty` 또는 `Passwords do not match` | 빈 값이 아닌 비밀번호와 동일한 확인값 재입력. 최대 3회까지 가능하며 입력 내용은 화면에 표시되지 않음 |
 | `127.0.0.1:8766`, `preview-*`, `soc.example.invalid`가 보임 | 옛 미리보기. 실제 AWS HTTPS 포털과 거기서 만든 새 패키지 사용 |
 | 포털에서 `Failed to fetch` | 동일 AWS 주소의 포털/gateway 상태, 클라이언트 네트워크, 인증서, 서버 로그. 임시 Python 서버 재실행으로 해결하지 않음 |
 | 모든 `Test-NetConnection`이 실패 | 현재 공인 IP/32, 보안그룹·다른 그룹의 규칙, 서브넷/IGW, NACL, 인스턴스 실행 여부 |

@@ -41,13 +41,12 @@ class ServerPreparationTests(unittest.TestCase):
                 code = result.code
         return code, stdout.getvalue() + stderr.getvalue(), prompt, action
 
-    def test_short_password_retries_before_confirmation_and_creates_no_state(self):
-        code, output, prompt, action = self.run_main(["short-canary", PASSWORD, PASSWORD])
+    def test_empty_password_retries_before_confirmation_and_creates_no_state(self):
+        code, output, prompt, action = self.run_main(["", PASSWORD, PASSWORD])
         self.assertEqual(code, 0)
-        self.assertIn("at least 16 characters", output)
-        self.assertNotIn("short-canary", output)
+        self.assertIn("password must not be empty", output)
         self.assertNotIn(PASSWORD, output)
-        self.assertEqual(prompt.call_args_list[1].args[0], "Portal admin password (16+ characters): ")
+        self.assertEqual(prompt.call_args_list[1].args[0], "Portal admin password: ")
         action.assert_called_once_with("soc.example.test", "10.0.0.5", self.state, PASSWORD)
         self.assertFalse(self.state.exists())
 
@@ -61,27 +60,43 @@ class ServerPreparationTests(unittest.TestCase):
         action.assert_called_once()
 
     def test_exhausted_retries_stop_before_preparation(self):
-        for entries in (["short-canary"] * 3, [PASSWORD, "different-canary"] * 3):
+        for entries in ([""] * 3, [PASSWORD, "different-canary"] * 3):
             with self.subTest(entries=len(entries)):
                 code, output, _prompt, action = self.run_main(entries)
                 self.assertEqual(code, 1)
                 self.assertIn("failed after 3 attempts", output)
-                self.assertNotIn("short-canary", output)
                 self.assertNotIn("different-canary", output)
                 self.assertNotIn(PASSWORD, output)
                 action.assert_not_called()
 
     def test_boundary_password_length(self):
-        with self.assertRaisesRegex(prepare.PreparationError, "at least 16"):
-            prepare.validate_password("x" * 15)
-        prepare.validate_password("x" * 16)
+        with self.assertRaisesRegex(prepare.PreparationError, "must not be empty"):
+            prepare.validate_password("")
+        for length in (1, 4, 8, 11, 12, 15, 16, 64):
+            prepare.validate_password("x" * length)
 
-    def test_direct_short_password_does_not_hash_or_write(self):
+    def test_short_password_reaches_preparation_without_retries(self):
+        password = "x"
+        code, output, prompt, action = self.run_main([password, password])
+        self.assertEqual(code, 0)
+        self.assertEqual(prompt.call_count, 2)
+        self.assertNotIn(password, output)
+        action.assert_called_once_with("soc.example.test", "10.0.0.5", self.state, password)
+
+    def test_direct_empty_password_does_not_hash_or_write(self):
         with patch.object(prepare, "password_hash") as hash_password:
-            with self.assertRaisesRegex(prepare.PreparationError, "at least 16"):
-                prepare.prepare("soc.example.test", "10.0.0.5", self.state, "short-canary")
+            with self.assertRaisesRegex(prepare.PreparationError, "must not be empty"):
+                prepare.prepare("soc.example.test", "10.0.0.5", self.state, "")
             hash_password.assert_not_called()
         self.assertFalse(self.state.exists())
+
+    def test_short_password_hash_still_verifies_without_plaintext_storage(self):
+        from werkzeug.security import check_password_hash
+
+        digest = prepare.password_hash("x")
+        self.assertTrue(digest.startswith("pbkdf2:sha256:600000$"))
+        self.assertTrue(check_password_hash(digest, "x"))
+        self.assertFalse(check_password_hash(digest, "y"))
 
     def test_existing_state_is_preserved(self):
         self.state.mkdir()

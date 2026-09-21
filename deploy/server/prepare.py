@@ -34,8 +34,8 @@ def validate_host(host):
 
 
 def validate_password(password):
-    if len(password) < 16:
-        raise PreparationError("Use a portal administrator password with at least 16 characters")
+    if not password:
+        raise PreparationError("Portal administrator password must not be empty")
 
 
 def read_admin_password():
@@ -43,7 +43,7 @@ def read_admin_password():
     with warnings.catch_warnings():
         warnings.simplefilter("error", getpass.GetPassWarning)
         for _ in range(3):
-            password = getpass.getpass("Portal admin password (16+ characters): ")
+            password = getpass.getpass("Portal admin password: ")
             try:
                 validate_password(password)
             except PreparationError as error:
