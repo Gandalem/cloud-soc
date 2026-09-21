@@ -16,6 +16,7 @@ from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 from werkzeug.security import check_password_hash
 
 from cloud_soc.portal.packages import PackageStore, validate_endpoint
+from cloud_soc.portal.agent_status import decode_cursor, snapshot
 
 PROJECT = Path(__file__).resolve().parents[3]
 
@@ -48,10 +49,11 @@ def settings_from_environment():
         "ES_URL": os.environ["SOC_INTERNAL_ES_URL"],
         "ES_PASSWORD": secret("SOC_ISSUER_PASSWORD_FILE"),
         "CA_FILE": str(ca_path),
+        "MONITOR_PASSWORD": secret("SOC_MONITOR_PASSWORD_FILE") if os.environ.get("SOC_MONITOR_PASSWORD_FILE") else None,
     }
 
 
-def create_app(settings=None, *, issuer=None):
+def create_app(settings=None, *, issuer=None, monitor=None):
     settings = settings if settings is not None else settings_from_environment()
     app = Flask(__name__, static_folder=None)
     app.config.update(MAX_CONTENT_LENGTH=8192, TRUSTED_HOSTS=[urlsplit(settings["PUBLIC_URL"]).hostname])
@@ -61,6 +63,10 @@ def create_app(settings=None, *, issuer=None):
         issuer = Elasticsearch(settings["ES_URL"], basic_auth=("cloud_soc_issuer", settings["ES_PASSWORD"]),
                                ca_certs=settings["CA_FILE"], request_timeout=5, max_retries=0)
     app.extensions["issuer"] = issuer
+    if monitor is None and settings.get("MONITOR_PASSWORD"):
+        monitor = Elasticsearch(settings["ES_URL"], basic_auth=("cloud_soc_agent_monitor", settings["MONITOR_PASSWORD"]),
+                                ca_certs=settings["CA_FILE"], request_timeout=5, max_retries=0)
+    app.extensions["monitor"] = monitor
 
     @app.before_request
     def protect():
@@ -121,6 +127,21 @@ def create_app(settings=None, *, issuer=None):
         return jsonify(endpoint=settings["ENDPOINT"], version="9.5.2", elasticsearch=status,
                        ca_sha256=hashlib.sha256(settings["CA_BYTES"]).hexdigest(),
                        packages=store.list(), max_packages=200)
+
+    @app.get("/api/agents/status")
+    def agent_status():
+        if set(request.args) - {"cursor"} or len(request.args.getlist("cursor")) > 1:
+            return jsonify(error="지원하지 않는 조회 조건입니다."), 400
+        after = decode_cursor(request.args.get("cursor"))
+        if monitor is None:
+            return jsonify(error="접속 현황 조회 계정이 준비되지 않았습니다. 중앙 서버 업데이트 절차를 확인하세요.",
+                           code="monitor_not_configured"), 503
+        try:
+            return jsonify(snapshot(monitor, after=after))
+        except Exception:
+            # Upstream errors can contain credentials or raw documents. Never echo them.
+            return jsonify(error="수신 현황을 조회하지 못했습니다. 서버 연결·조회 권한·수신 시각 설정을 확인하세요.",
+                           code="status_unavailable"), 503
 
     @app.post("/api/packages")
     def create_package():
@@ -191,6 +212,7 @@ def create_app(settings=None, *, issuer=None):
     def static_file(filename):
         # Never serve the repo, secrets, SQLite, source code, or arbitrary uploads.
         allowed = {"agents.html", "agents.js", "agents.css", "styles.css", "assets/mark.svg",
+                   "agent-status.html", "agent-status.js", "agent-status.css",
                    "index.html", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css"}
         if filename not in allowed:
             abort(404)

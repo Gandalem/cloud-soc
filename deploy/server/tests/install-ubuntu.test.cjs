@@ -69,6 +69,35 @@ test('POSIX sh syntax, LF checkout and help', () => {
   assert.match(ok(run([script, '--help'])), /--prepare-only/);
 });
 
+test('confirmation accepts y and yes in any case, plus legacy INSTALL', () => {
+  for (const answer of ['y', 'Y', 'yes', 'yeS', 'yEs', 'yES', 'Yes', 'YeS', 'YEs', 'YES', 'INSTALL']) {
+    const output = ok(fixture(`
+YES=no
+printf '%s\\n' ${quote(answer)} | confirm_installation
+printf '\\nCONFIRMED\\n'
+`));
+    assert.match(output, /type y\/yes\/INSTALL \(default: no\)/);
+    assert.match(output, /\nCONFIRMED\n$/);
+  }
+});
+
+test('empty, negative, unrecognized and EOF confirmation stops before installation', () => {
+  for (const answer of ['', ' ', 'n', 'N', 'no', 'NO', 'true', 'yesplease', 'y;true']) {
+    const result = fixture(`
+YES=no
+printf '%s\\n' ${quote(answer)} | confirm_installation
+install_packages
+`);
+    fail(result, /not confirmed; no changes made/);
+    assert.doesNotMatch(result.stderr, /Unexpected live operation/);
+  }
+  fail(fixture('YES=no; confirm_installation < /dev/null; install_packages'), /not confirmed; no changes made/);
+});
+
+test('--yes confirmation skips the prompt without reading input', () => {
+  assert.equal(ok(fixture('YES=yes; confirm_installation < /dev/null')), '');
+});
+
 for (const [version, suite] of [['22.04', 'jammy'], ['24.04', 'noble'], ['26.04', 'resolute']]) {
   test(`Ubuntu ${version} selects only its own Docker repository (${suite})`, () => {
     for (const arch of ['amd64', 'arm64']) {

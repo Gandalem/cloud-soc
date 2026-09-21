@@ -6,6 +6,10 @@ Cloud SOC는 Elasticsearch·Kibana와 Python 탐지 엔진을 사용하는 보�
 
 **AWS 인스턴스에 설치하고 현재 Windows PC에서 실제 수집을 시험하려면 [AWS Ubuntu + Windows 실제 수집 테스트](docs/aws_windows_e2e_test.md)를 순서대로 진행하세요.** EC2·보안그룹·인증서·패키지 설치와 고유 테스트 로그의 Kibana 검색까지 다룹니다.
 
+설치 중 오류가 발생했다면 [8. 문제 해결](#8-문제-해결)을 먼저 확인하세요. Ubuntu 버전·비밀번호·Elasticsearch 파일 권한, 웹 HTTPS 접속, Windows ZIP 경로·GUID 입력·스크립트 서명 오류와 백그라운드 동작을 정리했습니다.
+
+**수집 중인 에이전트는 중앙 포털의 [에이전트 접속 현황](docs/agent_status.md)에서 확인합니다.** 실제 마지막 서버 수신 시각으로 로그·네트워크 수집기 상태를 표시합니다. 미수신은 오프라인을 의미하지 않으며, 기존 중앙 서버는 가이드의 업데이트 절차를 먼저 진행해야 합니다.
+
 ### Git으로 받아 중앙 서버 자동 설치
 
 **새 Ubuntu 22.04·24.04·26.04 LTS 서버의 SSH 터미널**에서 실행합니다. 먼저 AWS 보안그룹의 22·443·5601·9200 접근을 승인된 IP로 제한하세요. 메모리 8GiB 이상을 권장하며, 설치기는 최소 6GiB RAM·10GiB 여유 디스크를 확인합니다.
@@ -21,7 +25,7 @@ sh deploy/server/install-ubuntu.sh --dry-run
 sudo sh deploy/server/install-ubuntu.sh
 ```
 
-실행 전 `deploy/server/install-ubuntu.sh`를 검토하세요. 스크립트는 **누락된 필수 패키지 → Docker·Compose → 커널 설정 → 인증서·비밀번호 준비 → 중앙 서비스 기동 → 로컬 HTTPS 확인**을 진행합니다. 공인 IP/도메인, EC2 프라이빗 IP, 설치 승인(`INSTALL`), 포털 비밀번호를 순서대로 입력합니다. 패키지·컨테이너 다운로드에 인터넷 연결이 필요합니다.
+실행 전 `deploy/server/install-ubuntu.sh`를 검토하세요. 스크립트는 **누락된 필수 패키지 → Docker·Compose → 커널 설정 → 인증서·비밀번호 준비 → 중앙 서비스 기동 → 로컬 HTTPS 확인**을 진행합니다. 공인 IP/도메인, EC2 프라이빗 IP, 설치 승인(`y`/`yes`, 대소문자 무관 또는 기존 `INSTALL`), 포털 비밀번호를 순서대로 입력합니다. 빈 입력이나 다른 값은 설치를 중단합니다. 패키지·컨테이너 다운로드에 인터넷 연결이 필요합니다.
 
 Ubuntu 버전·코드명을 확인해 Docker 저장소를 `jammy`/`noble`/`resolute`로 선택합니다. 모든 과거·미래 버전의 호환성을 보장하지 않으며, 현재 설치 대상 외 버전은 변경 전에 중단합니다. 범위는 [Docker 공식 Ubuntu 지원 목록](https://docs.docker.com/engine/install/ubuntu/#os-requirements)에 맞췄습니다. **중앙 서버 지원 확대이며 Ubuntu 에이전트 설치기는 별도로 22.04만 지원합니다.**
 
@@ -32,6 +36,7 @@ Ubuntu 버전·코드명을 확인해 Docker 저장소를 `jammy`/`noble`/`resol
 | 목적 | 진행 순서 | 결과 |
 | --- | --- | --- |
 | 중앙 서버와 에이전트 설치 파일 관리 화면 | [중앙 서버 가이드](deploy/server/README.md) | HTTPS ES·Kibana·포털, OS별 실제 설치 묶음과 수집 키 |
+| 에이전트 실제 수신 현황 | [접속 현황 및 기존 서버 업데이트](docs/agent_status.md) | 수집기별 마지막 수신·지연 상태·호스트 정보 |
 | 개발 PC에서 저장소·탐지 코드 실행 | 2 → 3 | 로컬 Elasticsearch/Kibana 및 Python 실행환경 |
 | Ubuntu 서버 로그 수집 | 2 → 4 → 5 → 7 | Filebeat 설치 및 원격 수신 서버 연결 |
 | Windows 서버 로그 수집 | 2 → 4 → 6 → 7 | Filebeat 설치 및 이벤트·파일 로그 수집 |
@@ -258,7 +263,7 @@ Nginx·audit 등의 로그가 `/var/log` 아래에 있으면 자동 탐색됩니
 
 ## 6. Windows 에이전트 설치
 
-기본 수집 대상은 **자동 발견한 모든 활성 Admin/Operational 이벤트 채널**과 표준 로그 디렉터리의 텍스트 파일입니다. `Application`·`Security`·`System` 3개로 제한하지 않습니다. 설치기와 `discover-windows.ps1`을 함께 준비하고, 검토된 스크립트를 실행할 수 있는 조직 정책 아래에서 **64비트 관리자 PowerShell**을 사용합니다.
+기본 수집 대상은 **자동 발견한 모든 활성 Admin/Operational 이벤트 채널**과 표준 로그 디렉터리의 텍스트 파일입니다. `Application`·`Security`·`System` 3개로 제한하지 않습니다. 설치기와 `discover-windows.ps1`, `download-windows.ps1`을 함께 준비하고, 검토된 스크립트를 실행할 수 있는 조직 정책 아래에서 **64비트 관리자 PowerShell**을 사용합니다. Windows 시스템 `curl.exe`가 필요합니다.
 
 CA 파일을 예를 들어 `C:\certs\cloud-soc-ca.crt`에 준비하고, 실제 존재하는 채널을 확인합니다.
 
@@ -346,6 +351,156 @@ Get-ChildItem "$env:ProgramFiles\Cloud-SOC-Agent\logs"
 
 ## 8. 문제 해결
 
+**명령은 안내된 운영체제의 터미널에서 실행합니다.** `PS C:\...>`, `ubuntu@...$`, `>>`, 코드블록의 시작·끝 표시와 `bash`/`powershell` 언어 표시는 입력하지 않습니다. 비밀번호·API 키·개인키·실제 운영 로그는 오류 보고나 Git에 포함하지 않습니다.
+
+### 중앙 서버 설치와 웹 접속
+
+| 발생한 증상 | 원인과 조치 |
+| --- | --- |
+| `Only Ubuntu 22.04 is supported` | 구버전 중앙 설치기의 제한. 현재 중앙 설치기는 22.04·24.04·26.04 LTS와 각 OS 코드명을 지원합니다. 로컬 Git 변경을 확인하고 검토한 수정본을 적용하세요. 모든 Ubuntu 버전을 허용하거나 다른 버전의 Docker 저장소를 강제하지 않습니다. Ubuntu 에이전트는 여전히 22.04 대상입니다. |
+| 비밀번호 입력 후 `Preparation failed (ValueError)` | 구버전은 길이 부족 등 여러 검증 오류를 같은 문구로 표시했습니다. 이 오류만으로 원인을 확정하지 않습니다. 현재 비밀번호는 빈 값만 거부하며 확인 입력이 일치해야 합니다. 상태 폴더 존재 여부부터 확인하는 [재시도 절차](deploy/server/README.md#실패재시도)를 따릅니다. |
+| 설치 승인에 `yes`를 입력했는데 중단 | 구버전은 `INSTALL`만 허용했습니다. 현재 수정본은 `y`/`yes`를 대소문자 구분 없이 허용하며 기존 `INSTALL`도 지원합니다. 원격 서버에 수정본을 반영해야 적용됩니다. 빈 입력과 `no`는 중단합니다. |
+| ES가 재시작하며 `ELASTIC_PASSWORD_FILE ... actually has: 644` 출력 | 비밀번호 내용이 아니라 해당 파일 권한 문제입니다. 기본 Docker 구성에서는 기존 `secrets/elastic_password` 파일 하나를 소유자 `1000:0`, 권한 `0400`으로 교정합니다. [정확한 권한 복구 명령](deploy/server/README.md#기존-설치의-elasticsearch-비밀번호-파일-권한-복구)을 사용하고 재설치·비밀번호 재생성·재귀 권한 변경은 하지 않습니다. |
+| 집 PC에서 EC2의 `http://10.x.x.x:5601` 접속 실패 | 프라이빗 IP는 VPN 등 별도 내부망 경로 없이 인터넷에서 직접 접근할 수 없습니다. 중앙 구성은 HTTP가 아닌 HTTPS입니다. 브라우저에는 설치 때 지정한 공인 DNS/IP를 사용하고, 서버 바인딩에는 실제 EC2 프라이빗 IP를 사용합니다. 보안그룹은 승인된 출발지 IP만 허용합니다. |
+| 포털·Kibana 모두 `ERR_SSL_PROTOCOL_ERROR` | TLS 협상 실패입니다. 같은 Caddy 버전에서 공인 IP와 Docker/NAT 내부 IP가 다르고 클라이언트가 SNI를 보내지 않을 때의 인증서 선택 오류를 재현했습니다. [Caddy 복구 절차](deploy/server/README.md#공인-ip-접속의-tls-오류-복구)에 따라 전역 블록의 `default_sni {$SOC_PUBLIC_HOST}`를 확인하고 설정 검증 성공 후 gateway만 재시작합니다. 다른 원인의 TLS 오류까지 이 설정으로 해결되는 것은 아닙니다. |
+| `ERR_CERT_AUTHORITY_INVALID` | TLS 프로토콜 오류와 별개인 CA 신뢰 문제입니다. [공개 CA 해시 확인·Windows 등록](docs/aws_windows_e2e_test.md#6-windows에-ca-공개-인증서-전달신뢰)을 진행합니다. 인증서 경고를 무시하거나 TLS 검증을 끄지 않습니다. |
+| `logs --since 10m ... gateway` 결과가 비어 있음 | 그 시간 안에 기록된 로그가 없다는 뜻입니다. 시작 시각이 더 이전이거나 TLS 실패가 기본 로그 수준에 기록되지 않을 수 있습니다. 빈 출력만으로 HTTPS가 정상이라고 판단하지 않습니다. |
+
+**Ubuntu 서버의 기존 체크아웃 루트**에서 상태와 시작 로그를 먼저 확인합니다. 아래 명령은 설치나 재시작을 하지 않습니다.
+
+```bash
+sudo docker compose --env-file state/server/compose.env -f deploy/server/compose.yaml ps -a
+sudo docker compose --env-file state/server/compose.env -f deploy/server/compose.yaml logs --tail 100 gateway
+```
+
+정상 기동 기준은 Elasticsearch `healthy`, bootstrap `Exited (0)`, portal·kibana·gateway 실행 중입니다. **bootstrap은 준비 작업 후 종료되는 것이 정상**이며, 나머지 컨테이너의 `Up`만으로 HTTPS·로그인·실제 문서 수신이 검증되지는 않습니다. `state/server/compose.env`까지 생성된 기존 서버는 설치기를 반복 실행하지 말고 같은 상태를 사용하는 Compose 복구 절차를 따릅니다. `state/server`나 데이터 볼륨을 삭제하지 않습니다.
+
+브라우저에서 키 파일을 매번 입력하는 구조는 아닙니다. AWS `.pem`은 SSH 관리용 개인키이며 웹 로그인용이 아닙니다. `ca.cer`/`ca.crt`는 서버를 신뢰하기 위한 공개 인증서로, 현재 사설 CA 구성에서는 브라우저를 사용하는 PC에 최초 신뢰 등록이 필요합니다. **`server.key`·`ca.key`는 PC나 에이전트에 배포하지 않습니다.**
+
+| 화면 | 설치한 공인 DNS/IP를 사용하는 HTTPS 경로 | 로그인 |
+| --- | --- | --- |
+| Cloud SOC 메인 | `https://<공인-DNS-또는-IP>/index.html` | `admin` / 설치 때 입력한 포털 비밀번호 |
+| 에이전트 설치·키 관리 | `https://<공인-DNS-또는-IP>/agents.html` 또는 `/` | 포털 계정 |
+| Kibana | `https://<공인-DNS-또는-IP>:5601` | 별도 `cloud_soc_analyst` 계정 |
+
+`<공인-DNS-또는-IP>` 표시는 실제 주소로 바꿉니다. 현재 자체 메인·조사·로그 목록 화면은 데모 데이터이며, 실제 수신은 Kibana Discover에서 확인합니다. `soc.example.invalid`나 `preview-*`, 정적 미리보기의 `Failed to fetch`는 실제 중앙 포털과 혼동하지 않도록 확인하세요.
+
+### Windows ZIP 경로와 해시 오류
+
+`Resolve-Path: '.\이름-setup.zip' 경로는 존재하지 않습니다` 뒤에 `SHA-256 mismatch`가 이어졌다면 **파일이 없어서 해시를 계산하지 못한 것인지 먼저 확인**합니다. 예를 들어 `Downloads\이름-setup`은 압축을 푼 폴더이고, ZIP은 상위 `Downloads\이름-setup.zip`에 있을 수 있습니다. 경로 오류만으로 변조나 실제 체크섬 불일치라고 판단하지 않습니다.
+
+```powershell
+Get-Location
+Get-ChildItem -LiteralPath (Join-Path $env:USERPROFILE 'Downloads') -Filter '*-setup.zip'
+```
+
+실제 ZIP의 절대 경로와 **현재 포털의 해당 패키지 SHA-256**으로 검증합니다. 이전 패키지의 해시를 재사용하지 않습니다. 아래는 검증만 하며 압축 해제나 설치를 하지 않습니다.
+
+```powershell
+& {
+    $ErrorActionPreference = 'Stop'
+    $Zip = (Read-Host '다운로드한 ZIP의 절대 경로').Trim().Trim('"')
+    if (-not [IO.Path]::IsPathRooted($Zip)) { throw 'Use an absolute ZIP path.' }
+    if (-not (Test-Path -LiteralPath $Zip -PathType Leaf)) { throw 'ZIP file not found. Check its location.' }
+    $ExpectedHash = (Read-Host '현재 포털에 표시된 SHA-256 64자리').Trim()
+    if ($ExpectedHash -notmatch '^[0-9a-fA-F]{64}$') { throw 'Invalid SHA-256.' }
+    $ActualHash = (Get-FileHash -LiteralPath $Zip -Algorithm SHA256 -ErrorAction Stop).Hash
+    if ($ActualHash -ine $ExpectedHash) { throw 'SHA-256 mismatch. Stop installation.' }
+    Write-Host 'ZIP SHA-256 verified. No installation performed.'
+}
+```
+
+파일이 실제로 존재하는데 해시가 다르면 설치를 중단하고 출처·패키지 버전·다운로드를 확인합니다. 검증을 생략하지 않습니다. 이미 압축을 풀었다면 같은 폴더에 `Expand-Archive -Force`로 덮어쓰지 말고, 그 파일들이 검증된 ZIP과 같은 내용인지 확인하세요. 확신할 수 없으면 [새 폴더에 검증 후 압축 해제](docs/aws_windows_e2e_test.md#windows-해시-검증압축-해제) 절차를 사용합니다.
+
+### Windows NIC GUID 문법 오류
+
+`'[' 뒤에 형식 이름이 없습니다` / `MissingTypename`은 `[guid]` 자리에 실제 GUID를 넣어서 발생할 수 있습니다. **`[guid]`는 PowerShell 자료형 이름이므로 수정하지 않습니다.** GUID 값은 `Read-Host`가 입력을 요청할 때 입력합니다. `실제-NIC-GUID`나 `<...>` 같은 설명 문구를 그대로 인자로 넣지 않습니다.
+
+먼저 자신의 수집 승인 대상인 이더넷/Wi-Fi 장치를 확인합니다. `Up`인 장치가 여러 개면 임의로 첫 번째 것을 고르지 말고 필요한 장치를 선택합니다.
+
+```powershell
+Get-NetAdapter -Physical | Select-Object Name, Status, InterfaceGuid
+```
+
+아래는 네트워크 포함 패키지의 **설정 미리보기**입니다. 코드는 그대로 실행하고 프롬프트에 실제 값을 입력합니다. 실제 설치·패킷 캡처는 하지 않습니다.
+
+```powershell
+& {
+    $ErrorActionPreference = 'Stop'
+    $AgentDir = (Read-Host '검증한 패키지를 압축 해제한 폴더의 절대 경로').Trim().Trim('"')
+    if (-not [IO.Path]::IsPathRooted($AgentDir)) { throw 'Use an absolute package directory.' }
+    $NicGuid = ([guid](Read-Host '수집할 장치의 InterfaceGuid 값 입력')).ToString()
+    if ([guid]$NicGuid -eq [guid]::Empty) { throw 'An empty NIC GUID is not allowed.' }
+    & (Join-Path $AgentDir 'install.ps1') -InterfaceGuid $NicGuid -DryRun
+    if ($LASTEXITCODE -ne 0) { throw 'Dry run failed. Do not install yet.' }
+}
+```
+
+미리보기는 Npcap·NIC 상태·서버 연결을 검증하지 않습니다. 실제 설치에서는 승인된 x64 Npcap이 실행 중이어야 하고 선택한 NIC가 `Up`이어야 합니다. 준비 후 같은 명령에서 `-DryRun`을 제거하면 서비스 설치와 실제 수집을 시작하므로 수집 권한·범위를 먼저 확인하세요. Filebeat용과 Packetbeat용 API 키를 각각 해당 입력 단계에 사용합니다. NIC를 모른다는 이유로 전체 장치를 자동 선택하지 않습니다.
+
+### Windows 미서명 스크립트 차단
+
+`파일이 디지털 서명되지 않았습니다` / `PSSecurityException` / `UnauthorizedAccess`는 실행 정책이나 인터넷 다운로드 출처 표시로 인해 발생할 수 있습니다. 실제 설치에 사용할 **관리자 PowerShell 창에서** 정책을 확인합니다. 관리자 권한만으로 서명 요건이 없어지는 것은 아닙니다.
+
+```powershell
+Get-ExecutionPolicy -List
+Get-ExecutionPolicy
+```
+
+- 유효 정책이 `RemoteSigned`이고, ZIP 해시·추출 파일·스크립트 내용·출처를 검토하여 실행을 승인한 경우에만 해당 파일의 차단 표시를 해제합니다.
+- `AllSigned`, `Restricted` 또는 조직 정책에 의해 차단된 경우에는 관리자에게 승인된 서명·배포 절차를 확인합니다. `Unblock-File`로 `AllSigned`의 서명 요건이 없어지지는 않습니다.
+- `Bypass`/`Unrestricted`로 정책을 낮추거나 전체 Downloads 폴더를 재귀적으로 차단 해제하지 않습니다. [Microsoft Unblock-File 안내](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/unblock-file)
+
+**검증한 패키지를 압축 해제한 폴더에서만** 다음을 실행합니다. 로그 전용 패키지는 앞의 3개 파일, 로그+네트워크 패키지는 4개 파일 모두 대상입니다. 이 명령은 서명을 추가하거나 실행 정책을 바꾸지 않고 해당 파일의 다운로드 차단 표시만 제거합니다.
+
+```powershell
+Unblock-File -LiteralPath '.\install.ps1'
+Unblock-File -LiteralPath '.\install-windows.ps1'
+Unblock-File -LiteralPath '.\discover-windows.ps1'
+Unblock-File -LiteralPath '.\download-windows.ps1'
+```
+
+네트워크 포함 패키지에서만 추가합니다.
+
+```powershell
+Unblock-File -LiteralPath '.\install-network-windows.ps1'
+```
+
+오류 없이 완료된 뒤 미리보기와 설치를 다시 진행합니다. 계속 서명 오류가 나면 어떤 파일이 차단됐는지 확인하고, 정책을 일괄 해제하거나 실행 방식을 바꿔 우회하지 않습니다.
+
+### 백그라운드 실행과 설치 완료 확인
+
+| 항목 | 정상 설치 후 역할 |
+| --- | --- |
+| `cloud-soc-filebeat` | 활성 지원 이벤트 채널·지정 로그 디렉터리에서 발견한 파일을 수집하고 중앙 Elasticsearch에 HTTPS 전송 |
+| `cloud-soc-packetbeat` | 네트워크 포함 설치에서 선택한 NIC의 통신 흐름·DNS·TLS 메타데이터 전송 |
+| `Cloud-SOC-Discovery` | 1분 주기로 로그 소스를 다시 탐색하여 Filebeat 입력 설정 갱신 |
+| `npcap` | Packetbeat가 패킷을 읽도록 지원하는 드라이버. 이것만 `Running`이라고 SOC로 전송 중인 것은 아님 |
+
+정상 설치된 두 수집 서비스는 터미널을 닫아도 동작하며 재부팅 후 자동 시작합니다. 대시보드·Elasticsearch는 중앙 서버에 있고 PC에는 수집기가 설치됩니다. 네트워크 수집은 원본 PCAP·HTTP 본문·쿠키를 저장하지 않지만 DNS 이름·IP 등 메타데이터에도 민감정보가 포함될 수 있습니다.
+
+```powershell
+Get-Service -Name cloud-soc-filebeat,cloud-soc-packetbeat,npcap -ErrorAction SilentlyContinue |
+    Select-Object Name, Status, StartType
+Get-ScheduledTask -TaskName Cloud-SOC-Discovery -ErrorAction SilentlyContinue |
+    Select-Object TaskName, State
+Get-Process -Name filebeat,packetbeat -ErrorAction SilentlyContinue |
+    Select-Object Name, Id
+```
+
+항목이 없으면 아직 등록되지 않았거나 설치가 중단됐을 수 있습니다. 설치 스크립트의 마지막 오류와 종료 코드를 확인하고 기존 서비스·부분 상태를 삭제하거나 무조건 재설치하지 않습니다. 예약 작업의 `Ready`는 상시 실행 프로세스가 아니라 다음 실행을 기다리는 상태일 수 있으며, 실행 결과는 `Get-ScheduledTaskInfo -TaskName Cloud-SOC-Discovery`로 확인합니다. 서비스가 `Running`이어도 **실제 수신은 [7절의 Kibana 조회](#7-설치-후-실제-로그-확인)로 별도 검증**합니다.
+
+### 이번 문제 해결에서 확인한 범위
+
+2026-09-21 확인 당시의 기록이며 현재 서버·PC 상태를 보장하지 않습니다.
+
+- AWS 출력에서 Elasticsearch `healthy`, bootstrap `Exited (0)`, 나머지 중앙 컨테이너 실행 중인 상태를 확인했습니다. 이것만으로 브라우저 접속과 문서 수신 성공을 확정하지 않았습니다.
+- 동일 Caddy 버전의 로컬 컨테이너에서 NAT/IP 무-SNI TLS 오류를 재현하고 수정 후 443·5601 TLS 연결 및 잘못된 CA·호스트 차단을 확인했습니다. 실제 AWS 브라우저 접속 완료 여부와 구분합니다.
+- Windows 사례에서는 잘못된 ZIP 상대 경로를 확인했고, 실제 ZIP 해시와 추출 파일 내용은 일치했습니다. NIC 자료형 입력 오류와 `RemoteSigned`·다운로드 표시로 인한 미서명 스크립트 차단도 확인했습니다.
+- PC 상태 확인 시 Npcap만 실행 중이었고 SOC 수집 서비스·프로세스·탐색 예약 작업은 확인되지 않았습니다. 따라서 에이전트 설치와 로그·네트워크 문서 수신을 완료한 것으로 기록하지 않습니다.
+
+### 기타 수집·개발 오류
+
 | 증상 | 확인할 내용 |
 | --- | --- |
 | `No module named 'cloud_soc'` | 저장소 루트에서 `PYTHONPATH=src`를 현재 셸에 지정했는지, 가상환경 Python을 사용했는지 확인 |
@@ -364,6 +519,25 @@ Get-ChildItem "$env:ProgramFiles\Cloud-SOC-Agent\logs"
 
 로컬 개발 컨테이너를 중지만 하려면 `docker compose stop`을 사용합니다. 데이터를 보존해야 한다면 볼륨을 삭제하지 마세요.
 
+### Windows 다운로드가 수십 분 걸리는 경우
+
+구버전의 `웹 요청을 쓰는 중 / 요청 스트림을 쓰는 중` 표시는 PowerShell `Invoke-WebRequest` 다운로드입니다. 바이트 수가 늘어도 정상 속도라는 뜻은 아닙니다. 수십 분씩 기다리지 말고 다운로드 중인 설치 창에서 `Ctrl+C`로 중단한 뒤 부분 설치 상태부터 확인합니다. 창을 닫거나 중단해도 기존 파일·서비스가 자동 복구되지는 않습니다.
+
+최신 Windows 설치기는 시스템 `curl.exe`를 사용합니다. 연결 제한 30초, 1회 전송 제한 300초, 60초 동안 초당 16KiB 미만인 저속 전송을 중단합니다. 일부 통신 오류만 3초 후 한 번 재시도하므로 파일 하나의 네트워크 전송은 최대 약 10분입니다. TLS·HTTP 오류와 SHA-512 실패는 무시하지 않습니다. [curl 옵션 문서](https://curl.se/docs/manpage.html)
+
+**수정한 저장소가 이미 받은 ZIP이나 실행 중인 설치기에 자동 반영되지는 않습니다.** 중앙 서버에 변경을 배포하고 포털 이미지를 다시 빌드한 뒤, 새 이름으로 설치 패키지를 생성하여 새 ZIP·새 해시를 받아야 합니다. 기존 패키지는 생성 당시 내용이 보존됩니다. `download-windows.ps1`이 포함되어야 하며, 기존 실행 정책에 따라 이 보조 파일도 검토·서명 또는 개별 차단 해제가 필요합니다.
+
+중단 후 별도의 관리자 PowerShell에서 다음은 상태만 조회합니다. 파일 내용·API 키는 출력하지 않습니다.
+
+```powershell
+Get-Service -Name 'cloud-soc-filebeat','cloud-soc-packetbeat' -ErrorAction SilentlyContinue |
+    Select-Object Name, Status, StartType
+Get-Item -LiteralPath "$env:ProgramFiles\Cloud-SOC-Agent", "$env:ProgramFiles\Cloud-SOC-Network" -ErrorAction SilentlyContinue |
+    Select-Object FullName, LastWriteTime
+```
+
+**폴더가 남아 있으면 바로 재설치하거나 재귀 삭제하지 않습니다.** 기존 `data`·keystore·서비스 유무를 확인한 후 관리자가 복구해야 합니다. Filebeat 설치 후 Packetbeat 다운로드에서 실패했다면 Filebeat는 정상 실행 중일 수 있으므로 전체 설치를 되풀이하지 않습니다. 실제 전송 속도는 네트워크·프록시·Elastic 배포 서버에 따라 달라지며, 중앙 서버 캐시와 다운로드 이어받기는 아직 구현하지 않았습니다.
+
 ## 9. 테스트와 현재 한계
 
 오프라인 설치기 테스트:
@@ -371,7 +545,7 @@ Get-ChildItem "$env:ProgramFiles\Cloud-SOC-Agent\logs"
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r deploy/server/requirements.txt
 .\.venv\Scripts\python.exe -B -m unittest discover -s tests -v
-node --test prototype/tests/logs.test.cjs deploy/agents/tests/installers.test.cjs deploy/agents/tests/network.test.cjs
+node --test prototype/tests/logs.test.cjs deploy/agents/tests/installers.test.cjs deploy/agents/tests/network.test.cjs deploy/agents/tests/download.test.cjs
 ```
 
 Windows에서는 Git Bash와 `pwsh`가 필요합니다. `BASH_EXE`, `POWERSHELL_EXE` 환경변수로 설치된 실행 파일 경로를 지정할 수 있습니다. 테스트는 실제 에이전트 설치, 중앙 서버 변경, 로그 전송을 수행하지 않습니다.

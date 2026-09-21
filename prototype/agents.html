@@ -13,10 +13,11 @@
 <body class="agents-page">
   <a class="skip-link" href="#main">본문으로 이동</a>
   <header class="app-header"><a class="brand" href="agents.html"><img src="assets/mark.svg" alt="">Cloud SOC</a><span class="workspace-label">중앙 관리 서버</span><span class="header-context">관리자 전용 · HTTPS 배포</span></header>
-  <aside class="sidebar" aria-label="설정 메뉴"><p class="nav-caption">SETTINGS</p><nav><a class="nav-item" href="index.html">관제 화면 <small>데모</small></a><div class="nav-separator"></div><span class="nav-group">에이전트</span><a class="nav-item active" href="agents.html" aria-current="page">에이전트 설치 파일</a><button class="nav-item" id="key-history">발급 키 관리</button><span class="nav-item unavailable">에이전트 접속 현황 <small>예정</small></span><span class="nav-item unavailable">수집 정책 관리 <small>예정</small></span></nav><div class="sidebar-footer"><strong>Cloud SOC Mini SIEM</strong>설치 패키지 배포<br>원격 자동 설치·삭제 아님</div></aside>
+  <aside class="sidebar" aria-label="설정 메뉴"><p class="nav-caption">SETTINGS</p><nav><a class="nav-item" href="index.html">관제 화면 <small>데모</small></a><div class="nav-separator"></div><span class="nav-group">에이전트</span><a class="nav-item active" href="agents.html" aria-current="page">에이전트 설치 파일</a><button class="nav-item" id="key-history">발급 키 관리</button><a class="nav-item" href="agent-status.html">에이전트 접속 현황</a><span class="nav-item unavailable">수집 정책 관리 <small>예정</small></span></nav><div class="sidebar-footer"><strong>Cloud SOC Mini SIEM</strong>설치 패키지 배포<br>원격 자동 설치·삭제 아님</div></aside>
   <main id="main" class="main-content agents-main">
     <p class="breadcrumbs">설정 <span>›</span> 에이전트 <span>›</span> <strong>에이전트 설치 파일</strong></p>
     <button id="mobile-key-history" class="mobile-key-history">발급 키 관리</button>
+    <a class="button-link" href="agent-status.html">에이전트 접속 현황 보기</a>
     <div class="page-heading"><div><p class="eyebrow">AGENT DISTRIBUTION</p><h1>에이전트 설치 파일</h1><p class="subheading">운영체제에 맞는 패키지를 생성하고 각 서버에서 설치합니다.</p></div><button id="refresh" class="quiet-button">새로고침</button></div>
     <section class="server-strip panel" aria-label="중앙 서버 상태"><div><span>수신 서버</span><strong id="server-endpoint">확인 중</strong></div><div><span>Elasticsearch</span><strong id="server-status">확인 중</strong></div><div><span>수집기 버전</span><strong id="beat-version">확인 중</strong></div><div><span>원본 PCAP</span><strong>저장하지 않음</strong></div></section>
     <div id="page-message" role="status" hidden></div>

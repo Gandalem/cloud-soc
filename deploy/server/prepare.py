@@ -81,11 +81,11 @@ def prepare(host, bind_ip, state, password):
     state.mkdir(parents=True, mode=0o700)
     for name in ("tls", "private", "secrets", "portal"):
         (state / name).mkdir(mode=0o700)
-    credentials = {name: secrets.token_urlsafe(36) for name in ("elastic_password", "kibana_password", "issuer_password", "analyst_password")}
+    credentials = {name: secrets.token_urlsafe(36) for name in ("elastic_password", "kibana_password", "issuer_password", "analyst_password", "monitor_password")}
     for name, value in {**credentials, "admin_hash": admin_hash}.items():
         path = state / "secrets" / name
         path.write_text(value, encoding="utf-8")
-        if name == "elastic_password":
+        if name in ("elastic_password", "monitor_password"):
             # ES rejects world-readable password files. ES and bootstrap share uid
             # 1000 (but not their primary gid), so owner-only read works for both.
             os.chown(path, 1000, 0)

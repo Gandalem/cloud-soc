@@ -32,7 +32,7 @@ sh deploy/server/install-ubuntu.sh --dry-run
 sudo sh deploy/server/install-ubuntu.sh
 ```
 
-공인 DNS/IPv4, 로컬 바인딩 IPv4, 변경 승인(`INSTALL`), 관리자 비밀번호를 요청합니다. 비밀번호의 길이·문자 조합 제한은 없으며 빈 값은 허용하지 않습니다. EC2의 바인딩 IP는 **프라이빗 IPv4**입니다. 공란이면 루프백만 열리므로 원격 접속을 원하는 경우 반드시 실제 프라이빗 IP를 입력하세요. 비밀번호를 CLI 인자·환경변수로 넘기지 않습니다.
+공인 DNS/IPv4, 로컬 바인딩 IPv4, 변경 승인(`y`/`yes`, 대소문자 무관 또는 기존 `INSTALL`), 관리자 비밀번호를 요청합니다. 승인 단계에서 빈 입력이나 다른 값은 설치를 중단합니다. 비밀번호의 길이·문자 조합 제한은 없으며 빈 값은 허용하지 않습니다. EC2의 바인딩 IP는 **프라이빗 IPv4**입니다. 공란이면 루프백만 열리므로 원격 접속을 원하는 경우 반드시 실제 프라이빗 IP를 입력하세요. 비밀번호를 CLI 인자·환경변수로 넘기지 않습니다.
 
 | 자동 처리 | 조건·제약 |
 | --- | --- |
@@ -165,6 +165,46 @@ sudo docker compose --env-file state/server/compose.env -f deploy/server/compose
 
 ES 정상 기동 후 `bootstrap`이 계정·템플릿을 준비하고 **종료 코드 0**으로 끝나야 포털과 Kibana가 시작됩니다. 이 초기화 컨테이너는 계속 실행되는 서비스가 아닙니다. 실패하면 원인을 고친 뒤 같은 `up -d --build` 명령으로 재시도하며 데이터 볼륨을 삭제하지 않습니다.
 
+### 공인 IP 접속의 TLS 오류 복구
+
+포털과 Kibana가 모두 `ERR_SSL_PROTOCOL_ERROR`로 실패하지만 컨테이너가 실행 중이면 Caddy의 인증서 선택을 확인합니다. IP 주소로 연결하는 클라이언트는 SNI를 보내지 않을 수 있으며, Docker/NAT 내부 수신 IP는 인증서의 공인 IP와 다릅니다. 이 구성을 Caddy `2.11.4-alpine`에서 재현했으며, 최상단 전역 블록의 `default_sni {$SOC_PUBLIC_HOST}`로 해결합니다. HTTPS·인증서 검증·Host 제한은 유지합니다. [Caddy default_sni 설명](https://caddyserver.com/docs/caddyfile/options#default_sni)
+
+현재 실행 중인 서버에서는 먼저 `ps -a`와 시작 로그를 확인합니다. `--since 10m`은 10분 이전 시작 로그를 제외하며, 기본 로그 수준에서 TLS 실패가 기록되지 않을 수 있으므로 빈 로그는 정상 동작의 증거가 아닙니다.
+
+```bash
+sudo docker compose --env-file state/server/compose.env -f deploy/server/compose.yaml ps -a
+sudo docker compose --env-file state/server/compose.env -f deploy/server/compose.yaml logs --tail 100 gateway
+```
+
+`deploy/server/Caddyfile`의 **기존 최상단 블록에 한 줄만 추가**합니다. 이미 같은 줄이 있으면 중복 추가하지 않습니다. 또는 해당 수정이 포함된 Git 버전을 배포합니다. 기존 `tls` 지시문과 두 사이트 블록은 그대로 둡니다.
+
+```text
+{
+    auto_https off
+    admin off
+    default_sni {$SOC_PUBLIC_HOST}
+}
+```
+
+기존 컨테이너에서 설정 검증이 성공한 경우에만 gateway를 재시작합니다. 포털·Kibana 접속이 잠시 끊어지지만 Elasticsearch와 수집기는 재시작하지 않습니다. `admin off` 구성이므로 `caddy reload`는 사용하지 않습니다.
+
+```bash
+sudo docker compose --env-file state/server/compose.env -f deploy/server/compose.yaml exec -T gateway caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo docker compose --env-file state/server/compose.env -f deploy/server/compose.yaml restart gateway
+```
+
+서버에서 아래 주소를 실제 값으로 바꿔 확인합니다. `--connect-to`는 접속 경로만 프라이빗 IP로 바꾸며 URL의 공인 주소와 CA 인증서 검증은 유지합니다. 인증정보 없이 요청하므로 포털 `HTTP 401`이면 TLS 이후 인증 단계까지 도달한 것입니다.
+
+```bash
+PublicHost='실제-공인-IP-또는-도메인'
+BindIp='실제-EC2-프라이빗-IP'
+sudo curl --noproxy '*' --cacert state/server/tls/ca.crt \
+  --connect-to "$PublicHost:443:$BindIp:443" --connect-timeout 5 --max-time 10 \
+  --output /dev/null --write-out 'HTTP %{http_code}\n' "https://$PublicHost/index.html"
+```
+
+계속 실패하면 원인을 별도로 확인합니다. 재설치·CA 재생성·데이터 삭제·검증 비활성화는 하지 않습니다. 브라우저 오류가 `ERR_CERT_AUTHORITY_INVALID`로 바뀌면 TLS 협상 이후의 별도 CA 신뢰 문제이므로 [Windows CA 등록](../../docs/aws_windows_e2e_test.md#6-windows에-ca-공개-인증서-전달신뢰)을 진행합니다. 서버 개인키·CA 개인키를 PC로 복사하지 않습니다.
+
 ### 기존 설치의 Elasticsearch 비밀번호 파일 권한 복구
 
 로그에 `ELASTIC_PASSWORD_FILE ... must have file permissions 400, 440, 600 or 640 ... actually has: 644`가 있으면 구버전 준비 스크립트가 만든 파일 권한이 원인입니다. **비밀번호 길이·내용·OOM 문제와 무관한 이 오류**는 아래처럼 기존 파일 하나의 소유자·권한만 교정합니다. `git pull`은 이미 생성된 파일의 권한을 바꾸지 않습니다.
@@ -233,6 +273,8 @@ Get-NetAdapter -IncludeHidden | Select-Object Name, Status, InterfaceGuid
 
 ## 5. 실제 수신 확인
 
+포털의 **에이전트 → 에이전트 접속 현황**에서 수집기별 마지막 서버 수신 시각을 확인할 수 있습니다. 기존 서버는 [접속 현황 업데이트 가이드](../../docs/agent_status.md)를 먼저 적용하세요. 서비스 heartbeat가 아니라 실제 수신 기록 기반이며, 데이터가 오지 않는다고 오프라인으로 단정하지 않습니다.
+
 1. 포털의 연결 상태를 확인합니다.
 2. 대상 서버에서 Filebeat, 네트워크 선택 시 Packetbeat 서비스와 전송 오류를 확인합니다. OS별 명령은 [설치 후 확인](../../README.md#7-설치-후-실제-로그-확인)과 [네트워크 가이드](../agents/NETWORK.md)에 있습니다.
 3. Kibana에서 `soc-host-raw-*`, `soc-network-*` Data View를 각각 만들고 시간 필드를 `@timestamp`로 선택합니다.
@@ -263,9 +305,23 @@ sudo docker compose --env-file state/server/compose.env -f deploy/server/compose
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r deploy/server/requirements.txt
 .\.venv\Scripts\python.exe -B -m unittest discover -s tests -v
-node --test prototype/tests/logs.test.cjs deploy/agents/tests/installers.test.cjs deploy/agents/tests/network.test.cjs deploy/server/tests/install-ubuntu.test.cjs deploy/server/tests/guides.test.cjs
+node --test prototype/tests/logs.test.cjs prototype/tests/agent-status.test.cjs deploy/agents/tests/installers.test.cjs deploy/agents/tests/network.test.cjs deploy/server/tests/install-ubuntu.test.cjs deploy/server/tests/guides.test.cjs deploy/server/tests/gateway-tls.test.cjs
 ```
 
 중앙 `sh` 설치기 테스트는 POSIX 구문, dry-run, Ubuntu 버전·코드명별 저장소 선택과 불일치 차단, 입력 검증, 기존 상태·저장소·포트 보호, 모의 APT/Docker·커널·TLS 준비 확인을 검사합니다. 실제 패키지 설치·다운로드·서비스 기동은 하지 않습니다.
+
+Caddy 실제 TLS 테스트는 기본적으로 건너뜁니다. Docker 로컬 데몬(Linux 컨테이너)과 `openssl`이 준비된 개발 PC에서 아래처럼 명시적으로 실행합니다. 이미지는 먼저 내려받아야 하며 테스트 내부에서는 다운로드하지 않습니다. 합성 CA·서버 인증서와 루프백 임시 포트만 사용하고 OS 인증서 저장소는 변경하지 않습니다. 테스트가 만든 컨테이너·임시 파일만 정리하며, 기존 SOC 컨테이너·볼륨·원격 AWS 서버는 건드리지 않습니다.
+
+```powershell
+docker pull caddy:2.11.4-alpine
+$env:SOC_TEST_DOCKER_TLS = '1'
+try {
+    node --test --test-reporter=spec deploy/server/tests/gateway-tls.test.cjs
+} finally {
+    Remove-Item Env:SOC_TEST_DOCKER_TLS
+}
+```
+
+이 테스트는 구버전 설정의 NAT/IP 무-SNI 실패를 재현하고, 수정본의 443·5601 IP/도메인 TLS 연결과 잘못된 CA·호스트 차단을 검증합니다. 실제 포털 로그인·Kibana·Elasticsearch 연동이나 외부 보안그룹은 검사하지 않습니다.
 
 **실제 AWS Ubuntu에서 이미지 빌드·기동·인증서·API 키·문서 수신을 통합 검증하지 못했습니다.** Compose 정적 검사, 오프라인 테스트와 테스트 서버의 브라우저 동작을 검증했습니다. 운영 전에는 실제 서버에서 기동·Windows 에이전트·Kibana 수신까지 확인해야 합니다.

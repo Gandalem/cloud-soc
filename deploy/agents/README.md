@@ -40,7 +40,7 @@ sudo bash deploy/agents/install-ubuntu.sh --endpoint https://soc.example.invalid
 
 ## Windows 설치
 
-64비트 관리자 PowerShell에서 실행합니다. 조직의 기존 실행 정책을 따르고 정책이나 인증서 검증을 우회하지 않습니다.
+64비트 관리자 PowerShell에서 실행합니다. Windows 시스템 `curl.exe`와 설치기 옆의 `download-windows.ps1`이 필요합니다. 조직의 기존 실행 정책을 따르고 정책이나 인증서 검증을 우회하지 않습니다. 다운로드는 1회 300초·최대 2회로 제한하며, 60초 동안 초당 16KiB 미만이면 중단합니다. SHA-512 검증 후에만 압축을 풉니다.
 
 ```powershell
 .\deploy\agents\install-windows.ps1 -Endpoint https://soc.example.invalid:9200 -CaPath C:\certs\cloud-soc-ca.crt -Organization school

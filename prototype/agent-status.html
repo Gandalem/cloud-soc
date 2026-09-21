@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>에이전트 접속 현황 | Cloud SOC</title>
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="agents.css">
+  <link rel="stylesheet" href="agent-status.css">
+  <script src="agent-status.js" defer></script>
+</head>
+<body class="agents-page status-page">
+  <a class="skip-link" href="#main">본문으로 이동</a>
+  <header class="app-header"><a class="brand" href="agents.html"><img src="assets/mark.svg" alt="">Cloud SOC</a><span class="workspace-label">중앙 관리 서버</span><span class="header-context">관리자 전용 · 실제 수신 데이터</span></header>
+  <aside class="sidebar" aria-label="설정 메뉴">
+    <p class="nav-caption">SETTINGS</p>
+    <nav><a class="nav-item" href="index.html">관제 화면 <small>데모</small></a><div class="nav-separator"></div><span class="nav-group">에이전트</span><a class="nav-item" href="agents.html">에이전트 설치 파일</a><a class="nav-item active" href="agent-status.html" aria-current="page">에이전트 접속 현황</a><span class="nav-item unavailable">수집 정책 관리 <small>예정</small></span></nav>
+    <div class="sidebar-footer"><strong>Cloud SOC Mini SIEM</strong>중앙 서버 수신 시각 기준<br>하트비트 연결 확인 아님</div>
+  </aside>
+  <main id="main" class="main-content agents-main">
+    <p class="breadcrumbs">설정 <span>›</span> 에이전트 <span>›</span> <strong>에이전트 접속 현황</strong></p>
+    <nav class="status-mobile-nav" aria-label="에이전트 페이지"><a href="agents.html">설치 파일 관리</a><a href="agent-status.html" aria-current="page">접속 현황</a></nav>
+    <div class="page-heading"><div><p class="eyebrow">AGENT ACTIVITY</p><h1>에이전트 접속 현황</h1><p class="subheading">어떤 수집기에서 데이터가 들어오고 있는지 확인합니다.</p></div><div class="status-controls"><label><input id="auto-refresh" type="checkbox" checked>30초 자동 갱신</label><button id="status-refresh" class="primary-button">새로고침</button></div></div>
+    <section class="status-explainer panel" aria-label="상태 판단 기준">
+      <div><span class="basis-label">수신 시각 기준</span><h2>미수신은 곧 오프라인을 의미하지 않습니다.</h2><p>로그가 없거나 전송이 지연돼도 미수신으로 표시됩니다. 현재 수집기 프로세스나 서버의 전원을 직접 확인하는 화면은 아닙니다.</p></div>
+      <div class="status-stamp"><span id="query-state" role="status">조회 중</span><span>마지막 성공 조회</span><time id="checked-at">아직 없음</time></div>
+    </section>
+    <div id="status-error" role="alert" hidden></div>
+    <section class="activity-stats" aria-label="현재 페이지 수집기 통계">
+      <article class="panel"><span>현재 페이지 수집기</span><strong id="count-all">-</strong><small>호스트 수가 아닌 수집기 수</small></article>
+      <article class="panel recent-stat"><span>최근 수신</span><strong id="count-recent">-</strong><small>5분 이내</small></article>
+      <article class="panel delayed-stat"><span>수신 지연</span><strong id="count-delayed">-</strong><small>5분 초과 ~ 15분 이내</small></article>
+      <article class="panel silent-stat"><span>장기 미수신 / 판단 불가</span><strong id="count-other">-</strong><small>15분 초과 / 수신 시각 없음</small></article>
+    </section>
+    <section class="package-panel panel" aria-label="수집기 수신 목록" id="status-panel" aria-busy="true">
+      <div class="package-toolbar status-toolbar">
+        <label class="search-box"><span class="sr-only">현재 페이지에서 호스트, IP, 조직, 수집기 검색</span><input id="agent-search" type="search" maxlength="100" placeholder="현재 페이지: 호스트 · IP · 조직 검색"></label>
+        <label class="status-filter">상태 <select id="agent-filter"><option value="all">전체</option><option value="recent">최근 수신</option><option value="delayed">수신 지연</option><option value="silent">장기 미수신</option><option value="unknown">판단 불가</option></select></label>
+        <span id="row-count">불러오는 중</span>
+      </div>
+      <div class="package-table-scroll"><table class="package-table activity-table"><caption class="sr-only">최근 30일 관측된 수집기. 동일 호스트의 Filebeat와 Packetbeat는 별도 행입니다.</caption><thead><tr><th scope="col">수신 상태</th><th scope="col">호스트 / IP</th><th scope="col">운영체제</th><th scope="col">조직</th><th scope="col">수집기 / 버전</th><th scope="col">마지막 서버 수신</th><th scope="col">해당 문서의 발생 시각</th><th scope="col">관측 문서 수</th></tr></thead><tbody id="agent-rows"></tbody></table></div>
+      <div id="status-empty" class="empty-state" hidden><strong id="empty-title"></strong><p id="empty-description"></p></div>
+      <div class="package-pagination"><button id="status-previous" disabled>이전</button><span id="status-page">1 페이지</span><button id="status-next" disabled>다음</button><span class="page-limit">페이지당 최대 50개</span></div>
+    </section>
+    <p id="unidentified-note" class="status-warning" hidden></p>
+    <section class="activity-notes" aria-label="조회 범위와 주의사항"><h2>목록을 읽는 방법</h2><p>최근 30일의 로그·네트워크 인덱스에서 조직 + agent.id + 수집기 종류별로 표시합니다. 설치 파일 생성이나 키 발급만으로는 목록에 등록되지 않습니다.</p><p>서버 수신 시각이 없는 이전 데이터는 ‘판단 불가’입니다. 새 수신 기록이 추가되면 상태가 갱신됩니다. 30일 동안 관측되지 않았거나 보존 기간이 지난 수집기는 이 목록에 없을 수 있습니다.</p><p>Filebeat와 Packetbeat는 같은 PC에서도 별도 행입니다. 재설치로 agent.id가 바뀌면 새로운 행이 생길 수 있습니다. 조회 실패 시 기존 결과를 정상 상태로 유지하지 않습니다.</p></section>
+  </main>
+</body>
+</html>

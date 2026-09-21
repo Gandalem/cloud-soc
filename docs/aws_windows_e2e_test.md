@@ -102,7 +102,7 @@ sudo sh deploy/server/install-ubuntu.sh
 | --- | --- |
 | `Public DNS/IPv4` | Windows PC에서 접근하는 고정 공인 IPv4 또는 도메인. `https://`·포트 제외 |
 | `Local bind IPv4` | EC2의 기본 **프라이빗 IPv4**. 직전에 출력되는 인터페이스 주소에도 존재해야 함 |
-| 변경 승인 | 보안그룹과 설치 계획 확인 후 `INSTALL` |
+| 변경 승인 | 보안그룹과 설치 계획 확인 후 `y`/`yes`(대소문자 무관) 또는 `INSTALL`; 빈 입력은 중단 |
 | 관리자 비밀번호 | 포털 `admin`용 비밀번호를 두 번 입력. 길이·문자 조합 제한 없음, 빈 값은 불가 |
 
 EC2 공인 IP는 보통 NAT 주소라서 바인딩 값으로 사용할 수 없습니다. 바인딩을 공란으로 두면 `127.0.0.1`만 사용하여 원격 접속이 안 됩니다. 이후 에이전트 패키지의 관리 서버 주소는 이때 정한 공개 주소로 자동 설정됩니다.
@@ -518,6 +518,7 @@ organization.id : "school-lab" and type : "tls"
 | 모든 `Test-NetConnection`이 실패 | 현재 공인 IP/32, 보안그룹·다른 그룹의 규칙, 서브넷/IGW, NACL, 인스턴스 실행 여부 |
 | `cannot assign requested address` | `BIND_IP`에 NAT 공인 IP를 넣었는지 확인. 실제 EC2 프라이빗 IP 필요 |
 | 브라우저 인증서 오류 | 정확한 CA·해시·사용자 저장소, 인증서 SAN과 접속 주소, 만료·시계. 검증을 끄지 않음 |
+| 공인 IP에서 포털·Kibana 모두 `ERR_SSL_PROTOCOL_ERROR` | [Caddy TLS 오류 복구](../deploy/server/README.md#공인-ip-접속의-tls-오류-복구) 참고. 실행 상태·시작 로그를 확인하고 no-SNI 기본 인증서 선택 설정 검증. 빈 최근 로그만으로 정상 판단하지 않음 |
 | ES 주소를 그냥 열었더니 401 | 인증을 요구하는 정상 동작. 에이전트는 별도의 수집 키 사용 |
 | 포털의 ES 연결 확인 실패 | `bootstrap` 종료 코드, issuer 비밀번호·CA, 내부 ES 상태 |
 | bootstrap가 Exited (0) | 정상. 준비 작업 후 종료되는 서비스 |

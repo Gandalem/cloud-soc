@@ -1,6 +1,8 @@
 {
     auto_https off
     admin off
+    # IP clients omit SNI; Docker/NAT listener IPs are not the public certificate IP.
+    default_sni {$SOC_PUBLIC_HOST}
 }
 
 https://{$SOC_PUBLIC_HOST} {

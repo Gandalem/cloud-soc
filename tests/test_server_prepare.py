@@ -162,6 +162,8 @@ class ServerPreparationTests(unittest.TestCase):
             read_bit = 0o400 if uid == owner_uid else 0o040 if gid == owner_gid else 0o004
             self.assertTrue(modes[0] & read_bit)
         self.assertEqual(modes[0] & 0o077, 0)
+        chown.assert_any_call(self.state / "secrets/monitor_password", 1000, 0)
+        chmod.assert_any_call(self.state / "secrets/monitor_password", 0o400)
         for name in ("kibana_password", "issuer_password", "analyst_password", "admin_hash"):
             chmod.assert_any_call(self.state / "secrets" / name, 0o644)
         chmod.assert_any_call(self.state / "tls", 0o750)

@@ -45,6 +45,8 @@ sudo bash deploy/agents/install-network-ubuntu.sh --endpoint https://soc.example
 
 수집 NIC의 GUID를 확인합니다. 인덱스 번호 대신 GUID를 저장하여 NIC 나열 순서 변경으로 수집 대상이 바뀌는 것을 방지합니다.
 
+Windows 시스템 `curl.exe`와 설치기 옆의 `download-windows.ps1`도 필요합니다. 다운로드는 1회 300초·최대 2회로 제한하며, 60초 동안 초당 16KiB 미만이면 중단합니다. 다운로드 실패 시 기존 Filebeat는 변경하지 않고, SHA-512 검증에 통과한 파일만 압축을 풉니다.
+
 ```powershell
 Get-NetAdapter -IncludeHidden | Select-Object Name, Status, InterfaceGuid
 ```

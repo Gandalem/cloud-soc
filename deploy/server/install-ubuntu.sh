@@ -75,6 +75,16 @@ show_plan() {
         'No agent installation, packet capture, firewall changes, package removal or data deletion.'
 }
 
+confirm_installation() {
+    [ "$YES" != yes ] || return 0
+    printf 'APT packages, Docker and host settings may change. Confirm approved IP restrictions and type y/yes/INSTALL (default: no): '
+    read -r CONFIRM || die 'Installation was not confirmed; no changes made.'
+    case "$CONFIRM" in
+        [Yy]|[Yy][Ee][Ss]|INSTALL) ;;
+        *) die 'Installation was not confirmed; no changes made.' ;;
+    esac
+}
+
 check_ubuntu_release() {
     [ "${ID:-}" = ubuntu ] || die "Ubuntu Server is required (detected ID: ${ID:-unknown}). Derivative distributions are not supported."
     UBUNTU_VERSION=${VERSION_ID:-}
@@ -357,11 +367,7 @@ main() {
     detect_docker
     check_kernel_config
     show_plan
-    if [ "$YES" != yes ]; then
-        printf 'APT packages, Docker and host settings may change. Confirm approved IP restrictions and type INSTALL: '
-        read -r CONFIRM
-        [ "$CONFIRM" = INSTALL ] || die 'Installation was not confirmed; no changes made.'
-    fi
+    confirm_installation
     # Serialize this installer, including a retry launched from another checkout.
     exec 9>/run/lock/cloud-soc-central-install.lock
     flock -n 9 || die 'Another central installation is running.'

@@ -88,6 +88,7 @@ class PortalTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(download.data).hexdigest(), item["sha256"])
         with zipfile.ZipFile(io.BytesIO(download.data)) as archive:
             self.assertIn("discover-windows.ps1", archive.namelist())
+            self.assertIn("download-windows.ps1", archive.namelist())
             self.assertIn("install-network-windows.ps1", archive.namelist())
             self.assertEqual(archive.read("ca.crt"), CA)
             self.assertNotIn(".env", archive.namelist())

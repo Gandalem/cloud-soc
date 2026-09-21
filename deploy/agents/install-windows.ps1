@@ -15,6 +15,7 @@ $Version = '9.5.2'
 $ServiceName = 'cloud-soc-filebeat'
 $DiscoveryTask = 'Cloud-SOC-Discovery'
 . (Join-Path $PSScriptRoot 'discover-windows.ps1')
+. (Join-Path $PSScriptRoot 'download-windows.ps1')
 $Root = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Cloud-SOC-Agent'
 $BeatHome = Join-Path $Root "filebeat-$Version-windows-x86_64"
 $Exe = Join-Path $BeatHome 'filebeat.exe'
@@ -137,6 +138,7 @@ try {
     $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run PowerShell as Administrator (not required for -DryRun).' }
     Assert-NoInstallation
+    $null = Get-SystemCurl
     if (-not (Test-Path -LiteralPath $CaPath -PathType Leaf)) { throw 'CA certificate file does not exist.' }
     $null = Get-SourceDiscovery -LogRoots $LogRoots -RequiredChannels $Channels
 
@@ -151,13 +153,7 @@ try {
     Update-SourceDiscovery -Root $Root -LogRoots $LogRoots -RequiredChannels $Channels
     $package = "filebeat-$Version-windows-x86_64.zip"
     $archive = Join-Path $Root $package
-    $oldTls = [Net.ServicePointManager]::SecurityProtocol
-    try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        Invoke-WebRequest -UseBasicParsing -Uri "https://artifacts.elastic.co/downloads/beats/filebeat/$package" -OutFile $archive -TimeoutSec 600 -MaximumRedirection 0
-    } finally {
-        [Net.ServicePointManager]::SecurityProtocol = $oldTls
-    }
+    Receive-CloudSocArchive -Uri "https://artifacts.elastic.co/downloads/beats/filebeat/$package" -OutFile $archive
     Assert-ArchiveHash $archive $Hash
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::OpenRead($archive)

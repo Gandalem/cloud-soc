@@ -40,7 +40,7 @@ services:
     environment:
       SOC_CA_FILE: /run/certs/ca.crt
       SOC_INTERNAL_ES_URL: https://elasticsearch:9200
-    secrets: [elastic_password, kibana_password, issuer_password, analyst_password]
+    secrets: [elastic_password, kibana_password, issuer_password, analyst_password, monitor_password]
     volumes: ["${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro"]
     read_only: true
     tmpfs: [/tmp]
@@ -60,9 +60,10 @@ services:
       SOC_ADMIN_USER: admin
       SOC_ADMIN_HASH_FILE: /run/secrets/admin_hash
       SOC_ISSUER_PASSWORD_FILE: /run/secrets/issuer_password
+      SOC_MONITOR_PASSWORD_FILE: /run/secrets/monitor_password
       SOC_CA_FILE: /run/certs/ca.crt
       SOC_STATE_DIR: /data
-    secrets: [admin_hash, issuer_password]
+    secrets: [admin_hash, issuer_password, monitor_password]
     volumes:
       - ${SOC_STATE_DIR}/portal:/data
       - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
@@ -103,6 +104,7 @@ secrets:
   issuer_password: {file: "${SOC_STATE_DIR}/secrets/issuer_password"}
   analyst_password: {file: "${SOC_STATE_DIR}/secrets/analyst_password"}
   admin_hash: {file: "${SOC_STATE_DIR}/secrets/admin_hash"}
+  monitor_password: {file: "${SOC_STATE_DIR}/secrets/monitor_password"}
 volumes:
   es-data:
   caddy-data:
