@@ -1,1 +1,2 @@
 deploy/agents/*.sh text eol=lf
+deploy/server/*.sh text eol=lf

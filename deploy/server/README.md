@@ -2,6 +2,8 @@
 
 이 구성은 **단일 노드 졸업작품·실습용**입니다. Elasticsearch, Kibana, 에이전트 배포 포털을 함께 실행합니다. 저장소 루트의 `compose.yaml`은 기존 로컬 개발용으로 유지하며, 아래에서는 항상 `deploy/server/compose.yaml`을 지정합니다.
 
+AWS EC2에 처음 배포하고 Windows PC에서 검증하는 경우에는 [AWS Ubuntu + Windows 실제 수집 테스트](../../docs/aws_windows_e2e_test.md)를 먼저 따라가세요. 아래는 공통 구성과 운영 제약 설명입니다.
+
 ```text
 관리자 PC -- HTTPS 443 --> Caddy --> 관리 포털 (인증·패키지·수집 키)
 관리자 PC -- HTTPS 5601 -> Caddy --> Kibana (별도 로그인)
@@ -14,7 +16,46 @@
 
 **아직 없는 것:** 원격 자동 설치, 에이전트 접속/헬스 현황, 정책 배포, 자동 업그레이드, 서명된 EXE, 실데이터 관제 메인/조사 화면, 신규 로그·네트워크 탐지 연동. 기존 관제 화면은 데모로 명확히 구분합니다. 탐지 규칙은 이번 단계에서 추가하지 않습니다.
 
-## 1. 준비
+## 빠른 설치: Git + sh (권장)
+
+**새 Ubuntu 22.04 서버**에서 먼저 아래 네트워크 제한을 준비한 뒤 사용합니다. Windows PC에서 실행하는 스크립트가 아닙니다. 기존 설치의 업그레이드·재설치 도구도 아닙니다.
+
+```bash
+# git이 없을 때만 실행: 저장소를 받으려면 Git 자체는 먼저 필요합니다.
+sudo apt-get update
+sudo apt-get install -y --no-remove --no-upgrade git
+git clone https://github.com/Gandalem/cloud-soc.git
+cd cloud-soc
+git rev-parse HEAD
+less deploy/server/install-ubuntu.sh
+sh deploy/server/install-ubuntu.sh --dry-run
+sudo sh deploy/server/install-ubuntu.sh
+```
+
+공인 DNS/IPv4, 로컬 바인딩 IPv4, 변경 승인(`INSTALL`), 16자 이상 관리자 비밀번호를 요청합니다. EC2의 바인딩 IP는 **프라이빗 IPv4**입니다. 공란이면 루프백만 열리므로 원격 접속을 원하는 경우 반드시 실제 프라이빗 IP를 입력하세요. 비밀번호를 CLI 인자·환경변수로 넘기지 않습니다.
+
+| 자동 처리 | 조건·제약 |
+| --- | --- |
+| 사전 검사 | Ubuntu 22.04 + systemd, amd64/arm64, root, 대화형 터미널, RAM 6GiB 이상, 체크아웃 디스크 여유 10GiB 이상 |
+| 필수 패키지 | 누락된 `ca-certificates`, `curl`, `git`, `python3`, `openssl`만 APT 설치. 전체 시스템 업그레이드 없음 |
+| Docker | 기존 로컬 Docker·Compose는 실행 가능한 경우 재사용. 없으면 공식 서명 APT 저장소의 Docker CE·Compose 플러그인 설치·데몬 활성화 |
+| 기존 설정 보호 | 충돌하는 Docker 패키지/저장소, 기존 `state/server`, 중앙 컨테이너·볼륨, 사용 중인 443·5601·9200, 비로컬 바인딩 IP는 중단 |
+| 커널 | `vm.max_map_count`가 낮으면 1048576으로 올리고 `/etc/sysctl.d/90-cloud-soc.conf`에 저장. 이미 높은 값은 낮추지 않음 |
+| 인증서·서비스 | `prepare.py` 재사용, 공개 CA의 DER 사본 추가, Compose 빌드·기동, bootstrap 종료 코드와 로컬 TLS/HTTP 응답 확인 |
+
+APT가 결정하는 Docker 버전은 고정하지 않으며 기존 엔진을 자동 업그레이드하지 않습니다. 이미지 다운로드·빌드·로그 보관에는 추가 공간이 필요합니다. Docker 데이터 디렉터리가 다른 디스크라면 해당 여유 공간도 별도로 확인하세요. **보안그룹·방화벽·DNS 설정, Windows CA 신뢰, 에이전트 설치, 실제 수신 검증은 자동 처리하지 않습니다.**
+
+`--dry-run`은 파일·OS·포트·의존성 확인 없이 계획만 출력합니다. `--prepare-only`는 의존성 설치와 인증서 준비까지만 하고 SOC 컨테이너는 기동하지 않습니다. 다만 새로 설치한 Docker 데몬은 시작됩니다. `--yes`는 변경 승인만 생략하며 관리자 비밀번호 때문에 대화형 터미널은 계속 필요합니다.
+
+자동 설치가 완료되면 아래 2~3절을 반복하지 말고 [AWS 가이드 6절](../../docs/aws_windows_e2e_test.md#6-windows에-ca-공개-인증서-전달신뢰)에서 Windows 신뢰 등록과 실제 수집 검증을 이어갑니다. 수동 설치를 원하는 경우에만 아래 1~3절을 진행합니다.
+
+### 실패·재시도
+
+첫 오류와 `Stopped during:` 단계를 확인하세요. 설치된 패키지와 생성된 상태는 자동 롤백하거나 지우지 않습니다. `state/server`가 없는 패키지 설치 단계 실패는 원인을 해결한 뒤 재실행할 수 있습니다. 다른 Docker 저장소·부분 설치 패키지가 감지되면 관리자가 먼저 정리 여부를 판단해야 합니다.
+
+**`state/server/compose.env`까지 정상 생성된 뒤 이미지 다운로드·기동·준비 확인이 실패했다면 설치기를 다시 실행하지 않습니다.** 아래 3절의 `config --quiet`, `up -d --build`, `ps -a`, `logs`로 같은 상태를 재사용합니다. 인증서 준비 자체가 실패해 `compose.env`가 없다면 상태를 보존하고 원인을 검토합니다. CA·비밀번호를 임의로 다시 만들거나 `down -v`로 데이터를 삭제하지 않습니다.
+
+## 1. 준비 (수동 설치)
 
 - Ubuntu 22.04 서버, Docker Engine와 Compose v2, Git, Python 3, OpenSSL이 필요합니다. Python 패키지는 컨테이너 안에 설치되므로 호스트 가상환경은 필요 없습니다.
 - 소규모 실습의 시작점으로 메모리 8GB와 여유 디스크를 권장합니다. 실제 필요량은 수집량에 따라 측정해야 합니다. 현재 ES 힙은 1GB, 컨테이너 한도는 ES 2GB/Kibana 1GB입니다.
@@ -43,7 +84,7 @@ sudo sysctl -w vm.max_map_count=1048576
 
 `--bind-ip`는 **서버에 실제 할당된 인터페이스 IP**입니다. NAT 공인 IP가 서버 인터페이스에 없으면 공인 IP를 바인딩 값에 넣지 않습니다. `--host`에는 대상 서버에서 접근 가능한 외부 DNS/IP, `--bind-ip`에는 내부 IP를 사용합니다. 포트포워딩에서도 위 허용 대상을 제한합니다.
 
-## 2. 최초 인증서·비밀번호 준비
+## 2. 최초 인증서·비밀번호 준비 (수동 설치)
 
 ```bash
 git clone https://github.com/Gandalem/cloud-soc.git
@@ -59,6 +100,7 @@ sudo python3 deploy/server/prepare.py --host soc.example.com --bind-ip 10.0.0.10
 | --- | --- |
 | `compose.env` | 공개 주소·바인딩 IP·상태 경로. 비밀번호 없음 |
 | `tls/ca.crt` | 에이전트에 배포할 CA 공개 인증서 |
+| `tls/ca.cer` | 자동 설치기가 추가로 내보내는 동일 CA의 공개 DER 사본. Windows 신뢰 등록용 |
 | `tls/server.crt`, `tls/server.key` | 서버 TLS 인증서·개인키 |
 | `private/ca.key` | CA 개인키. 배포 금지 |
 | `secrets/` | 관리자 해시와 서비스별 비밀번호. 배포 금지 |
@@ -160,7 +202,9 @@ sudo docker compose --env-file state/server/compose.env -f deploy/server/compose
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r deploy/server/requirements.txt
 .\.venv\Scripts\python.exe -B -m unittest discover -s tests -v
-node --test prototype/tests/logs.test.cjs deploy/agents/tests/installers.test.cjs deploy/agents/tests/network.test.cjs
+node --test prototype/tests/logs.test.cjs deploy/agents/tests/installers.test.cjs deploy/agents/tests/network.test.cjs deploy/server/tests/install-ubuntu.test.cjs deploy/server/tests/guides.test.cjs
 ```
 
-이 구현 시점에는 개발 PC의 Docker daemon이 실행되지 않아 **실제 Ubuntu에서 이미지 빌드·기동·인증서·API 키·문서 수신을 통합 검증하지 못했습니다.** Compose 정적 검사, 오프라인 테스트와 테스트 서버의 브라우저 동작을 검증했습니다. 운영 전에는 위 3~5절을 실제 서버에서 완료해야 합니다.
+중앙 `sh` 설치기 테스트는 POSIX 구문, dry-run, 입력 검증, 기존 상태·저장소·포트 보호, 모의 APT/Docker·커널·TLS 준비 확인을 검사합니다. 실제 패키지 설치·다운로드·서비스 기동은 하지 않습니다.
+
+**실제 AWS Ubuntu에서 이미지 빌드·기동·인증서·API 키·문서 수신을 통합 검증하지 못했습니다.** Compose 정적 검사, 오프라인 테스트와 테스트 서버의 브라우저 동작을 검증했습니다. 운영 전에는 실제 서버에서 기동·Windows 에이전트·Kibana 수신까지 확인해야 합니다.
