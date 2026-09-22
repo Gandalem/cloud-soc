@@ -128,10 +128,12 @@ test("OS and origin columns sort their displayed values", () => {
   }
 });
 
-test("static page uses local assets and blocks backend connections", () => {
+test("live page uses local assets and no longer loads demo fixtures", () => {
   const html = fs.readFileSync(path.join(root, "logs.html"), "utf8");
   assert.ok(html.includes('lang="ko"'));
-  assert.ok(html.includes("connect-src 'none'"));
+  assert.ok(html.includes("connect-src 'self'"));
+  assert.ok(!html.includes('src="logs-data.js"'));
+  assert.ok(!html.includes('src="app.js"'));
   assert.ok(html.includes("form-action 'none'"));
   const assets = Array.from(html.matchAll(/(?:src|href)="([^"#]+)"/g), (match) => match[1]);
   assert.ok(assets.length > 0);
@@ -139,8 +141,9 @@ test("static page uses local assets and blocks backend connections", () => {
     assert.ok(!/^(?:\w+:|\/\/)/.test(asset), `External asset: ${asset}`);
     assert.ok(fs.existsSync(path.join(root, asset)), `Missing asset: ${asset}`);
   }
-  for (const file of ["logs-data.js", "logs.js"]) {
+  for (const file of ["logs-data.js"]) {
     const source = fs.readFileSync(path.join(root, file), "utf8");
     assert.doesNotMatch(source, /\b(?:fetch|XMLHttpRequest|WebSocket|localStorage|sessionStorage|indexedDB)\b/);
   }
+  assert.doesNotMatch(fs.readFileSync(path.join(root, "logs.js"), "utf8"), /CloudSocLogData|localStorage|sessionStorage/);
 });

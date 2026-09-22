@@ -1,0 +1,19 @@
+# Optional overlay. Explicitly prepare the key and state directory first.
+services:
+  normalizer:
+    build:
+      context: ../..
+      dockerfile: deploy/server/Dockerfile
+    command: ["python", "-m", "cloud_soc.processing", "--run", "--start", "${SOC_PROCESSING_START:?Set approved initial UTC start}", "--state", "/data/checkpoint.sqlite", "--es-url", "https://elasticsearch:9200", "--ca-file", "/run/certs/ca.crt", "--api-key-file", "/run/keys/normalizer.key"]
+    restart: unless-stopped
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+    volumes:
+      - ${SOC_STATE_DIR}/processing:/data
+      - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+      - ${SOC_STATE_DIR}/secrets/normalizer.key:/run/keys/normalizer.key:ro
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    mem_limit: 512m

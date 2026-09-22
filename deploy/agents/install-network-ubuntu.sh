@@ -106,6 +106,7 @@ install_agent() {
     mkdir -m 700 "$ROOT"
     trap finish EXIT
     mkdir "$ROOT/data" "$ROOT/logs" "$ROOT/staging"
+    cp -- "$SCRIPT_DIR/privacy.js" "$ROOT/privacy.js"
     curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
         --connect-timeout 15 --max-time 600 --retry 2 \
         "https://artifacts.elastic.co/downloads/beats/packetbeat/$package.tar.gz" -o "$ROOT/package.tar.gz"

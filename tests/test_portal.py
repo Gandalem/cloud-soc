@@ -54,10 +54,28 @@ class PortalTests(unittest.TestCase):
         return result.json
 
     def test_every_page_and_api_require_authentication(self):
-        for path in ("/", "/agents.js", "/api/portal", "/api/packages/a/download", "/api/keys"):
+        for path in ("/", "/agents.js", "/api/portal", "/api/packages/a/download", "/api/keys", "/api/agents/health", "/collection-health.html", "/api/operations", "/api/alerts/detail", "/operations.js"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 401)
             self.assertIn("WWW-Authenticate", response.headers)
+
+    def test_operations_routes_and_no_demo_root(self):
+        response = self.request("GET", "/api/operations")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["sections"]["intake"]["state"], "unavailable")
+        self.assertEqual(self.request("GET", "/api/operations?bad=1").status_code, 400)
+        self.assertEqual(self.request("GET", "/api/alerts/detail?id=fixture").status_code, 503)
+        root = self.request("GET", "/")
+        self.assertIn(b"operations.js", root.data)
+        self.assertNotIn(b"demo-data.js", root.data)
+        root.close()
+
+    def test_health_unconfigured_is_not_empty_success(self):
+        response = self.request('GET', '/api/agents/health')
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn('rows', response.json)
+        self.assertEqual(self.request('GET', '/api/agents/health?index=*').status_code, 400)
+        self.assertEqual(self.request('GET', '/api/agents/health?cursor=a&cursor=b').status_code, 400)
 
     def test_host_origin_csrf_and_cross_site_protection(self):
         for headers in ({"Host": "attacker.test"}, {"Host": "localhost:8088"}, {"Origin": "https://attacker.test"}, {"Sec-Fetch-Site": "cross-site"}):
@@ -126,7 +144,7 @@ class PortalTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.json)
         self.assertEqual(response.json["keys"][0]["key"], "host-id:SENSITIVE_HOST_CANARY")
         calls = self.issuer.security.create_api_key.call_args_list
-        self.assertEqual(calls[0].kwargs["role_descriptors"]["cloud_soc_host"]["indices"][0]["names"], ["soc-host-raw-*"])
+        self.assertEqual(calls[0].kwargs["role_descriptors"]["cloud_soc_host"]["indices"][0]["names"], ["soc-host-raw-*", "soc-agent-health-*"])
         self.assertEqual(calls[1].kwargs["role_descriptors"]["cloud_soc_network"]["indices"][0]["names"], ["soc-network-*"])
         self.assertEqual(calls[0].kwargs["expiration"], "30d")
         self.assertNotIn(b"SENSITIVE", (Path(self.temp.name) / "packages.sqlite3").read_bytes())

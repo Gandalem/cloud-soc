@@ -1,4 +1,5 @@
 #requires -Version 5.1
+# cloud-soc-policy-format: 1
 param([switch]$Refresh)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -58,7 +59,7 @@ function Get-LogEncoding([string]$Path) {
     } finally { $stream.Dispose() }
 }
 
-function Get-SourceDiscovery([string[]]$LogRoots, [string[]]$RequiredChannels = @()) {
+function Get-SourceDiscovery([string[]]$LogRoots, [string[]]$RequiredChannels = @(), [string[]]$Exclusions = @()) {
     $entries = New-Object 'Collections.Generic.List[object]'
     $inputs = New-Object 'Collections.Generic.List[object]'
     $errors = @()
@@ -78,7 +79,7 @@ function Get-SourceDiscovery([string[]]$LogRoots, [string[]]$RequiredChannels = 
         $selected[$name] = $true
         $inputs.Add([ordered]@{
             type = 'winlog'; id = ('cloud-soc-event-' + (Get-DiscoveryId $name)); name = $name
-            include_xml = $true; ignore_missing_channel = $true
+            include_xml = $false; ignore_missing_channel = $true
             fields_under_root = $true
             fields = [ordered]@{ labels = [ordered]@{ log_source = 'windows_event'; collection_mode = 'auto_discovery' } }
         })
@@ -107,10 +108,12 @@ function Get-SourceDiscovery([string[]]$LogRoots, [string[]]$RequiredChannels = 
                 $path = $item.FullName
                 if ($seen.ContainsKey($path)) { continue }; $seen[$path] = $true
                 $status = 'selected'
-                if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { $status = 'reparse_point' }
+                $excluded = @($Exclusions | Where-Object { $path -ieq $_ -or $path.StartsWith($_.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
+                if ($excluded) { $status = 'policy_excluded' }
+                elseif ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { $status = 'reparse_point' }
                 elseif ($path -match '[\x00-\x1f$*?\[\]{}]') { $status = 'unsafe_path' }
                 elseif ($item.PSIsContainer) { $pending.Push($path); continue }
-                elseif ($path -match '\.(evtx|etl|gz|zip|7z|cab|dmp|db|sqlite|pem|key|crt|cer|der|pfx|p12)$' -or $path -match '[\\/](\.env|id_rsa|id_ed25519|id_ecdsa)(\.|$)') { $status = 'binary_archive_or_secret' }
+                elseif ($path -match '\.(evtx|etl|gz|zip|7z|cab|dmp|db|sqlite|pem|key|crt|cer|der|pfx|p12|docx?|xlsx?|pdf|kdbx)$' -or $path -match '[\\/](\.env|id_rsa|id_ed25519|id_ecdsa|credentials|secrets?)(\.|[\\/]|$)') { $status = 'binary_archive_or_secret' }
                 else {
                     try { $encoding = Get-LogEncoding $path }
                     catch { $encoding = 'unreadable' }
@@ -154,16 +157,59 @@ function Write-DiscoveryFile([string]$Path, [string]$Content) {
 function Update-SourceDiscovery([string]$Root, [string[]]$LogRoots, [string[]]$RequiredChannels = @()) {
     $lock = [IO.File]::Open((Join-Path $Root 'discovery.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::Write, [IO.FileShare]::None)
     try {
-        $discovery = Get-SourceDiscovery -LogRoots $LogRoots -RequiredChannels $RequiredChannels
+        if ($null -eq $LogRoots) {
+            $settings = Get-Content -LiteralPath (Join-Path $Root 'discovery-settings.json') -Raw | ConvertFrom-Json
+            $LogRoots = $settings.log_roots; $RequiredChannels = $settings.required_channels
+        }
+        $version = 0; $exclusions = @()
+        $policyPath = Join-Path $Root 'collection-policy.txt'
+        if (Test-Path -LiteralPath $policyPath) {
+            if (Test-ReparseAncestor $policyPath) { throw 'Unsafe policy file.' }
+            $lines = [IO.File]::ReadAllLines($policyPath)
+            if (-not $lines.Count -or $lines[0] -notmatch '^version=([0-9]{1,9})$') { throw 'Invalid policy version.' }
+            $version = [int]$Matches[1]; $LogRoots = @()
+            foreach ($line in ($lines | Select-Object -Skip 1)) {
+                if ($line.StartsWith('root=')) { $LogRoots += (Assert-LogRoot $line.Substring(5)) }
+                elseif ($line.StartsWith('exclude=')) { $exclusions += (Assert-LogRoot $line.Substring(8)) }
+                else { throw 'Invalid policy record.' }
+            }
+            if (-not $LogRoots.Count) { throw 'No policy roots.' }
+        }
+        $discovery = Get-SourceDiscovery -LogRoots $LogRoots -RequiredChannels $RequiredChannels -Exclusions $exclusions
         Write-DiscoveryFile (Join-Path $Root 'inputs\discovered.yml') (ConvertTo-Json -InputObject @($discovery.inputs) -Depth 16)
         Write-DiscoveryFile (Join-Path $Root 'discovery-report.json') ($discovery.report | ConvertTo-Json -Depth 8)
+        Write-HealthReport -Root $Root -Report $discovery.report -Version $version
     } finally { $lock.Dispose() }
+}
+
+function Write-HealthReport([string]$Root, $Report, [int]$Version = 0) {
+    $entries = @($Report.entries)
+    $selected = @($entries | Where-Object { $_.status -eq 'selected' }).Count
+    $errors = @($entries | Where-Object { $_.status -in @('unreadable', 'enumeration_error') }).Count
+    $summary = [ordered]@{ schema = 1; generated_at = $Report.generated_at; policy_version = $version
+        selected = $selected; excluded = ($entries.Count - $selected - $errors); errors = $errors; total = $entries.Count
+        sources = @($entries | Select-Object -First 200 | ForEach-Object { @{ id = (Get-DiscoveryId ([string]$_.name)); status = $_.status } })
+        queue_state = 'unknown'; transport_state = 'unknown' }
+    $spool = Join-Path $Root 'health.ndjson'
+    $previous = Join-Path $Root 'health-previous.ndjson'
+    foreach ($path in @($spool, $previous)) {
+        if (Test-ReparseAncestor $path) { throw 'Unsafe health spool.' }
+    }
+    if ((Test-Path -LiteralPath $spool) -and (Get-Item -LiteralPath $spool).Length -gt 5242880) {
+        Move-Item -LiteralPath $spool -Destination $previous -Force
+    }
+    [IO.File]::AppendAllText($spool, ($summary | ConvertTo-Json -Depth 8 -Compress) + "`n", (New-Object Text.UTF8Encoding($false)))
+    $input = @(@{ type = 'filestream'; id = 'cloud-soc-health-v1'; paths = @((Join-Path $Root 'health*.ndjson'))
+        'prospector.scanner.fingerprint.length' = 64
+        parsers = @(@{ ndjson = @{ target = 'cloud_soc.discovery' } }); fields_under_root = $true
+        fields = @{ labels = @{ log_source = 'agent_health' } }
+        processors = @(@{ drop_fields = @{ fields = @('message'); ignore_missing = $true } }) })
+    Write-DiscoveryFile (Join-Path $Root 'inputs\health.yml') (ConvertTo-Json -InputObject $input -Depth 12)
 }
 
 if ($Refresh) {
     try {
         $root = Join-Path $env:ProgramFiles 'Cloud-SOC-Agent'
-        $settings = Get-Content -LiteralPath (Join-Path $root 'discovery-settings.json') -Raw | ConvertFrom-Json
-        Update-SourceDiscovery -Root $root -LogRoots $settings.log_roots -RequiredChannels $settings.required_channels
+        Update-SourceDiscovery -Root $root
     } catch { [Console]::Error.WriteLine("Discovery failed; inspect discovery-report.json and task history: $($_.Exception.Message)"); exit 1 }
 }

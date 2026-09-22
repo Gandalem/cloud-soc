@@ -1,0 +1,7 @@
+{
+  "tenancy_id": "ocid1.tenancy.oc1..exampletenancy00000000",
+  "organization": "school",
+  "regions": ["ap-seoul-1"],
+  "compartments": ["ocid1.compartment.oc1..examplecompartment0000"],
+  "lookback_hours": 24
+}

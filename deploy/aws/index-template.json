@@ -1,0 +1,28 @@
+{
+  "index_patterns": ["soc-cloud-aws-*"],
+  "priority": 200,
+  "_meta": {"description": "Selected CloudTrail management metadata only; no original payload or retention policy."},
+  "template": {
+    "settings": {"number_of_shards": 1, "number_of_replicas": 1},
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "@timestamp": {"type": "date"},
+        "event": {"properties": {
+          "id": {"type": "keyword"}, "kind": {"type": "keyword"}, "dataset": {"type": "keyword"},
+          "provider": {"type": "keyword"}, "action": {"type": "keyword"}, "outcome": {"type": "keyword"}
+        }},
+        "organization": {"properties": {"id": {"type": "keyword"}}},
+        "agent": {"properties": {"id": {"type": "keyword"}, "type": {"type": "keyword"}}},
+        "cloud": {"properties": {
+          "provider": {"type": "keyword"}, "account": {"properties": {"id": {"type": "keyword"}}},
+          "region": {"type": "keyword"}, "service": {"properties": {"name": {"type": "keyword"}}}
+        }},
+        "user": {"properties": {"id": {"type": "keyword"}, "name": {"type": "keyword"}}},
+        "source": {"properties": {"ip": {"type": "ip"}, "address": {"type": "keyword"}}},
+        "labels": {"properties": {"log_source": {"type": "keyword"}, "privacy_policy": {"type": "keyword"}}},
+        "aws": {"properties": {"cloudtrail": {"type": "object", "enabled": false}}}
+      }
+    }
+  }
+}

@@ -135,6 +135,7 @@ try {
     } finally { $zip.Dispose() }
     Expand-Archive -LiteralPath $archive -DestinationPath $Root
     Copy-Item -LiteralPath $CaPath -Destination (Join-Path $Root 'ca.crt')
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'privacy.js') -Destination $Root
     $utf8 = New-Object System.Text.UTF8Encoding($false)
     # Even preflight commands receive never_install, never an empty default config.
     [IO.File]::WriteAllText($ConfigPath, '{"packetbeat.npcap.never_install":true}', $utf8)

@@ -66,8 +66,8 @@ render_config() {
     # JSON is a YAML-compatible representation; all interpolated values are validated.
     printf '%s' '{"filebeat.inputs":[{"type":"journald","id":"cloud-soc-journal-v2","seek":"head","fields_under_root":true,"fields":{"labels":{"log_source":"linux_journald","collection_mode":"auto_discovery"}},"processors":[{"drop_event":{"when":{"equals":{"systemd.unit":"cloud-soc-filebeat.service"}}}}]}],'
     printf '"filebeat.config.inputs":{"enabled":true,"path":"%s/inputs/*.yml","reload.enabled":true,"reload.period":"10s"},' "$ROOT"
-    printf '"processors":[{"add_host_metadata":{}},{"add_fields":{"target":"organization","fields":{"id":"%s"}}}],' "$ORGANIZATION"
-    printf '"output.elasticsearch":{"hosts":["%s"],"api_key":"${CLOUD_SOC_API_KEY}","ssl.certificate_authorities":["%s/ca.crt"],"ssl.verification_mode":"full","index":"soc-host-raw-linux-%s-%%{+yyyy.MM.dd}","timeout":30},' "$ENDPOINT" "$ROOT" "$BEAT_VERSION"
+    printf '"processors":[{"add_host_metadata":{}},{"add_fields":{"target":"organization","fields":{"id":"%s"}}},{"script":{"lang":"javascript","file":"privacy.js","timeout":"50ms","tag_on_exception":"_privacy_error"}},{"drop_event":{"when":{"contains":{"tags":"_privacy_error"}}}}],' "$ORGANIZATION"
+    printf '"output.elasticsearch":{"hosts":["%s"],"api_key":"${CLOUD_SOC_API_KEY}","ssl.certificate_authorities":["%s/ca.crt"],"ssl.verification_mode":"full","index":"soc-host-raw-linux-%s-%%{+yyyy.MM.dd}","indices":[{"index":"soc-agent-health-%%{+yyyy.MM.dd}","when.equals":{"labels.log_source":"agent_health"}}],"timeout":30},' "$ENDPOINT" "$ROOT" "$BEAT_VERSION"
     printf '%s\n' '"setup.ilm.enabled":false,"setup.template.enabled":false,"logging.level":"info","logging.to_files":true,"logging.to_stderr":false,"logging.to_syslog":false,"queue.disk":{"max_size":"1GB"}}'
 }
 
@@ -122,6 +122,7 @@ install_agent() {
     trap 'printf "Installation failed; protected partial state remains in %s. No automatic reinstall/cleanup.\n" "$ROOT" >&2' ERR
     mkdir "$ROOT/data" "$ROOT/logs" "$ROOT/staging" "$ROOT/inputs"
     cp -- "$SCRIPT_DIR/discover-linux.sh" "$ROOT/discover-linux.sh"
+    cp -- "$SCRIPT_DIR/privacy.js" "$ROOT/privacy.js"
     printf '%s\n' "${LOG_ROOTS[@]}" > "$ROOT/discovery-roots.txt"
     refresh_linux_inputs "$ROOT" "${LOG_ROOTS[@]}"
     curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \

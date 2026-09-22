@@ -1,0 +1,28 @@
+.operations-main { max-width: 1560px; }
+.ops-toolbar { display: flex; align-items: center; gap: 16px; padding: 16px; flex-wrap: wrap; }
+.ops-toolbar select { margin-left: 8px; background: white; color: #243a51; }
+#ops-detail button, .ops-alerts button { background: white; color: #30506d; border-color: #c3d3e1; }
+.ops-notice { margin: 18px 0; padding: 20px; border-left: 4px solid #b48123; }
+.ops-notice h2 { font-size: 17px; }
+.ops-notice p { margin: 8px 0 0; line-height: 1.7; }
+.ops-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.ops-metrics article { padding: 20px; }
+.ops-metrics h2 { font-size: 14px; }
+.ops-value { display: block; font-size: 30px; font-variant-numeric: tabular-nums; margin: 10px 0; }
+.ops-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 18px 0; }
+.ops-charts article, .ops-alerts { padding: 20px; min-width: 0; }
+.ops-charts h2, .ops-alerts h2 { font-size: 18px; }
+.ops-bars { display: flex; gap: 2px; align-items: end; height: 140px; margin-top: 24px; overflow: hidden; }
+.ops-bars svg { width: 100%; height: 140px; }
+.ops-bars rect { fill: #376c9b; }
+.ops-alerts table { width: 100%; min-width: 650px; border-collapse: collapse; }
+.ops-alerts th, .ops-alerts td { padding: 12px; text-align: left; border-bottom: 1px solid #dce3ec; }
+.ops-mobile { display: none; }
+#ops-error { color: #a62e26; }
+#ops-detail { width: min(840px, calc(100vw - 32px)); max-height: 85vh; overflow: auto; border: 1px solid #c5d3e2; border-radius: 8px; padding: 24px; box-sizing: border-box; }
+#ops-detail::backdrop { background: #17283f88; }
+.ops-dialog-heading { display: flex; gap: 16px; justify-content: space-between; align-items: start; }
+#ops-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.ops-evidence { padding-top: 14px; border-top: 1px solid #dce3ec; margin-top: 14px; }
+@media (max-width: 1050px) { .ops-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .ops-charts { grid-template-columns: 1fr; } .ops-mobile { display: flex; gap: 18px; margin-bottom: 18px; flex-wrap: wrap; } .ops-toolbar { align-items: start; } .ops-metrics article { padding: 14px; } .ops-value { font-size: 24px; } #ops-range { overflow-wrap: anywhere; } }

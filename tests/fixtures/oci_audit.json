@@ -1,0 +1,41 @@
+{
+  "description": "Synthetic OCI SDK snake_case metadata; no production data or credentials.",
+  "tenancy": "ocid1.tenancy.oc1..exampletenancy00000000",
+  "region": "ap-seoul-1",
+  "compartment": "ocid1.compartment.oc1..examplecompartment0000",
+  "events": [
+    {
+      "event_type": "com.oraclecloud.ComputeApi.LaunchInstance", "cloud_events_version": "0.1", "event_type_version": "2.0",
+      "source": "ComputeApi", "event_id": "22222222-3333-4444-5555-000000000001", "event_time": "2026-09-22T01:10:30.123Z", "content_type": "application/json",
+      "data": {
+        "event_name": "LaunchInstance", "compartment_id": "ocid1.compartment.oc1..examplecompartment0000", "compartment_name": "SOC fixture",
+        "resource_id": "ocid1.instance.oc1.ap-seoul-1.exampleinstance000000", "resource_name": "fixture-instance",
+        "event_grouping_id": "fixture-group-1",
+        "identity": {"principal_id": "ocid1.user.oc1..exampleuser00000000", "principal_name": "fixture-analyst", "auth_type": "natv", "tenant_id": "ocid1.tenancy.oc1..exampletenancy00000000", "ip_address": "198.51.100.31", "credentials": "PRIVATE_CANARY", "console_session_id": "PRIVATE_CANARY"},
+        "request": {"id": "fixture-request-1", "action": "POST", "headers": {"authorization": ["PRIVATE_CANARY"]}, "parameters": {"userData": "PRIVATE_CANARY"}, "path": "/PRIVATE_CANARY"},
+        "response": {"status": "202", "message": "PRIVATE_CANARY", "payload": {"secret": "PRIVATE_CANARY"}},
+        "state_change": {"current": {"secret": "PRIVATE_CANARY"}}, "additional_details": {"secret": "PRIVATE_CANARY"}, "freeform_tags": {"secret": "PRIVATE_CANARY"}
+      }
+    },
+    {
+      "event_type": "com.oraclecloud.VirtualNetwork.UpdateSecurityList", "cloud_events_version": "0.1", "event_type_version": "2.0",
+      "source": "VirtualNetwork", "event_id": "22222222-3333-4444-5555-000000000002", "event_time": "2026-09-22T01:20:00Z", "content_type": "application/json",
+      "data": {
+        "event_name": "UpdateSecurityList", "compartment_id": "ocid1.compartment.oc1..examplecompartment0000",
+        "resource_id": "ocid1.securitylist.oc1.ap-seoul-1.examplelist00000000", "resource_name": "fixture-list",
+        "identity": {"principal_id": "ocid1.instance.oc1.ap-seoul-1.fixtureprincipal0000", "auth_type": "instance", "ip_address": "2001:db8::31"},
+        "request": {"id": "fixture-request-2", "action": "PUT"}, "response": {"status": "403", "message": "PRIVATE_CANARY"}
+      }
+    },
+    {
+      "event_type": "com.oraclecloud.IdentityControlPlane.CreatePolicy", "cloud_events_version": "0.1", "event_type_version": "2.0",
+      "source": "IdentityControlPlane", "event_id": "22222222-3333-4444-5555-000000000003", "event_time": "2026-09-22T01:30:00Z", "content_type": "application/json",
+      "data": {
+        "event_name": "CreatePolicy", "compartment_id": "ocid1.compartment.oc1..examplecompartment0000",
+        "resource_id": "ocid1.policy.oc1..examplepolicy00000000", "resource_name": "fixture-policy",
+        "identity": {"principal_name": "fixture-admin", "ip_address": "198.51.100.32"},
+        "request": {"action": "POST", "parameters": {"statements": ["PRIVATE_CANARY"]}}, "response": {"status": "200"}
+      }
+    }
+  ]
+}

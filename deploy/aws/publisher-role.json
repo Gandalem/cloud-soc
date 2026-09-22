@@ -1,0 +1,4 @@
+{
+  "cluster": [],
+  "indices": [{"names": ["soc-cloud-aws-*"], "privileges": ["auto_configure", "create_doc"]}]
+}

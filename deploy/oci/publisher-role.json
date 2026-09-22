@@ -1,0 +1,4 @@
+{
+  "cluster": [],
+  "indices": [{"names": ["soc-cloud-oci-*"], "privileges": ["auto_configure", "create_doc"]}]
+}

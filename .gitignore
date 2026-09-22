@@ -3,6 +3,8 @@
 
 # Python
 .venv/
+.venv-aws/
+.venv-oci/
 venv/
 __pycache__/
 *.pyc

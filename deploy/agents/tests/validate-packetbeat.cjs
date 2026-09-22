@@ -21,6 +21,7 @@ if (process.platform === 'win32') {
 const state = path.resolve(root, '../../state');
 fs.mkdirSync(state, { recursive: true });
 const dir = fs.mkdtempSync(path.join(state, 'packetbeat-smoke-'));
+fs.copyFileSync(path.join(root, 'privacy.js'), path.join(dir, 'privacy.js'));
 const config = JSON.parse(fs.readFileSync(path.join(root, 'packetbeat.base.json'), 'utf8'));
 config['packetbeat.interfaces'].device = 'NEVER_OPEN_LIVE_INTERFACE';
 config['packetbeat.interfaces'].type = 'pcap';

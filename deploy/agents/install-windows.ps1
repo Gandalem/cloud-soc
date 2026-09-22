@@ -53,7 +53,9 @@ function Get-AgentConfig {
         'filebeat.config.inputs' = @{ enabled = $true; path = (Join-Path $Root 'inputs\*.yml'); 'reload.enabled' = $true; 'reload.period' = '10s' }
         processors = @(
             @{ add_host_metadata = @{} },
-            @{ add_fields = @{ target = 'organization'; fields = @{ id = $Organization } } }
+            @{ add_fields = @{ target = 'organization'; fields = @{ id = $Organization } } },
+            @{ script = @{ lang = 'javascript'; file = 'privacy.js'; timeout = '50ms'; tag_on_exception = '_privacy_error' } },
+            @{ drop_event = @{ when = @{ contains = @{ tags = '_privacy_error' } } } }
         )
         'output.elasticsearch' = @{
             hosts = @($Endpoint.TrimEnd('/'))
@@ -61,6 +63,7 @@ function Get-AgentConfig {
             'ssl.certificate_authorities' = @((Join-Path $Root 'ca.crt'))
             'ssl.verification_mode' = 'full'
             index = "soc-host-raw-windows-$Version-%{+yyyy.MM.dd}"
+            indices = @(@{ index = 'soc-agent-health-%{+yyyy.MM.dd}'; 'when.equals' = @{ 'labels.log_source' = 'agent_health' } })
             timeout = 30
         }
         'setup.ilm.enabled' = $false
@@ -148,6 +151,7 @@ try {
     Set-ProtectedDirectory $Root
     foreach ($path in @($DataPath, $LogsPath, (Join-Path $Root 'inputs'))) { New-Item -ItemType Directory -Path $path | Out-Null }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'discover-windows.ps1') -Destination $Root
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'privacy.js') -Destination $Root
     $settings = @{ log_roots = @($LogRoots); required_channels = @($Channels) } | ConvertTo-Json -Depth 8
     Write-DiscoveryFile (Join-Path $Root 'discovery-settings.json') $settings
     Update-SourceDiscovery -Root $Root -LogRoots $LogRoots -RequiredChannels $Channels

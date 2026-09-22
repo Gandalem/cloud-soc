@@ -36,6 +36,7 @@ class LiveStatusTests(unittest.TestCase):
         run("run", "--detach", "--rm", "--pull=never", "--name", name, "--memory=2g",
             "--publish", "127.0.0.1::9200", "--env", "discovery.type=single-node",
             "--env", "xpack.security.enabled=true", "--env", "xpack.security.http.ssl.enabled=false",
+            "--env", "path.repo=/tmp/cloud-soc-snapshots",
             "--env", "ES_JAVA_OPTS=-Xms512m -Xmx512m", "--env", "ELASTIC_PASSWORD=" + password, image)
         # This HTTP endpoint is loopback-only, temporary and uses synthetic credentials.
         try:
@@ -53,6 +54,9 @@ class LiveStatusTests(unittest.TestCase):
                 configure_reader(admin, password)
                 with Elasticsearch(url, basic_auth=("cloud_soc_agent_monitor", password), request_timeout=10) as monitor:
                     self.assertEqual(snapshot(monitor)["agents"], [])
+                    from cloud_soc.portal.log_query import LogReader
+                    empty = LogReader(monitor, secret="synthetic", principal="test")
+                    self.assertEqual(json.loads(empty.page([]))["rows"], [])
                     # Create a legacy document with no receipt time, before migration.
                     for kind, filename in [("host", "index-template.json"), ("network", "network-index-template.json")]:
                         template = json.loads((ROOT / "deploy/agents" / filename).read_text(encoding="utf-8"))
@@ -100,6 +104,16 @@ class LiveStatusTests(unittest.TestCase):
                         monitor.index(index="soc-host-raw-legacy", id="denied", document={})
                     with self.assertRaises(AuthorizationException):
                         monitor.security.create_api_key(name="denied")
+                    from log_query_live_checks import check_log_queries
+                    check_log_queries(self, admin, monitor)
+                    from p2_live_checks import check_p2
+                    check_p2(self, admin, monitor, url)
+                    from p4_live_checks import check_p4
+                    check_p4(self, admin, monitor, url)
+                    from oci_live_checks import check_oci
+                    check_oci(self, admin, monitor, url)
+                    from p5_live_checks import check_p5
+                    check_p5(self, admin, monitor, url)
         finally:
             cleanup = run("rm", "--force", "--volumes", name, check=False)
             self.assertEqual(cleanup.returncode, 0, "Clean up the named soc-status-test container manually")

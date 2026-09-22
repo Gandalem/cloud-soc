@@ -1,0 +1,76 @@
+{
+  "description": "Synthetic contract fixtures, not production logs or actual Beat output. Reserved IPs and example.test names only.",
+  "hits": [
+    {
+      "_index": "soc-host-raw-windows-9.5.2-2026.09.22", "_id": "windows-event",
+      "_source": {
+        "@timestamp": "2026-09-22T10:00:00+09:00", "event": {"ingested": "2026-09-22T01:00:03Z", "code": "4625"},
+        "organization": {"id": "synthetic"}, "agent": {"id": "win-fixture", "type": "filebeat"},
+        "host": {"name": "win.example.test", "ip": ["192.0.2.10"], "os": {"type": "windows", "name": "Windows"}},
+        "labels": {"log_source": "windows_event"}, "winlog": {"channel": "Security", "event_id": "4625", "event_data": {"TargetUserName": "fixture-user"}},
+        "message": "Synthetic Windows event; do not derive outcome or user from this text."
+      }
+    },
+    {
+      "_index": "soc-host-raw-windows-9.5.2-2026.09.22", "_id": "windows-file",
+      "_source": {
+        "@timestamp": "2026-09-22T01:01:00Z", "event": {"ingested": "2026-09-22T01:01:01Z"},
+        "agent": {"id": "win-fixture", "type": "filebeat"}, "host": {"name": "win.example.test"},
+        "labels": {"log_source": "windows_file"}, "log": {"file": {"path": "C:\\ProgramData\\Fixture\\logs\\app.log"}},
+        "message": "fixture login failed from 198.51.100.9"
+      }
+    },
+    {
+      "_index": "soc-host-raw-linux-9.5.2-2026.09.22", "_id": "linux-file",
+      "_source": {
+        "@timestamp": "2026-09-22T01:02:00Z", "event": {"ingested": "2026-09-22T01:02:04Z"},
+        "agent": {"id": "linux-fixture", "type": "filebeat"}, "host": {"name": "linux.example.test", "os": {"type": "linux", "name": "Ubuntu"}},
+        "labels": {"log_source": "linux_file"}, "log": {"file": {"path": "/var/log/auth.log"}},
+        "message": "Sep 22 01:02:00 fixture sshd[100]: Failed password for fixture-user from 198.51.100.9 port 12345 ssh2"
+      }
+    },
+    {
+      "_index": "soc-host-raw-linux-9.5.2-2026.09.22", "_id": "linux-journal",
+      "_source": {
+        "@timestamp": "2026-09-22T01:03:00Z", "event": {"ingested": "2026-09-22T01:03:01Z"},
+        "agent": {"id": "linux-fixture", "type": "filebeat"}, "host": {"name": "linux.example.test"},
+        "labels": {"log_source": "linux_journald"}, "systemd": {"unit": "fixture.service"},
+        "message": "Synthetic service started"
+      }
+    },
+    {
+      "_index": "soc-network-windows-9.5.2-2026.09.22", "_id": "flow",
+      "_source": {
+        "@timestamp": "2026-09-22T01:04:00Z", "event": {"ingested": "2026-09-22T01:04:01Z", "dataset": "flow"},
+        "agent": {"id": "network-fixture", "type": "packetbeat"}, "host": {"name": "win.example.test", "ip": ["192.0.2.10"], "os": {"name": "Windows"}},
+        "labels": {"log_source": "network_packetbeat", "sensor_platform": "windows", "flow_counters": "cumulative"},
+        "source": {"ip": "192.0.2.10", "port": 55000}, "destination": {"ip": "198.51.100.20", "port": 443},
+        "network": {"transport": "tcp", "bytes": 2048}, "flow": {"id": "synthetic-flow", "final": true}
+      }
+    },
+    {
+      "_index": "soc-network-linux-9.5.2-2026.09.22", "_id": "dns",
+      "_source": {
+        "@timestamp": "2026-09-22T01:05:00Z", "event": {"ingested": "2026-09-22T01:05:01Z", "dataset": "dns"},
+        "agent": {"id": "network-linux-fixture", "type": "packetbeat"}, "host": {"name": "linux.example.test"},
+        "labels": {"log_source": "network_packetbeat", "sensor_platform": "linux"},
+        "source": {"ip": "2001:db8::1"}, "destination": {"ip": "2001:db8::53"},
+        "network": {"protocol": "dns", "transport": "udp"}, "dns": {"question": {"name": "fixture.example.test", "type": "A"}, "resolved_ip": ["203.0.113.5"]}
+      }
+    },
+    {
+      "_index": "soc-network-linux-9.5.2-2026.09.22", "_id": "tls",
+      "_source": {
+        "@timestamp": "2026-09-22T01:06:00Z", "event": {"ingested": "2026-09-22T01:06:01Z"},
+        "agent": {"id": "network-linux-fixture", "type": "packetbeat"}, "host": {"name": "linux.example.test"},
+        "labels": {"log_source": "network_packetbeat", "sensor_platform": "linux"},
+        "network": {"protocol": "tls", "transport": "tcp"}, "tls": {"version": "1.3", "client": {"server_name": "fixture.example.test"}},
+        "source": {"ip": "192.0.2.10"}, "destination": {"ip": "198.51.100.20"}
+      }
+    },
+    {
+      "_index": "soc-host-raw-legacy", "_id": "legacy",
+      "_source": {"@timestamp": "2020-01-01T00:00:00Z", "message": "Legacy document without a receipt timestamp or collector metadata"}
+    }
+  ]
+}

@@ -17,6 +17,9 @@ from werkzeug.security import check_password_hash
 
 from cloud_soc.portal.packages import PackageStore, validate_endpoint
 from cloud_soc.portal.agent_status import decode_cursor, snapshot
+from cloud_soc.portal.log_query import LogReader, LogQueryError
+from cloud_soc.portal.collection_health import snapshot as health_snapshot
+from cloud_soc.portal.operations import Operations
 
 PROJECT = Path(__file__).resolve().parents[3]
 
@@ -67,6 +70,9 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         monitor = Elasticsearch(settings["ES_URL"], basic_auth=("cloud_soc_agent_monitor", settings["MONITOR_PASSWORD"]),
                                 ca_certs=settings["CA_FILE"], request_timeout=5, max_retries=0)
     app.extensions["monitor"] = monitor
+    log_reader = LogReader(monitor, secret=settings["ADMIN_HASH"],
+                           principal=settings["PUBLIC_URL"] + "/" + settings["ADMIN_USER"])
+    operations = Operations(monitor)
 
     @app.before_request
     def protect():
@@ -97,7 +103,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Frame-Options"] = "DENY"
         # Existing read-only demo charts use inline style attributes, not scripts.
-        styles = "'self' 'unsafe-inline'" if request.path in ("/index.html", "/workbench.html", "/logs.html") else "'self'"
+        styles = "'self' 'unsafe-inline'" if request.path == "/workbench.html" else "'self'"
         response.headers["Content-Security-Policy"] = f"default-src 'self'; script-src 'self'; style-src {styles}; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
         return response
 
@@ -142,6 +148,40 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             # Upstream errors can contain credentials or raw documents. Never echo them.
             return jsonify(error="수신 현황을 조회하지 못했습니다. 서버 연결·조회 권한·수신 시각 설정을 확인하세요.",
                            code="status_unavailable"), 503
+
+    def log_response(operation):
+        try:
+            return app.response_class(operation(request.args.items(multi=True)), mimetype="application/json")
+        except LogQueryError as error:
+            return jsonify(code=error.code, error=str(error)), error.status
+
+    @app.get("/api/agents/health")
+    def collection_health():
+        if set(request.args) - {"cursor"} or len(request.args.getlist("cursor")) > 1:
+            return jsonify(error="지원하지 않는 조회 조건입니다."), 400
+        after = decode_cursor(request.args.get("cursor"))
+        if monitor is None:
+            return jsonify(error="수집 품질 조회 계정이 준비되지 않았습니다."), 503
+        try:
+            return app.response_class(health_snapshot(monitor, after), mimetype="application/json")
+        except Exception:
+            return jsonify(error="수집 품질 보고를 조회하지 못했습니다. 권한·매핑·보고 형식을 확인하세요."), 503
+
+    @app.get("/api/logs")
+    def logs():
+        return log_response(log_reader.page)
+
+    @app.get("/api/logs/detail")
+    def log_detail():
+        return log_response(log_reader.detail)
+
+    @app.get("/api/operations")
+    def operations_summary():
+        return log_response(operations.summary)
+
+    @app.get("/api/alerts/detail")
+    def alert_detail():
+        return log_response(operations.detail)
 
     @app.post("/api/packages")
     def create_package():
@@ -206,14 +246,15 @@ def create_app(settings=None, *, issuer=None, monitor=None):
 
     @app.get("/")
     def index():
-        return send_from_directory(PROJECT / "prototype", "agents.html")
+        return send_from_directory(PROJECT / "prototype", "index.html")
 
     @app.get("/<path:filename>")
     def static_file(filename):
         # Never serve the repo, secrets, SQLite, source code, or arbitrary uploads.
         allowed = {"agents.html", "agents.js", "agents.css", "styles.css", "assets/mark.svg",
                    "agent-status.html", "agent-status.js", "agent-status.css",
-                   "index.html", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css"}
+                   "collection-health.html", "collection-health.js",
+                   "index.html", "operations.js", "operations.css", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css"}
         if filename not in allowed:
             abort(404)
         return send_from_directory(PROJECT / "prototype", filename)

@@ -44,7 +44,9 @@ function assertSafe(c, platform) {
     assert.equal(protocol.send_response, false);
   }
   assert.equal(c['packetbeat.protocols'][1].include_raw_certificates, false);
-  const fields = c.processors.at(-1).include_fields.fields;
+  const fields = c.processors.find(p => p.include_fields).include_fields.fields;
+  assert.equal(c.processors.at(-2).script.file, 'privacy.js');
+  assert.equal(c.processors.at(-1).drop_event.when.contains.tags, '_privacy_error');
   for (const required of ['source.ip', 'destination.ip', 'flow.final', 'dns.question.name', 'tls.client.server_name', 'organization.id']) assert.ok(fields.includes(required));
   assert.ok(!fields.some(f => /^(message|http|url|request|response|event.original|dns.answers|tls.detailed)(\.|$)/.test(f)));
 }
@@ -105,12 +107,12 @@ test('Network publisher and mapped metadata do not expand host-log permissions',
   const role = read('network-publisher-role.json');
   assert.deepEqual(role.cluster, ['monitor']);
   assert.deepEqual(role.indices, [{ names: ['soc-network-*'], privileges: ['auto_configure', 'create_doc'] }]);
-  assert.deepEqual(read('publisher-role.json').indices[0].names, ['soc-host-raw-*']);
+  assert.deepEqual(read('publisher-role.json').indices[0].names, ['soc-host-raw-*', 'soc-agent-health-*']);
   const template = read('network-index-template.json');
   assert.deepEqual(template.index_patterns, ['soc-network-*']);
   const props = template.template.mappings.properties;
   assert.equal(template.template.mappings.dynamic, false);
-  for (const field of read('packetbeat.base.json').processors.at(-1).include_fields.fields) {
+  for (const field of read('packetbeat.base.json').processors.find(p => p.include_fields).include_fields.fields) {
     let entry = { properties: props };
     for (const part of field.split('.')) entry = entry?.properties?.[part];
     assert.ok(entry, `Unmapped allowed field: ${field}`);

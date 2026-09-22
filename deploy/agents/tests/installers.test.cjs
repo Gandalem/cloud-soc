@@ -195,6 +195,32 @@ test('Linux failed enumeration does not silently publish a partial inventory', (
   assert.match(result.stderr, /Discovery failed/);
 });
 
+test('Linux refresh publishes policy-aware bounded health without source paths', () => fixture(dir => {
+  mkdirSync(path.join(dir, 'agent', 'inputs'), {recursive: true});
+  mkdirSync(path.join(dir, 'logs'));
+  writeFileSync(path.join(dir, 'logs', 'app.log'), 'synthetic only\n');
+  const script = `source ./discover-linux.sh
+r=$TEST_ROOT
+command -v cygpath >/dev/null && r=$(cygpath -u "$r")
+# Git Bash cannot provide Linux advisory locks; this fixture checks rendering only.
+if [[ $OSTYPE == msys* ]]; then flock() { return 0; }; fi
+printf 'version=3\\nroot=%s/logs\\nexclude=%s/logs/app.log\\n' "$r" "$r" > "$r/agent/collection-policy.txt"
+refresh_linux_inputs "$r/agent"
+`;
+  const result = run(bash, ['-c', script], {TEST_ROOT: dir});
+  assert.equal(result.status, 0, result.stderr);
+  const summary = JSON.parse(readFileSync(path.join(dir, 'agent', 'health.ndjson'), 'utf8'));
+  assert.equal(summary.policy_version, 3);
+  assert.equal(summary.selected, 0);
+  assert.equal(summary.excluded, 1);
+  assert.equal(summary.sources[0].status, 'policy_excluded');
+  assert.match(summary.sources[0].id, /^[a-f0-9]{64}$/);
+  assert.ok(!JSON.stringify(summary).includes('app.log'));
+  assert.equal(summary.queue_state, 'unknown');
+  const input = JSON.parse(readFileSync(path.join(dir, 'agent', 'inputs', 'health.yml'), 'utf8'));
+  assert.equal(input[0].parsers[0].ndjson.target, 'cloud_soc.discovery');
+}));
+
 test('Windows discovery isolates disabled/direct channels and finds file logs', { skip: !windows }, () => {
   const result = run(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-File', 'tests/windows-discovery.ps1']);
   assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -218,7 +244,7 @@ test('Central index template and publisher role are limited to the isolated inta
   assert.equal(template.template.mappings.properties['@timestamp'].type, 'date');
   const role = JSON.parse(readFileSync(path.join(root, 'publisher-role.json'), 'utf8'));
   assert.deepEqual(role.cluster, ['monitor']);
-  assert.deepEqual(role.indices[0].names, ['soc-host-raw-*']);
+  assert.deepEqual(role.indices[0].names, ['soc-host-raw-*', 'soc-agent-health-*']);
   assert.deepEqual(role.indices[0].privileges, ['auto_configure', 'create_doc']);
 });
 

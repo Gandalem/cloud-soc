@@ -15,8 +15,8 @@ import zipfile
 
 VERSION = "9.5.2"
 FILES = {
-    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1"],
-    "ubuntu": ["install-ubuntu.sh", "discover-linux.sh"],
+    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "privacy.js", "policy.py"],
+    "ubuntu": ["install-ubuntu.sh", "discover-linux.sh", "privacy.js", "policy.py"],
 }
 NETWORK_FILES = {
     "windows": ["install-network-windows.ps1", "packetbeat.base.json"],

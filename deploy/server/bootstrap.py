@@ -6,6 +6,7 @@ from pathlib import Path
 
 from elasticsearch import Elasticsearch
 from cloud_soc.portal.status_setup import SetupConflict, inspect_existing, install_receipt_pipeline, configure_template, configure_reader
+from cloud_soc.processing.setup import prepare as prepare_processing
 
 
 def main():
@@ -20,19 +21,30 @@ def main():
         install_receipt_pipeline(client, existing)
         client.security.change_password(username="kibana_system", password=secret("kibana_password"))
         client.security.put_role(name="cloud_soc_issuer", cluster=["monitor", "manage_own_api_key"],
-                                 indices=[{"names": ["soc-host-raw-*", "soc-network-*"], "privileges": ["auto_configure", "create_doc"]}])
+                                 indices=[{"names": ["soc-host-raw-*", "soc-network-*", "soc-agent-health-*"], "privileges": ["auto_configure", "create_doc"]}])
         client.security.put_user(username="cloud_soc_issuer", password=secret("issuer_password"), roles=["cloud_soc_issuer"])
         client.security.put_role(name="cloud_soc_reader", cluster=["monitor"], indices=[{
-            "names": ["soc-host-raw-*", "soc-network-*", "raw-logs-*", "normalized-events", "security-alerts"],
+            "names": ["soc-host-raw-*", "soc-network-*", "soc-cloud-aws-*", "soc-cloud-oci-*", "raw-logs-*", "normalized-events", "security-alerts"],
             "privileges": ["read", "view_index_metadata"],
         }])
         client.security.put_user(username="cloud_soc_analyst", password=secret("analyst_password"), roles=["cloud_soc_reader", "kibana_admin"])
-        for name, filename in [("cloud-soc-host", "index-template.json"), ("cloud-soc-network", "network-index-template.json")]:
+        for name, filename in [("cloud-soc-host", "index-template.json"), ("cloud-soc-network", "network-index-template.json"), ("cloud-soc-health", "health-index-template.json")]:
             template = json.loads((Path("/app/deploy/agents") / filename).read_text(encoding="utf-8"))
             template["template"]["settings"]["number_of_replicas"] = 0
             client.indices.put_index_template(name=name, body=configure_template(template))
         configure_reader(client, monitor_password)
-        print("Central users, intake templates and server receipt pipeline prepared. Existing documents were not rewritten; no rules, retention or agent services changed.")
+        prepare_processing(client)
+        cloud_template = json.loads(Path("/app/deploy/aws/index-template.json").read_text(encoding="utf-8"))
+        cloud_template["template"]["settings"]["number_of_replicas"] = 0
+        client.indices.put_index_template(name="cloud-soc-aws", body=configure_template(cloud_template))
+        cloud_role = json.loads(Path("/app/deploy/aws/publisher-role.json").read_text(encoding="utf-8"))
+        client.security.put_role(name="cloud_soc_cloudtrail_writer", **cloud_role)
+        oci_template = json.loads(Path("/app/deploy/oci/index-template.json").read_text(encoding="utf-8"))
+        oci_template["template"]["settings"]["number_of_replicas"] = 0
+        client.indices.put_index_template(name="cloud-soc-oci", body=configure_template(oci_template))
+        oci_role = json.loads(Path("/app/deploy/oci/publisher-role.json").read_text(encoding="utf-8"))
+        client.security.put_role(name="cloud_soc_oci_audit_writer", **oci_role)
+        print("Central users, intake templates, receipt pipeline and normalization indices/role prepared. Existing documents were not rewritten; no rules, retention or agent services changed. Normalizer not started.")
 
 
 if __name__ == "__main__":

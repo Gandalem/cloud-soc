@@ -52,7 +52,9 @@
       "flow.id", "flow.final", "flow.vlan",
       "dns.id", "dns.type", "dns.op_code", "dns.response_code", "dns.question.name", "dns.question.type", "dns.question.class", "dns.resolved_ip",
       "tls.version", "tls.version_protocol", "tls.cipher", "tls.established", "tls.resumed", "tls.client.server_name"
-    ]}}
+    ]}},
+    {"script": {"lang": "javascript", "file": "privacy.js", "timeout": "50ms", "tag_on_exception": "_privacy_error"}},
+    {"drop_event": {"when": {"contains": {"tags": "_privacy_error"}}}}
   ],
   "output.elasticsearch": {
     "hosts": ["__ENDPOINT__"],

@@ -1,0 +1,18 @@
+{
+  "index_patterns": ["soc-agent-health-*"],
+  "priority": 220,
+  "template": {
+    "settings": {"number_of_shards": 1, "number_of_replicas": 0},
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "@timestamp": {"type": "date"},
+        "event": {"properties": {"ingested": {"type": "date"}}},
+        "organization": {"properties": {"id": {"type": "keyword"}}},
+        "agent": {"properties": {"id": {"type": "keyword"}, "type": {"type": "keyword"}}},
+        "host": {"properties": {"name": {"type": "keyword"}}},
+        "cloud_soc": {"properties": {"discovery": {"type": "object", "enabled": false}}}
+      }
+    }
+  }
+}

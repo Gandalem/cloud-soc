@@ -57,6 +57,16 @@ try {
     Update-SourceDiscovery -Root $root -LogRoots @($logs) -RequiredChannels @('Security')
     $updated = Get-Content -LiteralPath (Join-Path $root 'inputs\discovered.yml') -Raw | ConvertFrom-Json
     Assert-True (@(($updated | Where-Object type -eq filestream).paths).Count -eq 4) 'Atomic replacement did not publish the new file'
+    Write-DiscoveryFile (Join-Path $root 'collection-policy.txt') ("version=1`nroot=$logs`nexclude=$logs`n")
+    Update-SourceDiscovery -Root $root -LogRoots @($logs) -RequiredChannels @('Security')
+    $limited = Get-Content -LiteralPath (Join-Path $root 'inputs\discovered.yml') -Raw | ConvertFrom-Json
+    Assert-True (@($limited | Where-Object type -eq filestream).Count -eq 0) 'Policy exclusions were ignored'
+    $health = (Get-Content -LiteralPath (Join-Path $root 'health.ndjson') | Select-Object -Last 1) | ConvertFrom-Json
+    Assert-True ($health.policy_version -eq 1) 'Policy version not reported'
+    Assert-True ($health.sources[0].id -match '^[a-f0-9]{64}$') 'Source identity was not hashed'
+    Assert-True (($health | ConvertTo-Json -Depth 8) -notmatch [Regex]::Escape($logs)) 'Source path leaked to report spool'
+    Assert-True ($health.queue_state -eq 'unknown') 'Queue incorrectly reported as measured'
+    Assert-True (Test-Path -LiteralPath (Join-Path $root 'inputs\health.yml')) 'Health input not written'
     $before = [IO.File]::ReadAllText((Join-Path $root 'inputs\discovered.yml'))
     function Get-WinEvent { param($ListLog, [switch]$Force, $ErrorAction, $ErrorVariable) @() }
     $failed = $false

@@ -1,56 +1,32 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark light">
-  <meta name="description" content="Cloud SOC A단계 정적 화면 프로토타입. 데모 데이터만 사용하며 백엔드 연결은 없습니다.">
-  <title>관제 현황 | Cloud SOC 프로토타입</title>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>관제 현황 | Cloud SOC</title>
   <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css">
-  <script src="demo-data.js" defer></script>
-  <script src="app.js" defer></script>
+  <link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css"><link rel="stylesheet" href="operations.css">
+  <script src="operations.js" defer></script>
 </head>
-<body data-page="mission">
+<body class="agents-page">
   <a class="skip-link" href="#main">본문으로 이동</a>
-  <div id="app-shell"></div>
-  <main id="main" class="main-content" tabindex="-1">
-    <div class="page-heading"><div><p class="eyebrow">보안 관제 업무 공간</p><h1>관제 현황</h1></div><p class="page-description">지금 어떤 일을 봐야 하는가?</p></div>
-    <section class="confidence panel" aria-label="데모 데이터 신뢰도" id="confidence"></section>
-    <section class="kpi-grid" aria-label="데모 사건 집계" id="kpis"></section>
-    <section class="queue panel" aria-labelledby="queue-heading">
-      <div class="queue-heading"><h2 id="queue-heading">분석 업무 목록</h2><span class="micro-label">데모 데이터 · 실제 보안 이벤트 아님</span></div>
-      <div class="tab-list queue-tabs" role="tablist" aria-label="업무 유형">
-        <button id="tab-incidents" role="tab" aria-selected="true" aria-controls="queue-panel" data-queue-tab="incidents">사건 <span id="incidents-count"></span></button>
-        <button id="tab-alerts" role="tab" aria-selected="false" aria-controls="queue-panel" tabindex="-1" data-queue-tab="alerts">미분류 경보 <span id="alerts-count"></span></button>
-      </div>
-      <div class="filter-bar">
-        <label class="search-field"><span data-icon="search"></span><input id="queue-search" type="search" placeholder="사건 검색..." aria-label="업무 검색"></label>
-        <label class="sr-only" for="priority-filter">중요도 필터</label><select id="priority-filter"><option value="all">전체 중요도</option><option value="Critical">긴급</option><option value="High">높음</option><option value="Medium">보통</option><option value="Low">낮음</option></select>
-        <label class="sr-only" for="status-filter">상태 필터</label><select id="status-filter"><option value="all">전체 상태</option><option value="New">신규</option><option value="Investigating">조사 중</option><option value="Triage">초기 분류</option><option value="Escalated">상위 이관</option><option value="Closed">종결</option></select>
-        <label class="sr-only" for="time-filter">기간 필터</label><select id="time-filter"><option value="all">전체 기간</option><option value="60">최근 1시간</option><option value="1440">최근 24시간</option></select>
-        <button class="icon-button" id="refresh-demo" aria-label="데모 화면 새로고침" title="데모 화면만 다시 표시"><span data-icon="refresh"></span></button>
-        <button class="quiet-button" id="more-filters" aria-expanded="false" aria-controls="extra-filters"><span data-icon="filter"></span>추가 필터</button>
-      </div>
-      <div id="extra-filters" class="extra-filters" hidden>
-        <label>담당자<select id="owner-filter"><option value="all">전체 담당자</option><option value="unassigned">미배정</option><option value="analyst01">분석가 01</option><option value="analyst02">분석가 02</option></select></label>
-        <label>분야<select id="domain-filter"><option value="all">전체 분야</option><option value="Authentication">인증</option><option value="Cloud">클라우드</option><option value="Host">호스트</option></select></label>
-        <button class="quiet-button" id="clear-filters">필터 초기화</button>
-      </div>
-      <div id="queue-panel" role="tabpanel" aria-labelledby="tab-incidents" tabindex="0">
-        <div class="table-scroll" id="queue-table-wrap"><table class="queue-table"><caption class="sr-only">데모 분석 업무 목록. 항목을 선택하면 해당 조사 화면이 열립니다.</caption><thead><tr><th>중요도</th><th id="queue-title-column">사건</th><th>조사 이유</th><th>상태</th><th>관련 대상</th><th>담당자</th><th>경과</th><th><span class="sr-only">열기</span></th></tr></thead><tbody id="queue-rows"></tbody></table></div>
-        <div id="queue-state" hidden></div>
-      </div>
-      <div class="queue-footer"><span id="queue-result" role="status"></span><span>중요도 우선 · 오래된 업무 우선 <span class="divider">|</span> 경과: 데모 기준 시각</span></div>
-    </section>
-    <section class="context-grid" aria-label="데모 참고 차트">
-      <article class="panel chart-card"><div class="panel-title"><h2>경보 추이 <span>(최근 24시간)</span></h2><span class="micro-label">데모 시각화</span></div><div id="trend-chart" class="chart-body"></div></article>
-      <article class="panel chart-card"><div class="panel-title"><h2>주요 탐지 규칙</h2><span class="micro-label">데모 시각화</span></div><div id="rule-chart" class="chart-body"></div></article>
-      <article class="panel chart-card"><div class="panel-title"><h2>주요 출발지 IP</h2><span class="micro-label">데모 시각화</span></div><div id="ip-chart" class="chart-body"></div></article>
-    </section>
-    <footer class="page-footer"><span>Cloud SOC Mini SIEM <span class="divider">/</span> A-2단계</span><span>화면 검토용 샘플 · 수집, 탐지, 조회 API 미연결</span></footer>
+  <header class="app-header"><a class="brand" href="index.html"><img src="assets/mark.svg" alt="">Cloud SOC</a><span class="workspace-label">관제 현황</span><span class="header-context">관리자 전용 · 실제 데이터</span></header>
+  <aside class="sidebar" aria-label="업무 메뉴"><p class="nav-caption">SECURITY OPERATIONS</p><nav>
+    <a class="nav-item active" href="index.html" aria-current="page">관제 현황</a><a class="nav-item" href="logs.html">통합 로그</a>
+    <a class="nav-item" href="collection-health.html">수집 품질</a><a class="nav-item" href="agent-status.html">에이전트 접속 현황</a>
+    <a class="nav-item" href="agents.html">에이전트 설치 파일</a><a class="nav-item" href="workbench.html">사건 조사 <small>데모</small></a>
+  </nav><div class="sidebar-footer"><strong>Cloud SOC Mini SIEM</strong>원본 기록 → 정규화 → 근거 조회<br>신규 탐지 규칙은 승인 대기</div></aside>
+  <main id="main" class="main-content agents-main operations-main">
+    <nav class="ops-mobile" aria-label="페이지 이동"><a href="logs.html">통합 로그</a><a href="collection-health.html">수집 품질</a><a href="agents.html">설치 파일</a></nav>
+    <div class="page-heading"><div><p class="eyebrow">MISSION CONTROL</p><h1>관제 현황</h1><p class="subheading">수신된 기록과 처리 상태를 확인하고, 저장된 경보의 근거를 조회합니다.</p></div></div>
+    <form id="ops-filter" class="panel ops-toolbar"><label>조회 기간 <select id="ops-period"><option value="60">최근 1시간</option><option value="1440">최근 24시간</option><option value="10080">최근 7일</option></select></label><button class="primary-button" type="submit">새로고침</button><span id="ops-range" role="status">조회 중</span></form>
+    <p id="ops-error" role="alert" hidden></p>
+    <section class="panel ops-notice"><h2>탐지 규칙 승인 대기</h2><p>신규 처리기는 정규화만 수행합니다. 아래 경보는 실제 저장된 기존 경보이며, 0건을 안전 판정으로 해석하지 않습니다. 사건·담당자·조사 메모 저장은 아직 지원하지 않습니다.</p><p id="ops-pipeline">처리기 상태 조회 중</p></section>
+    <section id="ops-metrics" class="ops-metrics" aria-label="실제 데이터 지표"></section>
+    <section class="ops-charts" aria-label="기간별 추이"><article class="panel"><h2>수신량 추이</h2><p>서버 수신 시각 기준 · 로그 문서 수</p><div id="ops-intake-chart"></div></article><article class="panel"><h2>저장된 경보 추이</h2><p>경보 시각 기준 · 공격 횟수가 아닙니다</p><div id="ops-alert-chart"></div></article></section>
+    <section class="panel ops-alerts"><h2>실제 경보 목록</h2><p id="ops-alert-state">조회 중</p><div class="table-scroll" tabindex="0" aria-label="경보 표"><table><thead><tr><th>경보 시각 (KST)</th><th>심각도</th><th>규칙</th><th>경보</th><th>조직</th><th>근거</th></tr></thead><tbody id="ops-alert-rows"></tbody></table></div></section>
+    <p class="scope-note">지표는 동일한 시작·종료 구간(종료 미포함)을 사용합니다. 수신량과 처리 결과는 수신 시각, 경보는 경보 시각 기준입니다. 처리기는 수신 시각이 없는 과거 문서를 자동 보정하지 않습니다. 수집 품질 보고 건수는 정상 호스트 수가 아닙니다.</p>
   </main>
-  <noscript><p class="noscript">이 정적 프로토타입의 탭과 데모 표시는 JavaScript가 필요합니다. 백엔드 연결은 없습니다.</p></noscript>
-</body>
-</html>
+  <dialog id="ops-detail" aria-labelledby="ops-detail-title"><div class="ops-dialog-heading"><h2 id="ops-detail-title">경보와 정확한 근거</h2><button id="ops-detail-close" type="button">닫기</button></div><p id="ops-detail-state" role="status"></p><div id="ops-detail-content"></div></dialog>
+  <noscript>관제 조회에는 JavaScript가 필요합니다. 샘플 데이터로 대체하지 않습니다.</noscript>
+</body></html>

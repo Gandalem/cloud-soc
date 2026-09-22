@@ -1,0 +1,2 @@
+-r ../../requirements.txt
+oci==2.186.0

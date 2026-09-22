@@ -1,0 +1,29 @@
+{
+  "description": "Synthetic management events only; reserved account/IP, no real AWS data.",
+  "events": [
+    {
+      "eventVersion": "1.11", "eventID": "11111111-2222-3333-4444-000000000001",
+      "eventTime": "2026-09-22T01:10:00Z", "eventSource": "signin.amazonaws.com", "eventName": "ConsoleLogin",
+      "awsRegion": "us-east-1", "recipientAccountId": "123456789012", "managementEvent": true, "eventCategory": "Management",
+      "userIdentity": {"type": "IAMUser", "principalId": "SYNTHETIC-USER", "arn": "arn:aws:iam::123456789012:user/fixture", "accountId": "123456789012", "userName": "fixture", "accessKeyId": "PRIVATE_CANARY"},
+      "sourceIPAddress": "198.51.100.10", "responseElements": {"ConsoleLogin": "Failure"},
+      "errorMessage": "PRIVATE_CANARY", "additionalEventData": {"LoginTo": "https://example.test/?token=PRIVATE_CANARY"}
+    },
+    {
+      "eventVersion": "1.11", "eventID": "11111111-2222-3333-4444-000000000002",
+      "eventTime": "2026-09-22T01:20:00Z", "eventSource": "iam.amazonaws.com", "eventName": "AttachUserPolicy",
+      "awsRegion": "us-east-1", "recipientAccountId": "123456789012", "managementEvent": true, "eventCategory": "Management", "readOnly": false,
+      "userIdentity": {"type": "AssumedRole", "principalId": "FIXTURE:session", "arn": "arn:aws:sts::123456789012:assumed-role/fixture/session", "accountId": "123456789012", "sessionContext": {"sessionIssuer": {"arn": "arn:aws:iam::123456789012:role/fixture"}}},
+      "sourceIPAddress": "198.51.100.11", "requestParameters": {"userName": "target-fixture", "policyDocument": "PRIVATE_CANARY"},
+      "resources": [{"ARN": "arn:aws:iam::123456789012:user/target-fixture", "type": "AWS::IAM::User", "accountId": "123456789012", "unknownSecret": "PRIVATE_CANARY"}]
+    },
+    {
+      "eventVersion": "1.11", "eventID": "11111111-2222-3333-4444-000000000003",
+      "eventTime": "2026-09-22T01:30:00Z", "eventSource": "ec2.amazonaws.com", "eventName": "AuthorizeSecurityGroupIngress",
+      "awsRegion": "ap-northeast-1", "recipientAccountId": "123456789012", "managementEvent": true, "eventCategory": "Management",
+      "userIdentity": {"type": "AWSService", "invokedBy": "fixture.amazonaws.com"},
+      "sourceIPAddress": "fixture.amazonaws.com", "requestParameters": {"groupId": "sg-0123456789abcdef0", "userData": "PRIVATE_CANARY"},
+      "errorCode": "Client.UnauthorizedOperation", "errorMessage": "PRIVATE_CANARY"
+    }
+  ]
+}

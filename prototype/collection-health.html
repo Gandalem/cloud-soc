@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>수집 품질 | Cloud SOC</title>
+  <link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css"><link rel="stylesheet" href="agent-status.css">
+  <script src="collection-health.js" defer></script>
+</head>
+<body class="agents-page status-page">
+  <a class="skip-link" href="#main">본문으로 이동</a>
+  <header class="app-header"><a class="brand" href="agents.html"><img src="assets/mark.svg" alt="">Cloud SOC</a><span class="workspace-label">중앙 관리 서버</span><span class="header-context">관리자 전용 · 실제 보고 데이터</span></header>
+  <aside class="sidebar" aria-label="설정 메뉴"><p class="nav-caption">SETTINGS</p><nav><a class="nav-item" href="agents.html">에이전트 설치 파일</a><a class="nav-item" href="agent-status.html">에이전트 접속 현황</a><a class="nav-item" href="logs.html">통합 로그</a><a class="nav-item active" href="collection-health.html" aria-current="page">수집 품질</a></nav></aside>
+  <main id="main" class="main-content agents-main">
+    <nav class="status-mobile-nav" aria-label="에이전트 페이지"><a href="agents.html">설치 파일</a><a href="agent-status.html">접속 현황</a><a href="logs.html">통합 로그</a></nav>
+    <div class="page-heading"><div><p class="eyebrow">COLLECTION QUALITY</p><h1>수집 품질</h1><p class="subheading">로그 탐색 결과와 마지막 보고 수신 시각을 확인합니다.</p></div><button id="refresh" class="primary-button">새로고침</button></div>
+    <section class="status-explainer panel"><div><h2>선택된 소스는 수신 성공을 뜻하지 않습니다.</h2><p>최근 30일의 에이전트 자체 보고입니다. Linux 집계는 파일 탐색 범위이며 journald 접근 상태는 포함하지 않습니다. Windows는 이벤트 채널과 파일·디렉터리를 포함합니다. 큐와 전송 오류는 아직 미측정입니다.</p><p>이전 에이전트는 보고하지 않습니다. 서버 업데이트와 새 수집 키·에이전트 설정 반영이 필요합니다. 이름·경로 대신 SHA-256 소스 ID를 표시합니다.</p></div></section>
+    <p id="query-state" role="status">조회 준비</p>
+    <section class="package-panel panel"><div class="package-table-scroll"><table class="package-table activity-table"><thead><tr><th>호스트 / 조직</th><th>보고 상태</th><th>선택 / 제외 / 오류</th><th>생성 / 서버 수신</th><th>지연 / 정책 버전</th><th>소스별 결과</th></tr></thead><tbody id="health-rows"></tbody></table></div>
+    <div class="package-pagination"><button id="next" disabled>다음 50개</button><span>처음부터 보려면 새로고침</span></div></section>
+    <section class="activity-notes"><h2>판단 범위</h2><p>5분 초과 미수신은 보고 지연으로 표시하며 오프라인으로 단정하지 않습니다. 소스가 많으면 첫 200개만 보고합니다. 경로 원본은 해당 서버의 discovery-report.json에서 확인하세요. 해시는 익명화 보장이 아닙니다.</p><p>인증된 수집 키로 전송되지만 호스트 신원 증명이나 무결성 증명은 아닙니다. 별도 상태 인덱스를 사용하므로 통합 로그와 접속 현황의 로그 건수를 늘리지 않습니다.</p></section>
+  </main>
+</body>
+</html>

@@ -10,6 +10,7 @@ $fixture = Join-Path $root 'fixtures\test.log'
 $marker = 'CLOUD_SOC_SYNTHETIC_DISCOVERY_TEST'
 [IO.File]::WriteAllText($fixture, ($marker + "`n"), (New-Object Text.UTF8Encoding($false)))
 [IO.File]::WriteAllText((Join-Path $root 'fixtures\unicode.log'), ($marker + "_UTF16`n"), [Text.Encoding]::Unicode)
+[IO.File]::WriteAllText((Join-Path $root 'fixtures\privacy.log'), "password=PRIVATE_SMOKE_CANARY`n", (New-Object Text.UTF8Encoding($false)))
 function Get-WinEvent {
     param($ListLog, [switch]$Force, $ErrorAction, $ErrorVariable)
     [pscustomobject]@{ LogName = 'Cloud-SOC-Synthetic-Nonexistent-Channel'; IsEnabled = $true; LogType = 'Operational' }
@@ -23,6 +24,11 @@ $configuration = @{
     'logging.level' = 'info'
     'setup.ilm.enabled' = $false
     'setup.template.enabled' = $false
+    'queue.disk' = @{ max_size = '1GB' }
+    processors = @(
+        @{ script = @{ lang = 'javascript'; file = (Join-Path $PSScriptRoot '../privacy.js'); timeout = '50ms'; tag_on_exception = '_privacy_error' } },
+        @{ drop_event = @{ when = @{ contains = @{ tags = '_privacy_error' } } } }
+    )
 }
 $configPath = Join-Path $root 'filebeat.yml'
 Write-DiscoveryFile $configPath ($configuration | ConvertTo-Json -Depth 12)
@@ -50,11 +56,15 @@ try {
     $stdout = $stdoutTask.GetAwaiter().GetResult()
     $stderr = $stderrTask.GetAwaiter().GetResult()
     if ($stderr -match 'No such input type|unknown input type|Error creating input') { [Console]::Error.WriteLine($stderr); throw 'Native input construction failed' }
-    $messages = @($stdout -split '\r?\n' | Where-Object { $_ } | ForEach-Object { ($_ | ConvertFrom-Json).message })
+    $events = @($stdout -split '\r?\n' | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
+    $messages = @($events | Where-Object { $_.PSObject.Properties.Name -contains 'message' } | ForEach-Object { $_.message })
     foreach ($expected in @($marker, ($marker + '_NEW'), ($marker + '_UTF16'))) {
         if ($expected -notin $messages) { throw "Synthetic log was not collected: $expected" }
     }
     if ($stderr -notmatch 'winlog') { throw 'Winlog input was not attempted by the actual binary' }
+    if ($stdout -match 'PRIVATE_SMOKE_CANARY' -or '[REDACTED]' -notin $messages) { throw 'Privacy processing failed in native Beat.' }
+    $reports = @($events | Where-Object { $_.PSObject.Properties.Name -contains 'cloud_soc' })
+    if (-not $reports.Count -or $reports[0].cloud_soc.discovery.schema -ne 1) { throw 'Health NDJSON was not parsed by native Beat.' }
     Write-Output 'Native Filebeat smoke test passed: synthetic files and live reload; nonexistent event channel; no network output.'
 } finally {
     if ($processStarted -and -not $process.HasExited) { $process.Kill(); $process.WaitForExit() }

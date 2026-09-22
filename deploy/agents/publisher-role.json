@@ -2,7 +2,7 @@
   "cluster": ["monitor"],
   "indices": [
     {
-      "names": ["soc-host-raw-*"],
+      "names": ["soc-host-raw-*", "soc-agent-health-*"],
       "privileges": ["auto_configure", "create_doc"]
     }
   ]

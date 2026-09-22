@@ -2,6 +2,8 @@
 
 from cloud_soc.portal.agent_status import INDICES
 
+SETUP_INDICES = INDICES + ",soc-agent-health-*,soc-cloud-aws-*,soc-cloud-oci-*"
+
 PIPELINE_ID = "cloud-soc-received-at-v1"
 PIPELINE = {"description": "Server receipt time for collector activity; not a heartbeat",
             "processors": [{"set": {"field": "event.ingested", "value": "{{{_ingest.timestamp}}}", "override": True}}]}
@@ -15,12 +17,12 @@ class SetupConflict(RuntimeError):
 def inspect_existing(client):
     # Filtering by final_pipeline omits indices that have never set it. Those
     # legacy indices are precisely the ones that need the receipt-time migration.
-    settings = client.indices.get_settings(index=INDICES, flat_settings=True,
+    settings = client.indices.get_settings(index=SETUP_INDICES, flat_settings=True,
                                           ignore_unavailable=True, allow_no_indices=True, expand_wildcards="open")
-    mappings = client.indices.get_mapping(index=INDICES, ignore_unavailable=True,
+    mappings = client.indices.get_mapping(index=SETUP_INDICES, ignore_unavailable=True,
                                          allow_no_indices=True, expand_wildcards="open") if settings else {}
     for name, entry in settings.items():
-        if not name.startswith(("soc-host-raw-", "soc-network-")):
+        if not name.startswith(("soc-host-raw-", "soc-network-", "soc-agent-health-", "soc-cloud-aws-", "soc-cloud-oci-")):
             raise SetupConflict("Unexpected intake index; no automatic migration")
         if entry.get("settings", {}).get("index.final_pipeline", "_none") not in ("_none", PIPELINE_ID):
             raise SetupConflict("Existing final pipeline requires manual review; not overwritten")
@@ -46,6 +48,8 @@ def configure_template(template):
 
 def configure_reader(client, password):
     client.security.put_role(name="cloud_soc_agent_monitor", cluster=[], indices=[{
-        "names": INDICES.split(","), "privileges": ["read", "view_index_metadata"],
+        "names": INDICES.split(",") + ["soc-agent-health-*", "soc-cloud-aws-*", "soc-cloud-oci-*",
+                  "soc-normalized-v1", "soc-processing-v1", "soc-pipeline-status", "security-alerts", "normalized-events", "raw-logs-*"],
+        "privileges": ["read", "view_index_metadata"],
     }])
     client.security.put_user(username="cloud_soc_agent_monitor", password=password, roles=["cloud_soc_agent_monitor"])

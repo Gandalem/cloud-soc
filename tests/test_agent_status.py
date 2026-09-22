@@ -152,7 +152,9 @@ class SetupTests(unittest.TestCase):
         configure_reader(client, "synthetic-password")
         role = client.security.put_role.call_args.kwargs
         self.assertEqual(role["cluster"], [])
-        self.assertEqual(role["indices"], [{"names": INDICES.split(","), "privileges": ["read", "view_index_metadata"]}])
+        self.assertEqual(role["indices"], [{"names": INDICES.split(",") + ["soc-agent-health-*", "soc-cloud-aws-*", "soc-cloud-oci-*",
+            "soc-normalized-v1", "soc-processing-v1", "soc-pipeline-status", "security-alerts", "normalized-events", "raw-logs-*"],
+            "privileges": ["read", "view_index_metadata"]}])
         self.assertEqual(client.security.put_user.call_args.kwargs["roles"], ["cloud_soc_agent_monitor"])
 
     def test_compose_only_mounts_reader_secret_into_bootstrap_and_portal(self):

@@ -4,6 +4,7 @@ import base64
 from datetime import datetime, timedelta, timezone
 import ipaddress
 import json
+from cloud_soc.portal.privacy import display, sensitive
 
 
 INDICES = "soc-host-raw-*,soc-network-*"
@@ -64,11 +65,13 @@ def decode_cursor(value):
 
 
 def encode_cursor(key):
+    if isinstance(key, dict) and any(sensitive(value) for value in key.values()):
+        raise ValueError("Unsafe pagination identity")
     return base64.urlsafe_b64encode(json.dumps(key, ensure_ascii=True).encode()).decode().rstrip("=")
 
 
 def text(value):
-    return value[:512] if isinstance(value, str) else None
+    return display(value)
 
 
 def object_field(value, name):
