@@ -78,6 +78,8 @@ sudo docker compose --env-file state/server/compose.env -f deploy/server/compose
 
 ### 백업·복구
 
+포털 사건/메모와 설치 패키지/발급 이력은 [포털 SQLite 백업·격리 복원](portal_backup.md) 도구를 추가했습니다. 기존 경로를 덮어쓰지 않으며 표준 라이브러리만 사용합니다. ES 스냅샷·CA/비밀 파일·에이전트 큐 백업과 운영 복구는 이 도구의 범위 밖입니다.
+
 격리 테스트는 임시 ES에서 30일 ILM 제안 정책을 쓰고, 90일 된 합성 인덱스 삭제·새 인덱스 유지·스냅샷의 다른 이름 복구를 검사합니다. 운영 서버에 이 정책이나 테스트 저장소를 복사하지 않습니다.
 
 운영 백업 저장소는 아직 구성하지 않았습니다. 먼저 별도 디스크/S3 등 목적지·암호화·접근 주체·보존 기간·비용을 승인하고 구성해야 합니다. 공유 파일 저장소는 모든 관련 노드의 마운트와 `path.repo` 설정이 필요합니다. [Elastic 파일 시스템 저장소 문서](https://www.elastic.co/docs/deploy-manage/tools/snapshot-and-restore/shared-file-system-repository).

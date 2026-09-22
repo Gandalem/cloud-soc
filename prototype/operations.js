@@ -73,6 +73,9 @@
       if (version !== detailGeneration) return;
       $("ops-detail-state").textContent = data.evidence_count ? "저장된 근거 " + data.evidence_count + "건 · 최대 100건 개별 확인" : "과거 경보에 정확한 근거 참조가 없습니다. 주변 로그로 대체하지 않습니다.";
       const condition = data.condition;
+      const investigate = node("a", "사건 조사 / 등록");
+      investigate.href = "workbench.html?" + new URLSearchParams({alert: id, return: (window.location?.search || "").slice(1)});
+      $("ops-detail-content").append(investigate);
       $("ops-detail-content").append(node("p", (data.alert.title || data.alert.rule || "경보") + " · 규칙 버전 " + (data.rule_version || "미기록")), node("p", "관측 수 " + (condition.event_count ?? "미기록") + " / 임계값 " + (condition.threshold ?? "미기록") + " / 시간 창 " + (condition.time_window_seconds ?? "미기록") + "초"));
       for (let i = 0; i < data.evidence_limit; i++) {
         const box = node("section", undefined, "ops-evidence"), button = node("button", "근거 " + (i + 1) + " 확인"), result = node("div");

@@ -20,6 +20,7 @@ from cloud_soc.portal.agent_status import decode_cursor, snapshot
 from cloud_soc.portal.log_query import LogReader, LogQueryError
 from cloud_soc.portal.collection_health import snapshot as health_snapshot
 from cloud_soc.portal.operations import Operations
+from cloud_soc.portal.cases import CaseStore, CaseError
 
 PROJECT = Path(__file__).resolve().parents[3]
 
@@ -73,6 +74,49 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     log_reader = LogReader(monitor, secret=settings["ADMIN_HASH"],
                            principal=settings["PUBLIC_URL"] + "/" + settings["ADMIN_USER"])
     operations = Operations(monitor)
+    cases = CaseStore(Path(settings["STATE_DIR"]) / "cases.sqlite", settings["ADMIN_USER"])
+    app.extensions["cases"] = cases
+
+    @app.errorhandler(CaseError)
+    def case_error(error):
+        return jsonify(code=error.code, error=str(error)), error.status
+
+    def case_response(operation):
+        try:
+            return jsonify(operation())
+        except LogQueryError as error:
+            return jsonify(code=error.code, error=str(error)), error.status
+        except sqlite3.Error:
+            return jsonify(code="case_storage_unavailable", error="사건 저장소에 접근하지 못했습니다. 같은 요청으로 재시도하거나 관리자에게 확인하세요."), 503
+
+    def fetch_case_alert(identifier):
+        return json.loads(operations.detail([("id", identifier)]))["alert"]
+
+    @app.get("/api/cases")
+    def case_list():
+        return case_response(lambda: cases.listing(request.args.items(multi=True), settings["ADMIN_USER"]))
+
+    @app.get("/api/case-link")
+    def case_link():
+        if set(request.args) != {"alert_id"} or len(request.args.getlist("alert_id")) != 1:
+            return jsonify(error="경보 참조를 확인하세요."), 400
+        return case_response(lambda: cases.lookup(request.args["alert_id"], settings["ADMIN_USER"]))
+
+    @app.post("/api/cases")
+    def case_create():
+        return case_response(lambda: cases.create(request.get_json(), settings["ADMIN_USER"],
+                             request.headers.get("Idempotency-Key"), fetch_case_alert))
+
+    @app.get("/api/cases/<identifier>")
+    def case_detail(identifier):
+        if set(request.args) - {"before"} or len(request.args.getlist("before")) > 1:
+            return jsonify(error="지원하지 않는 조회 조건입니다."), 400
+        return case_response(lambda: cases.detail(identifier, settings["ADMIN_USER"], request.args.get("before")))
+
+    @app.patch("/api/cases/<identifier>")
+    def case_update(identifier):
+        return case_response(lambda: cases.update(identifier, request.get_json(), settings["ADMIN_USER"],
+                             request.headers.get("Idempotency-Key"), fetch_case_alert))
 
     @app.before_request
     def protect():
@@ -102,8 +146,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Frame-Options"] = "DENY"
-        # Existing read-only demo charts use inline style attributes, not scripts.
-        styles = "'self' 'unsafe-inline'" if request.path == "/workbench.html" else "'self'"
+        styles = "'self'"
         response.headers["Content-Security-Policy"] = f"default-src 'self'; script-src 'self'; style-src {styles}; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
         return response
 
@@ -254,7 +297,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         allowed = {"agents.html", "agents.js", "agents.css", "styles.css", "assets/mark.svg",
                    "agent-status.html", "agent-status.js", "agent-status.css",
                    "collection-health.html", "collection-health.js",
-                   "index.html", "operations.js", "operations.css", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css"}
+                   "index.html", "operations.js", "operations.css", "cases.js", "cases.css", "investigation.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css"}
         if filename not in allowed:
             abort(404)
         return send_from_directory(PROJECT / "prototype", filename)

@@ -103,7 +103,7 @@ class Operations:
         except ValueError:
             raise LogQueryError("invalid_operations_query", 400, "조회 기간을 확인하세요.") from None
         interval = "5m" if (parse_time(filters.end) - parse_time(filters.start)).total_seconds() <= 86400 else "1h"
-        result = {"start": filters.start, "end": filters.end, "incident_work": "not_implemented", "sections": {}}
+        result = {"start": filters.start, "end": filters.end, "incident_work": "separate_case_api", "sections": {}}
         for key, operation in {
             "intake": lambda: self.series(INDICES, "event.ingested", filters.start, filters.end, interval),
             "processing": lambda: self.series([RECORDS], "event.ingested", filters.start, filters.end, interval, records=True),
@@ -177,5 +177,7 @@ class Operations:
         metadata = ({path: text(field(source, path)) for path in ("@timestamp", "host.name", "user.name", "event.action")}
                     if raw["index"].startswith("raw-logs-") else project_hit({"_index": raw["index"], "_id": raw["id"], "_source": source}))
         return {"state": "exact_reference", "normalized": normalized, "raw": raw,
+                "normalized_event": {"timestamp": text(norm.get("@timestamp")), "action": text(field(norm, "event.action")),
+                                     "outcome": text(field(norm, "event.outcome"))},
                 "metadata": metadata,
                 "security": security_detail(source)}

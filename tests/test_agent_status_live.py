@@ -114,6 +114,8 @@ class LiveStatusTests(unittest.TestCase):
                     check_oci(self, admin, monitor, url)
                     from p5_live_checks import check_p5
                     check_p5(self, admin, monitor, url)
+                    from p6_live_checks import check_p6
+                    check_p6(self, admin, monitor)
         finally:
             cleanup = run("rm", "--force", "--volumes", name, check=False)
             self.assertEqual(cleanup.returncode, 0, "Clean up the named soc-status-test container manually")

@@ -1,36 +1,34 @@
 <!doctype html>
-<html lang="ko">
-<head>
-  <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark light">
-  <meta name="description" content="Cloud SOC 조사 화면 프로토타입. 모든 근거는 합성 데이터이며 입력은 저장되지 않습니다.">
-  <title>사건 조사 | Cloud SOC 프로토타입</title>
-  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css">
-  <script src="demo-data.js" defer></script>
-  <script src="app.js" defer></script>
-</head>
-<body data-page="workbench">
+<html lang="ko"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>사건 조사 | Cloud SOC</title><link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css"><link rel="stylesheet" href="cases.css">
+  <script src="investigation.js" defer></script>
+</head><body class="agents-page">
   <a class="skip-link" href="#main">본문으로 이동</a>
-  <div id="app-shell"></div>
-  <main id="main" class="main-content workbench-main" tabindex="-1">
-    <a class="back-link" id="back-link" href="index.html"><span data-icon="arrow-left"></span>관제 현황으로 돌아가기</a>
-    <section id="incident-heading" aria-label="데모 조사 요약"></section>
-    <div class="workbench-frame">
-      <div class="tab-list workbench-tabs" role="tablist" aria-label="조사 항목">
-        <button id="tab-overview" role="tab" aria-selected="true" aria-controls="workbench-panel" data-workbench-tab="overview">개요</button>
-        <button id="tab-timeline" role="tab" aria-selected="false" aria-controls="workbench-panel" tabindex="-1" data-workbench-tab="timeline">시간 흐름</button>
-        <button id="tab-evidence" role="tab" aria-selected="false" aria-controls="workbench-panel" tabindex="-1" data-workbench-tab="evidence">탐지 근거</button>
-        <button id="tab-raw" role="tab" aria-selected="false" aria-controls="workbench-panel" tabindex="-1" data-workbench-tab="raw">원본 이벤트</button>
-        <button id="tab-entities" role="tab" aria-selected="false" aria-controls="workbench-panel" tabindex="-1" data-workbench-tab="entities">관련 대상</button>
-        <button id="tab-work" role="tab" aria-selected="false" aria-controls="workbench-panel" tabindex="-1" data-workbench-tab="work">분석 기록</button>
-      </div>
-      <section id="workbench-panel" class="workbench-surface" role="tabpanel" aria-labelledby="tab-overview" tabindex="0"></section>
-    </div>
-    <footer class="page-footer"><span>데모 근거 · 실제 보안 이벤트 아님</span><span>입력은 현재 페이지에만 유지되며 저장되지 않습니다.</span></footer>
-  </main>
-  <noscript><p class="noscript">이 정적 프로토타입의 조사 화면에는 JavaScript가 필요합니다. 백엔드 연결은 없습니다.</p></noscript>
-</body>
-</html>
+  <header class="app-header"><a class="brand" href="index.html"><img src="assets/mark.svg" alt="">Cloud SOC</a><span class="workspace-label">사건 조사</span><span class="header-context">관리자 전용 · 실제 업무 저장</span></header>
+  <aside class="sidebar" aria-label="업무 메뉴"><p class="nav-caption">SECURITY OPERATIONS</p><nav><a class="nav-item" href="index.html">관제 현황 / 사건 업무</a><a class="nav-item active" href="workbench.html" aria-current="page">사건 조사</a><a class="nav-item" href="logs.html">통합 로그</a><a class="nav-item" href="collection-health.html">수집 품질</a><a class="nav-item" href="agents.html">에이전트 설치 파일</a></nav><div class="sidebar-footer">경보와 사건은 다릅니다.<br>근거와 분석가 판단을 구분합니다.</div></aside>
+  <main id="main" class="main-content agents-main">
+    <a id="case-back" href="index.html#case-queue">사건 업무 목록으로 돌아가기</a>
+    <div class="page-heading"><div><p class="eyebrow">INVESTIGATION WORKBENCH</p><h1 id="case-title">사건 조사</h1><p id="case-summary" class="case-summary">사건을 선택하세요.</p></div></div>
+    <p id="investigation-error" role="alert" hidden></p><p id="investigation-status" role="status"></p>
+    <section id="case-create-panel" class="panel case-panel" hidden><h2>경보를 사건으로 등록</h2><p>분석가가 명시적으로 등록한 경우에만 사건이 만들어집니다. 동일 경보를 여러 사건에 중복 등록할 수 없습니다.</p>
+      <form id="case-create-form" class="case-form"><label class="case-wide">사건 제목<input id="create-title" required maxlength="160"></label><label>우선순위<select id="create-priority"><option value="high">높음</option><option value="critical">긴급</option><option value="medium">중간</option><option value="low">낮음</option></select></label><button id="case-create-button" type="submit">사건 생성</button></form>
+    </section>
+    <section id="case-work-panel" class="panel case-panel" hidden><h2>분석가 업무</h2><p>현재 포털은 단일 관리자 인증입니다. 판정 변경·종결·재개 시 사유를 남기세요. 메모에 비밀번호·API 키·개인 문서 내용을 넣지 마세요.</p>
+      <form id="case-work-form" class="case-form">
+        <label>사건 상태<select id="work-status"><option value="new">신규</option><option value="triage">초기 분류</option><option value="investigating">조사 중</option><option value="escalated">상위 이관</option><option value="closed">종결</option></select></label>
+        <label>담당자<select id="work-owner"><option value="">미배정</option></select></label>
+        <label>우선순위<select id="work-priority"><option value="critical">긴급</option><option value="high">높음</option><option value="medium">중간</option><option value="low">낮음</option></select></label>
+        <label>분석가 판정<select id="work-verdict"><option value="unreviewed">미판정</option><option value="malicious">악성</option><option value="benign">정상</option><option value="false_positive">오탐</option><option value="inconclusive">판단 보류</option></select></label>
+        <label class="case-wide">메모 / 판단 근거 (저장 후 수정·삭제 불가)<textarea id="work-note" maxlength="2000" placeholder="관측 근거와 분석가 판단을 구분해서 기록하세요."></textarea></label>
+        <button id="case-save-button" type="submit">업무 저장</button><button id="case-reload" type="button">최신 버전 다시 불러오기</button>
+      </form>
+      <form id="case-link-form" class="case-toolbar"><label>같은 조직의 경보 ID 추가<input id="case-link-id" maxlength="512" required></label><button id="case-link-button" type="submit">경보 연결</button></form>
+    </section>
+    <section class="panel case-panel"><h2>탐지 이유 · 경보 타임라인 · 정확한 근거</h2><p>경보 시각 순서로 표시합니다. 경보 시각은 원본 사건 발생 시각과 다를 수 있습니다. 원본 문서가 삭제되었으면 저장된 요약만 남으며, 주변 로그를 근거로 대체하지 않습니다. 전체 원문 본문은 계속 제한됩니다.</p><div id="case-alerts"></div></section>
+    <section id="case-history-panel" class="panel case-panel" hidden><h2>메모 · 판정 · 처리 이력</h2><p>서버가 작성자·시각·수정 버전을 기록합니다. DB 관리자에 대한 변조 방지 감사 저장소는 아닙니다.</p><ol id="case-history" class="case-history"></ol><button id="case-history-more" type="button" disabled>이전 이력 더 보기</button></section>
+    <section class="panel case-panel"><h2>관련 활동 조사</h2><p>자동으로 연관성을 확정하지 않습니다. 통합 로그에서 기간·호스트·IP를 직접 제한하여 주변 활동을 별도로 확인하세요. 주변 활동은 탐지에 사용된 정확한 근거가 아닙니다.</p><a href="logs.html">통합 로그 열기</a></section>
+  </main><noscript>사건 조회·저장에는 JavaScript가 필요합니다. 샘플 데이터로 대체하지 않습니다.</noscript>
+</body></html>

@@ -26,6 +26,10 @@ Cloud SOC는 Elasticsearch·Kibana와 Python 탐지 엔진을 사용하는 보�
 
 [P5 정규화·관제 현황 가이드](docs/processing_operations.md): 관제 메인을 실제 수신량·처리 결과·저장된 경보 조회로 전환했습니다. 새 처리기는 별도 키와 Compose 파일을 준비해야 실행되며 **정규화만 수행하고 탐지 규칙은 승인 대기**입니다. 코드 업데이트만으로 기존 운영 서버나 에이전트가 변경되지는 않습니다.
 
+[P6 사건 조사·업무 저장 가이드](docs/incident_workflow.md): 실제 경보에서 사건 생성, 담당 배정·메모·판정·처리 이력 저장과 사건 업무 큐를 제공합니다. 현재 단일 관리자 범위이며 SQLite에 업무만 저장합니다. ES 원본은 변경하지 않고, 전체 미분류 경보 집계·주변 활동 자동 연결·운영 배포 검증은 남아 있습니다.
+
+업데이트·장애 대비에는 [포털 DB 백업·격리 복원](docs/portal_backup.md)을 사용하세요. 사건/메모·설치 패키지/발급 이력을 백업하고 무결성을 검사하며 기존 운영 경로는 덮어쓰지 않습니다. ES·CA/비밀 파일·에이전트 큐는 별도 백업이 필요합니다.
+
 **새 Ubuntu 22.04·24.04·26.04 LTS 서버의 SSH 터미널**에서 실행합니다. 먼저 AWS 보안그룹의 22·443·5601·9200 접근을 승인된 IP로 제한하세요. 메모리 8GiB 이상을 권장하며, 설치기는 최소 6GiB RAM·10GiB 여유 디스크를 확인합니다.
 
 ```bash
@@ -397,7 +401,7 @@ sudo docker compose --env-file state/server/compose.env -f deploy/server/compose
 | 에이전트 설치·키 관리 | `https://<공인-DNS-또는-IP>/agents.html` 또는 `/` | 포털 계정 |
 | Kibana | `https://<공인-DNS-또는-IP>:5601` | 별도 `cloud_soc_analyst` 계정 |
 
-`<공인-DNS-또는-IP>` 표시는 실제 주소로 바꿉니다. 현재 자체 메인·조사·로그 목록 화면은 데모 데이터이며, 실제 수신은 Kibana Discover에서 확인합니다. `soc.example.invalid`나 `preview-*`, 정적 미리보기의 `Failed to fetch`는 실제 중앙 포털과 혼동하지 않도록 확인하세요.
+`<공인-DNS-또는-IP>` 표시는 실제 주소로 바꿉니다. 최신 코드의 관제 메인·사건 조사·통합 로그는 인증된 중앙 포털 API에 연결됩니다. 정적 HTML 미리보기만으로는 동작하지 않으며, 기존 서버에는 업데이트가 필요합니다. 실제 원본 수신은 Kibana Discover에서도 확인할 수 있습니다. `soc.example.invalid`나 `preview-*`, 정적 미리보기의 `Failed to fetch`는 실제 중앙 포털과 혼동하지 않도록 확인하세요.
 
 ### Windows ZIP 경로와 해시 오류
 

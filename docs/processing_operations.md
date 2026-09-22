@@ -28,7 +28,7 @@ sudo docker compose --env-file state/server/compose.env -f deploy/server/compose
 
 bootstrap은 신규 결과/상태 인덱스 3개와 `cloud_soc_normalizer` 역할을 준비하고 관리자 포털 조회 계정에 해당 인덱스·기존 경보/근거의 **읽기 권한**을 추가합니다. 기존 문서·규칙·에이전트·키·보존 정책은 수정하지 않습니다. 매핑 충돌은 자동 덮어쓰지 않습니다. `down -v`나 기존 `state` 삭제가 필요하지 않습니다.
 
-업데이트 후 포털 `/` 또는 `/index.html`이 실제 관제 현황입니다. `/agents.html`은 설치 파일 관리, `/workbench.html`은 여전히 데모입니다. 처리기를 실행하지 않았다면 ‘실행 기록 없음’이 정상적인 표시입니다.
+업데이트 후 포털 `/` 또는 `/index.html`이 실제 관제 현황입니다. `/agents.html`은 설치 파일 관리입니다. P6가 반영된 `/workbench.html`은 [실제 사건 조사·업무 저장](incident_workflow.md) 화면이며, 관제 메인에서 경보 또는 사건을 선택해 진입합니다. 처리기를 실행하지 않았다면 ‘실행 기록 없음’이 정상적인 표시입니다.
 
 ## 선택적 정규화 처리기
 
@@ -99,6 +99,6 @@ sudo docker compose --env-file state/server/compose.env -f deploy/server/compose
 - 수집 품질은 보고 건수 및 별도 품질 페이지로 연결합니다. 정상 호스트 비율·큐/전송 오류를 이 숫자로 추정하지 않습니다.
 - 경보 목록은 최신 50건, 상세는 최대 100개 근거를 개별 조회합니다. 페이지 탐색·규칙별 필터는 후속 과제입니다.
 - `경보 → 정규화 문서 → 원본 문서` 참조가 일치할 때만 근거를 표시합니다. 없어진 문서는 누락/만료, 다른 참조는 불일치로 표시합니다. 주변 로그 자동 검색이나 근거 내용 해시 재검증은 하지 않습니다.
-- 새 규칙·탐지 서비스·사건 수·담당자·조사 판정 저장은 활성화하지 않았습니다. 규칙별 지원 소스·조건·임계값·버전·기대 결과 승인(P5-03)이 다음 의사결정입니다.
+- 새 규칙·탐지 서비스는 활성화하지 않았습니다. 규칙별 지원 소스·조건·임계값·버전·기대 결과 승인(P5-03)이 다음 의사결정입니다. 사건 수·담당자·조사 판정 저장은 별도 [P6 업무 저장소](incident_workflow.md)에서 제공하며, 규칙 실행을 활성화하지 않습니다.
 
 설계 근거: [Elasticsearch 권한](https://www.elastic.co/docs/reference/elasticsearch/security-privileges), [PIT 조회](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-open-point-in-time). 최소 키는 결과 덮어쓰기와 `security-alerts` 쓰기를 허용하지 않습니다.
