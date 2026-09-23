@@ -16,7 +16,11 @@ $ServiceName = 'cloud-soc-filebeat'
 $DiscoveryTask = 'Cloud-SOC-Discovery'
 . (Join-Path $PSScriptRoot 'discover-windows.ps1')
 . (Join-Path $PSScriptRoot 'download-windows.ps1')
+. (Join-Path $PSScriptRoot 'transaction-windows.ps1')
 $Root = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Cloud-SOC-Agent'
+$FinalRoot = $Root
+$Stage = $null
+$ServiceStarted = $false
 $BeatHome = Join-Path $Root "filebeat-$Version-windows-x86_64"
 $Exe = Join-Path $BeatHome 'filebeat.exe'
 $ConfigPath = Join-Path $Root 'filebeat.yml'
@@ -46,6 +50,16 @@ function Assert-Arguments {
     }
     if ($Root -match '["\r\n${}]') { throw 'Unsupported Program Files path.' }
     foreach ($path in $LogRoots) { $null = Assert-LogRoot $path }
+}
+
+function Set-AgentPaths([string]$Path) {
+    $script:Root = $Path
+    $script:BeatHome = Join-Path $Path "filebeat-$Version-windows-x86_64"
+    $script:Exe = Join-Path $BeatHome 'filebeat.exe'
+    $script:ConfigPath = Join-Path $Path 'filebeat.yml'
+    $script:DataPath = Join-Path $Path 'data'
+    $script:LogsPath = Join-Path $Path 'logs'
+    $script:CommonArgs = @('--path.home', $BeatHome, '--path.config', $Root, '--path.data', $DataPath, '--path.logs', $LogsPath, '-c', $ConfigPath)
 }
 
 function Get-AgentConfig {
@@ -120,7 +134,7 @@ function Test-DiscoveryTask {
         Start-Sleep -Seconds 1
         $info = Get-ScheduledTaskInfo -TaskName $DiscoveryTask
         $task = Get-ScheduledTask -TaskName $DiscoveryTask
-        if ($info.LastRunTime -ge $started -and $task.State -ne 'Running') {
+        if ($info.LastRunTime -ge $started -and $task.State -notin @('Running', 'Queued')) {
             if ($info.LastTaskResult -ne 0) { throw "Discovery task failed (exit $($info.LastTaskResult)); inspect execution policy and source access." }
             return
         }
@@ -141,20 +155,22 @@ try {
     $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run PowerShell as Administrator (not required for -DryRun).' }
     Assert-NoInstallation
+    Assert-SocLocalPath $FinalRoot
     $null = Get-SystemCurl
     if (-not (Test-Path -LiteralPath $CaPath -PathType Leaf)) { throw 'CA certificate file does not exist.' }
+    Test-SocServerTls -Endpoint $Endpoint -CaPath $CaPath
     $null = Get-SourceDiscovery -LogRoots $LogRoots -RequiredChannels $Channels
 
-    # New-Item without -Force fails if another installer created the directory first.
-    New-Item -ItemType Directory -Path $Root | Out-Null
+    $Stage = New-SocStage
+    Set-AgentPaths $Stage.Path
     $RootCreated = $true
-    Set-ProtectedDirectory $Root
     foreach ($path in @($DataPath, $LogsPath, (Join-Path $Root 'inputs'))) { New-Item -ItemType Directory -Path $path | Out-Null }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'discover-windows.ps1') -Destination $Root
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'privacy.js') -Destination $Root
     $settings = @{ log_roots = @($LogRoots); required_channels = @($Channels) } | ConvertTo-Json -Depth 8
     Write-DiscoveryFile (Join-Path $Root 'discovery-settings.json') $settings
-    Update-SourceDiscovery -Root $Root -LogRoots $LogRoots -RequiredChannels $Channels
+    # Test the real SYSTEM environment before downloading or creating any service.
+    Invoke-SocDiscoveryProbe -Root $Root
     $package = "filebeat-$Version-windows-x86_64.zip"
     $archive = Join-Path $Root $package
     Receive-CloudSocArchive -Uri "https://artifacts.elastic.co/downloads/beats/filebeat/$package" -OutFile $archive
@@ -174,36 +190,62 @@ try {
     Invoke-Beat -BeatArguments @('keystore', 'create')
     Write-Host 'Enter the restricted Elasticsearch API key as id:api_key (not the encoded value).'
     Invoke-Beat -BeatArguments @('keystore', 'add', 'CLOUD_SOC_API_KEY')
-    [IO.File]::WriteAllText($ConfigPath, $config, $utf8)
+    [IO.File]::WriteAllText($ConfigPath, (Get-AgentConfig | ConvertTo-Json -Depth 12), $utf8)
+    Invoke-Beat -BeatArguments @('test', 'config')
+    Invoke-Beat -BeatArguments @('test', 'output')
+
+    # Recheck immediately before promotion. Move never merges into an existing path.
+    if (Test-Path -LiteralPath $FinalRoot) { throw 'Final destination appeared during preparation; installation stopped.' }
+    Assert-SocLocalPath $FinalRoot
+    [IO.Directory]::Move($Root, $FinalRoot)
+    Set-AgentPaths $FinalRoot
+    [IO.File]::WriteAllText($ConfigPath, (Get-AgentConfig | ConvertTo-Json -Depth 12), $utf8)
+    Update-SourceDiscovery -Root $Root -LogRoots $LogRoots -RequiredChannels $Channels
     Invoke-Beat -BeatArguments @('test', 'config')
     Invoke-Beat -BeatArguments @('test', 'output')
 
     # Quote every path and use the same data/keystore path for preflight and service.
     $command = '"{0}" --environment=windows_service --path.home "{1}" --path.config "{2}" --path.data "{3}" --path.logs "{4}" -c "{5}" -E logging.files.redirect_stderr=true' -f $Exe, $BeatHome, $Root, $DataPath, $LogsPath, $ConfigPath
-    New-Service -Name $ServiceName -DisplayName 'Cloud SOC Filebeat' -BinaryPathName $command -StartupType Manual | Out-Null
-    $ServiceCreated = $true
-    Start-Service -Name $ServiceName
-    (Get-Service -Name $ServiceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
-    Start-Sleep -Seconds 3
-    if ((Get-Service -Name $ServiceName).Status -ne 'Running') { throw 'Service did not remain running.' }
-    Set-Service -Name $ServiceName -StartupType Automatic
     # Respect the machine's existing PowerShell execution policy; never bypass it.
-    $action = New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument ('-NoProfile -NonInteractive -File "{0}" -Refresh' -f (Join-Path $Root 'discover-windows.ps1'))
+    $action = New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument ('-NoProfile -NonInteractive -File "{0}" -Refresh -DiscoveryRoot "{1}"' -f (Join-Path $Root 'discover-windows.ps1'), $Root) -WorkingDirectory $Root
     $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
     $taskSettings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -StartWhenAvailable
     Register-ScheduledTask -TaskName $DiscoveryTask -Action $action -Trigger $trigger -Principal $principal -Settings $taskSettings | Out-Null
     $TaskCreated = $true
     Test-DiscoveryTask
+    New-Service -Name $ServiceName -DisplayName 'Cloud SOC Filebeat' -BinaryPathName $command -StartupType Manual | Out-Null
+    $ServiceCreated = $true
+    $ServiceStarted = $true
+    Start-Service -Name $ServiceName
+    (Get-Service -Name $ServiceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
+    Start-Sleep -Seconds 3
+    if ((Get-Service -Name $ServiceName).Status -ne 'Running') { throw 'Service did not remain running.' }
+    Set-Service -Name $ServiceName -StartupType Automatic
     Write-Host 'Service active; TLS/auth connection test passed. Document ingestion is NOT yet verified. Check soc-host-raw-windows-* in Kibana.'
     exit 0
 } catch {
-    if ($TaskCreated) { Disable-ScheduledTask -TaskName $DiscoveryTask -ErrorAction Continue | Out-Null }
+    $cleanupSafe = $true
+    $failureMessage = $_.Exception.Message
+    if ($TaskCreated) {
+        try {
+            Stop-ScheduledTask -TaskName $DiscoveryTask -ErrorAction Stop
+            if ((Get-ScheduledTask -TaskName $DiscoveryTask).State -in @('Running', 'Queued')) { throw 'Task still active.' }
+            Unregister-ScheduledTask -TaskName $DiscoveryTask -Confirm:$false -ErrorAction Stop
+        } catch { $cleanupSafe = $false }
+    }
+    if ($RootCreated -and (Get-ScheduledTask -TaskName $DiscoveryTask -ErrorAction SilentlyContinue)) { $cleanupSafe = $false }
     if ($ServiceCreated) {
         Stop-Service -Name $ServiceName -ErrorAction Continue
         Set-Service -Name $ServiceName -StartupType Disabled -ErrorAction Continue
     }
-    [Console]::Error.WriteLine("Installation failed: $($_.Exception.Message)")
-    if ($RootCreated) { [Console]::Error.WriteLine("Protected partial state retained at $Root. Review before reinstalling; no automatic cleanup.") }
+    [Console]::Error.WriteLine("Installation failed: $failureMessage")
+    if ($RootCreated -and $Stage -and -not $ServiceStarted -and $cleanupSafe -and -not (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)) {
+        try {
+            $expected = if ($Root -eq $FinalRoot) { $FinalRoot } else { $Stage.Path }
+            Remove-SocOwnedDirectory -Path $Root -ExpectedPath $expected -Token $Stage.Token
+            [Console]::Error.WriteLine('Preparation rolled back. No permanent collector service was started; correct the error and retry.')
+        } catch { [Console]::Error.WriteLine('Safe cleanup could not finish. Protected scratch state retained; no unrelated files were removed.') }
+    } elseif ($RootCreated) { [Console]::Error.WriteLine("Post-start or cleanup failure: state retained at $Root to preserve queues/keys. Repair is not yet supported; do not delete data.") }
     exit 1
 }

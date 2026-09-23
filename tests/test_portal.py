@@ -107,6 +107,7 @@ class PortalTests(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(download.data)) as archive:
             self.assertIn("discover-windows.ps1", archive.namelist())
             self.assertIn("download-windows.ps1", archive.namelist())
+            self.assertIn("transaction-windows.ps1", archive.namelist())
             self.assertIn("install-network-windows.ps1", archive.namelist())
             self.assertEqual(archive.read("ca.crt"), CA)
             self.assertNotIn(".env", archive.namelist())
@@ -115,6 +116,8 @@ class PortalTests(unittest.TestCase):
             self.assertIn("https://soc.example.test:9200", launcher)
             self.assertIn("-InterfaceGuid", launcher)
             self.assertIn("$LASTEXITCODE", launcher)
+            self.assertIn("Select-SocInterface", launcher)
+            self.assertLess(launcher.index("-PreflightOnly"), launcher.index("& (Join-Path $PSScriptRoot 'install-windows.ps1')"))
             for line in archive.read("SHA256SUMS").decode().splitlines():
                 digest, name = line.split("  ")
                 self.assertEqual(hashlib.sha256(archive.read(name)).hexdigest(), digest)
@@ -203,8 +206,13 @@ class PortalTests(unittest.TestCase):
                         nic = ["--interface", "eth0"]
                     if network:
                         missing = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", timeout=20)
-                        self.assertNotEqual(missing.returncode, 0)
-                        self.assertNotIn("soc-host-raw-", missing.stdout)
+                        if platform == "windows":
+                            # Preview uses an explicitly synthetic NIC; it never enumerates or captures.
+                            self.assertEqual(missing.returncode, 0, missing.stderr)
+                            self.assertIn("DRY RUN", missing.stderr)
+                        else:
+                            self.assertNotEqual(missing.returncode, 0)
+                            self.assertNotIn("soc-host-raw-", missing.stdout)
                         args += nic
                     result = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", timeout=20)
                     self.assertEqual(result.returncode, 0, result.stderr)

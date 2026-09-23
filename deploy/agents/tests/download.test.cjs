@@ -21,7 +21,7 @@ test('both installers use the shared downloader and verify hash before extractin
     const source = readFileSync(path.join(root, name), 'utf8');
     assert.match(source, /Join-Path \$PSScriptRoot 'download-windows.ps1'/);
     assert.doesNotMatch(source, /Invoke-WebRequest/);
-    assert.ok(source.indexOf('$null = Get-SystemCurl') < source.indexOf('New-Item -ItemType Directory -Path $Root'));
+    assert.ok(source.indexOf('$null = Get-SystemCurl') < source.indexOf('$Stage = New-SocStage'));
     const download = source.indexOf('Receive-CloudSocArchive -Uri');
     const hash = source.indexOf('Assert-ArchiveHash $archive $Hash');
     assert.ok(download > 0 && hash > download && source.indexOf('Expand-Archive') > hash);

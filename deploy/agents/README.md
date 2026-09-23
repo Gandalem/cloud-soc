@@ -40,6 +40,8 @@ sudo bash deploy/agents/install-ubuntu.sh --endpoint https://soc.example.invalid
 
 ## Windows 설치
 
+신규 Windows 패키지는 [설치 실패 예방 1차 가이드](../../docs/windows_install_recovery.md)의 SYSTEM 사전 검사·보호 staging·준비 단계 롤백을 적용합니다. NIC는 확인 후 선택할 수 있습니다. 두 수집기의 원자적 설치, `-Repair`, Enrollment, 실제 수신 자동 확인은 아직 미완료입니다.
+
 64비트 관리자 PowerShell에서 실행합니다. Windows 시스템 `curl.exe`와 설치기 옆의 `download-windows.ps1`이 필요합니다. 조직의 기존 실행 정책을 따르고 정책이나 인증서 검증을 우회하지 않습니다. 다운로드는 1회 300초·최대 2회로 제한하며, 60초 동안 초당 16KiB 미만이면 중단합니다. SHA-512 검증 후에만 압축을 풉니다.
 
 ```powershell
@@ -74,7 +76,7 @@ sudo bash deploy/agents/install-ubuntu.sh --endpoint https://soc.example.invalid
 
 공통 파일: `filebeat.yml`, `inputs/discovered.yml`, `discovery-report.json`, `data`, `logs`, `ca.crt`. 탐색 루트는 Ubuntu의 `discovery-roots.txt`, Windows의 `discovery-settings.json`에 보관합니다. 관리자만 수정합니다.
 
-설치 후 명령 재실행으로 덮어쓰거나 업그레이드하지 않습니다. 부분 실패 상태·registry·대기 큐도 자동 삭제하지 않습니다.
+설치 후 명령 재실행으로 덮어쓰거나 업그레이드하지 않습니다. 새 Windows 설치기는 서비스 시작 전 자기 staging만 정리할 수 있습니다. 구버전 잔존 상태와 서비스 시작 이후의 registry·대기 큐는 자동 삭제하지 않습니다.
 
 ## 검증
 

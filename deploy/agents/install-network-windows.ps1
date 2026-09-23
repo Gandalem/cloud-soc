@@ -4,16 +4,21 @@ param(
     [Parameter(Mandatory = $true)][string]$Endpoint,
     [Parameter(Mandatory = $true)][string]$CaPath,
     [Parameter(Mandatory = $true)][string]$Organization,
-    [Parameter(Mandatory = $true)][string]$InterfaceGuid,
+    [string]$InterfaceGuid,
+    [switch]$PreflightOnly,
     [switch]$DryRun
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'download-windows.ps1')
+. (Join-Path $PSScriptRoot 'transaction-windows.ps1')
 $Version = '9.5.2'
 $ServiceName = 'cloud-soc-packetbeat'
 $Root = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Cloud-SOC-Network'
+$FinalRoot = $Root
+$Stage = $null
+$ServiceStarted = $false
 $BeatHome = Join-Path $Root "packetbeat-$Version-windows-x86_64"
 $Exe = Join-Path $BeatHome 'packetbeat.exe'
 $ConfigPath = Join-Path $Root 'packetbeat.yml'
@@ -30,8 +35,18 @@ function Assert-Arguments {
     if ($portValue -and ([int]$portValue -lt 1 -or [int]$portValue -gt 65535)) { throw 'Invalid endpoint port.' }
     if ($Organization -cnotmatch '^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\z') { throw 'Invalid organization identifier.' }
     if ($CaPath -notmatch '^[a-zA-Z]:[\\/]' -or $CaPath -match '[\x00-\x1f${}]') { throw 'CA must be an absolute local Windows path without variable expansion.' }
-    if ($InterfaceGuid -cnotmatch '^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}\z' -or [guid]$InterfaceGuid -eq [guid]::Empty) { throw 'Supply the non-empty InterfaceGuid from Get-NetAdapter, without braces.' }
+    if ($InterfaceGuid -and ($InterfaceGuid -cnotmatch '^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}\z' -or [guid]$InterfaceGuid -eq [guid]::Empty)) { throw 'Supply the non-empty InterfaceGuid from Get-NetAdapter, without braces.' }
     if ($Root -match '["\x00-\x1f${}]') { throw 'Unsupported Program Files path.' }
+}
+
+function Set-AgentPaths([string]$Path) {
+    $script:Root = $Path
+    $script:BeatHome = Join-Path $Path "packetbeat-$Version-windows-x86_64"
+    $script:Exe = Join-Path $BeatHome 'packetbeat.exe'
+    $script:ConfigPath = Join-Path $Path 'packetbeat.yml'
+    $script:DataPath = Join-Path $Path 'data'
+    $script:LogsPath = Join-Path $Path 'logs'
+    $script:CommonArgs = @('--path.home', $BeatHome, '--path.config', $Root, '--path.data', $DataPath, '--path.logs', $LogsPath, '-c', $ConfigPath)
 }
 
 function Get-AgentConfig {
@@ -102,6 +117,7 @@ function Set-ProtectedDirectory([string]$Path) {
 }
 
 try {
+    if ($DryRun -and -not $InterfaceGuid) { $InterfaceGuid = '11111111-1111-1111-1111-111111111111' }
     Assert-Arguments
     $config = Get-AgentConfig | ConvertTo-Json -Depth 16
     if ($DryRun) {
@@ -113,13 +129,20 @@ try {
     $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run as Administrator (not required for -DryRun).' }
     Assert-NoInstallation
+    Assert-SocLocalPath $FinalRoot
     $null = Get-SystemCurl
     Assert-Npcap
+    if (-not $InterfaceGuid) { $InterfaceGuid = Select-SocInterface }
     Assert-Interface
     if (-not (Test-Path -LiteralPath $CaPath -PathType Leaf)) { throw 'CA certificate file does not exist.' }
-    New-Item -ItemType Directory -Path $Root | Out-Null
+    Test-SocServerTls -Endpoint $Endpoint -CaPath $CaPath
+    if ($PreflightOnly) {
+        Write-Host 'Network OS/admin/Npcap/NIC/TLS preflight passed. Key/config/ingestion are not verified yet.'
+        exit 0
+    }
+    $Stage = New-SocStage
+    Set-AgentPaths $Stage.Path
     $RootCreated = $true
-    Set-ProtectedDirectory $Root
     foreach ($path in @($DataPath, $LogsPath)) { New-Item -ItemType Directory -Path $path | Out-Null }
     $package = "packetbeat-$Version-windows-x86_64.zip"
     $archive = Join-Path $Root $package
@@ -142,12 +165,20 @@ try {
     Invoke-Beat -BeatArguments @('keystore', 'create')
     Write-Host 'Enter the network-only publisher API key as id:api_key (not encoded).'
     Invoke-Beat -BeatArguments @('keystore', 'add', 'CLOUD_SOC_NETWORK_API_KEY')
-    [IO.File]::WriteAllText($ConfigPath, $config, $utf8)
+    [IO.File]::WriteAllText($ConfigPath, (Get-AgentConfig | ConvertTo-Json -Depth 16), $utf8)
+    Invoke-Beat -BeatArguments @('test', 'config')
+    Invoke-Beat -BeatArguments @('test', 'output')
+    if (Test-Path -LiteralPath $FinalRoot) { throw 'Final destination appeared during preparation; installation stopped.' }
+    Assert-SocLocalPath $FinalRoot
+    [IO.Directory]::Move($Root, $FinalRoot)
+    Set-AgentPaths $FinalRoot
+    [IO.File]::WriteAllText($ConfigPath, (Get-AgentConfig | ConvertTo-Json -Depth 16), $utf8)
     Invoke-Beat -BeatArguments @('test', 'config')
     Invoke-Beat -BeatArguments @('test', 'output')
     $command = '"{0}" --environment=windows_service --path.home "{1}" --path.config "{2}" --path.data "{3}" --path.logs "{4}" -c "{5}" -E logging.files.redirect_stderr=true' -f $Exe, $BeatHome, $Root, $DataPath, $LogsPath, $ConfigPath
     New-Service -Name $ServiceName -DisplayName 'Cloud SOC Packetbeat' -BinaryPathName $command -StartupType Manual -DependsOn npcap | Out-Null
     $ServiceCreated = $true
+    $ServiceStarted = $true
     Start-Service -Name $ServiceName
     (Get-Service -Name $ServiceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
     Start-Sleep -Seconds 3
@@ -161,6 +192,12 @@ try {
         Set-Service -Name $ServiceName -StartupType Disabled -ErrorAction Continue
     }
     [Console]::Error.WriteLine("Installation failed: $($_.Exception.Message)")
-    if ($RootCreated) { [Console]::Error.WriteLine("Protected partial state retained at $Root; no automatic cleanup.") }
+    if ($RootCreated -and $Stage -and -not $ServiceStarted -and -not (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)) {
+        try {
+            $expected = if ($Root -eq $FinalRoot) { $FinalRoot } else { $Stage.Path }
+            Remove-SocOwnedDirectory -Path $Root -ExpectedPath $expected -Token $Stage.Token
+            [Console]::Error.WriteLine('Preparation rolled back. No Packetbeat service was started; correct the error and retry.')
+        } catch { [Console]::Error.WriteLine('Safe cleanup could not finish; protected scratch state retained.') }
+    } elseif ($RootCreated) { [Console]::Error.WriteLine("Post-start failure: state retained at $Root to preserve queues/keys. Repair is not yet supported; do not delete data.") }
     exit 1
 }

@@ -20,7 +20,7 @@
   }
   function commands(item) {
     const directory = `${item.name}-agent`;
-    if (item.os === 'windows') return `# 관리자 PowerShell, 다운로드 폴더에서 실행\n& {\n$ErrorActionPreference = 'Stop'\nif ((Get-FileHash -LiteralPath '.\\${item.filename}' -Algorithm SHA256).Hash -ne '${item.sha256}') { throw 'SHA-256 mismatch; stop installation.' }\nExpand-Archive -LiteralPath '.\\${item.filename}' -DestinationPath '.\\${directory}'\nSet-Location '.\\${directory}'\n${item.network ? "Get-NetAdapter -IncludeHidden | Select-Object Name, Status, InterfaceGuid\n# 아래 GUID를 실제 수집 NIC GUID로 교체하고, Npcap을 먼저 준비\n.\\install.ps1 -InterfaceGuid '실제-NIC-GUID'" : '.\\install.ps1'}\n}\n# 먼저 설정만 확인하려면 install.ps1 명령에 -DryRun 추가`;
+    if (item.os === 'windows') return `# 관리자 PowerShell, 다운로드 폴더에서 실행\n& {\n$ErrorActionPreference = 'Stop'\nif ((Get-FileHash -LiteralPath '.\\${item.filename}' -Algorithm SHA256).Hash -ne '${item.sha256}') { throw 'SHA-256 mismatch; stop installation.' }\nExpand-Archive -LiteralPath '.\\${item.filename}' -DestinationPath '.\\${directory}'\nSet-Location '.\\${directory}'\n${item.network ? "# 승인된 Npcap을 먼저 준비. 표시되는 활성 물리 NIC를 확인해 선택\n.\\install.ps1" : '.\\install.ps1'}\n}\n# 새 패키지 기준. 가상/VPN NIC는 -InterfaceGuid를 명시\n# 먼저 설정만 확인하려면 install.ps1 명령에 -DryRun 추가`;
     return `# 다운로드 폴더에서 실행. 공백 없는 경로를 사용\n(\nset -e\nprintf '%s  %s\\n' '${item.sha256}' '${item.filename}' | sha256sum --check\nmkdir '${directory}'\ntar -xzf '${item.filename}' -C '${directory}'\ncd '${directory}'\n${item.network ? "ip -brief link\n# ens3를 실제 수집 NIC로 교체 (전체 로컬 NIC는 any를 명시)\nsudo bash install.sh --interface ens3" : 'sudo bash install.sh'}\n)\n# 먼저 설정만 확인하려면 install.sh 명령에 --dry-run 추가`;
   }
   function render() {

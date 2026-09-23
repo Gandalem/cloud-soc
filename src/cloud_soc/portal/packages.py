@@ -15,7 +15,7 @@ import zipfile
 
 VERSION = "9.5.2"
 FILES = {
-    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "privacy.js", "policy.py"],
+    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "privacy.js", "policy.py"],
     "ubuntu": ["install-ubuntu.sh", "discover-linux.sh", "privacy.js", "policy.py"],
 }
 NETWORK_FILES = {
@@ -78,9 +78,15 @@ $ErrorActionPreference = 'Stop'
 $common = @{{ Endpoint = '{endpoint}'; CaPath = (Join-Path $PSScriptRoot 'ca.crt'); Organization = '{org}' }}
 '''
     if spec["network"]:
-        text += '''if (-not $InterfaceGuid) { throw 'Supply -InterfaceGuid from Get-NetAdapter; approved Npcap must already be running.' }
+        text += '''. (Join-Path $PSScriptRoot 'transaction-windows.ps1')
+if (-not $DryRun) { Assert-SocAdministrator }
+if (-not $InterfaceGuid) {
+    if ($DryRun) { $InterfaceGuid = '11111111-1111-1111-1111-111111111111' }
+    else { $InterfaceGuid = Select-SocInterface }
+}
 $networkInstaller = Join-Path $PSScriptRoot 'install-network-windows.ps1'
-& $networkInstaller @common -InterfaceGuid $InterfaceGuid -DryRun | Out-Null
+if ($DryRun) { & $networkInstaller @common -InterfaceGuid $InterfaceGuid -DryRun | Out-Null }
+else { & $networkInstaller @common -InterfaceGuid $InterfaceGuid -PreflightOnly }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 '''
     text += '''& (Join-Path $PSScriptRoot 'install-windows.ps1') @common -DryRun:$DryRun

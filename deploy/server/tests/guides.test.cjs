@@ -21,7 +21,7 @@ test('guide links exclude fenced code examples', () => {
   assert.deepEqual(localLinks(content), ['README.md', 'README.md#section']);
 });
 
-for (const name of ['README.md', 'deploy/server/README.md', 'docs/aws_windows_e2e_test.md', 'docs/agent_status.md', 'docs/portal_backup.md']) {
+for (const name of ['README.md', 'deploy/server/README.md', 'docs/aws_windows_e2e_test.md', 'docs/agent_status.md', 'docs/portal_backup.md', 'docs/windows_install_recovery.md']) {
   test(`installation guide syntax and repository links: ${name}`, () => {
     const file = path.join(root, name);
     const content = fs.readFileSync(file, 'utf8');
@@ -39,6 +39,7 @@ for (const name of ['README.md', 'deploy/server/README.md', 'docs/aws_windows_e2
     for (const link of links) assert.ok(fs.existsSync(path.resolve(path.dirname(file), link.split('#')[0])), link);
     if (name === 'docs/agent_status.md') assert.ok(content.includes('sudo python3 deploy/server/prepare-monitor.py'));
     else if (name === 'docs/portal_backup.md') assert.ok(content.includes('sudo python3 deploy/server/portal-backup.py'));
+    else if (name === 'docs/windows_install_recovery.md') assert.ok(content.includes('P0C-02'));
     else assert.ok(content.includes('sudo sh deploy/server/install-ubuntu.sh'));
   });
 }

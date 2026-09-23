@@ -1,6 +1,6 @@
 #requires -Version 5.1
 # cloud-soc-policy-format: 1
-param([switch]$Refresh)
+param([switch]$Refresh, [string]$DiscoveryRoot)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -209,7 +209,8 @@ function Write-HealthReport([string]$Root, $Report, [int]$Version = 0) {
 
 if ($Refresh) {
     try {
-        $root = Join-Path $env:ProgramFiles 'Cloud-SOC-Agent'
+        $root = if ($DiscoveryRoot) { $DiscoveryRoot } else { Join-Path $env:ProgramFiles 'Cloud-SOC-Agent' }
+        if ($root -notmatch '^[A-Za-z]:[\\/]' -or (Test-ReparseAncestor $root)) { throw 'Unsafe discovery root.' }
         Update-SourceDiscovery -Root $root
     } catch { [Console]::Error.WriteLine("Discovery failed; inspect discovery-report.json and task history: $($_.Exception.Message)"); exit 1 }
 }
