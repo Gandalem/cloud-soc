@@ -59,6 +59,16 @@ class PolicyTests(unittest.TestCase):
             with self.assertRaises((ValueError, BlockingIOError)):
                 policy.update(self.root, self.platform, self.base, apply=True, expected=0)
 
+    @unittest.skipUnless(os.name == 'nt', 'Windows Discovery update')
+    def test_pending_discovery_update_blocks_policy_and_releases_lock(self):
+        marker = self.root / 'discovery-update-pending.json'
+        marker.write_text('{}')
+        with self.assertRaisesRegex(ValueError, 'Discovery update is pending'):
+            policy.update(self.root, self.platform, self.base, apply=True, expected=0)
+        self.assertFalse((self.root / 'collection-policy.txt').exists())
+        marker.unlink()
+        self.assertTrue(policy.update(self.root, self.platform, self.base, apply=True, expected=0)['applied'])
+
     def test_no_commands_globs_personal_roots_or_external_exclusions(self):
         for platform, roots in [('linux', ['/', '/home/user/logs', '/etc/app', '/var/log/../secret', '/var/log/*']),
                                 ('windows', ['C:\\', 'C:\\Users\\person', 'C:\\logs\\..\\secret', '\\\\server\\share'])]:

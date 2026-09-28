@@ -6,15 +6,24 @@ if ($PSVersionTable.PSEdition -eq 'Desktop') {
     Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -Force
 }
 . (Join-Path $PSScriptRoot '../transaction-windows.ps1')
+. (Join-Path $PSScriptRoot '../repair-windows.ps1')
+. (Join-Path $PSScriptRoot '../update-discovery-windows.ps1')
 $root = Join-Path ((Resolve-Path (Join-Path $PSScriptRoot '../../../state')).ProviderPath) ('native-build-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $root | Out-Null
 function New-SocProtectedDirectory { param($Path,[switch]$Reuse) New-Item -ItemType Directory -Path $Path | Out-Null }
+function Assert-SocRepairAcl { param($Path) }
 try {
     Build-SocNativeDiscovery -Root $root -Source (Split-Path -Parent $PSScriptRoot)
     Assert-SocNativeDiscovery $root
     $manifest = Get-Content -LiteralPath (Join-Path $root 'discovery-native.json') -Raw | ConvertFrom-Json
     if ($manifest.worker -ne 'native-v1') { throw 'Wrong worker manifest' }
     if (@(Get-ChildItem -LiteralPath $root -Directory).Count) { throw 'Build scratch directory left behind' }
+    New-Item -ItemType Directory -Path (Join-Path $root 'inputs') | Out-Null
+    # Read channel metadata only. No event contents, service changes or network.
+    @{log_roots=@(); required_channels=@('Application')} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'discovery-settings.json') -Encoding UTF8
+    $started = (Get-Date).AddSeconds(-1)
+    Invoke-SocNativeRefresh $root
+    Assert-SocUpdateReport $root $started
     [IO.File]::AppendAllText((Join-Path $root 'cloud-soc-discovery.exe'), 'tamper')
     $rejected = $false
     try { Assert-SocNativeDiscovery $root } catch { if ($_.Exception.Message -notmatch 'integrity') { throw }; $rejected=$true }

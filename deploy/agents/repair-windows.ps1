@@ -26,8 +26,12 @@ function Assert-SocRepairAcl([string]$Path) {
     }
 }
 
-function Assert-SocRepairIdentity($Service, $Config, [string]$Command, [string]$Endpoint, [string]$Organization, [string]$Root) {
-    if ($Service.State -ne 'Stopped' -or $Service.ProcessId -ne 0 -or $Service.StartMode -notin @('Disabled','Manual','Auto')) {
+function Assert-SocRepairIdentity($Service, $Config, [string]$Command, [string]$Endpoint, [string]$Organization, [string]$Root, [switch]$RunningUpdate) {
+    if ($RunningUpdate) {
+        if ($Service.State -ne 'Running' -or $Service.ProcessId -le 0 -or $Service.StartMode -ne 'Auto') {
+            throw 'Discovery update requires a running automatic Filebeat service; use recovery for stopped installations.'
+        }
+    } elseif ($Service.State -ne 'Stopped' -or $Service.ProcessId -ne 0 -or $Service.StartMode -notin @('Disabled','Manual','Auto')) {
         throw 'Existing Filebeat must be stopped before recovery. Running installations are not modified.'
     }
     if ($Service.PathName -cne $Command -or $Service.StartName -notin @('LocalSystem','NT AUTHORITY\SYSTEM')) {
@@ -185,6 +189,7 @@ function Invoke-SocFilebeatRepairCore {
     Assert-SocLocalPath $Root
     Assert-SocRepairAcl $Root
     $pendingPath = Join-Path $Root 'recovery-pending.json'
+    if (Test-Path -LiteralPath (Join-Path $Root 'discovery-update-pending.json')) { throw 'Incomplete Discovery update; preserve its backup before attempting recovery.' }
     if (Test-Path -LiteralPath $pendingPath) { throw 'Interrupted/incomplete recovery is recorded; retained backup must be reviewed before retrying.' }
     foreach ($item in Get-SocRepairTree $Root) { Assert-SocRepairAcl $item.FullName }
     $beatDirectory = Join-Path $Root "filebeat-$Version-windows-x86_64"

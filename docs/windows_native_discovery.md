@@ -21,6 +21,8 @@
 
 ## 수집 계약과 진단
 
+정상 실행 중 native 설치의 갱신은 별도 `-UpdateDiscovery` 경로입니다. [Discovery 갱신 안내](windows_discovery_update.md)를 참고하세요. 새 패키지가 필요하며, 중지된 설치용 `-Repair`와 혼용하지 않습니다.
+
 활성 이벤트 채널, 텍스트 로그 인코딩/회전, 민감 파일·바이너리·사용자 프로필 제외, 디렉터리 링크 제외, 기존 채널/filestream ID, 정책 v1과 `agent_health` 출력 계약을 유지합니다. 디스크 전체·모든 파일·개인 문서를 수집한다는 의미가 아닙니다. 기존 `discover-windows.ps1`은 설치기 사전 검사·기존 정책 도구 호환용으로 남지만 SYSTEM의 주기적 작업에서는 실행하지 않습니다.
 
 - `discovery-report.json`: 마지막 성공 탐색의 소스 목록과 시각. 실패했다고 이전 성공 보고를 현재 결과로 취급하지 않습니다.

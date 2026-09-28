@@ -15,7 +15,7 @@ import zipfile
 
 VERSION = "9.5.2"
 FILES = {
-    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "repair-windows.ps1", "native-windows.ps1", "discovery-native.cs", "privacy.js", "policy.py"],
+    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "repair-windows.ps1", "update-discovery-windows.ps1", "native-windows.ps1", "discovery-native.cs", "privacy.js", "policy.py"],
     "ubuntu": ["install-ubuntu.sh", "discover-linux.sh", "privacy.js", "policy.py"],
 }
 NETWORK_FILES = {
@@ -73,9 +73,13 @@ bash "$HERE/install-network-ubuntu.sh" "${ARGS[@]}" --interface "$DEVICE" --dry-
             text += 'bash "$HERE/install-network-ubuntu.sh" "${ARGS[@]}" --interface "$DEVICE" "${DRY[@]}"\n'
         return "install.sh", text
     text = f'''#requires -Version 5.1
-param([string]$InterfaceGuid, [switch]$DryRun, [switch]$AllowUnavailableRevocation, [switch]$Repair)
+param([string]$InterfaceGuid, [switch]$DryRun, [switch]$AllowUnavailableRevocation, [switch]$Repair, [switch]$UpdateDiscovery)
 $ErrorActionPreference = 'Stop'
 $common = @{{ Endpoint = '{endpoint}'; CaPath = (Join-Path $PSScriptRoot 'ca.crt'); Organization = '{org}'; AllowUnavailableRevocation = $AllowUnavailableRevocation }}
+if ($UpdateDiscovery) {{
+    & (Join-Path $PSScriptRoot 'install-windows.ps1') @common -UpdateDiscovery -DryRun:$DryRun -Repair:$Repair
+    exit $LASTEXITCODE
+}}
 '''
     if spec["network"]:
         text += '''. (Join-Path $PSScriptRoot 'transaction-windows.ps1')
@@ -120,6 +124,9 @@ def build_bundle(spec, source, ca):
         "Existing installations are never automatically removed or overwritten.\n"
         "Recognized stopped Filebeat with missing/disabled owned Discovery offers confirmed backup/recovery; -Repair accepts it explicitly.\n"
         "Windows periodic Discovery uses an independent .NET executable built in protected storage from included source.\n"
+        "For a recognized running native installation, use install.ps1 -UpdateDiscovery (-DryRun for read-only checks).\n"
+        "Discovery-only update preserves Filebeat, keys and queued data; network installation is skipped.\n"
+        "Protected backup and isolated SYSTEM checks precede replacement; central receipt still needs verification.\n"
         "Windows .NET Framework 4.x compiler must be present and trusted; no PowerShell policy is changed.\n"
         "Recovery preserves server, organization, CA, key and queues; it is not server migration or a network repair.\n"
         "Network collection requires an explicit NIC; Windows also needs approved Npcap.\n"

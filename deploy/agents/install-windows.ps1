@@ -8,6 +8,7 @@ param(
     [string[]]$AdditionalLogRoot = @(),
     [switch]$AllowUnavailableRevocation,
     [switch]$Repair,
+    [switch]$UpdateDiscovery,
     [switch]$DryRun
 )
 
@@ -20,6 +21,7 @@ $DiscoveryTask = 'Cloud-SOC-Discovery'
 . (Join-Path $PSScriptRoot 'download-windows.ps1')
 . (Join-Path $PSScriptRoot 'transaction-windows.ps1')
 . (Join-Path $PSScriptRoot 'repair-windows.ps1')
+. (Join-Path $PSScriptRoot 'update-discovery-windows.ps1')
 $Root = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Cloud-SOC-Agent'
 $FinalRoot = $Root
 $Stage = $null
@@ -150,6 +152,12 @@ function Test-DiscoveryTask {
 
 try {
     Assert-Arguments
+    if ($Repair -and $UpdateDiscovery) { throw 'Choose either -Repair or -UpdateDiscovery, not both.' }
+    if ($UpdateDiscovery) {
+        Invoke-SocDiscoveryUpdate -Root $Root -Source $PSScriptRoot -Endpoint $Endpoint -CaPath $CaPath -Organization $Organization `
+            -Version $Version -Hash $Hash -DryRun:$DryRun
+        exit 0
+    }
     $config = Get-AgentConfig | ConvertTo-Json -Depth 12
     if ($DryRun) {
         $config
@@ -160,6 +168,10 @@ try {
     if (-not [Environment]::Is64BitOperatingSystem -or -not [Environment]::Is64BitProcess -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Use 64-bit PowerShell on Windows x86_64.' }
     $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run PowerShell as Administrator (not required for -DryRun).' }
+    $existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($existingService -and $existingService.Status -eq 'Running') {
+        throw 'Filebeat is already running. Do not stop or reinstall it for a Discovery update; use the complete new package with -UpdateDiscovery (-DryRun first).'
+    }
     if ($Repair -or (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)) {
         Invoke-SocFilebeatRepair -Root $Root -Source $PSScriptRoot -Endpoint $Endpoint -CaPath $CaPath -Organization $Organization `
             -Version $Version -Hash $Hash -Repair:$Repair -AllowUnavailableRevocation:$AllowUnavailableRevocation

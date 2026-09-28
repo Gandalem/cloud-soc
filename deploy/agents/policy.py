@@ -91,6 +91,8 @@ def locked(root):
         if handle == wintypes.HANDLE(-1).value:
             raise ValueError('Discovery/policy update is busy or inaccessible; retry later')
         try:
+            if (root / 'discovery-update-pending.json').exists():
+                raise ValueError('Discovery update is pending; policy changes are blocked')
             yield
         finally:
             kernel.CloseHandle(handle)

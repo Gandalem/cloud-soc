@@ -130,6 +130,7 @@ class PortalTests(unittest.TestCase):
             self.assertIn("transaction-windows.ps1", archive.namelist())
             self.assertIn("repair-windows.ps1", archive.namelist())
             self.assertIn("native-windows.ps1", archive.namelist())
+            self.assertIn("update-discovery-windows.ps1", archive.namelist())
             self.assertEqual(archive.read("discovery-native.cs"), (ROOT / "deploy/agents/discovery-native.cs").read_bytes())
             self.assertNotIn("cloud-soc-discovery.exe", archive.namelist())
             self.assertIn("install-network-windows.ps1", archive.namelist())
@@ -146,7 +147,13 @@ class PortalTests(unittest.TestCase):
             self.assertIn("-Repair:$Repair", launcher)
             self.assertIn("AllowUnavailableRevocation = $AllowUnavailableRevocation", launcher)
             self.assertNotIn("AllowUnavailableRevocation = $true", launcher)
-            self.assertLess(launcher.index("-PreflightOnly"), launcher.index("& (Join-Path $PSScriptRoot 'install-windows.ps1')"))
+            self.assertLess(launcher.index("-PreflightOnly"), launcher.index("@common -DryRun:$DryRun -Repair:$Repair"))
+            self.assertIn("[switch]$UpdateDiscovery", launcher)
+            update = launcher.split("if ($UpdateDiscovery) {")[1].split("}\n", 1)[0]
+            self.assertIn("-UpdateDiscovery -DryRun:$DryRun -Repair:$Repair", update)
+            self.assertIn("exit $LASTEXITCODE", update)
+            self.assertNotIn("network", update)
+            self.assertLess(launcher.index("if ($UpdateDiscovery)"), launcher.index("Select-SocInterface"))
             for line in archive.read("SHA256SUMS").decode().splitlines():
                 digest, name = line.split("  ")
                 self.assertEqual(hashlib.sha256(archive.read(name)).hexdigest(), digest)
@@ -162,6 +169,26 @@ class PortalTests(unittest.TestCase):
             self.assertIn("@common -DryRun:$DryRun", launcher)
             self.assertIn("repair-windows.ps1", archive.namelist())
             self.assertIn("-Repair:$Repair", launcher)
+
+    def test_discovery_update_launcher_skips_network_installer(self):
+        # Run generated entrypoint against stub children, not an installed agent.
+        if os.name != "nt":
+            self.skipTest("Windows launcher")
+        item = self.package()
+        response = self.request("GET", f"/api/packages/{item['id']}/download")
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+                (folder / "install.ps1").write_bytes(archive.read("install.ps1"))
+            (folder / "install-windows.ps1").write_text(
+                "param($Endpoint,$CaPath,$Organization,[switch]$AllowUnavailableRevocation,"
+                "[switch]$UpdateDiscovery,[switch]$DryRun,[switch]$Repair)\n"
+                "if (-not $UpdateDiscovery -or -not $DryRun) { exit 99 }; exit 17\n"
+            )
+            for shell in ("powershell.exe", "pwsh"):
+                result = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-File", str(folder / "install.ps1"),
+                                         "-UpdateDiscovery", "-DryRun"], capture_output=True, timeout=30)
+                self.assertEqual(result.returncode, 17, result.stderr.decode(errors="replace"))
 
     def test_linux_log_only_bundle_is_executable_and_has_no_network_installer(self):
         item = self.package({**SPEC, "os": "ubuntu", "network": False})

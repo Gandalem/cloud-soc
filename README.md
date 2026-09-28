@@ -569,6 +569,8 @@ Get-Item -LiteralPath "$env:ProgramFiles\Cloud-SOC-Agent", "$env:ProgramFiles\Cl
 
 ## 9. 테스트와 현재 한계
 
+정상 실행 중인 Windows 에이전트의 Discovery만 갱신하려면 [갱신 가이드](docs/windows_discovery_update.md)를 따릅니다. 새 코드로 생성한 전체 패키지에서 `-UpdateDiscovery -DryRun`으로 점검한 뒤 `-UpdateDiscovery`로 실행합니다. 기존 키·registry·큐는 보존하며 `-Repair`로 대체하지 않습니다. 기존 다운로드 ZIP에는 이 옵션이 없을 수 있습니다.
+
 오프라인 설치기 테스트:
 
 ```powershell
