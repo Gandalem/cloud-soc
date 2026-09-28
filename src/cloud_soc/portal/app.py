@@ -244,8 +244,9 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def issue_keys(identifier):
         package = store.get(identifier)
         data = request.get_json()
-        if not isinstance(data, dict) or set(data) != {"days"} or type(data["days"]) is not int or data["days"] not in (1, 7, 30, 90):
+        if not isinstance(data, dict) or set(data) - {"days", "target_label"} or type(data.get("days")) is not int or data["days"] not in (1, 7, 30, 90):
             raise ValueError("키 만료일은 1·7·30·90일 중 선택하세요.")
+        label = key_label(data.get("target_label", ""))
         issued = []
         try:
             for scope, role_file in [("host", "publisher-role.json")] + ([("network", "network-publisher-role.json")] if package["network"] else []):
@@ -256,7 +257,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                     metadata={"package_id": identifier, "organization": package["organization"]},
                 )
                 issued.append({"id": key["id"], "key": key["id"] + ":" + key["api_key"], "scope": scope, "expiration": key.get("expiration")})
-            store.record_keys(identifier, issued)
+            store.record_keys(identifier, issued, package=package, target_label=label)
         except Exception:
             if issued:
                 try:
@@ -269,23 +270,76 @@ def create_app(settings=None, *, issuer=None, monitor=None):
 
     @app.post("/api/keys/<identifier>/revoke")
     def revoke_key(identifier):
-        with store.connect() as db:
-            found = db.execute("SELECT id FROM issued_keys WHERE id = ?", (identifier,)).fetchone()
-        if found is None:
-            abort(404)
+        found = known_key(identifier)
+        if found["revoked_at"]:
+            return jsonify(revoked=True, key=found)
         try:
             result = issuer.security.invalidate_api_key(ids=[identifier])
-            if result.get("error_count", 0):
+            invalidated = result.get("invalidated_api_keys", [])
+            previous = result.get("previously_invalidated_api_keys", [])
+            if (not isinstance(invalidated, list) or not isinstance(previous, list)
+                    or type(result.get("error_count")) is not int or result["error_count"] != 0
+                    or identifier not in invalidated + previous):
                 raise RuntimeError("Key revocation failed")
+            store.mark_revoked(identifier)
         except Exception:
-            return jsonify(error="키 폐기에 실패했습니다. 다시 확인하세요."), 503
-        return jsonify(revoked=True)
+            return jsonify(error="키 폐기를 확인하지 못했습니다. 서버 연결·발급 계정 권한을 확인하고 다시 시도하세요. 이력은 삭제하지 않았습니다."), 503
+        return jsonify(revoked=True, key=store.key(identifier))
+
+    def known_key(identifier):
+        found = store.key(identifier)
+        if found is None:
+            abort(404, description="발급 키 이력을 찾을 수 없습니다.")
+        return found
+
+    def key_label(value):
+        if not isinstance(value, str) or len(value) > 100 or any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("대상 별칭은 줄바꿈 없이 100자 이내로 입력하세요. 키·비밀번호를 입력하지 마세요.")
+        return value.strip()
+
+    @app.patch("/api/keys/<identifier>")
+    def label_key(identifier):
+        known_key(identifier)
+        data = request.get_json()
+        if not isinstance(data, dict) or set(data) != {"target_label"}:
+            raise ValueError("대상 별칭만 수정할 수 있습니다.")
+        store.label_key(identifier, key_label(data["target_label"]))
+        return jsonify(key=store.key(identifier))
+
+    @app.post("/api/keys/<identifier>/check")
+    def check_key(identifier):
+        found = known_key(identifier)
+        try:
+            response = issuer.security.get_api_key(id=identifier, owner=True)
+            keys = response["api_keys"]
+            if not isinstance(keys, list):
+                raise RuntimeError("Invalid key response")
+            if not keys:
+                store.check_key(identifier, None, "missing")
+            else:
+                if len(keys) != 1 or keys[0].get("id") != identifier or type(keys[0].get("invalidated")) is not bool:
+                    raise RuntimeError("Invalid key response")
+                key = keys[0]
+                expiration = key.get("expiration")
+                if expiration is not None and (type(expiration) is not int or not 0 <= expiration <= 253402300799000):
+                    raise RuntimeError("Invalid expiration")
+                scope = None
+                if key.get("metadata", {}).get("package_id") == found["package_id"]:
+                    roles = set(key.get("role_descriptors", {}))
+                    if roles == {"cloud_soc_host"}:
+                        scope = "host"
+                    if roles == {"cloud_soc_network"}:
+                        scope = "network"
+                store.check_key(identifier, {"expiration": expiration, "invalidated": key["invalidated"], "scope": scope},
+                                "revoked" if key["invalidated"] else "active")
+        except Exception:
+            store.check_key(identifier, None, "unavailable")
+            return jsonify(error="서버에서 키 정보를 확인하지 못했습니다. 연결·발급 계정 권한을 확인하세요.", key=store.key(identifier)), 503
+        return jsonify(key=store.key(identifier))
 
     @app.get("/api/keys")
     def key_ids():
-        with store.connect() as db:
-            rows = [dict(row) for row in db.execute("SELECT id, package_id, created_at FROM issued_keys ORDER BY created_at DESC LIMIT 500")]
-        return jsonify(keys=rows)
+        return jsonify(keys=store.keys())
 
     @app.get("/")
     def index():
@@ -294,10 +348,10 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     @app.get("/<path:filename>")
     def static_file(filename):
         # Never serve the repo, secrets, SQLite, source code, or arbitrary uploads.
-        allowed = {"agents.html", "agents.js", "agents.css", "styles.css", "assets/mark.svg",
+        allowed = {"agents.html", "agents.js", "agents.css", "styles.css", "shell.js", "shell.css", "assets/mark.svg",
                    "agent-status.html", "agent-status.js", "agent-status.css",
                    "collection-health.html", "collection-health.js",
-                   "index.html", "operations.js", "operations.css", "cases.js", "cases.css", "investigation.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css"}
+                   "index.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css"}
         if filename not in allowed:
             abort(404)
         return send_from_directory(PROJECT / "prototype", filename)

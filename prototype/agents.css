@@ -1,15 +1,4 @@
 .agents-page { --bg:#f3f5f8; --panel:#fff; --panel-raised:#f6f8fa; --border:#d6dce4; --text:#233246; --muted:#627185; --blue:#1756b8; color:var(--text); background:linear-gradient(135deg,#f8fafc,#edf2f7); }
-.agents-page .app-header { border-color:#1f3547; }
-.agents-page .sidebar { background:#fff; }
-.agents-page .nav-item { color:#4d5f74; }
-.agents-page .nav-item:hover { background:#edf3fb; color:#13488f; }
-.agents-page .nav-item.active { background:#edf3ff; color:#1756b8; border-color:#dce7fc; box-shadow:inset 3px 0 #2563bc; }
-.agents-page .nav-separator,.agents-page .sidebar-footer { border-color:#e3e8ee; }
-.agents-page .sidebar-footer,.agents-page .sidebar-footer strong { color:#65778a; }
-.nav-group { display:block; padding:10px; font-weight:600; color:#213c59; }
-.nav-item small { font-size:9px; margin-left:auto; padding:2px 5px; background:#e9edf2; color:#77879a; }
-.unavailable { opacity:.55; }
-.mobile-key-history { display:none; }
 .agents-main { padding-top:calc(var(--header-height) + 18px); }
 .breadcrumbs { font-size:11px; color:#7a8796; margin-bottom:25px; }
 .breadcrumbs span { margin:0 9px; color:#abb6c3; }
@@ -89,10 +78,20 @@ fieldset.form-row legend { float:left; width:130px; flex-shrink:0; padding:0; }
 .key-item input { width:100%; font-family:Consolas,monospace; padding:8px; }
 .key-item h3,.key-item small { grid-column:1/-1; }
 #key-message { margin:12px 0; font-size:12px; color:#9d493c; }
-.history-row { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--border); font-size:11px; }
-.history-row div { flex:1; min-width:0; }
+.history-row { display:grid; gap:10px; padding:18px 0; border-bottom:1px solid var(--border); font-size:12px; }
+.history-heading,.key-actions,.history-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.history-heading { justify-content:space-between; }
+.history-row small { color:#62758a; line-height:1.8; }
+.key-label,.history-toolbar label { display:grid; gap:6px; min-width:0; }
+.key-label input,.history-toolbar input,.history-toolbar select { min-width:0; max-width:100%; padding:8px; background:#fff; color:var(--text); }
+.key-state { padding:4px 8px; background:#eef2f6; color:#536477; border-radius:4px; font-size:11px; }
+.key-state.revoked,.key-state.expired,.key-state.unavailable { background:#fff0ed; color:#963c2a; }
+.key-state.active { background:#e9f5ef; color:#286347; }
+.key-confirm { border:1px solid #e4a79b; background:#fff6f3; padding:12px; display:grid; gap:10px; line-height:1.8; }
+#history-message { position:sticky; top:0; background:#f2f6fb; padding:10px; line-height:1.8; color:#344f6a; z-index:1; }
+#history-message:empty { display:none; }
+#history-count { margin-top:12px; color:#62758a; font-size:11px; }
 .history-row code { overflow-wrap:anywhere; display:block; }
 .agents-page .toast { background:#203c59; color:#fff; border-color:#355777; }
-@media(max-width:700px) { .mobile-key-history { display:block; margin-bottom:15px; } }
-@media(max-width:1000px) { .server-strip { grid-template-columns:1fr 1fr; } .package-toolbar { flex-wrap:wrap; } .installation-flow { grid-template-columns:1fr 1fr; } .agents-page .sidebar .nav-text { display:inline; } }
-@media(max-width:700px) { .agents-page .sidebar { display:none; } .agents-main { margin-left:0; padding:calc(var(--header-height) + 18px) 12px 20px; } .agents-page .brand { width:auto; padding-right:20px; } .agents-page .header-context { display:none; } .search-box { width:100%; } .search-box input { width:100%; min-width:0; } .form-row { grid-template-columns:1fr; gap:7px; } fieldset.form-row { flex-direction:column; align-items:flex-start; } .agent-dialog header,.agent-dialog footer,.dialog-body { padding:16px; } #package-info { grid-template-columns:1fr; gap:5px; } #package-info dd { margin-bottom:10px; } .server-strip { padding:14px; } }
+@media(max-width:1000px) { .server-strip { grid-template-columns:1fr 1fr; } .package-toolbar { flex-wrap:wrap; } .installation-flow { grid-template-columns:1fr 1fr; } }
+@media(max-width:700px) { .agents-main { margin-left:0; padding:calc(var(--header-height) + 18px) 12px 20px; } .search-box { width:100%; } .search-box input { width:100%; min-width:0; } .form-row { grid-template-columns:1fr; gap:7px; } fieldset.form-row { flex-direction:column; align-items:flex-start; } .agent-dialog header,.agent-dialog footer,.dialog-body { padding:16px; } #package-info { grid-template-columns:1fr; gap:5px; } #package-info dd { margin-bottom:10px; } .server-strip { padding:14px; } }

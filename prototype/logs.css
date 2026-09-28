@@ -1,5 +1,4 @@
 .logs-main { min-width:0; }
-.logs-mobile-nav { display:none; }
 .log-scope-note { padding:18px 20px; margin-bottom:20px; border-left:3px solid #447eb7; background:linear-gradient(110deg,#fff,#edf4fb); }
 .log-scope-note h2 { margin-bottom:9px; }
 .log-scope-note p { color:var(--muted); font-size:12px; line-height:1.9; }
@@ -36,7 +35,6 @@
 #log-detail-fields dt,#log-detail-fields dd { margin:0; padding:12px 8px; border-bottom:1px solid #dfe6ef; overflow-wrap:anywhere; line-height:1.7; white-space:pre-wrap; }
 #log-detail-fields dt { color:#667d95; }
 @media (max-width:720px) {
-  .logs-mobile-nav { display:flex; gap:16px; font-size:12px; margin-bottom:18px; flex-wrap:wrap; }
   .log-list-heading { flex-direction:column; padding:16px; }
   .log-filters { padding:0 16px 16px; gap:10px; }
   .log-filters label { flex-basis:calc(50% - 10px); }

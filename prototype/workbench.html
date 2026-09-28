@@ -4,13 +4,14 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>사건 조사 | Cloud SOC</title><link rel="icon" href="assets/mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css"><link rel="stylesheet" href="cases.css">
+  <link rel="stylesheet" href="shell.css">
+  <script src="shell.js" defer></script>
   <script src="investigation.js" defer></script>
 </head><body class="agents-page">
   <a class="skip-link" href="#main">본문으로 이동</a>
-  <header class="app-header"><a class="brand" href="index.html"><img src="assets/mark.svg" alt="">Cloud SOC</a><span class="workspace-label">사건 조사</span><span class="header-context">관리자 전용 · 실제 업무 저장</span></header>
-  <aside class="sidebar" aria-label="업무 메뉴"><p class="nav-caption">SECURITY OPERATIONS</p><nav><a class="nav-item" href="index.html">관제 현황 / 사건 업무</a><a class="nav-item active" href="workbench.html" aria-current="page">사건 조사</a><a class="nav-item" href="logs.html">통합 로그</a><a class="nav-item" href="collection-health.html">수집 품질</a><a class="nav-item" href="agents.html">에이전트 설치 파일</a></nav><div class="sidebar-footer">경보와 사건은 다릅니다.<br>근거와 분석가 판단을 구분합니다.</div></aside>
+  <div id="app-shell"></div>
   <main id="main" class="main-content agents-main">
-    <a id="case-back" href="index.html#case-queue">사건 업무 목록으로 돌아가기</a>
+    <a id="case-back" href="cases.html#case-queue">사건 목록으로 돌아가기</a>
     <div class="page-heading"><div><p class="eyebrow">INVESTIGATION WORKBENCH</p><h1 id="case-title">사건 조사</h1><p id="case-summary" class="case-summary">사건을 선택하세요.</p></div></div>
     <p id="investigation-error" role="alert" hidden></p><p id="investigation-status" role="status"></p>
     <section id="case-create-panel" class="panel case-panel" hidden><h2>경보를 사건으로 등록</h2><p>분석가가 명시적으로 등록한 경우에만 사건이 만들어집니다. 동일 경보를 여러 사건에 중복 등록할 수 없습니다.</p>

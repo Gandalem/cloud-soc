@@ -53,5 +53,7 @@ test('alert IDs are encoded and untrusted titles are text nodes',async()=>{
   const cells=ui.get('ops-alert-rows').children[0].children;
   assert.equal(cells[3].textContent,'<img src=x>');cells[5].children[0].listeners.click();await settle();
   assert.equal(new URL(ui.calls[1].url,'https://example.test').searchParams.get('id'),row.id);
+  const investigation = new URL(ui.get('ops-detail-content').children[0].href,'https://example.test');
+  assert.equal(investigation.searchParams.get('return_page'),'index.html');
   assert.match(ui.get('ops-detail-state').textContent,/주변 로그로 대체하지/);
 });

@@ -29,6 +29,7 @@ SCHEMAS = {
 }
 MAX_BYTES = 1024 ** 3
 MANIFEST = "manifest.json"
+KEY_HISTORY_COLUMNS = SCHEMAS["packages.sqlite3"]["issued_keys"] + "scope expiration target_label package_name package_os organization revoked_at checked_at server_state".split()
 
 
 class BackupError(Exception):
@@ -99,7 +100,10 @@ def inspect_database(path, name, budget):
             raise BackupError("Unsupported database schema; use the matching application version.")
         counts = {}
         for table, columns in SCHEMAS[name].items():
-            if [row[1] for row in db.execute(f'PRAGMA table_info("{table}")')] != columns:
+            accepted = [columns]
+            if name == "packages.sqlite3" and table == "issued_keys":
+                accepted.append(KEY_HISTORY_COLUMNS)
+            if [row[1] for row in db.execute(f'PRAGMA table_info("{table}")')] not in accepted:
                 raise BackupError("Unsupported database columns.")
             counts[table] = db.execute(f'SELECT count(*) FROM "{table}"').fetchone()[0]
         if db.execute("PRAGMA integrity_check").fetchall() != [("ok",)] or db.execute("PRAGMA foreign_key_check").fetchone():

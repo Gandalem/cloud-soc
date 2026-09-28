@@ -149,8 +149,20 @@ class PackageStore:
         self.database = root / "packages.sqlite3"
         self.source, self.ca, self.endpoint = source, ca, validate_endpoint(endpoint)
         with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             db.execute("CREATE TABLE IF NOT EXISTS packages (id TEXT PRIMARY KEY, name TEXT NOT NULL, os TEXT NOT NULL, spec TEXT NOT NULL, filename TEXT NOT NULL, sha256 TEXT NOT NULL, created_at TEXT NOT NULL, archive BLOB NOT NULL, UNIQUE(name, os))")
             db.execute("CREATE TABLE IF NOT EXISTS issued_keys (id TEXT PRIMARY KEY, package_id TEXT NOT NULL, created_at TEXT NOT NULL)")
+            columns = {row[1] for row in db.execute("PRAGMA table_info(issued_keys)")}
+            for column, kind in (("scope", "TEXT"), ("expiration", "INTEGER"), ("target_label", "TEXT"),
+                                 ("package_name", "TEXT"), ("package_os", "TEXT"), ("organization", "TEXT"),
+                                 ("revoked_at", "TEXT"), ("checked_at", "TEXT"), ("server_state", "TEXT")):
+                if column not in columns:
+                    db.execute(f"ALTER TABLE issued_keys ADD COLUMN {column} {kind}")
+            # Old histories contain IDs only. Recover only the still-existing package metadata.
+            for row in db.execute("SELECT id, spec FROM packages"):
+                spec = json.loads(row["spec"])
+                db.execute("UPDATE issued_keys SET package_name=?, package_os=?, organization=? WHERE package_id=? AND package_name IS NULL",
+                           (spec["name"], spec["os"], spec["organization"], row["id"]))
         self.database.chmod(0o600)
 
     @contextmanager
@@ -199,7 +211,50 @@ class PackageStore:
         with self.connect() as db:
             db.execute("DELETE FROM packages WHERE id = ?", (identifier,))
 
-    def record_keys(self, identifier, keys):
+    def record_keys(self, identifier, keys, *, package=None, target_label=""):
+        package = package if package is not None else self.get(identifier)
         with self.connect() as db:
             for key in keys:
-                db.execute("INSERT INTO issued_keys VALUES (?, ?, ?)", (key["id"], identifier, datetime.now(timezone.utc).isoformat()))
+                db.execute("INSERT INTO issued_keys (id, package_id, created_at, scope, expiration, target_label, package_name, package_os, organization) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                           (key["id"], identifier, datetime.now(timezone.utc).isoformat(), key.get("scope"), key.get("expiration"),
+                            target_label, package["name"], package["os"], package["organization"]))
+
+    @staticmethod
+    def public_key(row):
+        result = dict(row)
+        if result["revoked_at"]:
+            result["status"] = "revoked"
+        elif result["expiration"] is not None and result["expiration"] <= datetime.now(timezone.utc).timestamp() * 1000:
+            result["status"] = "expired"
+        else:
+            result["status"] = result["server_state"] or "unverified"
+        return result
+
+    def keys(self):
+        with self.connect() as db:
+            return [self.public_key(row) for row in db.execute("SELECT * FROM issued_keys ORDER BY created_at DESC, id LIMIT 500")]
+
+    def key(self, identifier):
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM issued_keys WHERE id=?", (identifier,)).fetchone()
+            return self.public_key(row) if row else None
+
+    def mark_revoked(self, identifier):
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connect() as db:
+            db.execute("UPDATE issued_keys SET revoked_at=COALESCE(revoked_at, ?), checked_at=?, server_state='revoked' WHERE id=?",
+                       (now, now, identifier))
+
+    def check_key(self, identifier, info, state):
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connect() as db:
+            db.execute("UPDATE issued_keys SET checked_at=?, server_state=? WHERE id=?", (now, state, identifier))
+            if info is not None:
+                db.execute("UPDATE issued_keys SET expiration=?, scope=COALESCE(scope, ?) WHERE id=?",
+                           (info["expiration"], info.get("scope"), identifier))
+                if info["invalidated"]:
+                    db.execute("UPDATE issued_keys SET revoked_at=COALESCE(revoked_at, ?) WHERE id=?", (now, identifier))
+
+    def label_key(self, identifier, label):
+        with self.connect() as db:
+            db.execute("UPDATE issued_keys SET target_label=? WHERE id=?", (label, identifier))

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>사건 조사 | Cloud SOC</title>
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css"><link rel="stylesheet" href="cases.css">
+  <link rel="stylesheet" href="shell.css">
+  <script src="shell.js" defer></script>
+  <script src="cases.js" defer></script>
+</head>
+<body class="agents-page" data-case-list-page="cases.html">
+  <a class="skip-link" href="#main">본문으로 이동</a>
+  <div id="app-shell"></div>
+  <main id="main" class="main-content agents-main">
+    <div class="page-heading"><div><p class="eyebrow">INVESTIGATION WORKBENCH</p><h1>사건 조사</h1><p class="subheading">조사할 사건을 선택해 근거·담당자·메모·처리 이력을 확인하세요.</p></div></div>
+    <section id="case-queue" class="panel case-panel" aria-labelledby="case-queue-title">
+      <h2 id="case-queue-title">사건 목록</h2><p>현재 관리자 계정의 업무 저장소입니다. 필터는 사건 생성 시각 기준이며 로그/경보 조회 기간과 독립적입니다.</p>
+      <form id="case-filters" class="case-toolbar">
+        <label>사건 상태<select name="status"><option value="open">미종결</option><option value="">전체</option><option value="new">신규</option><option value="triage">초기 분류</option><option value="investigating">조사 중</option><option value="escalated">상위 이관</option><option value="closed">종결</option></select></label>
+        <label>담당자<select name="owner"><option value="">전체</option><option value="unassigned">미배정</option><option value="me">현재 관리자</option></select></label>
+        <label>우선순위<select name="priority"><option value="">전체</option><option value="critical">긴급</option><option value="high">높음</option><option value="medium">중간</option><option value="low">낮음</option></select></label>
+        <label>생성 기간<select name="days"><option value="">전체 기간</option><option value="1">최근 1일</option><option value="7">최근 7일</option><option value="30">최근 30일</option></select></label>
+        <label>정렬<select name="sort"><option value="priority">우선순위·오래된 순</option><option value="newest">최신 생성 순</option><option value="oldest">오래된 생성 순</option></select></label>
+        <button type="submit">업무 조회</button>
+      </form><p id="case-counts" role="status">조회 중</p><p id="case-error" role="alert" hidden></p>
+      <div class="table-scroll" tabindex="0" aria-label="사건 업무 표"><table><thead><tr><th>사건</th><th>조직</th><th>우선순위</th><th>상태</th><th>담당자</th><th>생성 시각 (KST)</th></tr></thead><tbody id="case-rows"></tbody></table></div>
+      <div class="case-toolbar"><button id="case-prev" type="button" disabled>이전</button><span id="case-page">1 페이지</span><button id="case-next" type="button" disabled>다음</button></div>
+      <p>조사할 사건이 없다면 필터를 확인하거나 <a href="index.html#ops-alerts">관제 현황의 실제 경보 목록</a>에서 ‘사건 조사 / 등록’을 선택하세요. 사건은 자동 생성되지 않습니다.</p>
+    </section>
+  </main><noscript>사건 목록 조회에는 JavaScript가 필요합니다. 샘플 데이터로 대체하지 않습니다.</noscript>
+</body></html>

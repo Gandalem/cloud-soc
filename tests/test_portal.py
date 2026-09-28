@@ -54,7 +54,7 @@ class PortalTests(unittest.TestCase):
         return result.json
 
     def test_every_page_and_api_require_authentication(self):
-        for path in ("/", "/agents.js", "/api/portal", "/api/packages/a/download", "/api/keys", "/api/agents/health", "/collection-health.html", "/api/operations", "/api/alerts/detail", "/operations.js"):
+        for path in ("/", "/agents.js", "/api/portal", "/api/packages/a/download", "/api/keys", "/api/agents/health", "/collection-health.html", "/api/operations", "/api/alerts/detail", "/operations.js", "/cases.html"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 401)
             self.assertIn("WWW-Authenticate", response.headers)
@@ -69,6 +69,26 @@ class PortalTests(unittest.TestCase):
         self.assertIn(b"operations.js", root.data)
         self.assertNotIn(b"demo-data.js", root.data)
         root.close()
+
+    def test_case_list_page_is_authenticated_and_not_the_operations_page(self):
+        with self.request("GET", "/cases.html") as response:
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b'data-case-list-page="cases.html"', response.data)
+            self.assertIn(b'cases.js', response.data)
+            self.assertNotIn(b'operations.js', response.data)
+            self.assertNotIn(b'demo-data.js', response.data)
+
+    def test_shared_shell_assets_require_authentication(self):
+        for path in ('/shell.js', '/shell.css'):
+            with self.client.get(path) as response:
+                self.assertEqual(response.status_code, 401)
+            with self.request('GET', path) as response:
+                self.assertEqual(response.status_code, 200)
+        for page in ('index', 'logs', 'cases', 'workbench', 'agents', 'agent-status', 'collection-health'):
+            with self.request('GET', '/' + page + '.html') as response:
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(b'src="shell.js" defer', response.data)
+                self.assertIn(b'id="app-shell"', response.data)
 
     def test_health_unconfigured_is_not_empty_success(self):
         response = self.request('GET', '/api/agents/health')
@@ -170,7 +190,7 @@ class PortalTests(unittest.TestCase):
             self.assertEqual(self.request("POST", f"/api/packages/{item['id']}/keys", {"days": value}).status_code, 400)
         self.assertEqual(self.request("POST", "/api/keys/arbitrary-key/revoke", {}).status_code, 404)
         self.request("POST", f"/api/packages/{item['id']}/keys", {"days": 1})
-        self.issuer.security.invalidate_api_key.return_value = {"error_count": 0}
+        self.issuer.security.invalidate_api_key.return_value = {"error_count": 0, "invalidated_api_keys": ["host-id"], "previously_invalidated_api_keys": []}
         self.assertEqual(self.request("POST", "/api/keys/host-id/revoke", {}).status_code, 200)
 
     def test_repo_secrets_and_arbitrary_paths_are_not_served(self):

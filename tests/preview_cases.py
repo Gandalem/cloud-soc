@@ -39,8 +39,8 @@ class Preview(BaseHTTPRequestHandler):
             if length > 8192: self.send_error(413); return
             response = client.open(self.path, method=self.command, headers=headers, data=self.rfile.read(length) if length else None)
             data = response.get_data()
-            if urlsplit(self.path).path in ("/index.html", "/workbench.html", "/"):
-                data = data.replace("관리자 전용 · 실제".encode(), "합성 UI 검증 ·".encode())
+            if urlsplit(self.path).path == "/shell.js":
+                data = data.replace("관리자 전용 · 중앙 관리".encode(), "합성 UI 검증 · 운영 데이터 아님".encode())
             self.send_response(response.status_code)
             self.send_header("Content-Type", response.content_type)
             self.send_header("Content-Length", str(len(data)))

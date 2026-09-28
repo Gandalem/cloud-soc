@@ -10,7 +10,9 @@
   const back=new URLSearchParams(query.get("return")||"");
   const safeBack=new URLSearchParams();
   for(const [key,value]of back)if(["case_status","case_owner","case_priority","case_days","case_sort","case_page"].includes(key)&&value.length<40)safeBack.set(key,value);
-  $("case-back").href="index.html?"+safeBack+"#case-queue";
+  const returnPage=query.get("return_page")==="index.html"?"index.html":"cases.html";
+  $("case-back").href=returnPage+"?"+safeBack+"#case-queue";
+  $("case-back").textContent=returnPage==="index.html"?"관제 현황의 사건 업무 큐로 돌아가기":"사건 목록으로 돌아가기";
   function node(tag,text){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;}
   function error(message){$("investigation-error").hidden=false;$("investigation-error").textContent=message;}
   async function request(url,options={}){
@@ -105,12 +107,12 @@
   });
   $("case-create-form").addEventListener("submit",async event=>{
     event.preventDefault();if(saving)return;locked(true);$("investigation-error").hidden=true;
-    try{const result=await mutate("/api/cases","POST",{title:$("create-title").value,priority:$("create-priority").value,alert_id:alertId});caseId=result.id;window.history.replaceState(null,"","workbench.html?"+new URLSearchParams({case:caseId,return:safeBack.toString()}));await loadCase();}
+    try{const result=await mutate("/api/cases","POST",{title:$("create-title").value,priority:$("create-priority").value,alert_id:alertId});caseId=result.id;window.history.replaceState(null,"","workbench.html?"+new URLSearchParams({case:caseId,return:safeBack.toString(),return_page:returnPage}));await loadCase();}
     catch(failure){error(failure.message);}finally{locked(false);}
   });
   async function init(){
     if(caseId){if(!/^[0-9a-f]{32}$/.test(caseId)){error("사건 ID를 확인하세요.");return;}await loadCase();return;}
-    if(!alertId){$("investigation-status").textContent="관제 현황에서 사건이나 경보를 선택하세요.";return;}
+    if(!alertId){$("investigation-status").textContent="선택한 사건이 없습니다. 위의 ‘사건 목록으로 돌아가기’에서 조사할 사건을 선택하세요. 새 사건은 관제 현황의 경보에서 등록할 수 있습니다.";return;}
     try{
       const linked=await request("/api/case-link?"+new URLSearchParams({alert_id:alertId}));
       if(linked.case_id){caseId=linked.case_id;await loadCase();return;}

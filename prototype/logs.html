@@ -10,18 +10,14 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="agents.css">
   <link rel="stylesheet" href="logs.css">
+  <link rel="stylesheet" href="shell.css">
+  <script src="shell.js" defer></script>
   <script src="logs.js" defer></script>
 </head>
 <body class="agents-page logs-page">
   <a class="skip-link" href="#main">본문으로 이동</a>
-  <header class="app-header"><a class="brand" href="agents.html"><img src="assets/mark.svg" alt="">Cloud SOC</a><span class="workspace-label">통합 로그</span><span class="header-context">관리자 전용 · 읽기 전용</span></header>
-  <aside class="sidebar" aria-label="업무 메뉴">
-    <p class="nav-caption">SECURITY OPERATIONS</p>
-    <nav><a class="nav-item" href="index.html">관제 현황</a><a class="nav-item active" href="logs.html" aria-current="page">통합 로그</a><a class="nav-item" href="index.html#case-queue">사건 조사</a><div class="nav-separator"></div><a class="nav-item" href="agents.html">에이전트 설치 파일</a><a class="nav-item" href="agent-status.html">에이전트 접속 현황</a></nav>
-    <div class="sidebar-footer"><strong>Cloud SOC Mini SIEM</strong>수신 문서 메타데이터 조회<br>본문·전체 원문은 접근 제한</div>
-  </aside>
+  <div id="app-shell"></div>
   <main id="main" class="main-content agents-main logs-main">
-    <nav class="logs-mobile-nav" aria-label="페이지 이동"><a href="agents.html">설치 파일</a><a href="agent-status.html">접속 현황</a><a href="index.html">관제 현황</a></nav>
     <div class="page-heading"><div><p class="eyebrow">LOG EXPLORER</p><h1>통합 로그</h1><p class="subheading">호스트 로그·네트워크 관측·AWS/OCI 감사 이벤트를 하나의 표에서 조회합니다.</p></div><button id="log-refresh" class="primary-button" type="button">새로고침</button></div>
     <section class="log-scope-note panel" aria-label="조회 범위"><h2>수집된 기록과 해석 결과는 다릅니다.</h2><p>실제 수신 인덱스의 메타데이터만 표시합니다. IP·사용자·결과가 없으면 미관측으로 남기며, 수집 성공을 파싱 완료나 안전 판정으로 표시하지 않습니다.</p><p>민감정보 보호 정책 검증 전까지 메시지 본문·전체 원문·내보내기는 제한됩니다. 네트워크 기록은 흐름·DNS·TLS 메타데이터이며 원본 PCAP이 아닙니다.</p></section>
     <section class="panel log-workspace" id="log-panel" aria-labelledby="log-list-title" aria-busy="true">

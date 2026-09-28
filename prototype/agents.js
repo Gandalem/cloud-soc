@@ -1,8 +1,35 @@
+const SocKeyHistory = (() => {
+  const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  const date = value => value != null && Number.isFinite(new Date(value).getTime()) ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '기록 없음';
+  const scopes = { host: 'Filebeat · 로그 수집', network: 'Packetbeat · 네트워크 수집' };
+  const statuses = { unverified: '서버 확인 전', active: '유효 (마지막 확인 기준)', expired: '만료', revoked: '폐기 완료', missing: '서버에서 찾지 못함', unavailable: '서버 확인 실패' };
+  const scope = key => Object.hasOwn(scopes, key.scope) ? scopes[key.scope] : '용도 미확인 · 서버 확인 필요';
+  function rows(keys, query, filter) {
+    const search = query.trim().toLowerCase();
+    return keys.filter(key => (filter === 'all' || (filter === 'not_revoked' ? key.status !== 'revoked' : key.status === filter)) &&
+      [key.id, key.package_id, key.package_name, key.package_os, key.organization, key.target_label, scope(key)].join(' ').toLowerCase().includes(search));
+  }
+  function markup(key, busy = false, confirming = false) {
+    const status = Object.hasOwn(statuses, key.status) ? key.status : 'unverified';
+    return `<article class="history-row" data-key="${escape(key.id)}"><div class="history-heading"><strong>${escape(scope(key))}</strong><span class="key-state ${status}">${statuses[status]}</span></div>
+      <p>${escape(key.package_name || '패키지 정보 없음')} · ${escape(key.package_os || 'OS 미확인')} · 조직 ${escape(key.organization || '미확인')}</p>
+      <label class="key-label">대상 별칭 (직접 입력)<input data-target-label maxlength="100" value="${escape(key.target_label || '')}" placeholder="예: VMware 실습 Windows 01" ${busy ? 'disabled' : ''}></label>
+      <small>발급 ${escape(date(key.created_at))} · 만료 ${escape(date(key.expiration))}</small>
+      <small>서버 조회 ${escape(date(key.checked_at))}${key.revoked_at ? ` · 폐기 확인 ${escape(date(key.revoked_at))}` : ''}</small>
+      <details><summary>키 ID / 패키지 ID</summary><code>${escape(key.id)}</code><code>${escape(key.package_id)}</code></details>
+      <div class="key-actions"><button data-key-action="label" ${busy ? 'disabled' : ''}>별칭 저장</button><button data-key-action="check" ${busy ? 'disabled' : ''}>서버 확인</button><button data-key-action="revoke" class="danger-button" ${busy || status === 'revoked' ? 'disabled' : ''}>${status === 'revoked' ? '폐기 완료' : '키 폐기 (사용 중지)'}</button></div>
+      ${confirming ? `<div class="key-confirm" role="alert"><strong>${escape(key.target_label || '대상 미지정')} / ${escape(scope(key))}</strong><p>이 키를 사용하는 수집기의 전송이 중단됩니다. 키 ID를 확인하세요. 이력은 삭제하지 않습니다.</p><code>${escape(key.id)}</code><div class="key-actions"><button data-key-action="cancel-revoke" ${busy ? 'disabled' : ''}>취소</button><button data-key-action="confirm-revoke" class="danger-button" ${busy ? 'disabled' : ''}>확인 후 키 폐기</button></div></div>` : ''}</article>`;
+  }
+  return { rows, markup, scope };
+})();
+if (typeof module !== 'undefined') module.exports = SocKeyHistory;
+
 (() => {
   'use strict';
+  if (typeof document === 'undefined') return;
   const $ = selector => document.querySelector(selector);
   const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-  const state = { packages: [], selected: new Set(), page: 1, size: 25, detail: null, pendingDelete: [], keyPackage: null, keyGeneration: 0, loadGeneration: 0 };
+  const state = { packages: [], selected: new Set(), page: 1, size: 25, detail: null, pendingDelete: [], keyPackage: null, keyGeneration: 0, loadGeneration: 0, keys: [], historyGeneration: 0, keyBusy: new Set(), keyDrafts: new Map(), pendingRevoke: null };
   let toastTimer;
   function toast(text) { $('#agent-toast').textContent = text; $('#agent-toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#agent-toast').hidden = true; }, 4500); }
   const date = value => new Intl.DateTimeFormat('ko-KR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
@@ -90,23 +117,37 @@
   }
   function confirmDelete(ids) {
     state.pendingDelete = ids;
+    $('#delete-error').hidden = true;
     $('#delete-description').textContent = `선택한 설치 패키지 ${ids.length}개를 삭제합니다. 이 작업은 되돌릴 수 없습니다.`;
     $('#delete-dialog').showModal();
   }
   function openKeys(id) {
     state.keyPackage = id;
+    $('#key-target').value = '';
+    $('#key-package-name').textContent = state.packages.find(item => item.id === id)?.filename || id;
     $('#issued-keys').replaceChildren();
     $('#key-message').textContent = '';
     $('#issue-keys').disabled = false;
     $('#keys-dialog').showModal();
   }
+  function renderHistory() {
+    const keys = SocKeyHistory.rows(state.keys, $('#history-search').value, $('#history-filter').value);
+    $('#history-count').textContent = `최근 ${state.keys.length}개 중 ${keys.length}개 표시`;
+    $('#history-content').innerHTML = keys.length ? keys.map(key => SocKeyHistory.markup({ ...key, target_label: state.keyDrafts.get(key.id) ?? key.target_label }, state.keyBusy.has(key.id), state.pendingRevoke === key.id)).join('') : '<p>표시할 발급 이력이 없습니다.</p>';
+  }
   async function history() {
+    const generation = ++state.historyGeneration;
+    state.pendingRevoke = null;
+    state.keys = [];
+    $('#history-message').textContent = '';
+    $('#history-count').textContent = '';
     $('#history-content').textContent = '불러오는 중';
-    $('#history-dialog').showModal();
+    if (!$('#history-dialog').open) $('#history-dialog').showModal();
     try {
       const { keys } = await api('/api/keys');
-      $('#history-content').innerHTML = keys.length ? keys.map(key => `<div class="history-row"><div><code>${escape(key.id)}</code><small>${escape(date(key.created_at))} · 패키지 ${escape(key.package_id)}</small></div><button data-revoke="${escape(key.id)}">폐기</button></div>`).join('') : '<p>발급 이력이 없습니다.</p>';
-    } catch (error) { $('#history-content').textContent = error.message; }
+      if (generation !== state.historyGeneration) return;
+      state.keys = keys; renderHistory();
+    } catch (error) { if (generation === state.historyGeneration) $('#history-content').textContent = error.message; }
   }
   $('#refresh').addEventListener('click', load);
   $('#package-search').addEventListener('input', () => { state.page = 1; render(); });
@@ -124,10 +165,11 @@
   $('#delete-selected').addEventListener('click', () => confirmDelete([...state.selected]));
   $('#confirm-delete').addEventListener('click', async () => {
     $('#confirm-delete').disabled = true;
+    $('#delete-error').hidden = true;
     let removed = 0;
-    try { for (const id of state.pendingDelete) { await api(`/api/packages/${id}`, { method: 'DELETE' }); removed++; } toast(`${removed}개 패키지를 삭제했습니다. 에이전트와 키는 유지됩니다.`); }
-    catch (error) { toast(`${removed}개 삭제 후 중단: ${error.message}`); }
-    finally { $('#confirm-delete').disabled = false; $('#delete-dialog').close(); await load(); }
+    try { for (const id of state.pendingDelete) { await api(`/api/packages/${id}`, { method: 'DELETE' }); removed++; } $('#delete-dialog').close(); toast(`${removed}개 패키지를 삭제했습니다. 에이전트와 키는 유지됩니다.`); }
+    catch (error) { state.pendingDelete = state.pendingDelete.slice(removed); $('#delete-error').textContent = `${removed}개 삭제 후 중단: ${error.message} 남은 ${state.pendingDelete.length}개만 재시도합니다.`; $('#delete-error').hidden = false; }
+    finally { $('#confirm-delete').disabled = false; await load(); }
   });
   $('#add-package').addEventListener('click', () => { $('#package-form').reset(); setFormOS(); $('#form-error').hidden = true; $('#add-dialog').showModal(); });
   document.querySelectorAll('input[name=os]').forEach(input => input.addEventListener('change', setFormOS));
@@ -146,7 +188,7 @@
     const generation = ++state.keyGeneration;
     $('#issue-keys').disabled = true; $('#key-message').textContent = '발급 중';
     try {
-      const data = await api(`/api/packages/${state.keyPackage}/keys`, { method: 'POST', data: { days: Number($('#key-days').value) } });
+      const data = await api(`/api/packages/${state.keyPackage}/keys`, { method: 'POST', data: { days: Number($('#key-days').value), target_label: $('#key-target').value } });
       if (generation !== state.keyGeneration || !$('#keys-dialog').open) return;
       $('#issued-keys').replaceChildren();
       for (const key of data.keys) {
@@ -161,15 +203,62 @@
     } catch (error) { if (generation === state.keyGeneration) { $('#key-message').textContent = error.message; $('#issue-keys').disabled = false; } }
   });
   $('#keys-dialog').addEventListener('close', () => { state.keyGeneration++; $('#issued-keys').replaceChildren(); $('#key-message').textContent = ''; });
-  $('#key-history').addEventListener('click', history);
-  $('#mobile-key-history').addEventListener('click', history);
-  $('#history-content').addEventListener('click', async event => {
-    const button = event.target.closest('[data-revoke]'); if (!button) return;
-    if (!window.confirm('이 키를 폐기하면 해당 키를 사용하는 수집기의 전송이 중단됩니다. 계속할까요?')) return;
-    button.disabled = true;
-    try { await api(`/api/keys/${encodeURIComponent(button.dataset.revoke)}/revoke`, { method: 'POST' }); button.textContent = '폐기 확인'; }
-    catch (error) { toast(error.message); button.disabled = false; }
+  $('#key-history').addEventListener('click', () => {
+    if (window.location.hash === '#keys') return history();
+    window.location.hash = 'keys';
   });
-  document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => document.getElementById(button.dataset.close).close()));
+  function routeHistory() {
+    if (window.location.hash === '#keys') history();
+    else if ($('#history-dialog').open) $('#history-dialog').close();
+  }
+  window.addEventListener('hashchange', routeHistory);
+  $('#history-refresh').addEventListener('click', history);
+  $('#history-search').addEventListener('input', renderHistory);
+  $('#history-filter').addEventListener('change', renderHistory);
+  $('#history-dialog').addEventListener('close', () => {
+    state.historyGeneration++;
+    if (window.location.hash === '#keys') {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      window.dispatchEvent(new Event('hashchange'));
+    }
+  });
+  $('#history-content').addEventListener('input', event => {
+    if (event.target.matches('[data-target-label]')) state.keyDrafts.set(event.target.closest('[data-key]').dataset.key, event.target.value);
+  });
+  $('#history-content').addEventListener('click', async event => {
+    const button = event.target.closest('[data-key-action]'); if (!button) return;
+    const card = button.closest('[data-key]'), id = card.dataset.key;
+    const key = state.keys.find(item => item.id === id);
+    let action = button.dataset.keyAction;
+    if (!key || state.keyBusy.has(id)) return;
+    if (action === 'revoke' || action === 'cancel-revoke') {
+      state.pendingRevoke = action === 'revoke' ? id : null; renderHistory();
+      $('#history-message').textContent = '';
+      if (action === 'revoke') $('#history-content').querySelector('[data-key-action="confirm-revoke"]').focus();
+      return;
+    }
+    if (action === 'confirm-revoke') {
+      if (state.pendingRevoke !== id) return;
+      action = 'revoke';
+    }
+    const label = card.querySelector('[data-target-label]').value;
+    const generation = state.historyGeneration;
+    state.keyBusy.add(id); renderHistory(); $('#history-message').textContent = '처리 중…';
+    try {
+      const data = await api(`/api/keys/${encodeURIComponent(id)}${action === 'label' ? '' : `/${action}`}`, { method: action === 'label' ? 'PATCH' : 'POST', ...(action === 'label' ? { data: { target_label: label } } : {}) });
+      if (generation !== state.historyGeneration) return;
+      state.keys = state.keys.map(item => item.id === id ? data.key : item);
+      if (action === 'revoke') state.pendingRevoke = null;
+      if (action === 'label' && state.keyDrafts.get(id) === label) state.keyDrafts.delete(id);
+      $('#history-message').textContent = action === 'revoke' ? '키 폐기를 확인했습니다. 사용은 중지되며 감사 이력은 보존됩니다.' : action === 'label' ? '대상 별칭을 저장했습니다. 실제 설치 대상의 자동 확인은 아닙니다.' : '서버 조회 결과를 반영했습니다. 실제 수집 성공을 뜻하지 않습니다.';
+    } catch (error) {
+      if (generation !== state.historyGeneration) return;
+      if (action === 'check') state.keys = state.keys.map(item => item.id === id && !item.revoked_at ? { ...item, status: 'unavailable' } : item);
+      $('#history-message').textContent = `${SocKeyHistory.scope(key)} · ${key.target_label || id}: ${error.message}`;
+    } finally { state.keyBusy.delete(id); if ($('#history-dialog').open) renderHistory(); }
+  });
+  $('#delete-dialog').addEventListener('cancel', event => { if ($('#confirm-delete').disabled) event.preventDefault(); });
+  document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => { if (button.dataset.close !== 'delete-dialog' || !$('#confirm-delete').disabled) document.getElementById(button.dataset.close).close(); }));
   load();
+  routeHistory();
 })();

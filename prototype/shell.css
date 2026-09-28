@@ -1,0 +1,27 @@
+/* Shared layout overrides legacy prototype breakpoints on every portal page. */
+.agents-page .app-header { border-color:#1f3547; }
+.agents-page .sidebar { background:#fff; }
+.agents-page .nav-item { color:#4d5f74; }
+.agents-page .nav-item:hover { background:#edf3fb; color:#13488f; }
+.agents-page .nav-item.active { background:#edf3ff; color:#1756b8; border-color:#dce7fc; box-shadow:inset 3px 0 #2563bc; }
+.agents-page .nav-separator,.agents-page .sidebar-footer { border-color:#e3e8ee; }
+.agents-page .sidebar-footer,.agents-page .sidebar-footer strong { color:#65778a; }
+.nav-group { display:block; padding:10px; font-weight:600; color:#213c59; }
+.nav-item small { font-size:9px; margin-left:auto; padding:2px 5px; background:#e9edf2; color:#77879a; }
+.unavailable { opacity:.55; }
+.agents-page { --sidebar-width: 224px; }
+#app-shell .sidebar { overflow-y: auto; padding: 18px 12px; }
+#app-shell .nav-item { justify-content: flex-start; padding: 9px 10px; }
+#app-shell .nav-group { font-size: 12px; margin: 0 0 4px; padding: 10px; }
+#app-shell .shell-group + .shell-group { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
+#app-shell .sidebar-footer { display: block; padding-top: 16px; }
+.shell-toggle { display: none; }
+@media (max-width: 700px) {
+  #app-shell .workspace-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding-left: 0; }
+  #app-shell .header-context { display: none; }
+  #app-shell .brand { width: auto; padding-left: 12px; padding-right: 12px; font-size: 15px; }
+  #app-shell .shell-toggle { display: block; margin: 0 12px 0 auto; flex-shrink: 0; color: #fff; border-color: #536c81; background: #203445; }
+  #app-shell .sidebar { display: none; width: min(300px, 100%); box-shadow: 8px 0 24px #14283c26; }
+  #app-shell .sidebar.is-open { display: flex; }
+}
+@media print { #app-shell { display: none; } }
