@@ -5,6 +5,16 @@ const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 
+test('private CA compatibility is opt-in in both installers and never added to public downloads', () => {
+  for (const name of ['install-windows.ps1','install-network-windows.ps1']) {
+    const source = readFileSync(path.join(root,name),'utf8');
+    assert.match(source, /\[switch\]\$AllowUnavailableRevocation/);
+    assert.match(source, /Test-SocServerTls[^\r\n]*-AllowUnavailableRevocation:\$AllowUnavailableRevocation/);
+  }
+  const download = readFileSync(path.join(root,'download-windows.ps1'),'utf8');
+  assert.doesNotMatch(download, /--ssl-revoke-best-effort|--ssl-no-revoke|--insecure/);
+});
+
 for (const shell of ['powershell.exe', 'pwsh']) test(`SYSTEM probe and scratch cleanup use isolated mocks: ${shell}`, { skip: process.platform !== 'win32' }, () => {
   const result = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-File', path.join(__dirname, 'transaction-windows.ps1')], { encoding: 'utf8', timeout: 30000, windowsHide: true });
   assert.ifError(result.error);

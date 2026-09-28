@@ -6,6 +6,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Organization,
     [string[]]$AdditionalChannel = @(),
     [string[]]$AdditionalLogRoot = @(),
+    [switch]$AllowUnavailableRevocation,
     [switch]$DryRun
 )
 
@@ -158,7 +159,7 @@ try {
     Assert-SocLocalPath $FinalRoot
     $null = Get-SystemCurl
     if (-not (Test-Path -LiteralPath $CaPath -PathType Leaf)) { throw 'CA certificate file does not exist.' }
-    Test-SocServerTls -Endpoint $Endpoint -CaPath $CaPath
+    Test-SocServerTls -Endpoint $Endpoint -CaPath $CaPath -AllowUnavailableRevocation:$AllowUnavailableRevocation
     $null = Get-SourceDiscovery -LogRoots $LogRoots -RequiredChannels $Channels
 
     $Stage = New-SocStage

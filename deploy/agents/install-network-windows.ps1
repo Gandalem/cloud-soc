@@ -6,6 +6,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Organization,
     [string]$InterfaceGuid,
     [switch]$PreflightOnly,
+    [switch]$AllowUnavailableRevocation,
     [switch]$DryRun
 )
 
@@ -135,7 +136,7 @@ try {
     if (-not $InterfaceGuid) { $InterfaceGuid = Select-SocInterface }
     Assert-Interface
     if (-not (Test-Path -LiteralPath $CaPath -PathType Leaf)) { throw 'CA certificate file does not exist.' }
-    Test-SocServerTls -Endpoint $Endpoint -CaPath $CaPath
+    Test-SocServerTls -Endpoint $Endpoint -CaPath $CaPath -AllowUnavailableRevocation:$AllowUnavailableRevocation
     if ($PreflightOnly) {
         Write-Host 'Network OS/admin/Npcap/NIC/TLS preflight passed. Key/config/ingestion are not verified yet.'
         exit 0

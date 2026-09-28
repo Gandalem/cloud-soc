@@ -137,10 +137,23 @@ class PortalTests(unittest.TestCase):
             self.assertIn("-InterfaceGuid", launcher)
             self.assertIn("$LASTEXITCODE", launcher)
             self.assertIn("Select-SocInterface", launcher)
+            self.assertIn("[switch]$AllowUnavailableRevocation", launcher)
+            self.assertIn("AllowUnavailableRevocation = $AllowUnavailableRevocation", launcher)
+            self.assertNotIn("AllowUnavailableRevocation = $true", launcher)
             self.assertLess(launcher.index("-PreflightOnly"), launcher.index("& (Join-Path $PSScriptRoot 'install-windows.ps1')"))
             for line in archive.read("SHA256SUMS").decode().splitlines():
                 digest, name = line.split("  ")
                 self.assertEqual(hashlib.sha256(archive.read(name)).hexdigest(), digest)
+
+    def test_log_only_windows_bundle_supports_explicit_private_ca_option(self):
+        item = self.package({**SPEC, "network": False})
+        response = self.request("GET", f"/api/packages/{item['id']}/download")
+        with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+            launcher = archive.read("install.ps1").decode()
+            self.assertIn("[switch]$AllowUnavailableRevocation", launcher)
+            self.assertIn("AllowUnavailableRevocation = $AllowUnavailableRevocation", launcher)
+            self.assertNotIn("$networkInstaller", launcher)
+            self.assertIn("@common -DryRun:$DryRun", launcher)
 
     def test_linux_log_only_bundle_is_executable_and_has_no_network_installer(self):
         item = self.package({**SPEC, "os": "ubuntu", "network": False})

@@ -29,8 +29,19 @@ try {
     }
     Test-SocServerTls 'https://soc.example.invalid:9200' 'C:\synthetic\ca.crt'
     if ($CurlArguments[0] -ne '--disable' -or '--cacert' -notin $CurlArguments -or '--max-time' -notin $CurlArguments -or '-k' -in $CurlArguments) { throw 'TLS validation weakened' }
+    if ('--ssl-revoke-best-effort' -in $CurlArguments -or '--ssl-no-revoke' -in $CurlArguments) { throw 'Default revocation policy weakened' }
+    Test-SocServerTls 'https://soc.example.invalid:9200' 'C:\synthetic\ca.crt' -AllowUnavailableRevocation
+    if ('--ssl-revoke-best-effort' -notin $CurlArguments -or '--cacert' -notin $CurlArguments) { throw 'Missing scoped private CA compatibility option' }
+    foreach ($forbidden in @('-k', '--insecure', '--ssl-no-revoke', '--location', '--user')) {
+        if ($forbidden -in $CurlArguments) { throw 'Unsafe central preflight option' }
+    }
+    function Mock-Curl { $global:LASTEXITCODE = 0; return '302' }
+    Assert-Throws { Test-SocServerTls 'https://soc.example.invalid' 'C:\synthetic\ca.crt' -AllowUnavailableRevocation } 'TLS/connectivity'
     function Mock-Curl { $global:LASTEXITCODE = 60; return '000' }
     Assert-Throws { Test-SocServerTls 'https://soc.example.invalid' 'C:\synthetic\ca.crt' } 'TLS/connectivity'
+    Assert-Throws { Test-SocServerTls 'https://soc.example.invalid' 'C:\synthetic\ca.crt' -AllowUnavailableRevocation } 'TLS/connectivity'
+    function Mock-Curl { $global:LASTEXITCODE = 2; return '000' }
+    Assert-Throws { Test-SocServerTls 'https://soc.example.invalid' 'C:\synthetic\ca.crt' -AllowUnavailableRevocation } 'TLS/connectivity'
 
     $script:Calls = New-Object 'Collections.Generic.List[string]'
     function New-ScheduledTaskAction { param($Execute, $Argument, $WorkingDirectory)

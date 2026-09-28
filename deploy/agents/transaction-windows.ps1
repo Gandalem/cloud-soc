@@ -43,12 +43,17 @@ function New-SocProtectedDirectory([string]$Path, [switch]$Reuse) {
     New-SocProtectedDirectory $Path -Reuse
 }
 
-function Test-SocServerTls([string]$Endpoint, [string]$CaPath) {
+function Test-SocServerTls([string]$Endpoint, [string]$CaPath, [switch]$AllowUnavailableRevocation) {
     $curl = Get-SystemCurl
     $PSNativeCommandUseErrorActionPreference = $false
+    $revocationOptions = @()
+    if ($AllowUnavailableRevocation) {
+        Write-Warning 'Private CA compatibility: unavailable revocation information is allowed for this central-server probe only. CA, hostname, expiry and known revocation checks remain enabled; an unknown revoked certificate may be accepted. No Windows trust settings are changed.'
+        $revocationOptions = @('--ssl-revoke-best-effort')
+    }
     $status = & $curl --disable --silent --show-error --proto '=https' --tlsv1.2 --retry 0 --max-redirs 0 `
-        --connect-timeout 10 --max-time 20 --cacert $CaPath --output NUL --write-out '%{http_code}' -- ($Endpoint.TrimEnd('/') + '/')
-    if ($LASTEXITCODE -ne 0 -or $status -notin @('200', '401')) { throw 'Central TLS/connectivity preflight failed. Check server address, CA and connectivity; no credentials were sent.' }
+        --connect-timeout 10 --max-time 20 --cacert $CaPath @revocationOptions --output NUL --write-out '%{http_code}' -- ($Endpoint.TrimEnd('/') + '/')
+    if ($LASTEXITCODE -ne 0 -or $status -notin @('200', '401')) { throw 'Central TLS/connectivity preflight failed. Check server address, CA and connectivity; no credentials were sent. For an approved private CA with unavailable revocation information only, see -AllowUnavailableRevocation in the recovery guide; other certificate errors must be fixed.' }
     Write-Host '[OK] Central server TLS (API authentication still pending).'
 }
 

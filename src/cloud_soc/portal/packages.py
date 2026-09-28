@@ -73,9 +73,9 @@ bash "$HERE/install-network-ubuntu.sh" "${ARGS[@]}" --interface "$DEVICE" --dry-
             text += 'bash "$HERE/install-network-ubuntu.sh" "${ARGS[@]}" --interface "$DEVICE" "${DRY[@]}"\n'
         return "install.sh", text
     text = f'''#requires -Version 5.1
-param([string]$InterfaceGuid, [switch]$DryRun)
+param([string]$InterfaceGuid, [switch]$DryRun, [switch]$AllowUnavailableRevocation)
 $ErrorActionPreference = 'Stop'
-$common = @{{ Endpoint = '{endpoint}'; CaPath = (Join-Path $PSScriptRoot 'ca.crt'); Organization = '{org}' }}
+$common = @{{ Endpoint = '{endpoint}'; CaPath = (Join-Path $PSScriptRoot 'ca.crt'); Organization = '{org}'; AllowUnavailableRevocation = $AllowUnavailableRevocation }}
 '''
     if spec["network"]:
         text += '''. (Join-Path $PSScriptRoot 'transaction-windows.ps1')

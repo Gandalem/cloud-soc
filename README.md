@@ -528,6 +528,7 @@ Get-Process -Name filebeat,packetbeat -ErrorAction SilentlyContinue |
 | `No module named 'cloud_soc'` | 저장소 루트에서 `PYTHONPATH=src`를 현재 셸에 지정했는지, 가상환경 Python을 사용했는지 확인 |
 | HTTP 주소 거부 | 에이전트는 HTTPS만 허용. 개발용 Compose가 아닌 보안 수신 환경 준비 필요 |
 | TLS 연결 실패 | CA PEM 파일, 인증서 만료, DNS/IP와 SAN 일치 여부 확인. 검증을 끄지 않음 |
+| Windows `schannel: the revocation status is unknown` | 사설 CA의 폐기 정보 조회 불가일 수 있습니다. 기본 검사는 유지하며 승인된 사설 CA에만 새 패키지의 `-AllowUnavailableRevocation` 옵션을 사용합니다. 인증서 서명·주소·기간 검사는 유지하지만 조회 불가 시 폐기 여부를 확인하지 못할 수 있습니다. [원인·적용 조건·새 패키지 필요 안내](docs/windows_install_recovery.md)를 먼저 확인하세요. |
 | API 키 인증/저장 실패 | `id:api_key` 형식, 만료, 대상 인덱스 권한, 중앙 인덱스 자동 생성 정책 확인 |
 | 기존 설치 감지 | 기존 서비스·설정·registry를 검토한 후 전환 계획 수립. 무조건 삭제하거나 덮어쓰지 않음 |
 | Ubuntu 로그 파일 없음 | journald 수집과 `discovery-report.json`, 탐색 타이머 상태 확인 |
