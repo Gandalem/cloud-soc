@@ -51,7 +51,7 @@ P3에서 `privacy_policy=v2`로 보완했습니다. Windows 렌더링 `message`�
 
 형식과 카운터 의미: [Elastic Filebeat 통계 설명](https://www.elastic.co/docs/reference/beats/filebeat/understand-filebeat-logs), [로그 설정과 통계 형식 주의](https://www.elastic.co/docs/reference/beats/filebeat/configuration-logging).
 
-이번 변경은 코드/합성·실제 로그 읽기 검증 범위입니다. 기존 Windows worker·VMware 포털에 이 변경을 배포한 것은 아닙니다. 실행 중인 설치에 신규 설치기나 `-Repair`를 강제로 덮어씌우지 마세요. 안전한 worker 갱신/롤백과 중앙 보고 도착 검증을 P2-04/P2-03에서 이어갑니다. 과거 거절 로그는 [범위 진단 가이드](windows_log_loss_audit.md)를 참고하세요.
+2026-09-28 `dc3f6b3` 기준으로 VMware 포털과 새 패키지 생성기에 반영했습니다(P2C-08). 기존 Windows worker와 이미 저장된 설치 ZIP은 자동 갱신되지 않습니다. 현재 기존 worker의 보고에 신규 통계가 없어 `미측정`으로 표시되며 정상/0으로 간주하지 않습니다. 실행 중인 설치에 신규 설치기나 `-Repair`를 강제로 덮어씌우지 마세요. 안전한 worker 갱신/롤백과 신규 통계의 중앙 도착 검증은 P2C-07에 남아 있습니다. 과거 거절 로그는 [범위 진단 가이드](windows_log_loss_audit.md)를 참고하세요.
 
 ### 중앙 서버 반영 순서
 
