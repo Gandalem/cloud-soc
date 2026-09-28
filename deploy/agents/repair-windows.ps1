@@ -106,9 +106,54 @@ function Invoke-SocRepairBeat([string]$Root, [string]$Version, [string]$Check) {
     if ($LASTEXITCODE -ne 0) { throw "Existing Filebeat $Check check failed (exit $LASTEXITCODE). Existing key was not replaced." }
 }
 
-function Register-SocRepairDiscovery([string]$Root) {
-    $action = New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') `
+function New-SocRepairDiscoveryAction([string]$Root) {
+    New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') `
         -Argument ('-NoProfile -NonInteractive -File "{0}" -Refresh -DiscoveryRoot "{1}"' -f (Join-Path $Root 'discover-windows.ps1'), $Root) -WorkingDirectory $Root
+}
+
+function Get-SocRepairDiscovery([string]$Root, [switch]$AllowEnabled) {
+    $tasks = @(Get-ScheduledTask -ErrorAction Stop | Where-Object TaskName -eq 'Cloud-SOC-Discovery')
+    if (-not $tasks.Count) { return $null }
+    if ($tasks.Count -ne 1) { throw 'Multiple Discovery tasks; automatic recovery refused.' }
+    $task = $tasks[0]
+    $legacy = '-NoProfile -NonInteractive -File "{0}" -Refresh' -f (Join-Path $Root 'discover-windows.ps1')
+    $current = $legacy + (' -DiscoveryRoot "{0}"' -f $Root)
+    $actions = @($task.Actions)
+    if ($task.TaskPath -cne '\' -or $actions.Count -ne 1 -or
+        $actions[0].Execute -ine (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -or
+        $actions[0].Arguments -cnotin @($legacy,$current) -or
+        ($actions[0].WorkingDirectory -and $actions[0].WorkingDirectory -ine $Root) -or
+        $task.Principal.UserId -notin @('SYSTEM','NT AUTHORITY\SYSTEM','S-1-5-18') -or
+        [string]$task.Principal.LogonType -notin @('ServiceAccount','5') -or
+        [string]$task.Principal.RunLevel -notin @('Highest','1')) {
+        throw 'Existing Discovery task identity differs; it was not changed.'
+    }
+    if (-not $AllowEnabled -and ($task.Settings.Enabled -or [string]$task.State -ne 'Disabled')) {
+        throw 'Existing Discovery task must be disabled and idle before recovery; no task was stopped.'
+    }
+    return $task
+}
+
+function Get-SocRepairTaskInvariant([string]$Xml) {
+    # Preserve every original task setting except the action and enabled flag we own.
+    $document = [xml]$Xml
+    foreach ($node in @($document.SelectNodes('/*[local-name()="Task"]/*[local-name()="Actions"] | /*[local-name()="Task"]/*[local-name()="Settings"]/*[local-name()="Enabled"]'))) {
+        $null = $node.ParentNode.RemoveChild($node)
+    }
+    return $document.OuterXml
+}
+
+function Assert-SocRepairTaskUnchanged([string]$Root, [string]$OriginalXml) {
+    $task = Get-SocRepairDiscovery $Root -AllowEnabled
+    if (-not $task) { throw 'Discovery task disappeared during recovery.' }
+    $now = Export-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop
+    if ((Get-SocRepairTaskInvariant $now) -cne (Get-SocRepairTaskInvariant $OriginalXml)) {
+        throw 'Discovery definition changed during recovery; automatic replacement refused.'
+    }
+}
+
+function Register-SocRepairDiscovery([string]$Root) {
+    $action = New-SocRepairDiscoveryAction $Root
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
     $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
     $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -StartWhenAvailable
@@ -143,9 +188,9 @@ function Invoke-SocFilebeatRepairCore {
     $command = '"{0}" --environment=windows_service --path.home "{1}" --path.config "{2}" --path.data "{3}" --path.logs "{4}" -c "{5}" -E logging.files.redirect_stderr=true' -f (Join-Path $beatDirectory 'filebeat.exe'), $beatDirectory, $Root, (Join-Path $Root 'data'), (Join-Path $Root 'logs'), (Join-Path $Root 'filebeat.yml')
     $config = Get-Content -LiteralPath (Join-Path $Root 'filebeat.yml') -Raw -ErrorAction Stop | ConvertFrom-Json
     Assert-SocRepairIdentity $service $config $command $Endpoint $Organization $Root
-    if (@(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName -eq 'Cloud-SOC-Discovery' }).Count) {
-        throw 'Existing Discovery task requires a different recovery path; it was not replaced.'
-    }
+    $existingTask = Get-SocRepairDiscovery $Root
+    $taskXml = $null
+    if ($existingTask) { $taskXml = Export-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop }
     if (@(Get-Process -ErrorAction Stop | Where-Object { $_.ProcessName -eq 'filebeat' }).Count) { throw 'Filebeat process is still active; no changes made.' }
     foreach ($name in @('data\filebeat.keystore','discovery-settings.json','discover-windows.ps1','privacy.js')) {
         if (-not (Test-Path -LiteralPath (Join-Path $Root $name) -PathType Leaf)) { throw "Incomplete recovery prerequisite: $name" }
@@ -155,10 +200,16 @@ function Invoke-SocFilebeatRepairCore {
     Assert-SocRepairDistribution $Root $Version $Hash
     Test-SocServerTls -Endpoint $Endpoint -CaPath $CaPath -AllowUnavailableRevocation:$AllowUnavailableRevocation
     Write-Host 'Recognized stopped Filebeat; same server, organization and CA. Recovery preserves the existing key and queued data.'
-    if (-not $Repair -and (Read-Host 'Back up and recover Filebeat + missing SYSTEM Discovery task? This starts log collection. [y/N]') -notmatch '^(?i:y|yes)$') {
+    if (-not $Repair -and (Read-Host 'Back up and recover Filebeat + SYSTEM Discovery task? This starts log collection. [y/N]') -notmatch '^(?i:y|yes)$') {
         throw 'Recovery cancelled; existing installation unchanged.'
     }
     $backup = Backup-SocRepair $Root $service
+    if ($existingTask) {
+        $taskBackup = Join-Path $backup 'discovery-task.xml'
+        [IO.File]::WriteAllText($taskBackup, $taskXml, [Text.Encoding]::Unicode)
+        if ([IO.File]::ReadAllText($taskBackup) -cne $taskXml) { throw 'Discovery task backup verification failed.' }
+        (Get-FileHash -LiteralPath $taskBackup -Algorithm SHA256).Hash | Set-Content -LiteralPath (Join-Path $backup 'discovery-task.sha256')
+    }
     Write-Host "[2/4] Protected verified backup: $backup"
     $journal = [IO.File]::Open($pendingPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
     try {
@@ -167,12 +218,15 @@ function Invoke-SocFilebeatRepairCore {
         $journal.Write($bytes, 0, $bytes.Length)
         $journal.Flush($true)
     } finally { $journal.Dispose() }
-    $taskCreated = $false; $serviceTouched = $false; $changed = $false
+    $taskCreated = $false; $taskTouched = $false; $serviceTouched = $false; $changed = $false
     try {
         $current = Get-CimInstance Win32_Service -Filter "Name='cloud-soc-filebeat'" -ErrorAction Stop
         Assert-SocRepairIdentity $current $config $command $Endpoint $Organization $Root
         if (@(Get-Process -ErrorAction Stop | Where-Object { $_.ProcessName -eq 'filebeat' }).Count) { throw 'Filebeat process appeared during backup; no recovery changes made.' }
-        if (@(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName -eq 'Cloud-SOC-Discovery' }).Count) { throw 'Discovery task appeared during preparation.' }
+        $nowTask = Get-SocRepairDiscovery $Root
+        if ($existingTask) {
+            if (-not $nowTask -or (Export-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop) -cne $taskXml) { throw 'Discovery task changed during preparation.' }
+        } elseif ($nowTask) { throw 'Discovery task appeared during preparation.' }
         Write-Host '[3/4] Checking SYSTEM Discovery, existing configuration and server authentication.'
         # Keep the current configuration, organization, policy, keys and queues.
         $changed = $true
@@ -180,8 +234,21 @@ function Invoke-SocFilebeatRepairCore {
         Invoke-SocDiscoveryProbe $Root
         Invoke-SocRepairBeat $Root $Version 'config'
         Invoke-SocRepairBeat $Root $Version 'output'
-        Register-SocRepairDiscovery $Root
-        $taskCreated = $true
+        if ($existingTask) {
+            $null = Get-SocRepairDiscovery $Root
+            Assert-SocRepairTaskUnchanged $Root $taskXml
+            $taskTouched = $true
+            Set-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -Action (New-SocRepairDiscoveryAction $Root) -ErrorAction Stop | Out-Null
+            $updatedTask = Get-SocRepairDiscovery $Root
+            if (-not $updatedTask -or $updatedTask.Actions[0].WorkingDirectory -ine $Root -or
+                $updatedTask.Actions[0].Arguments -cne (New-SocRepairDiscoveryAction $Root).Arguments) { throw 'Discovery action update was not applied.' }
+            Assert-SocRepairTaskUnchanged $Root $taskXml
+            Enable-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop | Out-Null
+            Assert-SocRepairTaskUnchanged $Root $taskXml
+        } else {
+            Register-SocRepairDiscovery $Root
+            $taskCreated = $true
+        }
         $started = (Get-Date).AddSeconds(-1)
         Start-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop
         Wait-SocTask -Name 'Cloud-SOC-Discovery' -Started $started
@@ -208,8 +275,27 @@ function Invoke-SocFilebeatRepairCore {
                 if ((Get-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\').State -in @('Running','Queued')) { throw 'Discovery cleanup still active.' }
                 Unregister-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -Confirm:$false -ErrorAction Stop
             }
+            if ($taskTouched) {
+                Assert-SocRepairTaskUnchanged $Root $taskXml
+                Disable-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop | Out-Null
+                Stop-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop
+                $deadline = (Get-Date).AddSeconds(30)
+                while ((Get-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop).State -in @('Running','Queued')) {
+                    if ((Get-Date) -ge $deadline) { throw 'Existing Discovery cleanup still active.' }
+                    Start-Sleep -Seconds 1
+                }
+                Assert-SocRepairTaskUnchanged $Root $taskXml
+                Set-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -Action $existingTask.Actions -ErrorAction Stop | Out-Null
+                if ((Export-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop) -cne $taskXml) { throw 'Original Discovery definition was not fully restored.' }
+            }
             if (Test-Path -LiteralPath (Join-Path $Root 'probe-active.txt')) { throw 'SYSTEM probe cleanup incomplete.' }
-            if ($changed) { Restore-SocRepairFiles $Root $backup }
+            if ($changed) {
+                $safeTask = Get-SocRepairDiscovery $Root
+                if ($existingTask) {
+                    if (-not $safeTask -or (Export-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop) -cne $taskXml) { throw 'Original task is not idle/unchanged; files retained.' }
+                } elseif ($safeTask) { throw 'Unexpected task during rollback; files retained.' }
+                Restore-SocRepairFiles $Root $backup
+            }
             Remove-Item -LiteralPath $pendingPath -ErrorAction Stop
             Write-Warning "Recovery failed; owned changes rolled back, queues/keys retained. Backup: $backup"
         } catch { Write-Warning "Recovery cleanup incomplete. Files and backup retained at $backup; no queue rollback or deletion attempted." }

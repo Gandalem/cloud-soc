@@ -10,7 +10,7 @@ Cloud SOC는 Elasticsearch·Kibana와 Python 탐지 엔진을 사용하는 보�
 
 설치 중 오류가 발생했다면 [8. 문제 해결](#8-문제-해결)을 먼저 확인하세요. Ubuntu 버전·비밀번호·Elasticsearch 파일 권한, 웹 HTTPS 접속, Windows ZIP 경로·GUID 입력·스크립트 서명 오류와 백그라운드 동작을 정리했습니다.
 
-새 Windows 패키지는 [SYSTEM 사전 검사·staging 설치·기존 Filebeat 복구 확인](docs/windows_install_recovery.md)을 제공합니다. 중지된 동일 서버/조직/CA의 Filebeat와 누락 Discovery 작업은 사용자 동의 후 보호 백업·검사·복구하며 키와 큐를 보존합니다. 임의 잔존 설치/Packetbeat의 전체 자동 복구·Enrollment·수신 확인까지 구현된 것은 아닙니다.
+새 Windows 패키지는 [SYSTEM 사전 검사·staging 설치·기존 Filebeat 복구 확인](docs/windows_install_recovery.md)을 제공합니다. 중지된 동일 서버/조직/CA의 Filebeat와 누락되었거나 동일 설치의 비활성 Discovery 작업은 사용자 동의 후 보호 백업·검사·복구하며 키와 큐를 보존합니다. 임의 잔존 설치/Packetbeat의 전체 자동 복구·Enrollment·수신 확인까지 구현된 것은 아닙니다.
 
 발급한 키를 구분하거나 사용 중지하려면 [에이전트 키 관리 안내](docs/agent_key_management.md)를 확인하세요. 용도·패키지·대상 별칭·만료/폐기 상태를 표시하며, **패키지 삭제와 키 폐기는 별개**입니다. 폐기된 키 이력은 감사용으로 보존합니다.
 

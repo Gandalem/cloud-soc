@@ -74,10 +74,33 @@ try {
     }
     function Get-CimInstance { param($ClassName,$Filter,$ErrorAction) return $script:service }
     function Get-Process { param($ErrorAction) return @() }
-    $script:task = $false; $script:fail = ''; $script:answer = 'yes'
+    $legacyAction = [pscustomobject]@{ Execute=(Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'); Arguments=('-NoProfile -NonInteractive -File "{0}" -Refresh' -f (Join-Path $root 'discover-windows.ps1')); WorkingDirectory='' }
+    function New-FixtureTask {
+        [pscustomobject]@{ TaskName='Cloud-SOC-Discovery'; TaskPath='\'; State='Disabled'; Actions=@($legacyAction.PSObject.Copy()); Principal=[pscustomobject]@{ UserId='SYSTEM'; LogonType=5; RunLevel=1 }; Settings=[pscustomobject]@{ Enabled=$false } }
+    }
+    $script:task = $null; $script:fail = ''; $script:answer = 'yes'
     $script:calls = New-Object 'Collections.Generic.List[string]'
     function Get-ScheduledTask { param($TaskName,$TaskPath,$ErrorAction)
-        if ($script:task) { return [pscustomobject]@{ TaskName='Cloud-SOC-Discovery'; State='Ready' } }; return @()
+        if ($script:task) { return $script:task }; return @()
+    }
+    function Export-ScheduledTask { param($TaskName,$TaskPath,$ErrorAction)
+        $a = $script:task.Actions[0]
+        '<Task><Principal>SYSTEM</Principal><Actions><Exec><Command>{0}</Command><Arguments>{1}</Arguments><WorkingDirectory>{2}</WorkingDirectory></Exec></Actions><Settings><Enabled>{3}</Enabled></Settings><Triggers>original-schedule</Triggers></Task>' -f $a.Execute,[Security.SecurityElement]::Escape($a.Arguments),$a.WorkingDirectory,([string]$script:task.Settings.Enabled).ToLowerInvariant()
+    }
+    function New-ScheduledTaskAction { param($Execute,$Argument,$WorkingDirectory)
+        [pscustomobject]@{ Execute=$Execute; Arguments=$Argument; WorkingDirectory=$WorkingDirectory }
+    }
+    function Set-ScheduledTask { param($TaskName,$TaskPath,$Action,$ErrorAction)
+        $script:calls.Add('task-set')
+        $copy = $script:task.PSObject.Copy(); $copy.Actions=@($Action); $script:task=$copy
+        if ($script:fail -eq 'task-set' -and $Action.Arguments -match 'DiscoveryRoot') { throw 'synthetic task-set failure' }
+    }
+    function Enable-ScheduledTask { param($TaskName,$TaskPath,$ErrorAction)
+        $script:calls.Add('task-enable'); $script:task.Settings.Enabled=$true; $script:task.State='Ready'
+        if ($script:fail -eq 'task-enable') { throw 'synthetic task-enable failure' }
+    }
+    function Disable-ScheduledTask { param($TaskName,$TaskPath,$ErrorAction)
+        $script:calls.Add('task-disable'); $script:task.Settings.Enabled=$false; $script:task.State='Disabled'
     }
     function Read-Host { param($Prompt) return $script:answer }
     function Test-SocServerTls { param($Endpoint,$CaPath,[switch]$AllowUnavailableRevocation)
@@ -96,7 +119,7 @@ try {
         $script:calls.Add($Check)
         if ($script:fail -eq $Check) { throw "synthetic $Check failure" }
     }
-    function Register-SocRepairDiscovery { param($Root) $script:task=$true; $script:calls.Add('register') }
+    function Register-SocRepairDiscovery { param($Root) $script:task=New-FixtureTask; $script:task.Settings.Enabled=$true; $script:task.State='Ready'; $script:calls.Add('register') }
     function Start-ScheduledTask { param($TaskName,$TaskPath,$ErrorAction) $script:calls.Add('task-start') }
     function Wait-SocTask { param($Name,$Started) if ($script:fail -eq 'task') { throw 'synthetic task failure' } }
     function Stop-ScheduledTask { param($TaskName,$TaskPath,$ErrorAction) $script:calls.Add('task-stop') }
@@ -122,9 +145,33 @@ try {
     Assert-Throws { Invoke-SocFilebeatRepairCore @params } 'cancelled'
     if (Test-Path (Join-Path $env:ProgramData 'Cloud-SOC')) { throw 'Cancellation created backup/state' }
     $script:answer='yes'
-    $script:task=$true
-    Assert-Throws { Invoke-SocFilebeatRepairCore @params } 'Existing Discovery'
-    $script:task=$false
+    foreach ($change in @('path','execute','arguments','directory','principal','logon','level','extra-action')) {
+        $script:task=New-FixtureTask
+        switch ($change) {
+            'path' { $script:task.TaskPath='\Other\' }
+            'execute' { $script:task.Actions[0].Execute='cmd.exe' }
+            'arguments' { $script:task.Actions[0].Arguments+=' -Unexpected' }
+            'directory' { $script:task.Actions[0].WorkingDirectory=$source }
+            'principal' { $script:task.Principal.UserId='other' }
+            'logon' { $script:task.Principal.LogonType=3 }
+            'level' { $script:task.Principal.RunLevel=0 }
+            'extra-action' { $script:task.Actions+= $legacyAction }
+        }
+        Assert-Throws { Get-SocRepairDiscovery $root } 'identity differs'
+    }
+    $script:task=New-FixtureTask
+    $originalXml=Export-ScheduledTask
+    Assert-SocRepairTaskUnchanged $root $originalXml
+    Assert-Throws { Assert-SocRepairTaskUnchanged $root ($originalXml.Replace('original-schedule','other-schedule')) } 'definition changed'
+    $script:task=$null
+    Assert-Throws { Assert-SocRepairTaskUnchanged $root $originalXml } 'disappeared'
+    $script:task=New-FixtureTask
+    $script:task.Principal.UserId='other'
+    Assert-Throws { Invoke-SocFilebeatRepairCore @params } 'identity differs'
+    $script:task=New-FixtureTask
+    $script:task.Settings.Enabled=$true; $script:task.State='Ready'
+    Assert-Throws { Invoke-SocFilebeatRepairCore @params } 'disabled and idle'
+    $script:task=$null
     foreach ($failure in @('tls','probe','config','output','task','start')) {
         $script:fail=$failure; $script:calls.Clear()
         Assert-Throws { Invoke-SocFilebeatRepairCore @params -Repair } 'synthetic'
@@ -153,6 +200,27 @@ try {
         $snapshot = Join-Path $manifest.DirectoryName 'snapshot'
         foreach ($file in (Get-Content $manifest.FullName -Raw | ConvertFrom-Json).files) {
             if ((Get-FileHash (Join-Path $snapshot $file.path)).Hash -cne $file.sha256) { throw 'Backup changed' }
+        }
+    }
+    # A disabled legacy SYSTEM task is preserved, not deleted/re-registered.
+    $script:service.State='Stopped'; $script:service.StartMode='Disabled'
+    foreach ($failure in @('probe','config','output','task-set','task-enable','task','start','')) {
+        $script:task=New-FixtureTask
+        $originalXml = Export-ScheduledTask
+        $script:fail=$failure; $script:calls.Clear()
+        if ($failure) {
+            Assert-Throws { Invoke-SocFilebeatRepairCore @params -Repair } 'synthetic'
+            if ((Export-ScheduledTask) -cne $originalXml -or $script:task.State -ne 'Disabled') { throw "Existing task not restored: $failure" }
+            if ($service.State -ne 'Stopped' -or $service.StartMode -ne 'Disabled') { throw "Existing service not restored: $failure" }
+            if (Test-Path (Join-Path $root 'recovery-pending.json')) { throw "Rollback unexpectedly incomplete: $failure" }
+        } else {
+            Invoke-SocFilebeatRepairCore @params -Repair
+            if ($script:task.Actions[0].WorkingDirectory -ne $root -or $script:task.Actions[0].Arguments -notmatch 'DiscoveryRoot' -or -not $script:task.Settings.Enabled) { throw 'Legacy task action not repaired/enabled' }
+        }
+        if ('unregister' -in $script:calls -or 'register' -in $script:calls) { throw 'Existing task was deleted/replaced' }
+        $backups = @(Get-ChildItem (Join-Path $env:ProgramData 'Cloud-SOC\recovery') -Filter discovery-task.xml -Recurse)
+        foreach ($file in $backups) {
+            if ([IO.File]::ReadAllText($file.FullName) -cne $originalXml -or (Get-FileHash $file.FullName).Hash -ne (Get-Content (Join-Path $file.DirectoryName 'discovery-task.sha256'))) { throw 'Task backup differs' }
         }
     }
     Write-Output 'Recovery identity/distribution, cancellation, six failure paths, backup integrity and success order passed.'
