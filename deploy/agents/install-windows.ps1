@@ -7,6 +7,7 @@ param(
     [string[]]$AdditionalChannel = @(),
     [string[]]$AdditionalLogRoot = @(),
     [switch]$AllowUnavailableRevocation,
+    [switch]$Repair,
     [switch]$DryRun
 )
 
@@ -18,6 +19,7 @@ $DiscoveryTask = 'Cloud-SOC-Discovery'
 . (Join-Path $PSScriptRoot 'discover-windows.ps1')
 . (Join-Path $PSScriptRoot 'download-windows.ps1')
 . (Join-Path $PSScriptRoot 'transaction-windows.ps1')
+. (Join-Path $PSScriptRoot 'repair-windows.ps1')
 $Root = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Cloud-SOC-Agent'
 $FinalRoot = $Root
 $Stage = $null
@@ -155,6 +157,11 @@ try {
     if (-not [Environment]::Is64BitOperatingSystem -or -not [Environment]::Is64BitProcess -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Use 64-bit PowerShell on Windows x86_64.' }
     $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run PowerShell as Administrator (not required for -DryRun).' }
+    if ($Repair -or (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)) {
+        Invoke-SocFilebeatRepair -Root $Root -Source $PSScriptRoot -Endpoint $Endpoint -CaPath $CaPath -Organization $Organization `
+            -Version $Version -Hash $Hash -Repair:$Repair -AllowUnavailableRevocation:$AllowUnavailableRevocation
+        exit 0
+    }
     Assert-NoInstallation
     Assert-SocLocalPath $FinalRoot
     $null = Get-SystemCurl
@@ -247,6 +254,6 @@ try {
             Remove-SocOwnedDirectory -Path $Root -ExpectedPath $expected -Token $Stage.Token
             [Console]::Error.WriteLine('Preparation rolled back. No permanent collector service was started; correct the error and retry.')
         } catch { [Console]::Error.WriteLine('Safe cleanup could not finish. Protected scratch state retained; no unrelated files were removed.') }
-    } elseif ($RootCreated) { [Console]::Error.WriteLine("Post-start or cleanup failure: state retained at $Root to preserve queues/keys. Repair is not yet supported; do not delete data.") }
+    } elseif ($RootCreated) { [Console]::Error.WriteLine("Post-start or cleanup failure: state retained at $Root to preserve queues/keys. Rerun the complete package to check supported recovery; do not delete data.") }
     exit 1
 }

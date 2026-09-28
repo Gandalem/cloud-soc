@@ -128,6 +128,7 @@ class PortalTests(unittest.TestCase):
             self.assertIn("discover-windows.ps1", archive.namelist())
             self.assertIn("download-windows.ps1", archive.namelist())
             self.assertIn("transaction-windows.ps1", archive.namelist())
+            self.assertIn("repair-windows.ps1", archive.namelist())
             self.assertIn("install-network-windows.ps1", archive.namelist())
             self.assertEqual(archive.read("ca.crt"), CA)
             self.assertNotIn(".env", archive.namelist())
@@ -138,6 +139,8 @@ class PortalTests(unittest.TestCase):
             self.assertIn("$LASTEXITCODE", launcher)
             self.assertIn("Select-SocInterface", launcher)
             self.assertIn("[switch]$AllowUnavailableRevocation", launcher)
+            self.assertIn("[switch]$Repair", launcher)
+            self.assertIn("-Repair:$Repair", launcher)
             self.assertIn("AllowUnavailableRevocation = $AllowUnavailableRevocation", launcher)
             self.assertNotIn("AllowUnavailableRevocation = $true", launcher)
             self.assertLess(launcher.index("-PreflightOnly"), launcher.index("& (Join-Path $PSScriptRoot 'install-windows.ps1')"))
@@ -154,6 +157,8 @@ class PortalTests(unittest.TestCase):
             self.assertIn("AllowUnavailableRevocation = $AllowUnavailableRevocation", launcher)
             self.assertNotIn("$networkInstaller", launcher)
             self.assertIn("@common -DryRun:$DryRun", launcher)
+            self.assertIn("repair-windows.ps1", archive.namelist())
+            self.assertIn("-Repair:$Repair", launcher)
 
     def test_linux_log_only_bundle_is_executable_and_has_no_network_installer(self):
         item = self.package({**SPEC, "os": "ubuntu", "network": False})
@@ -227,7 +232,7 @@ class PortalTests(unittest.TestCase):
                     if platform == "windows":
                         with zipfile.ZipFile(io.BytesIO(data)) as archive:
                             archive.extractall(folder)
-                        args = [shell, "-NoProfile", "-NonInteractive", "-File", str(folder / "install.ps1"), "-DryRun"]
+                        args = [shell, "-NoProfile", "-NonInteractive", "-File", str(folder / "install.ps1"), "-DryRun", "-Repair"]
                         nic = ["-InterfaceGuid", "12345678-1234-1234-1234-123456789abc"]
                     else:
                         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:

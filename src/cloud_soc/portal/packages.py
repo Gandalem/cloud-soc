@@ -15,7 +15,7 @@ import zipfile
 
 VERSION = "9.5.2"
 FILES = {
-    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "privacy.js", "policy.py"],
+    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "repair-windows.ps1", "privacy.js", "policy.py"],
     "ubuntu": ["install-ubuntu.sh", "discover-linux.sh", "privacy.js", "policy.py"],
 }
 NETWORK_FILES = {
@@ -73,7 +73,7 @@ bash "$HERE/install-network-ubuntu.sh" "${ARGS[@]}" --interface "$DEVICE" --dry-
             text += 'bash "$HERE/install-network-ubuntu.sh" "${ARGS[@]}" --interface "$DEVICE" "${DRY[@]}"\n'
         return "install.sh", text
     text = f'''#requires -Version 5.1
-param([string]$InterfaceGuid, [switch]$DryRun, [switch]$AllowUnavailableRevocation)
+param([string]$InterfaceGuid, [switch]$DryRun, [switch]$AllowUnavailableRevocation, [switch]$Repair)
 $ErrorActionPreference = 'Stop'
 $common = @{{ Endpoint = '{endpoint}'; CaPath = (Join-Path $PSScriptRoot 'ca.crt'); Organization = '{org}'; AllowUnavailableRevocation = $AllowUnavailableRevocation }}
 '''
@@ -89,7 +89,7 @@ if ($DryRun) { & $networkInstaller @common -InterfaceGuid $InterfaceGuid -DryRun
 else { & $networkInstaller @common -InterfaceGuid $InterfaceGuid -PreflightOnly }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 '''
-    text += '''& (Join-Path $PSScriptRoot 'install-windows.ps1') @common -DryRun:$DryRun
+    text += '''& (Join-Path $PSScriptRoot 'install-windows.ps1') @common -DryRun:$DryRun -Repair:$Repair
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 '''
     if spec["network"]:
@@ -118,6 +118,8 @@ def build_bundle(spec, source, ca):
         "Beats are downloaded from Elastic with pinned SHA-512 checks. Internet is required.\n"
         "Use --dry-run (Linux) or -DryRun (Windows) to inspect configuration first.\n"
         "Existing installations are never automatically removed or overwritten.\n"
+        "Recognized stopped Filebeat with missing Discovery task offers confirmed backup/recovery; -Repair accepts it explicitly.\n"
+        "Recovery preserves server, organization, CA, key and queues; it is not server migration or a network repair.\n"
         "Network collection requires an explicit NIC; Windows also needs approved Npcap.\n"
         "Enter the host key at Filebeat's keystore prompt; enter the separate network key at Packetbeat's prompt.\n"
         "If network installation fails after Filebeat succeeds, Filebeat remains running.\n"
