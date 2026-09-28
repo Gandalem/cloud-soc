@@ -53,7 +53,6 @@ function Test-SocVerificationProtectedAcl([string]$Path) {
 }
 
 function Test-SocVerificationAdmin {
-    if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) { return $false }
     if (-not [Environment]::Is64BitOperatingSystem -or -not [Environment]::Is64BitProcess) { return $false }
     $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
