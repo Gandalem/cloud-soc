@@ -15,7 +15,7 @@ import zipfile
 
 VERSION = "9.5.2"
 FILES = {
-    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "repair-windows.ps1", "privacy.js", "policy.py"],
+    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "repair-windows.ps1", "native-windows.ps1", "discovery-native.cs", "privacy.js", "policy.py"],
     "ubuntu": ["install-ubuntu.sh", "discover-linux.sh", "privacy.js", "policy.py"],
 }
 NETWORK_FILES = {
@@ -118,7 +118,9 @@ def build_bundle(spec, source, ca):
         "Beats are downloaded from Elastic with pinned SHA-512 checks. Internet is required.\n"
         "Use --dry-run (Linux) or -DryRun (Windows) to inspect configuration first.\n"
         "Existing installations are never automatically removed or overwritten.\n"
-        "Recognized stopped Filebeat with missing Discovery task offers confirmed backup/recovery; -Repair accepts it explicitly.\n"
+        "Recognized stopped Filebeat with missing/disabled owned Discovery offers confirmed backup/recovery; -Repair accepts it explicitly.\n"
+        "Windows periodic Discovery uses an independent .NET executable built in protected storage from included source.\n"
+        "Windows .NET Framework 4.x compiler must be present and trusted; no PowerShell policy is changed.\n"
         "Recovery preserves server, organization, CA, key and queues; it is not server migration or a network repair.\n"
         "Network collection requires an explicit NIC; Windows also needs approved Npcap.\n"
         "Enter the host key at Filebeat's keystore prompt; enter the separate network key at Packetbeat's prompt.\n"

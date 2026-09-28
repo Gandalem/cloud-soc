@@ -78,6 +78,7 @@ Write-Output 'PowerShell parser and isolated validation/checksum/native-error/ex
 
 # A registered task alone is not proof that policy permits the helper to run.
 function Start-ScheduledTask { param($TaskName) }
+function Write-SocDiscoveryFailureSummary { param($Root,$Since) }
 function Start-Sleep { param($Seconds) }
 function Get-ScheduledTaskInfo { param($TaskName) @{ LastRunTime = (Get-Date); LastTaskResult = 1 } }
 function Get-ScheduledTask { param($TaskName) @{ State = 'Ready' } }

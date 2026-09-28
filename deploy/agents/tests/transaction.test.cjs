@@ -27,7 +27,9 @@ test('host SYSTEM discovery runs before downloads and service creation', () => {
   assert.ok(probe > 0 && probe < source.indexOf('Receive-CloudSocArchive'));
   assert.ok(source.indexOf('Test-DiscoveryTask') < source.indexOf('New-Service'));
   assert.ok(source.indexOf("@('test', 'output')") < source.indexOf('[IO.Directory]::Move'));
-  assert.match(source, /-WorkingDirectory \$Root/);
+  assert.match(source, /New-SocNativeDiscoveryAction \$Root/);
+  const native = readFileSync(path.join(__dirname, '../native-windows.ps1'), 'utf8');
+  assert.match(native, /-WorkingDirectory \$Root/);
 });
 
 test('both installers validate staged config before promotion and never delete post-start queues', () => {

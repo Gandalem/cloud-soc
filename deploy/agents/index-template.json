@@ -2,12 +2,13 @@
   "index_patterns": ["soc-host-raw-*"],
   "priority": 200,
   "_meta": {
-    "description": "Minimal isolated host intake mappings. Not a full ECS/Beats template or a retention policy."
+    "description": "Minimal host intake mappings. Excess dynamic fields stay in _source but are not searchable; inspect _ignored. Not a full ECS/Beats template or retention policy."
   },
   "template": {
     "settings": {
       "number_of_shards": 1,
-      "number_of_replicas": 1
+      "number_of_replicas": 1,
+      "index.mapping.total_fields.ignore_dynamic_beyond_limit": true
     },
     "mappings": {
       "properties": {

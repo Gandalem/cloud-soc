@@ -399,7 +399,7 @@ Get-WinEvent -FilterHashtable @{ LogName='Application'; ProviderName='CloudSOCTe
     Where-Object { $_.Message -like "*$TestId*" } |
     Select-Object TimeCreated, Id, ProviderName, Message
 "PC: $env:COMPUTERNAME"
-'KQL: organization.id : "school-lab" and winlog.channel : "Application" and message : "' + $TestId + '"'
+'KQL: organization.id : "school-lab" and winlog.channel : "Application" and winlog.event_data.param1 : "' + $TestId + '"'
 ```
 
 ### AWS Kibana: 실제 저장 확인
@@ -410,7 +410,9 @@ Get-WinEvent -FilterHashtable @{ LogName='Application'; ProviderName='CloudSOCTe
 4. 시간 범위를 **최근 1시간**으로 설정하고, PowerShell이 출력한 `KQL:` 뒤의 검색식을 붙여 넣습니다.
 5. 새로고침해 고유 `$TestId`가 들어간 문서의 시간·호스트·조직·채널을 로컬 이벤트와 비교합니다.
 
-확인 필드: `@timestamp`, `host.name`, `organization.id`, `winlog.channel`, `event.code`, `message`. 처음 과거 로그가 많이 쌓이면 새 이벤트가 보일 때까지 지연될 수 있습니다. 서비스 로그의 인덱싱 오류도 같이 봅니다.
+확인 필드: `@timestamp`, `event.ingested`, `agent.id`, `host.name`, `organization.id`, `winlog.channel`, `winlog.record_id`, `event.code`, `winlog.event_data.param1`. Windows 렌더링 `message`는 개인정보 중복 노출 방지를 위해 제거하므로 서버 검색 기준으로 사용하지 않습니다. 위 eventcreate 시험의 문자열은 구조화된 `param1`에서 대조하고, 다른 공급자는 실제 필드와 이벤트 참조를 확인합니다. 처음 과거 로그가 많이 쌓이면 새 이벤트가 보일 때까지 지연될 수 있습니다. 서비스 로그의 인덱싱 오류도 같이 봅니다.
+
+필드 한도 초과 보호가 적용된 호스트 인덱스에서는 새 동적 필드가 검색 대상에 추가되지 않고 저장 문서에만 남을 수 있습니다. `_ignored`와 정확한 문서 참조를 함께 확인하며, KQL 결과 0건만으로 미수신이라고 단정하지 않습니다.
 
 **이 문서가 실제 AWS Kibana에서 보이면 Windows 이벤트 로그 → Filebeat → HTTPS → Elasticsearch → Kibana 경로가 검증된 것입니다.** 이것이 탐지 규칙 실행이나 모든 종류의 로그 수집 성공까지 뜻하지는 않습니다.
 

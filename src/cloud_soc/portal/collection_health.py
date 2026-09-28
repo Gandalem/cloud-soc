@@ -1,6 +1,7 @@
 """Authenticated source-discovery reports, deliberately separate from log counts."""
 from datetime import datetime, timedelta, timezone
 import json
+import math
 import re
 
 from cloud_soc.portal.agent_status import iso, parse_time, encode_cursor
@@ -10,6 +11,56 @@ STATUSES = {'selected', 'unreadable', 'enumeration_error', 'disabled', 'unsuppor
             'unsafe_name', 'unsafe_path', 'missing', 'reparse_point', 'symlink',
             'binary_archive_or_secret', 'unsupported_encoding', 'unsupported_encoding_or_binary',
             'binary', 'empty_pending', 'policy_excluded'}
+
+METRICS = ('queue_bytes', 'queue_events', 'queue_pct', 'queue_max_bytes', 'pipeline_active',
+           'output_total', 'output_acked', 'output_failed', 'output_dropped',
+           'output_dead_letter', 'output_failure_store', 'read_errors', 'write_errors')
+PROBLEMS = ('output_failed', 'output_dropped', 'output_dead_letter', 'output_failure_store',
+            'read_errors', 'write_errors')
+
+
+def collector_metrics(value, generated, now):
+    """Allowlisted interval samples; missing counters are never claimed as zero."""
+    unavailable = {'state': 'unavailable', 'queue_state': 'unknown', 'transport_state': 'unknown'}
+    if value is None:
+        return unavailable
+    invalid = {**unavailable, 'state': 'invalid'}
+    if not isinstance(value, dict) or type(value.get('schema')) is not int or value['schema'] != 1:
+        return invalid
+    if value.get('state') == 'unavailable':
+        return unavailable
+    sampled = parse_time(value.get('sampled_at'))
+    interval = value.get('interval_seconds')
+    if (value.get('state') != 'observed' or value.get('counter_scope') != 'logged_interval_delta'
+            or not sampled or type(interval) is not int or not 1 <= interval <= 86400
+            or type(value.get('scan_partial')) is not bool):
+        return invalid
+    numbers = {}
+    for name in METRICS:
+        number = value.get(name)
+        if number is not None:
+            if name == 'queue_pct':
+                valid = type(number) in (int, float) and 0 <= number <= 1 and math.isfinite(number)
+            else:
+                valid = type(number) is int and 0 <= number <= 9007199254740991
+            if not valid:
+                return invalid
+        numbers[name] = number
+    future = (sampled - now).total_seconds() > 60 or (sampled - generated).total_seconds() > 60
+    age = max(0, round((now - sampled).total_seconds()))
+    state = 'clock_warning' if future else 'stale' if age > 300 else 'recent'
+    problem = parse_time(value.get('last_problem_at'))
+    if value.get('last_problem_at') is not None and (not problem or (problem - sampled).total_seconds() > 60):
+        return invalid
+    recent_problem = problem and now - timedelta(minutes=30) <= problem <= now + timedelta(seconds=60)
+    active = state == 'recent'
+    queue = numbers['queue_pct']
+    return {**numbers, 'state': state, 'sampled_at': iso(sampled), 'age_seconds': age,
+            'interval_seconds': interval, 'counter_scope': 'logged_interval_delta',
+            'scan_partial': value['scan_partial'], 'last_problem_at': iso(problem) if problem else None,
+            'queue_state': 'unknown' if not active or queue is None else 'high' if queue >= .8 else 'measured',
+            'transport_state': ('error_observed' if recent_problem or any((numbers[k] or 0) > 0 for k in PROBLEMS)
+                                else 'observed') if active else 'unknown'}
 
 
 def project(source, key, now):
@@ -39,13 +90,15 @@ def project(source, key, now):
         raise ValueError('Missing health times')
     delay = (received - generated).total_seconds()
     age = (now - received).total_seconds()
+    metrics = collector_metrics(report.get('collector_metrics'), generated, now)
     return {**values, 'sources': sources, 'omitted_sources': values['total'] - len(sources),
             'agent_id': display(key.get('agent_id')), 'organization': display(key.get('organization')),
             'host': display(source.get('host', {}).get('name')), 'generated_at': iso(generated),
             'received_at': iso(received), 'delay_seconds': round(delay) if delay >= 0 else None,
             'clock_warning': delay < 0 or age < -60,
             'report_state': 'unknown' if age < -60 else 'recent' if age <= 300 else 'stale',
-            'queue_state': 'unknown', 'transport_state': 'unknown', 'source_success': 'not_measured'}
+            'queue_state': metrics['queue_state'], 'transport_state': metrics['transport_state'],
+            'collector_metrics': metrics, 'source_success': 'not_measured'}
 
 
 def snapshot(client, after=None, now=None):

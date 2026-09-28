@@ -1,4 +1,5 @@
 # Shared installation scratch space and SYSTEM probe. No top-level host changes.
+. (Join-Path $PSScriptRoot 'native-windows.ps1')
 function Assert-SocAdministrator {
     if (-not [Environment]::Is64BitOperatingSystem -or -not [Environment]::Is64BitProcess -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Use 64-bit PowerShell on Windows x86_64.' }
     $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -95,7 +96,7 @@ function Wait-SocTask([string]$Name, [datetime]$Started, [int]$TimeoutSeconds = 
         $info = Get-ScheduledTaskInfo -TaskName $Name
         $task = Get-ScheduledTask -TaskName $Name
         if ($info.LastRunTime -ge $Started -and $task.State -notin @('Running', 'Queued')) {
-            if ($info.LastTaskResult -ne 0) { throw "SYSTEM Discovery failed (exit $($info.LastTaskResult)). Check execution policy and source access; policy was not bypassed." }
+            if ($info.LastTaskResult -ne 0) { throw "SYSTEM Discovery failed (exit $($info.LastTaskResult)). Inspect protected discovery-diagnostic.json and Windows application-control/task history. No policy was changed." }
             return
         }
     } while ((Get-Date) -lt $deadline)
@@ -106,9 +107,7 @@ function Invoke-SocDiscoveryProbe([string]$Root) {
     $name = 'Cloud-SOC-Preflight-' + [guid]::NewGuid().ToString('N')
     $created = $false
     try {
-        $exe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-        $arguments = '-NoProfile -NonInteractive -File "{0}" -Refresh -DiscoveryRoot "{1}"' -f (Join-Path $Root 'discover-windows.ps1'), $Root
-        $action = New-ScheduledTaskAction -Execute $exe -Argument $arguments -WorkingDirectory $Root
+        $action = New-SocNativeDiscoveryAction $Root
         $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
         $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -MultipleInstances IgnoreNew
         [IO.File]::WriteAllText((Join-Path $Root 'probe-active.txt'), $name)
@@ -122,6 +121,9 @@ function Invoke-SocDiscoveryProbe([string]$Root) {
         $generated = if ($report.generated_at -is [datetime]) { $report.generated_at.ToUniversalTime() }
                      else { [DateTimeOffset]::Parse([string]$report.generated_at, [Globalization.CultureInfo]::InvariantCulture).UtcDateTime }
         if ($generated -lt $started.ToUniversalTime() -or $generated -gt [DateTime]::UtcNow.AddSeconds(30)) { throw 'SYSTEM Discovery did not publish a fresh report.' }
+    } catch {
+        if ($created) { Write-SocDiscoveryFailureSummary -Root $Root -Since $started }
+        throw
     } finally {
         if ($created) {
             Stop-ScheduledTask -TaskName $name -ErrorAction Stop

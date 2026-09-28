@@ -107,8 +107,7 @@ function Invoke-SocRepairBeat([string]$Root, [string]$Version, [string]$Check) {
 }
 
 function New-SocRepairDiscoveryAction([string]$Root) {
-    New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') `
-        -Argument ('-NoProfile -NonInteractive -File "{0}" -Refresh -DiscoveryRoot "{1}"' -f (Join-Path $Root 'discover-windows.ps1'), $Root) -WorkingDirectory $Root
+    New-SocNativeDiscoveryAction $Root
 }
 
 function Get-SocRepairDiscovery([string]$Root, [switch]$AllowEnabled) {
@@ -119,9 +118,13 @@ function Get-SocRepairDiscovery([string]$Root, [switch]$AllowEnabled) {
     $legacy = '-NoProfile -NonInteractive -File "{0}" -Refresh' -f (Join-Path $Root 'discover-windows.ps1')
     $current = $legacy + (' -DiscoveryRoot "{0}"' -f $Root)
     $actions = @($task.Actions)
+    $recognized = $false
+    if ($actions.Count -eq 1) {
+        $recognized = ($actions[0].Execute -ieq (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -and $actions[0].Arguments -cin @($legacy,$current)) -or
+            ($actions[0].Execute -ieq (Join-Path $Root 'cloud-soc-discovery.exe') -and $actions[0].Arguments -ceq ('--root "{0}"' -f $Root))
+    }
     if ($task.TaskPath -cne '\' -or $actions.Count -ne 1 -or
-        $actions[0].Execute -ine (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -or
-        $actions[0].Arguments -cnotin @($legacy,$current) -or
+        -not $recognized -or
         ($actions[0].WorkingDirectory -and $actions[0].WorkingDirectory -ine $Root) -or
         $task.Principal.UserId -notin @('SYSTEM','NT AUTHORITY\SYSTEM','S-1-5-18') -or
         [string]$task.Principal.LogonType -notin @('ServiceAccount','5') -or
@@ -162,7 +165,7 @@ function Register-SocRepairDiscovery([string]$Root) {
 
 function Restore-SocRepairFiles([string]$Root, [string]$Backup) {
     # Only files the recovery/Discovery phase can replace. Never rewind data/registry/queue/keystore.
-    foreach ($name in @('discover-windows.ps1','discovery-report.json','health.ndjson','health-previous.ndjson','inputs\discovered.yml','inputs\health.yml')) {
+    foreach ($name in @('discover-windows.ps1','discovery-native.cs','cloud-soc-discovery.exe','discovery-native.json','discovery-report.json','health.ndjson','health-previous.ndjson','inputs\discovered.yml','inputs\health.yml')) {
         $target = Join-Path $Root $name
         $source = Join-Path (Join-Path $Backup 'snapshot') $name
         Assert-SocLocalPath $target
@@ -231,6 +234,7 @@ function Invoke-SocFilebeatRepairCore {
         # Keep the current configuration, organization, policy, keys and queues.
         $changed = $true
         Copy-Item -LiteralPath (Join-Path $Source 'discover-windows.ps1') -Destination (Join-Path $Root 'discover-windows.ps1') -Force -ErrorAction Stop
+        Build-SocNativeDiscovery -Root $Root -Source $Source
         Invoke-SocDiscoveryProbe $Root
         Invoke-SocRepairBeat $Root $Version 'config'
         Invoke-SocRepairBeat $Root $Version 'output'
@@ -251,7 +255,8 @@ function Invoke-SocFilebeatRepairCore {
         }
         $started = (Get-Date).AddSeconds(-1)
         Start-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop
-        Wait-SocTask -Name 'Cloud-SOC-Discovery' -Started $started
+        try { Wait-SocTask -Name 'Cloud-SOC-Discovery' -Started $started }
+        catch { Write-SocDiscoveryFailureSummary -Root $Root -Since $started; throw }
         $serviceTouched = $true
         Set-Service -Name 'cloud-soc-filebeat' -StartupType Manual -ErrorAction Stop
         Start-Service -Name 'cloud-soc-filebeat' -ErrorAction Stop

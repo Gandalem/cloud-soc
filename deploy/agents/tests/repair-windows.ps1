@@ -73,6 +73,12 @@ try {
         if (-not (Test-Path $Path)) { New-Item -ItemType Directory $Path | Out-Null }
     }
     function Get-CimInstance { param($ClassName,$Filter,$ErrorAction) return $script:service }
+    function Assert-SocNativeDiscovery { param($Root) }
+    function Build-SocNativeDiscovery { param($Root,$Source)
+        $script:calls.Add('build')
+        foreach ($name in @('discovery-native.cs','cloud-soc-discovery.exe','discovery-native.json')) { [IO.File]::WriteAllText((Join-Path $Root $name), 'synthetic-native') }
+        if ($script:fail -eq 'build') { throw 'synthetic build failure' }
+    }
     function Get-Process { param($ErrorAction) return @() }
     $legacyAction = [pscustomobject]@{ Execute=(Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'); Arguments=('-NoProfile -NonInteractive -File "{0}" -Refresh' -f (Join-Path $root 'discover-windows.ps1')); WorkingDirectory='' }
     function New-FixtureTask {
@@ -93,7 +99,7 @@ try {
     function Set-ScheduledTask { param($TaskName,$TaskPath,$Action,$ErrorAction)
         $script:calls.Add('task-set')
         $copy = $script:task.PSObject.Copy(); $copy.Actions=@($Action); $script:task=$copy
-        if ($script:fail -eq 'task-set' -and $Action.Arguments -match 'DiscoveryRoot') { throw 'synthetic task-set failure' }
+        if ($script:fail -eq 'task-set' -and $Action.Arguments -match '--root') { throw 'synthetic task-set failure' }
     }
     function Enable-ScheduledTask { param($TaskName,$TaskPath,$ErrorAction)
         $script:calls.Add('task-enable'); $script:task.Settings.Enabled=$true; $script:task.State='Ready'
@@ -172,7 +178,7 @@ try {
     $script:task.Settings.Enabled=$true; $script:task.State='Ready'
     Assert-Throws { Invoke-SocFilebeatRepairCore @params } 'disabled and idle'
     $script:task=$null
-    foreach ($failure in @('tls','probe','config','output','task','start')) {
+    foreach ($failure in @('tls','build','probe','config','output','task','start')) {
         $script:fail=$failure; $script:calls.Clear()
         Assert-Throws { Invoke-SocFilebeatRepairCore @params -Repair } 'synthetic'
         if ($service.State -ne 'Stopped' -or $service.StartMode -ne 'Disabled' -or $script:task) { throw "State not restored: $failure" }
@@ -180,6 +186,7 @@ try {
             if ([IO.File]::ReadAllText((Join-Path $root $name)) -cne 'synthetic-original') { throw "File not preserved: $name / $failure" }
         }
         if ($failure -in @('tls','probe','config','output','task') -and 'service-start' -in $script:calls) { throw 'Service started before prerequisites passed' }
+        foreach ($name in @('discovery-native.cs','cloud-soc-discovery.exe','discovery-native.json')) { if (Test-Path (Join-Path $root $name)) { throw "Native rollback left $name" } }
     }
     $script:fail='probe-cleanup'
     Assert-Throws { Invoke-SocFilebeatRepairCore @params -Repair } 'synthetic cleanup'
@@ -193,9 +200,9 @@ try {
     $script:fail=''; $script:calls.Clear()
     Invoke-SocFilebeatRepairCore @params
     if ($service.State -ne 'Running' -or $service.StartMode -ne 'Auto' -or -not $script:task) { throw 'Recovery did not activate verified resources' }
-    if (($script:calls -join ',') -ne 'tls,probe,config,output,register,task-start,mode:Manual,service-start,mode:Automatic') { throw 'Wrong recovery order' }
+    if (($script:calls -join ',') -ne 'tls,build,probe,config,output,register,task-start,mode:Manual,service-start,mode:Automatic') { throw 'Wrong recovery order' }
     $manifests = @(Get-ChildItem (Join-Path $env:ProgramData 'Cloud-SOC\recovery') -Filter manifest.json -Recurse)
-    if ($manifests.Count -ne 7) { throw 'Missing verified backups' }
+    if ($manifests.Count -ne 8) { throw 'Missing verified backups' }
     foreach ($manifest in $manifests) {
         $snapshot = Join-Path $manifest.DirectoryName 'snapshot'
         foreach ($file in (Get-Content $manifest.FullName -Raw | ConvertFrom-Json).files) {
@@ -215,7 +222,7 @@ try {
             if (Test-Path (Join-Path $root 'recovery-pending.json')) { throw "Rollback unexpectedly incomplete: $failure" }
         } else {
             Invoke-SocFilebeatRepairCore @params -Repair
-            if ($script:task.Actions[0].WorkingDirectory -ne $root -or $script:task.Actions[0].Arguments -notmatch 'DiscoveryRoot' -or -not $script:task.Settings.Enabled) { throw 'Legacy task action not repaired/enabled' }
+            if ($script:task.Actions[0].WorkingDirectory -ne $root -or $script:task.Actions[0].Execute -ne (Join-Path $root 'cloud-soc-discovery.exe') -or $script:task.Actions[0].Arguments -notmatch '--root' -or -not $script:task.Settings.Enabled) { throw 'Legacy task action not repaired/enabled' }
         }
         if ('unregister' -in $script:calls -or 'register' -in $script:calls) { throw 'Existing task was deleted/replaced' }
         $backups = @(Get-ChildItem (Join-Path $env:ProgramData 'Cloud-SOC\recovery') -Filter discovery-task.xml -Recurse)

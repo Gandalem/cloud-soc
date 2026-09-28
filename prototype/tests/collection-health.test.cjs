@@ -10,6 +10,7 @@ const item = {host: '<img src=x>', organization: 'synthetic', report_state: 'rec
 const page = {rows: [item], next_cursor: null};
 const ok = data => () => ({ok: true, json: async () => data});
 const settle = () => new Promise(resolve => setImmediate(resolve));
+const textOf = node => typeof node === 'string' ? node : node.textContent + node.children.map(textOf).join(' ');
 function browser(responses) {
   const elements = new Map(), calls = [];
   function element() { return {textContent: '', children: [], listeners: {}, disabled: false,
@@ -49,4 +50,24 @@ test('authentication failure and empty data are distinct', async () => {
   assert.match(denied.get('#query-state').textContent, /로그인/);
   const empty = browser([ok({rows: []})]); await settle();
   assert.match(empty.get('#query-state').textContent, /보고가 없습니다/);
+});
+
+test('numeric samples show backlog and failures without treating absent counters as zero', async () => {
+  const metrics = {state:'recent', queue_state:'high', queue_pct:.9, queue_bytes:900, queue_events:10,
+    sampled_at:'2026-09-22T00:00:00Z', interval_seconds:30, output_total:20, output_acked:18,
+    output_failed:2, output_dropped:null, scan_partial:true, transport_state:'error_observed'};
+  const ui = browser([ok({rows:[{...item,collector_metrics:metrics}]})]); await settle();
+  const text = textOf(ui.get('#health-rows'));
+  assert.match(text,/90\.0% · 적체 주의/);
+  assert.match(text,/재시도 실패 2 \/ 포기 미보고/);
+  assert.match(text,/읽기 범위 제한/);
+  assert.match(text,/누적 유실량\/전체 정상 판정 아님/);
+});
+
+test('stale, clock-invalid, absent and malformed samples remain visibly uncertain', async () => {
+  for (const [state,label] of [['stale','오래된 표본'],['clock_warning','시계 확인'],['unavailable','미측정'],['invalid','보고 형식 확인']]) {
+    const ui=browser([ok({rows:[{...item,collector_metrics:{state,sampled_at:item.generated_at}}]})]); await settle();
+    assert.match(textOf(ui.get('#health-rows')),new RegExp(label));
+    assert.doesNotMatch(textOf(ui.get('#health-rows')),/포기 0|정상입니다/);
+  }
 });

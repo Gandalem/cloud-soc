@@ -138,7 +138,10 @@ function Test-DiscoveryTask {
         $info = Get-ScheduledTaskInfo -TaskName $DiscoveryTask
         $task = Get-ScheduledTask -TaskName $DiscoveryTask
         if ($info.LastRunTime -ge $started -and $task.State -notin @('Running', 'Queued')) {
-            if ($info.LastTaskResult -ne 0) { throw "Discovery task failed (exit $($info.LastTaskResult)); inspect execution policy and source access." }
+            if ($info.LastTaskResult -ne 0) {
+                Write-SocDiscoveryFailureSummary -Root $Root -Since $started
+                throw "Discovery task failed (exit $($info.LastTaskResult)); inspect native diagnostic and application-control/task history. No policy was changed."
+            }
             return
         }
     } while ((Get-Date) -lt $deadline)
@@ -177,6 +180,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'privacy.js') -Destination $Root
     $settings = @{ log_roots = @($LogRoots); required_channels = @($Channels) } | ConvertTo-Json -Depth 8
     Write-DiscoveryFile (Join-Path $Root 'discovery-settings.json') $settings
+    Build-SocNativeDiscovery -Root $Root -Source $PSScriptRoot
     # Test the real SYSTEM environment before downloading or creating any service.
     Invoke-SocDiscoveryProbe -Root $Root
     $package = "filebeat-$Version-windows-x86_64.zip"
@@ -208,14 +212,14 @@ try {
     [IO.Directory]::Move($Root, $FinalRoot)
     Set-AgentPaths $FinalRoot
     [IO.File]::WriteAllText($ConfigPath, (Get-AgentConfig | ConvertTo-Json -Depth 12), $utf8)
-    Update-SourceDiscovery -Root $Root -LogRoots $LogRoots -RequiredChannels $Channels
+    Invoke-SocNativeRefresh -Root $Root
     Invoke-Beat -BeatArguments @('test', 'config')
     Invoke-Beat -BeatArguments @('test', 'output')
 
     # Quote every path and use the same data/keystore path for preflight and service.
     $command = '"{0}" --environment=windows_service --path.home "{1}" --path.config "{2}" --path.data "{3}" --path.logs "{4}" -c "{5}" -E logging.files.redirect_stderr=true' -f $Exe, $BeatHome, $Root, $DataPath, $LogsPath, $ConfigPath
-    # Respect the machine's existing PowerShell execution policy; never bypass it.
-    $action = New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument ('-NoProfile -NonInteractive -File "{0}" -Refresh -DiscoveryRoot "{1}"' -f (Join-Path $Root 'discover-windows.ps1'), $Root) -WorkingDirectory $Root
+    # The periodic worker is an independent executable, not a PowerShell wrapper.
+    $action = New-SocNativeDiscoveryAction $Root
     $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
     $taskSettings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -StartWhenAvailable

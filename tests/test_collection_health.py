@@ -18,6 +18,53 @@ SOURCE = {'host': {'name': 'host'}, 'event': {'ingested': '2026-09-22T01:04:00Z'
 
 
 class HealthTests(unittest.TestCase):
+    def metrics_source(self, **changes):
+        source = copy.deepcopy(SOURCE)
+        source['cloud_soc']['discovery']['collector_metrics'] = {
+            'schema': 1, 'state': 'observed', 'sampled_at': '2026-09-22T01:03:20Z',
+            'interval_seconds': 30, 'counter_scope': 'logged_interval_delta', 'scan_partial': True,
+            'queue_pct': .9, 'queue_events': 900, 'output_total': 100, 'output_acked': 99,
+            'output_failed': 1, **changes}
+        return source
+
+    def test_numeric_metrics_preserve_unknown_and_distinguish_delta_from_loss(self):
+        row = project(self.metrics_source(), KEY, NOW)
+        sample = row['collector_metrics']
+        self.assertEqual(row['queue_state'], 'high')
+        self.assertEqual(row['transport_state'], 'error_observed')
+        self.assertEqual(sample['output_acked'], 99)
+        self.assertIsNone(sample['output_dropped'])
+        self.assertEqual(sample['counter_scope'], 'logged_interval_delta')
+        self.assertEqual(row['source_success'], 'not_measured')
+
+    def test_old_and_future_metrics_do_not_claim_current_health(self):
+        for at, state in [('2026-09-22T00:00:00Z', 'stale'), ('2026-09-22T01:07:00Z', 'clock_warning')]:
+            with self.subTest(at=at):
+                row = project(self.metrics_source(sampled_at=at), KEY, NOW)
+                self.assertEqual(row['collector_metrics']['state'], state)
+                self.assertEqual(row['queue_state'], 'unknown')
+                self.assertEqual(row['transport_state'], 'unknown')
+
+    def test_bad_metrics_do_not_erase_discovery_or_echo_input(self):
+        for key, value in [('queue_events', True), ('queue_pct', float('nan')), ('queue_pct', 1.1), ('queue_pct', 10**500),
+                           ('output_dropped', -1), ('output_acked', 1.5), ('output_total', 2**53),
+                           ('sampled_at', 'SECRET'), ('schema', True), ('interval_seconds', 0),
+                           ('scan_partial', 'SECRET'), ('last_problem_at', 'SECRET')]:
+            with self.subTest(key=key, value=value):
+                row = project(self.metrics_source(**{key: value}), KEY, NOW)
+                self.assertEqual(row['collector_metrics']['state'], 'invalid')
+                self.assertEqual(row['selected'], 1)
+                self.assertNotIn('SECRET', json.dumps(row))
+
+    def test_recent_problem_survives_later_good_sample_without_claiming_total(self):
+        row = project(self.metrics_source(output_failed=None, output_acked=100,
+                      last_problem_at='2026-09-22T01:00:00Z', password='PRIVATE_CANARY',
+                      message='PRIVATE_CANARY', ephemeral_id='PRIVATE_CANARY'), KEY, NOW)
+        self.assertEqual(row['transport_state'], 'error_observed')
+        self.assertNotIn('PRIVATE_CANARY', json.dumps(row))
+        row = project(self.metrics_source(output_failed=None, last_problem_at=None), KEY, NOW)
+        self.assertEqual(row['transport_state'], 'observed')  # not "healthy"
+
     def test_states_are_not_receipt_or_queue_success(self):
         result = project(SOURCE, KEY, NOW)
         self.assertEqual(result['report_state'], 'recent')

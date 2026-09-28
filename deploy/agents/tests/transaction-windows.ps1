@@ -44,8 +44,9 @@ try {
     Assert-Throws { Test-SocServerTls 'https://soc.example.invalid' 'C:\synthetic\ca.crt' -AllowUnavailableRevocation } 'TLS/connectivity'
 
     $script:Calls = New-Object 'Collections.Generic.List[string]'
+    function Assert-SocNativeDiscovery { param($Root) }
     function New-ScheduledTaskAction { param($Execute, $Argument, $WorkingDirectory)
-        if ($Argument -match 'ExecutionPolicy|Bypass' -or $Argument -notmatch 'DiscoveryRoot') { throw 'Unsafe task arguments' }
+        if ($Argument -match 'ExecutionPolicy|Bypass' -or $Argument -cne ('--root "{0}"' -f $root) -or $Execute -ne (Join-Path $root 'cloud-soc-discovery.exe')) { throw 'Unsafe task arguments' }
         if ($WorkingDirectory -ne $root) { throw 'Missing working directory' }
         return @{ Arguments = $Argument }
     }
@@ -65,6 +66,13 @@ try {
     if (($Calls -join ',') -ne 'register,start,stop,unregister') { throw 'Failure did not clean owned task' }
     if ($ProbeName -notmatch '^Cloud-SOC-Preflight-[a-f0-9]{32}$') { throw 'Task name not unique' }
     if (Test-Path -LiteralPath (Join-Path $root 'probe-active.txt')) { throw 'Probe marker not removed' }
+    $diagnosticPath = Join-Path $root 'discovery-diagnostic.json'
+    @{worker='native-v1';status='error';generated_at=[DateTime]::UtcNow.ToString('o');stage='settings';error_type='InvalidDataException';hresult=-1} | ConvertTo-Json | Set-Content -LiteralPath $diagnosticPath
+    $summary = @(Write-SocDiscoveryFailureSummary -Root $root -Since (Get-Date).AddSeconds(-2) 3>&1)
+    if (($summary | Out-String) -notmatch 'stage=settings; error=InvalidDataException') { throw 'Missing safe diagnostic summary' }
+    $stale = @(Write-SocDiscoveryFailureSummary -Root $root -Since (Get-Date).AddHours(1) 3>&1)
+    if ($stale.Count) { throw 'Stale diagnostic was attributed to current attempt' }
+    Remove-Item -LiteralPath $diagnosticPath
     $script:ExitCode = 0
     $script:TaskPoll = 0
     function Get-ScheduledTask {

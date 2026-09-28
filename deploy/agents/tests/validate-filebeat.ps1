@@ -1,21 +1,35 @@
 # Optional offline smoke test with the pinned official Windows Filebeat binary.
-param([Parameter(Mandatory = $true)][string]$FilebeatPath)
+param([Parameter(Mandatory = $true)][string]$FilebeatPath, [string]$NativeFixturePath)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot '../discover-windows.ps1')
-$root = Join-Path ((Resolve-Path (Join-Path $PSScriptRoot '../../..')).ProviderPath) ('state\beat-smoke-' + [Guid]::NewGuid().ToString('N'))
+$workspace = Join-Path ((Resolve-Path (Join-Path $PSScriptRoot '../../..')).ProviderPath) ('state\beat-smoke-' + [Guid]::NewGuid().ToString('N'))
+$root = Join-Path $workspace 'agent'
+$fixtures = Join-Path $workspace 'fixtures'
 $null = New-Item -ItemType Directory -Path (Join-Path $root 'inputs') -Force
-$null = New-Item -ItemType Directory -Path (Join-Path $root 'fixtures')
-$fixture = Join-Path $root 'fixtures\test.log'
+$null = New-Item -ItemType Directory -Path $fixtures
+$fixture = Join-Path $fixtures 'test.log'
 $marker = 'CLOUD_SOC_SYNTHETIC_DISCOVERY_TEST'
 [IO.File]::WriteAllText($fixture, ($marker + "`n"), (New-Object Text.UTF8Encoding($false)))
-[IO.File]::WriteAllText((Join-Path $root 'fixtures\unicode.log'), ($marker + "_UTF16`n"), [Text.Encoding]::Unicode)
-[IO.File]::WriteAllText((Join-Path $root 'fixtures\privacy.log'), "password=PRIVATE_SMOKE_CANARY`n", (New-Object Text.UTF8Encoding($false)))
+[IO.File]::WriteAllText((Join-Path $fixtures 'unicode.log'), ($marker + "_UTF16`n"), [Text.Encoding]::Unicode)
+[IO.File]::WriteAllText((Join-Path $fixtures 'privacy.log'), "password=PRIVATE_SMOKE_CANARY`n", (New-Object Text.UTF8Encoding($false)))
 function Get-WinEvent {
     param($ListLog, [switch]$Force, $ErrorAction, $ErrorVariable)
     [pscustomobject]@{ LogName = 'Cloud-SOC-Synthetic-Nonexistent-Channel'; IsEnabled = $true; LogType = 'Operational' }
 }
-Update-SourceDiscovery -Root $root -LogRoots @((Join-Path $root 'fixtures'))
+@{ log_roots=@($fixtures); required_channels=@() } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'discovery-settings.json') -Encoding UTF8
+if ($NativeFixturePath) {
+    $null=New-Item -ItemType Directory -Path (Join-Path $root 'logs') -Force
+    $metric=@{'@timestamp'='2026-09-28T00:00:00Z'; 'log.logger'='monitoring'; 'service.name'='filebeat';
+        message='Non-zero metrics in the last 30s';
+        monitoring=@{metrics=@{libbeat=@{output=@{events=@{total=10;acked=9;dropped=1}};pipeline=@{queue=@{filled=@{pct=0.8;events=2;bytes=40}}}}}}}
+    [IO.File]::WriteAllText((Join-Path $root 'logs/filebeat-20260928.ndjson'),(($metric | ConvertTo-Json -Depth 12 -Compress)+"`n"))
+}
+function Refresh-Fixture {
+    if ($NativeFixturePath) { & $NativeFixturePath --refresh-fixture $root; if ($LASTEXITCODE) { throw 'Native fixture discovery failed' } }
+    else { Update-SourceDiscovery -Root $root -LogRoots @($fixtures) }
+}
+Refresh-Fixture
 $configuration = @{
     'filebeat.config.inputs' = @{ enabled = $true; path = (Join-Path $root 'inputs\*.yml'); 'reload.enabled' = $true; 'reload.period' = '1s' }
     'output.console' = @{ pretty = $false }
@@ -49,8 +63,8 @@ try {
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
     Start-Sleep -Seconds 4
-    [IO.File]::WriteAllText((Join-Path $root 'fixtures\new.log'), ($marker + "_NEW`n"), (New-Object Text.UTF8Encoding($false)))
-    Update-SourceDiscovery -Root $root -LogRoots @((Join-Path $root 'fixtures'))
+    [IO.File]::WriteAllText((Join-Path $fixtures 'new.log'), ($marker + "_NEW`n"), (New-Object Text.UTF8Encoding($false)))
+    Refresh-Fixture
     $null = $process.WaitForExit(14000)
     if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }
     $stdout = $stdoutTask.GetAwaiter().GetResult()
@@ -65,6 +79,10 @@ try {
     if ($stdout -match 'PRIVATE_SMOKE_CANARY' -or '[REDACTED]' -notin $messages) { throw 'Privacy processing failed in native Beat.' }
     $reports = @($events | Where-Object { $_.PSObject.Properties.Name -contains 'cloud_soc' })
     if (-not $reports.Count -or $reports[0].cloud_soc.discovery.schema -ne 1) { throw 'Health NDJSON was not parsed by native Beat.' }
+    if ($NativeFixturePath) {
+        $metric=$reports[0].cloud_soc.discovery.collector_metrics
+        if ($metric.state -ne 'observed' -or $metric.output_dropped -ne 1 -or $metric.output_acked -ne 9 -or $metric.queue_pct -ne 0.8) { throw 'Metrics did not survive native Filebeat/privacy/queue processing.' }
+    }
     Write-Output 'Native Filebeat smoke test passed: synthetic files and live reload; nonexistent event channel; no network output.'
 } finally {
     if ($processStarted -and -not $process.HasExited) { $process.Kill(); $process.WaitForExit() }
