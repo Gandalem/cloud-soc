@@ -16,13 +16,13 @@ services:
       xpack.security.transport.ssl.certificate: certs/server.crt
       xpack.security.transport.ssl.certificate_authorities: certs/ca.crt
       ELASTIC_PASSWORD_FILE: /run/secrets/elastic_password
-      ES_JAVA_OPTS: -Xms1g -Xmx1g
+      ES_JAVA_OPTS: -Xms1536m -Xmx1536m
     secrets: [elastic_password]
     volumes:
       - es-data:/usr/share/elasticsearch/data
       - ${SOC_STATE_DIR:?Run prepare.py first}/tls:/usr/share/elasticsearch/config/certs:ro
     ports: ["${SOC_BIND_IP:-127.0.0.1}:9200:9200"]
-    mem_limit: 2g
+    mem_limit: 3g
     healthcheck:
       test: ["CMD-SHELL", "curl -s --cacert config/certs/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'"]
       interval: 10s

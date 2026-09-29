@@ -5,6 +5,9 @@ from dataclasses import asdict
 import hmac
 import json
 import time
+import secrets
+import threading
+
 
 from elasticsearch import NotFoundError
 from cloud_soc.portal.security_detail import DETAIL_FIELDS, security_detail
@@ -99,37 +102,114 @@ def valid_sort(value):
 
 class LogReader:
     def __init__(self, client, *, secret, principal, clock=time.time):
-        self.client = client.options(request_timeout=5, max_retries=0) if client is not None else None
-        self.key = hmac.digest(secret.encode(), b"cloud-soc-log-cursor-v1", "sha256")
+        self.client = client.options(
+            request_timeout=5,
+            max_retries=0,
+        ) if client is not None else None
+        self.key = hmac.digest(
+            secret.encode(),
+            b"cloud-soc-log-cursor-v1",
+            "sha256",
+        )
         self.principal, self.clock = principal, clock
+        self._cursor_states = {}
+        self._cursor_lock = threading.Lock()
+
+    def _purge_cursors(self):
+        now = self.clock()
+        with self._cursor_lock:
+            expired_ids = [
+                cursor_id
+                for cursor_id, state in self._cursor_states.items()
+                if state.get("expires", 0) <= now
+            ]
+            for cursor_id in expired_ids:
+                self._cursor_states.pop(cursor_id, None)
 
     def encode(self, state):
-        payload = pack(bounded_json(state))
-        result = payload + "." + pack(hmac.digest(self.key, payload.encode(), "sha256"))
-        if len(result) > MAX_CURSOR_LENGTH:
+        self._purge_cursors()
+
+        cursor_id = secrets.token_urlsafe(24)
+        signature = pack(
+            hmac.digest(
+                self.key,
+                (self.principal + "\0" + cursor_id).encode("utf-8"),
+                "sha256",
+            )
+        )
+        token = cursor_id + "." + signature
+
+        if len(token) > MAX_CURSOR_LENGTH:
             raise unavailable()
-        return result
+
+        with self._cursor_lock:
+            self._cursor_states[cursor_id] = state
+
+        return token
 
     def decode(self, token):
         try:
-            if not isinstance(token, str) or not token or len(token) > MAX_CURSOR_LENGTH:
+            if (
+                not isinstance(token, str)
+                or not token
+                or len(token) > MAX_CURSOR_LENGTH
+            ):
                 raise ValueError()
-            payload, signature = token.split(".")
-            if not hmac.compare_digest(unpack(signature), hmac.digest(self.key, payload.encode("ascii"), "sha256")):
+
+            cursor_id, signature = token.split(".", 1)
+
+            expected = hmac.digest(
+                self.key,
+                (self.principal + "\0" + cursor_id).encode("utf-8"),
+                "sha256",
+            )
+
+            if not hmac.compare_digest(
+                unpack(signature),
+                expected,
+            ):
                 raise ValueError()
-            state = json.loads(unpack(payload))
-            if (set(state) != {"v", "principal", "pit", "filters", "after", "expires"}
-                    or state["v"] != CONTRACT_VERSION or state["principal"] != self.principal
-                    or not isinstance(state["pit"], str) or not state["pit"]
-                    or not valid_sort(state["after"]) or type(state["expires"]) is not int):
+
+            self._purge_cursors()
+
+            with self._cursor_lock:
+                state = self._cursor_states.get(cursor_id)
+
+            if state is None:
+                raise expired()
+
+            if (
+                set(state)
+                != {
+                    "v",
+                    "principal",
+                    "pit",
+                    "filters",
+                    "after",
+                    "expires",
+                }
+                or state["v"] != CONTRACT_VERSION
+                or state["principal"] != self.principal
+                or not isinstance(state["pit"], str)
+                or not state["pit"]
+                or not valid_sort(state["after"])
+                or type(state["expires"]) is not int
+            ):
                 raise ValueError()
+
             parsed = filters_from_dict(state["filters"])
+
             if asdict(parsed) != state["filters"]:
                 raise ValueError()
+
+        except LogQueryError:
+            raise
         except (ValueError, TypeError, KeyError, UnicodeError):
             raise invalid() from None
+
         if state["expires"] <= self.clock():
             raise expired()
+
         return state, parsed
 
     def require_client(self):
@@ -182,7 +262,7 @@ class LogReader:
 
     def check_mappings(self, indices, filters):
         fields = [filters.time_field, "host.name", "agent.type"]
-        caps = self.client.field_caps(index=indices, fields=fields, include_unmapped=True)["fields"]
+        caps = self.client.field_caps(index=INDICES, fields=fields, include_unmapped=True)["fields"]
         required = {filters.time_field: {"date", "date_nanos"}}
         if filters.host is not None:
             required["host.name"] = {"keyword"}
@@ -216,7 +296,7 @@ class LogReader:
                 if not names:
                     return bounded_json(self.result(filters, [], None))
                 self.check_mappings(names, filters)
-                opened = self.client.open_point_in_time(index=names, keep_alive=PIT_TTL,
+                opened = self.client.open_point_in_time(index=INDICES, keep_alive=PIT_TTL,
                                                         allow_partial_search_results=False)
                 pit = opened["id"]
                 if opened.get("_shards", {}).get("failed", 0):
