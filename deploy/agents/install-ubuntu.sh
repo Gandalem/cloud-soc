@@ -97,9 +97,9 @@ beat() {
 
 install_agent() {
     [[ $EUID == 0 ]] || fail 'Run with sudo (not required for --dry-run).'
-    [[ -f /etc/os-release ]] || fail 'Ubuntu 22.04 is required.'
+    [[ -f /etc/os-release ]] || fail 'Ubuntu 22.04 or 24.04 is required.'
     . /etc/os-release
-    [[ $ID == ubuntu && $VERSION_ID == 22.04 && -d /run/systemd/system ]] || fail 'Only Ubuntu 22.04 with systemd is supported.'
+    [[ $ID == ubuntu && ( $VERSION_ID == 22.04 || $VERSION_ID == 24.04 ) && -d /run/systemd/system ]] || fail 'Only Ubuntu 22.04 or 24.04 with systemd is supported.'
     local tool path arch hash package member
     for tool in curl tar sha512sum sha256sum systemctl pgrep timeout realpath find file flock sort cmp journalctl; do
         command -v "$tool" >/dev/null || fail "Missing prerequisite: $tool"
