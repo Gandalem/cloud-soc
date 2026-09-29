@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Root = (Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Cloud-SOC-Agent'),
     [string]$BackupId = ''
 )
@@ -185,7 +185,7 @@ function Invoke-SocDiscoveryUpdateVerification {
             Add-SocVerificationCheck $checks 'backup_acl_protected' $true ([bool]$backupAclPass) 'Update backup directory keeps the protected Administrators/SYSTEM-only ACL.'
             $manifestPath = Join-Path $backupPath 'manifest.json'
             $manifestItem = Get-Item -LiteralPath $manifestPath -Force -ErrorAction Stop
-            if ($manifestItem.Length -gt 1048576 -or Test-SocVerificationLinked $manifestPath) { throw 'invalid manifest' }
+            if ($manifestItem.Length -gt 1048576 -or (Test-SocVerificationLinked $manifestPath)) { throw 'invalid manifest' }
             $manifest = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
             $allowedFiles = @('discovery-native.cs','cloud-soc-discovery.exe','discovery-native.json','inputs\discovered.yml','inputs\health.yml')
             $entries = @($manifest.files)
@@ -263,7 +263,7 @@ function Invoke-SocDiscoveryUpdateVerification {
         $sourcePath = Join-Path $Root 'discovery-native.cs'
         $exePath = Join-Path $Root 'cloud-soc-discovery.exe'
         foreach ($path in @($nativeManifestPath,$sourcePath,$exePath)) {
-            if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or Test-SocVerificationLinked $path) { throw 'native file unavailable' }
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Test-SocVerificationLinked $path)) { throw 'native file unavailable' }
         }
         $nativeManifest = Get-Content -LiteralPath $nativeManifestPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
         $sourceHash = Get-SocVerificationHash $sourcePath
@@ -306,9 +306,14 @@ function Invoke-SocDiscoveryUpdateVerification {
     $policySame = Test-SocExecutionPolicySame $policyBefore $policyAfter
     Add-SocVerificationCheck $checks 'execution_policy_unchanged' $true ([bool]$policySame) 'Execution-policy scope values are identical before and after the diagnostic reads.'
 
-    $required = @($checks | Where-Object required)
-    $failed = @($required | Where-Object status -ne 'pass')
+    $checkArray = $checks.ToArray()
+    $required = @($checkArray | Where-Object { $_.required })
+    $failed = @($required | Where-Object { $_.status -ne 'pass' })
     $status = if ($failed.Count -eq 0) { 'pass' } else { 'fail' }
+    $successCriteria = @()
+    foreach ($item in $required) {
+        $successCriteria += [string]$item.id
+    }
 
     return [pscustomobject][ordered]@{
         schema = 1
@@ -320,8 +325,8 @@ function Invoke-SocDiscoveryUpdateVerification {
             required_passed = $required.Count - $failed.Count
             required_failed = $failed.Count
         }
-        success_criteria = @($required | ForEach-Object { $_.id })
-        checks = @($checks)
+        success_criteria = $successCriteria
+        checks = $checkArray
         evidence = [ordered]@{
             service = $serviceEvidence
             discovery_task = $taskEvidence
