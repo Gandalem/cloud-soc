@@ -21,7 +21,7 @@ test('guide links exclude fenced code examples', () => {
   assert.deepEqual(localLinks(content), ['README.md', 'README.md#section']);
 });
 
-for (const name of ['README.md', 'deploy/server/README.md', 'docs/aws_windows_e2e_test.md', 'docs/agent_status.md', 'docs/portal_backup.md', 'docs/windows_install_recovery.md', 'docs/windows_native_discovery.md', 'docs/windows_discovery_update.md', 'docs/agent_key_management.md', 'docs/windows_log_loss_audit.md', 'docs/collection_protection.md']) {
+for (const name of ['README.md', 'deploy/server/README.md', 'docs/aws_windows_e2e_test.md', 'docs/agent_status.md', 'docs/portal_backup.md', 'docs/windows_install_recovery.md', 'docs/windows_native_discovery.md', 'docs/windows_discovery_update.md', 'docs/agent_key_management.md', 'docs/windows_log_loss_audit.md', 'docs/collection_protection.md', 'docs/local_development.md', 'docs/installation_reference.md']) {
   test(`installation guide syntax and repository links: ${name}`, () => {
     const file = path.join(root, name);
     const content = fs.readFileSync(file, 'utf8');
@@ -45,6 +45,35 @@ for (const name of ['README.md', 'deploy/server/README.md', 'docs/aws_windows_e2
     else if (name === 'docs/agent_key_management.md') assert.ok(content.includes('build portal'));
     else if (name === 'docs/windows_log_loss_audit.md') assert.ok(content.includes('audit-windows-loss.ps1'));
     else if (name === 'docs/collection_protection.md') assert.ok(content.includes('collector_metrics'));
+    else if (name === 'docs/local_development.md') assert.ok(content.includes('PYTHONPATH'));
+    else if (name === 'docs/installation_reference.md') {
+      const request = content.match(/^```http\r?\nPOST \/_security\/api_key\r?\n([\s\S]*?)^```/m);
+      assert.ok(request, 'Manual publisher example was preserved');
+      const role = JSON.parse(request[1]).role_descriptors.cloud_soc_publisher;
+      assert.deepEqual(role, JSON.parse(fs.readFileSync(path.join(root, 'deploy/agents/publisher-role.json'), 'utf8')));
+    }
     else assert.ok(content.includes('sudo sh deploy/server/install-ubuntu.sh'));
   });
 }
+
+test('quick start stays concise and relocated section links resolve', () => {
+  const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+  assert.ok(readme.trimEnd().split('\n').length <= 200, 'Keep detailed reference material outside the quick start');
+  for (const link of ['docs/local_development.md', 'docs/installation_reference.md', 'docs/windows_discovery_update.md']) {
+    assert.ok(localLinks(readme).includes(link), link);
+  }
+  assert.ok(readme.includes('id="7-설치-후-실제-로그-확인"'), 'Preserve existing incoming verification links');
+  for (const name of ['README.md', 'docs/local_development.md', 'docs/installation_reference.md']) {
+    const file = path.join(root, name);
+    for (const link of localLinks(fs.readFileSync(file, 'utf8'))) {
+      const [destination, fragment] = link.split('#');
+      if (!fragment) continue;
+      const target = destination ? path.resolve(path.dirname(file), destination) : file;
+      const content = fs.readFileSync(target, 'utf8').replace(/^```[^\r\n]*\r?\n[\s\S]*?^```[ \t]*\r?$/gm, '');
+      const anchors = [...content.matchAll(/^#{1,6}\s+(.+)$/gm)].map(match => match[1].trim().toLowerCase()
+        .replace(/[^\p{L}\p{N}\p{M}_\- ]/gu, '').replace(/ /g, '-'));
+      anchors.push(...[...content.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]));
+      assert.ok(anchors.includes(decodeURIComponent(fragment)), `${name}: ${link}`);
+    }
+  }
+});
