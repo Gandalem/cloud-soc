@@ -50,4 +50,6 @@ sudo docker compose --env-file state/server/compose.env -f deploy/server/compose
 
 ## 검증 범위
 
+키 폐기 후 이력 저장이 실패했거나 이미 서버에서 폐기된 키를 재시도하면, 소유자 범위 폐기 응답의 ID 목록이 비어 있을 수 있습니다. 이때 오류 없는 빈 응답에 한해서 동일 소유자의 정확한 키 ID를 다시 조회하고 `invalidated=true`를 확인한 경우만 폐기 완료로 기록합니다. 미조회·활성 키·다른 ID·권한/응답 오류는 성공으로 표시하지 않습니다.
+
 `tests/test_key_management.py`는 가짜 발급 서버와 임시 DB로 정보 보존·구버전 이행·확인/폐기 응답·권한/CSRF·백업 복원을 검증합니다. `prototype/tests/key-management.test.cjs`는 검색·필터·확인/취소·오류·초안·패키지 삭제 재시도를 검증합니다. `tests/key_management_preview.py`는 임시 상태와 합성 인증만 사용하는 루프백 화면 검증용이며 운영 실행기가 아닙니다. 실제 VMware ES 권한/연결 및 에이전트 전송 중지 확인은 별도입니다.

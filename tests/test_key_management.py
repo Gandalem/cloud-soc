@@ -88,6 +88,42 @@ class KeyManagementTests(unittest.TestCase):
         self.confirm(previous=True)
         self.assertEqual(self.request("POST", "/api/keys/host-id/revoke", {}).status_code, 200)
 
+    def test_empty_owner_response_requires_exact_owned_invalidated_key(self):
+        item = self.issue()
+        self.issuer.security.invalidate_api_key.return_value = {
+            "error_count": 0, "invalidated_api_keys": [], "previously_invalidated_api_keys": [],
+        }
+        for keys in (None, [], [self.server_key(item["id"])],
+                     [self.server_key(item["id"], id="other", invalidated=True)],
+                     [self.server_key(item["id"], invalidated="true")],
+                     [self.server_key(item["id"], invalidated=True)] * 2):
+            self.issuer.security.get_api_key.return_value = {"api_keys": keys}
+            self.assertEqual(self.request("POST", "/api/keys/host-id/revoke", {}).status_code, 503)
+            self.assertIsNone(self.history()["host-id"]["revoked_at"])
+        self.issuer.security.get_api_key.side_effect = PermissionError("SECRET")
+        result = self.request("POST", "/api/keys/host-id/revoke", {})
+        self.assertEqual(result.status_code, 503)
+        self.assertNotIn("SECRET", result.get_data(as_text=True))
+        self.issuer.security.get_api_key.side_effect = None
+        self.issuer.security.get_api_key.return_value = {"api_keys": [self.server_key(item["id"], invalidated=True)]}
+        self.assertEqual(self.request("POST", "/api/keys/host-id/revoke", {}).status_code, 200)
+        self.assertEqual(self.history()["host-id"]["status"], "revoked")
+        self.issuer.security.get_api_key.assert_called_with(id="host-id", owner=True)
+        count = self.issuer.security.invalidate_api_key.call_count
+        self.assertEqual(self.request("POST", "/api/keys/host-id/revoke", {}).status_code, 200)
+        self.assertEqual(self.issuer.security.invalidate_api_key.call_count, count)
+
+    def test_unrelated_or_failed_revoke_cannot_use_lookup_as_success(self):
+        item = self.issue()
+        self.issuer.security.get_api_key.return_value = {"api_keys": [self.server_key(item["id"], invalidated=True)]}
+        for result in ({"error_count": 1, "invalidated_api_keys": [], "previously_invalidated_api_keys": []},
+                       {"error_count": 0, "invalidated_api_keys": ["other"], "previously_invalidated_api_keys": []},
+                       {"error_count": 0, "invalidated_api_keys": []}):
+            self.issuer.security.invalidate_api_key.return_value = result
+            self.assertEqual(self.request("POST", "/api/keys/host-id/revoke", {}).status_code, 503)
+        self.issuer.security.get_api_key.assert_not_called()
+        self.assertIsNone(self.history()["host-id"]["revoked_at"])
+
     def legacy(self):
         item = self.issue()
         store = self.app.extensions["packages"]

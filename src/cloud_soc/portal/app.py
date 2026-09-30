@@ -276,12 +276,19 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         try:
             # manage_own_api_key requires an explicitly owner-scoped request.
             result = issuer.security.invalidate_api_key(ids=[identifier], owner=True)
-            invalidated = result.get("invalidated_api_keys", [])
-            previous = result.get("previously_invalidated_api_keys", [])
+            invalidated = result.get("invalidated_api_keys")
+            previous = result.get("previously_invalidated_api_keys")
             if (not isinstance(invalidated, list) or not isinstance(previous, list)
-                    or type(result.get("error_count")) is not int or result["error_count"] != 0
-                    or identifier not in invalidated + previous):
+                    or type(result.get("error_count")) is not int or result["error_count"] != 0):
                 raise RuntimeError("Key revocation failed")
+            if identifier not in invalidated + previous:
+                # An owner-scoped retry can omit keys already invalidated remotely.
+                if invalidated or previous:
+                    raise RuntimeError("Unexpected key revocation response")
+                keys = issuer.security.get_api_key(id=identifier, owner=True).get("api_keys")
+                if (not isinstance(keys, list) or len(keys) != 1
+                        or keys[0].get("id") != identifier or keys[0].get("invalidated") is not True):
+                    raise RuntimeError("Key revocation not confirmed")
             store.mark_revoked(identifier)
         except Exception:
             return jsonify(error="키 폐기를 확인하지 못했습니다. 서버 연결·발급 계정 권한을 확인하고 다시 시도하세요. 이력은 삭제하지 않았습니다."), 503
