@@ -12,7 +12,7 @@ Cloud SOC는 Elasticsearch·Kibana와 Python 탐지 엔진을 사용하는 보�
 
 새 Windows 패키지는 [SYSTEM 사전 검사·staging 설치·기존 Filebeat 복구 확인](docs/windows_install_recovery.md)을 제공합니다. 중지된 동일 서버/조직/CA의 Filebeat와 누락되었거나 동일 설치의 비활성 Discovery 작업은 사용자 동의 후 보호 백업·검사·복구하며 키와 큐를 보존합니다. 임의 잔존 설치/Packetbeat의 전체 자동 복구·Enrollment·수신 확인까지 구현된 것은 아닙니다.
 
-새 Windows 네트워크 묶음의 통합 설치 흐름을 로컬에 추가했습니다. 두 수집기의 준비·설정/키 인증 후에만 서비스 등록·시작하며, 시작 이후 실패는 큐/키를 보존하고 중단 receipt가 무분별한 재설치를 차단합니다. 기존 설치의 통합 Repair/자동 재개는 아직 미지원입니다. 현재 코드·모의 검증 단계이며 기존 VMware·ZIP·PC에는 자동 적용되지 않습니다.
+새 Windows 네트워크 묶음은 두 수집기의 준비·설정/키 인증 후에만 서비스 등록·시작하며, 시작 이후 실패는 큐/키를 보존하고 중단 receipt가 무분별한 재설치를 차단합니다. 2026-09-30 VMware 포털과 새 ZIP에 반영하고 HTTPS 다운로드·기존 자료 보존을 검증했습니다. 실제 두 수집기 통합 설치/수신 및 기존 설치의 통합 Repair/자동 재개는 아직 미검증·미지원입니다. 기존 ZIP/PC는 자동 변경되지 않으며, 이미 수집 중인 PC는 신규 통합 설치가 아니라 로그 전용 ZIP의 `-UpdateDiscovery` 경로를 사용합니다.
 
 Windows의 주기적 Discovery는 이제 PowerShell 대신 독립 `.NET` 실행 프로그램을 사용합니다. SYSTEM이 `Restricted`인 경우에도 PowerShell 정책을 변경하지 않으며, 로컬 .NET Framework 컴파일러의 서명 확인 후 보호 폴더에서 포함된 소스를 빌드합니다. 앱 제어 정책이 실행을 차단하면 중단하며 우회하지 않습니다. 기존 ZIP은 바뀌지 않으므로 서버 반영 후 새 패키지가 필요합니다. [실행 방식·진단·남은 제약](docs/windows_native_discovery.md)을 확인하세요.
 
