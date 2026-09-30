@@ -20,6 +20,24 @@ from cloud_soc.portal.log_contract import (
 PIT_TTL = "90s"
 CURSOR_SECONDS = 600
 
+
+def project_list_hit(hit):
+    """Expose the existing allowlisted interpretation without rewriting raw metadata."""
+    row = project_hit(hit)
+    detail = security_detail(hit.get("_source")) if row["source_kind"] != "unknown" else {
+        "status": "unsupported", "adapter": None, "fields": {}}
+    adapters = {"windows_event": {"windows_security_v1", "sysmon_v1"},
+                "network_packetbeat": {"packetbeat_metadata_v1"},
+                "aws_cloudtrail": {"aws_cloudtrail_metadata_v1"}, "oci_audit": {"oci_audit_metadata_v1"}}
+    if detail["adapter"] not in adapters.get(row["source_kind"], set()):
+        detail = {"status": "unsupported", "adapter": None, "fields": {}}
+    fields = detail["fields"]
+    row["interpretation"] = {"status": detail["status"], "adapter": detail["adapter"],
+        "fields": {key: fields[key] for key in ("action", "outcome", "actor", "target_user", "source_ip", "destination_ip")
+                   if key in fields}}
+    row["parse_status"] = detail["status"]
+    return row
+
 # Source-based runtime fields avoid keyword/text mapping differences without
 # changing stored mappings. These scripts are fixed, never provided by callers.
 FIELD_HELPER = """
@@ -249,7 +267,7 @@ class LogReader:
             clauses.append({"term": {"soc_query_ip": filters.ip}})
         body = {
             "pit": {"id": pit, "keep_alive": PIT_TTL}, "size": filters.page_size + 1,
-            "track_total_hits": False, "timeout": SEARCH_TIMEOUT, "_source": list(SOURCE_FIELDS),
+            "track_total_hits": False, "timeout": SEARCH_TIMEOUT, "_source": list(dict.fromkeys(SOURCE_FIELDS + DETAIL_FIELDS)),
             "query": {"bool": {"filter": clauses}},
             "sort": [{filters.time_field: {"order": "desc", "unmapped_type": "date", "numeric_type": "date"}},
                      {"_shard_doc": "asc"}],
@@ -322,7 +340,7 @@ class LogReader:
                     raise unavailable()
                 last = order
                 identities.add(identity)
-            rows = [project_hit(hit) for hit in hits[:filters.page_size]]
+            rows = [project_list_hit(hit) for hit in hits[:filters.page_size]]
             token = None
             if len(hits) > filters.page_size:
                 token = self.encode({**state, "pit": pit, "after": hits[filters.page_size - 1]["sort"]})
@@ -361,7 +379,7 @@ class LogReader:
                                   source_includes=list(SOURCE_FIELDS) + list(DETAIL_FIELDS))
             if hit["_index"] != reference["index"] or hit["_id"] != reference["id"]:
                 raise unavailable()
-            return bounded_json({"contract_version": CONTRACT_VERSION, "row": project_hit(hit),
+            return bounded_json({"contract_version": CONTRACT_VERSION, "row": project_list_hit(hit),
                                  "security": security_detail(hit.get("_source")),
                                  "raw_access": "restricted"}, MAX_DETAIL_BYTES)
         except NotFoundError:

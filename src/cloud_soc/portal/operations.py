@@ -2,6 +2,8 @@
 
 from datetime import datetime, timezone
 import re
+from time import monotonic
+from urllib.parse import quote
 from elasticsearch import NotFoundError
 from cloud_soc.portal.agent_status import iso, parse_time
 from cloud_soc.portal.log_contract import INDICES, SOURCE_FIELDS, field, parse_filters, document_reference, project_hit
@@ -11,6 +13,9 @@ from cloud_soc.processing.contract import NORMALIZED, RECORDS, STATUS
 from cloud_soc.processing.worker import checked
 
 ALERT = "security-alerts"
+INDEX_PATH_BUDGET = 3000
+MAX_INDEX_BATCHES = 32
+SERIES_TIMEOUT = 12
 ALERT_FIELDS = ["@timestamp", "rule.id", "rule.name", "organization.id", "source.ip", "cloud_soc.severity",
                 "cloud_soc.alert_title", "cloud_soc.event_count", "cloud_soc.threshold", "cloud_soc.time_window_seconds",
                 "cloud_soc.window_start", "cloud_soc.window_end", "cloud_soc.provenance"]
@@ -27,7 +32,32 @@ def exact_indices(client, patterns):
     for name in names:
         if not any(re.fullmatch(re.escape(pattern).replace(r"\*", ".*"), name) for pattern in patterns):
             raise ValueError("Unexpected index")
-    return names
+    return list(dict.fromkeys(names))
+
+
+def index_batches(names):
+    """Keep exact index scope while leaving room for API paths and query options."""
+    batches, batch, length = [], [], 0
+    for name in names:
+        if not name or len(name.encode("utf-8")) > 255 or re.search(r"[,*/?\\#]", name):
+            raise ValueError("Invalid concrete index")
+        size = len(quote(name, safe="")) + (3 if batch else 0)
+        if length + size > INDEX_PATH_BUDGET:
+            batches.append(batch)
+            batch, length, size = [], 0, len(quote(name, safe=""))
+        batch.append(name)
+        length += size
+    if batch:
+        batches.append(batch)
+    if len(batches) > MAX_INDEX_BATCHES:
+        raise ValueError("Index scope too large")
+    return batches
+
+
+def exact_count(value):
+    if type(value) is not int or not 0 <= value <= 2**53 - 1:
+        raise ValueError("Invalid count")
+    return value
 
 
 def identifier(value):
@@ -61,27 +91,60 @@ class Operations:
     def series(self, patterns, time_field, start, end, interval, *, records=False, alerts=False):
         if not self.client:
             raise RuntimeError()
+        deadline = monotonic() + SERIES_TIMEOUT
         names = exact_indices(self.client, patterns)
         if not names:
             return {"state": "no_index", "count": 0, "buckets": [], "rows": [], "statuses": []}
-        caps = self.client.field_caps(index=names, fields=[time_field], include_unmapped=True)["fields"].get(time_field, {})
-        if not caps or set(caps) - {"date", "date_nanos"}:
-            raise ValueError("Time mapping missing")
+        batches = index_batches(names)
+        # Alerts are a single concrete index; do not approximate cross-index top-N sorting.
+        if alerts and names != [ALERT]:
+            raise ValueError("Unexpected alert scope")
         aggs = {"trend": {"date_histogram": {"field": time_field, "fixed_interval": interval,
                     "min_doc_count": 0, "extended_bounds": {"min": start, "max": iso(parse_time(end))}}}}
         if records:
             aggs["status"] = {"terms": {"field": "status", "size": 10}}
-        result = checked(self.client.search(index=names, size=50 if alerts else 0,
-            source=ALERT_FIELDS if alerts else False, sort=[{"@timestamp": "desc"}] if alerts else None,
-            track_total_hits=True, timeout="4s", allow_partial_search_results=False,
-            query={"range": {time_field: {"gte": start, "lt": end}}}, aggs=aggs))
-        if result["hits"]["total"]["relation"] != "eq":
-            raise ValueError("Inexact total")
-        return {"state": "ok", "count": result["hits"]["total"]["value"],
-                "buckets": [{"time": b["key_as_string"], "count": b["doc_count"]} for b in result["aggregations"]["trend"]["buckets"]],
-                "rows": [alert_row(hit) for hit in result["hits"]["hits"]] if alerts else [],
-                "statuses": [{"key": b["key"] if b["key"] in ("normalized", "unsupported", "invalid") else "unknown",
-                              "doc_count": b["doc_count"]} for b in result["aggregations"].get("status", {}).get("buckets", [])]}
+        count, buckets, statuses, rows = 0, {}, {}, []
+        for batch in batches:
+            if monotonic() >= deadline:
+                raise RuntimeError("Query budget exhausted")
+            caps = self.client.field_caps(index=batch, fields=[time_field], include_unmapped=True)["fields"].get(time_field, {})
+            if not caps or set(caps) - {"date", "date_nanos"} or any(
+                    value.get("aggregatable") is False or value.get("searchable") is False for value in caps.values()):
+                raise ValueError("Time mapping missing")
+            if monotonic() >= deadline:
+                raise RuntimeError("Query budget exhausted")
+            result = checked(self.client.search(index=batch, size=50 if alerts else 0,
+                source=ALERT_FIELDS if alerts else False, sort=[{"@timestamp": "desc"}] if alerts else None,
+                track_total_hits=True, timeout="4s", allow_partial_search_results=False,
+                query={"range": {time_field: {"gte": start, "lt": end}}}, aggs=aggs))
+            if monotonic() >= deadline:
+                raise RuntimeError("Query budget exhausted")
+            if result["hits"]["total"]["relation"] != "eq":
+                raise ValueError("Inexact total")
+            batch_count = exact_count(result["hits"]["total"]["value"])
+            trend = result["aggregations"]["trend"]["buckets"]
+            if sum(exact_count(b["doc_count"]) for b in trend) != batch_count:
+                raise ValueError("Incomplete trend")
+            for bucket in trend:
+                stamp = parse_time(bucket["key_as_string"])
+                if stamp is None:
+                    raise ValueError("Invalid bucket time")
+                buckets[stamp] = exact_count(buckets.get(stamp, 0) + bucket["doc_count"])
+            if len(buckets) > 1000:
+                raise ValueError("Too many buckets")
+            count = exact_count(count + batch_count)
+            status = result["aggregations"].get("status", {})
+            if records and (status.get("sum_other_doc_count", 0) or status.get("doc_count_error_upper_bound", 0)
+                    or sum(exact_count(b["doc_count"]) for b in status.get("buckets", [])) != batch_count):
+                raise ValueError("Incomplete statuses")
+            for bucket in status.get("buckets", []):
+                key = bucket["key"] if bucket["key"] in ("normalized", "unsupported", "invalid") else "unknown"
+                statuses[key] = exact_count(statuses.get(key, 0) + exact_count(bucket["doc_count"]))
+            if alerts:
+                rows = [alert_row(hit) for hit in result["hits"]["hits"]]
+        return {"state": "ok", "count": count,
+                "buckets": [{"time": iso(stamp), "count": buckets[stamp]} for stamp in sorted(buckets)],
+                "rows": rows, "statuses": [{"key": key, "doc_count": statuses[key]} for key in sorted(statuses)]}
 
     def pipeline(self):
         value = self.get(STATUS, "normalizer", ["@timestamp", "state", "last_success", "checkpoint", "error", "detection"])

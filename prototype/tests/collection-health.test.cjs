@@ -59,9 +59,37 @@ test('numeric samples show backlog and failures without treating absent counters
   const ui = browser([ok({rows:[{...item,collector_metrics:metrics}]})]); await settle();
   const text = textOf(ui.get('#health-rows'));
   assert.match(text,/90\.0% · 적체 주의/);
-  assert.match(text,/재시도 실패 2 \/ 포기 미보고/);
+  assert.match(text,/전송 실패 2 \/ 전송 포기 미보고/);
   assert.match(text,/읽기 범위 제한/);
   assert.match(text,/누적 유실량\/전체 정상 판정 아님/);
+});
+
+test('queue is a byte-sized pending sample, and missing metrics never imply failed collection', async () => {
+  const metrics={state:'recent',queue_events:37116,queue_bytes:71102543,queue_pct:.071,queue_state:'measured',
+    interval_seconds:30,output_total:125,output_acked:125,output_failed:null,output_dropped:null,
+    read_errors:null,write_errors:null,scan_partial:true,sampled_at:item.generated_at};
+  const ui=browser([ok({rows:[{...item,collector_metrics:metrics}]})]);await settle();
+  const text=textOf(ui.get('#health-rows'));
+  assert.match(text,/전송 대기 37,116건/);
+  assert.match(text,/67\.8 MiB/);
+  assert.match(text,/71,102,543 bytes/);
+  assert.match(text,/수신 확인\(ACK\) 125/);
+  assert.match(text,/미보고 항목은 오류 0/);
+  assert.match(text,/원본 로그 수집 실패를 뜻하지 않음/);
+  assert.doesNotMatch(text,/재시도 실패|1970|Invalid Date|NaN/);
+  const missing=browser([ok(page)]);await settle();
+  assert.match(textOf(missing.get('#health-rows')),/유효한 큐 통계가 없습니다/);
+  assert.match(textOf(missing.get('#health-rows')),/통계 없음은 전송 실패나 오류 0/);
+});
+
+test('absent sample time is not epoch and explicit zero remains distinct from missing',async()=>{
+  const ui=browser([ok({rows:[{...item,collector_metrics:{state:'recent',queue_events:0,queue_bytes:0,queue_pct:0,
+    output_total:0,output_acked:0,output_failed:0,output_dropped:null,scan_partial:false,sampled_at:null}}]})]);
+  await settle();const text=textOf(ui.get('#health-rows'));
+  assert.match(text,/전송 대기 0건/);
+  assert.match(text,/전송 실패 0 \/ 전송 포기 미보고/);
+  assert.match(text,/시각 미보고/);
+  assert.doesNotMatch(text,/1970|Invalid Date/);
 });
 
 test('stale, clock-invalid, absent and malformed samples remain visibly uncertain', async () => {

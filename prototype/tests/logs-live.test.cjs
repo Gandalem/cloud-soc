@@ -60,6 +60,32 @@ test('invalid response shapes are rejected, not used as fake empty success', () 
     { ...result, rows: Array(51).fill(row) }, { ...result, raw_access: 'full' }, { ...result, next_cursor: 123 }]) assert.ok(!validPage(data));
 });
 
+test('generic Windows metadata does not display None as action or claim a parser failure', () => {
+  const html = rowMarkup({...row, action:'None', event_code:'21', provider:'Microsoft-Windows-TerminalServices-LocalSessionManager',
+    actor_id:'S-1-5-18', interpretation:{status:'unsupported',fields:{}}},0);
+  assert.doesNotMatch(html,/None \/|undefined|NaN/);
+  assert.match(html,/행위 정보 없음 \/ 결과 정보 없음/);
+  assert.match(html,/21 \/ Microsoft-Windows-TerminalServices/);
+  assert.match(html,/S-1-5-18/);
+  assert.match(html,/메타데이터만 표시 · 행위 해석 미지원/);
+  assert.doesNotMatch(html,/수집 실패|안전|로그인 성공/);
+});
+
+test('list distinguishes supported interpretation, target identity, partial and original fields', () => {
+  const interpretation={status:'recognized',fields:{action:'login',outcome:'failure',target_user:'fixture',source_ip:'192.0.2.10'}};
+  const html=rowMarkup({...row,interpretation},0);
+  assert.match(html,/로그인 \/ 실패/);
+  assert.match(html,/대상 계정: fixture/);
+  assert.match(html,/192.0.2.10/);
+  assert.match(html,/지원 이벤트 해석/);
+  assert.match(rowMarkup({...row,interpretation:{...interpretation,status:'partial'}},0),/부분 해석 · 필드 누락/);
+  assert.match(rowMarkup({...row,interpretation,user:'canonical',source_ip:'192.0.2.11',outcome:'success'},0),/canonical/);
+  assert.match(rowMarkup({...row,action:'CreateSection',interpretation:{status:'unsupported'}},0),/CreateSection \/ 결과 정보 없음/);
+  const malicious=rowMarkup({...row,interpretation:{status:'recognized',fields:{action:'<img src=x>',actor:'<img src=x>'}}},0);
+  assert.doesNotMatch(malicious,/<img/);
+  assert.match(malicious,/&lt;img/);
+});
+
 test('next fetches cursor only; previous and visited next use snapshot memory', async () => {
   const ui = browser([ok({ ...result, next_cursor: 'opaque/+=' }), ok({ ...result, rows: [{ ...row, reference: { ...row.reference, id: 'second' } }] })]);
   await settle();
@@ -169,6 +195,7 @@ test('AWS records display account/Region without pretending they are hosts', () 
   assert.match(html, /클라우드 API/);
   assert.match(html, /AWS 관리 이벤트/);
   assert.match(html, /ROLE:fixture/);
+  assert.match(rowMarkup({...cloud,interpretation:{status:'recognized',fields:{action:'management_api_call',outcome:'failure'}}},0),/ConsoleLogin \/ 실패/);
   const url = new URL(query({ ...defaults, collector: 'cloudtrail', os: 'cloud' }), 'https://example.test');
   assert.equal(url.searchParams.get('collector'), 'cloudtrail');
   assert.equal(url.searchParams.get('os'), 'cloud');

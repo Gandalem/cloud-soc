@@ -17,6 +17,7 @@ from werkzeug.security import generate_password_hash
 from cloud_soc.portal.app import create_app
 from cloud_soc.portal.log_contract import SOURCE_FIELDS, parse_filters
 from cloud_soc.portal.log_query import LogReader, LogQueryError, bounded_json
+from cloud_soc.portal.security_detail import DETAIL_FIELDS
 
 FIXTURE = json.loads((ROOT / "tests/fixtures/log_intake.json").read_text(encoding="utf-8"))["hits"][0]
 
@@ -66,7 +67,7 @@ class ReaderTests(unittest.TestCase):
         self.assertFalse(request["allow_partial_search_results"])
         self.assertEqual(request["body"]["size"], 26)
         self.assertEqual(request["body"]["timeout"], "4s")
-        self.assertEqual(request["body"]["_source"], list(SOURCE_FIELDS))
+        self.assertEqual(request["body"]["_source"], list(dict.fromkeys(SOURCE_FIELDS + DETAIL_FIELDS)))
         self.assertEqual(request["body"]["sort"][-1], {"_shard_doc": "asc"})
         self.client.close_point_in_time.assert_called_with(id="rotated-pit")
         self.client.index.assert_not_called()

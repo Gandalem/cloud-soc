@@ -12,12 +12,15 @@
 .log-query-summary { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; border-block:1px solid var(--border); padding:12px 20px; font-size:11px; line-height:1.8; color:var(--muted); background:#f7f9fc; }
 #log-error { padding:16px 20px; color:#963b32; background:#fff2ef; border-bottom:1px solid #edc5ba; }
 .log-sheet-scroll { max-height:570px; overflow:auto; }
-.log-sheet { min-width:2050px; table-layout:fixed; font-size:11px; }
+.log-sheet { min-width:2550px; table-layout:fixed; font-size:11px; }
 .log-sheet th { position:sticky; top:0; background:#edf2f7; color:#486078; padding:13px 12px; border-right:1px solid #dae3ed; border-bottom:1px solid #c9d5e2; white-space:nowrap; z-index:2; }
 .log-sheet td { padding:13px 12px; border-right:1px solid #e7edf3; border-bottom:1px solid #e7edf3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; height:44px; }
 .log-sheet th:first-child { width:180px; }
 .log-sheet th:nth-child(2),.log-sheet th:nth-child(3) { width:185px; }
 .log-sheet th:nth-child(8) { width:260px; }
+.log-sheet th:nth-child(9) { width:280px; }
+.log-sheet th:nth-child(13) { width:200px; }
+.log-sheet th:last-child { width:260px; }
 .log-sheet tbody tr:nth-child(even) { background:#f8fafc; }
 .log-sheet tbody tr:hover,.log-sheet tbody tr:focus-within { background:#edf4ff; }
 .log-row-open { color:#1756b8; background:none; border:0; text-align:left; padding:0 !important; max-width:100%; overflow:hidden; text-overflow:ellipsis; min-height:24px !important; text-decoration:underline; text-underline-offset:3px; }

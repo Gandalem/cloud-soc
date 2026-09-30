@@ -10,9 +10,21 @@
   function rowMarkup(row, index) {
     const cloudName = row.cloud_provider === "oci" ? "OCI" : row.source_kind === "aws_cloudtrail" ? "AWS" : "클라우드";
     const origin = row.stream === "cloud" ? `${cloudName} ${row.cloud_account || "계정 미관측"} / ${row.cloud_region || "리전 미관측"}` : row.host_name;
+    const interpreted = row.interpretation || {};
+    const supported = ["recognized", "partial"].includes(interpreted.status);
+    const fields = supported ? interpreted.fields || {} : {};
+    const rawAction = typeof row.action === "string" && !/^(none|null|-)$/i.test(row.action.trim()) ? row.action : null;
+    const actionText = row.stream === "cloud" && rawAction ? rawAction : fields.action ? label(securityTerms, fields.action, fields.action) : rawAction || "행위 정보 없음";
+    const outcome = row.outcome && row.outcome !== "unknown" ? row.outcome : fields.outcome || "unknown";
+    const outcomeText = outcome === "unknown" ? "결과 정보 없음" : label(outcomes, outcome, "결과 정보 없음");
+    const actor = row.user || row.actor_id || fields.actor || (fields.target_user ? `대상 계정: ${fields.target_user}` : null);
+    const interpretation = label({ recognized: "지원 이벤트 해석", partial: "부분 해석 · 필드 누락",
+      unsupported: "메타데이터만 표시 · 행위 해석 미지원" }, interpreted.status, "미평가 · 서버 갱신 필요");
     const values = [time(row.received_at), time(row.event_at), origin, label(osNames, row.os), row.collector,
       label(sources, row.source_kind, "미분류"), row.channel || row.file_path || row.dataset,
-      row.source_ip, row.destination_ip, row.user || row.actor_id, `${row.action || "미관측"} / ${label(outcomes, row.outcome)}`, "미평가"];
+      `${row.event_code || "ID 미관측"} / ${row.provider || "공급자 미관측"}`,
+      row.source_ip || fields.source_ip, row.destination_ip || fields.destination_ip, actor,
+      `${actionText} / ${outcomeText}`, interpretation];
     return `<tr><td><button type="button" class="log-row-open" data-row="${index}" title="${escape(row.reference.id)}">${escape(row.reference.id)}</button></td>${values.map(value => `<td title="${escape(value)}">${escape(value)}</td>`).join("")}</tr>`;
   }
   function query(values, now = Date.now()) {
@@ -155,7 +167,7 @@
     try { return load(query(values()), true); }
     catch (error) { generation++; pending?.abort(); busy = false; fail(error); controls(); }
   }
-  const detailLabels = { received_at: "서버 수신 시각", event_at: "로그 기준 시각", organization: "조직", agent_id: "수집기 ID", collector: "수집기", host_name: "수집 호스트", host_ips: "호스트 IP", os: "OS 분류", os_basis: "OS 분류 근거", os_name: "OS 이름", source_label: "소스 태그", channel: "채널", file_path: "파일 경로", dataset: "데이터셋", event_code: "이벤트 코드", action: "행위", user: "사용자", source_ip: "출발지 IP", destination_ip: "목적지 IP", transport: "전송 방식", protocol: "프로토콜", flow_final: "흐름 종료 보고" };
+  const detailLabels = { received_at: "서버 수신 시각", event_at: "로그 기준 시각", organization: "조직", agent_id: "수집기 ID", collector: "수집기", host_name: "수집 호스트", host_ips: "호스트 IP", os: "OS 분류", os_basis: "OS 분류 근거", os_name: "OS 이름", source_label: "소스 태그", channel: "채널", file_path: "파일 경로", dataset: "데이터셋", event_code: "이벤트 코드", provider: "이벤트 공급자", action: "원본 행위", user: "사용자", actor_id: "주체 ID / Windows SID", source_ip: "출발지 IP", destination_ip: "목적지 IP", transport: "전송 방식", protocol: "프로토콜", flow_final: "흐름 종료 보고" };
   async function detail(row) {
     const ticket = ++detailGeneration; detailPending?.abort(); detailPending = new AbortController();
     const controller = detailPending;
@@ -166,7 +178,7 @@
       const data = await fetchJson("/api/logs/detail?" + new URLSearchParams(row.reference), controller);
       if (ticket !== detailGeneration) return;
       if (data.contract_version !== 1 || data.raw_access !== "restricted" || data.row?.reference?.id !== row.reference.id || data.row?.reference?.index !== row.reference.index) throw new Error("상세 응답의 문서 참조가 일치하지 않습니다.");
-      const entries = [["인덱스", data.row.reference.index], ["문서 ID", data.row.reference.id], ...securityEntries(data.security), ...Object.entries(detailLabels).map(([key, name]) => [name, key.endsWith("_at") ? time(data.row[key]) : data.row[key]]), ["원본 표준 필드 결과", label(outcomes, data.row.outcome)], ["목록 메타데이터 평가", "미평가"], ["형식 오류 필드", data.row.quality?.invalid_fields], ["표시 제한 필드", data.row.quality?.truncated_fields]];
+      const entries = [["인덱스", data.row.reference.index], ["문서 ID", data.row.reference.id], ...securityEntries(data.security), ...Object.entries(detailLabels).map(([key, name]) => [name, key.endsWith("_at") ? time(data.row[key]) : data.row[key]]), ["원본 표준 필드 결과", label(outcomes, data.row.outcome)], ["목록 해석 상태", label({ recognized: "지원 이벤트 해석", partial: "부분 해석 · 필드 누락", unsupported: "메타데이터만 표시 · 행위 해석 미지원" }, data.row.parse_status, "미평가")], ["형식 오류 필드", data.row.quality?.invalid_fields], ["표시 제한 필드", data.row.quality?.truncated_fields]];
       for (const [name, value] of entries) {
         const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = name;
         dd.textContent = Array.isArray(value) ? value.join(", ") || "없음" : value == null ? "미관측" : String(value);

@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from cloud_soc.portal.log_contract import project_hit
+from cloud_soc.portal.log_query import project_list_hit as project_hit
 from cloud_soc.portal.collection_health import project as project_health
 from cloud_soc.portal.security_detail import security_detail
 from cloud_soc.aws.cloudtrail import project_event, timestamp
@@ -22,6 +22,12 @@ from cloud_soc.oci.audit import project_event as project_oci
 FIXTURES = json.loads((ROOT / "tests/fixtures/log_intake.json").read_text(encoding="utf-8"))["hits"]
 FIXTURES[0]["_source"]["winlog"].update(provider_name="Microsoft-Windows-Security-Auditing")
 FIXTURES[0]["_source"]["winlog"]["event_data"].update(LogonType="10", IpAddress="198.51.100.10", IpPort="55000")
+FIXTURES.insert(1, {"_index": "soc-host-raw-synthetic", "_id": "synthetic-generic-channel", "_source": {
+    "host": {"name": "SYNTHETIC-WINDOWS", "os": {"type": "windows"}},
+    "agent": {"type": "filebeat"}, "labels": {"log_source": "windows_event"},
+    "event": {"action": "None", "code": "21"}, "winlog": {"event_id": 21,
+        "channel": "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational",
+        "provider_name": "Microsoft-Windows-TerminalServices-LocalSessionManager", "user": {"identifier": "S-1-5-18"}}}})
 for event in json.loads((ROOT / "tests/fixtures/cloudtrail_management.json").read_text(encoding="utf-8"))["events"]:
     index, identifier, document = project_event({"EventId": event["eventID"], "EventTime": timestamp(event["eventTime"]), "CloudTrailEvent": json.dumps(event)},
                                                  account="123456789012", region=event["awsRegion"], organization="synthetic")
@@ -44,7 +50,12 @@ class Preview(BaseHTTPRequestHandler):
                 "schema": 1, "generated_at": (now - timedelta(seconds=12)).isoformat(), "policy_version": 2,
                 "selected": 28, "excluded": 4, "errors": 1, "total": 33,
                 "sources": [{"id": "a" * 64, "status": "selected"}, {"id": "b" * 64, "status": "unreadable"}]}}}
-            data = {"rows": [project_health(source, {"agent_id": "synthetic", "organization": "test"}, now)], "next_cursor": None}
+            missing = project_health(source, {"agent_id": "synthetic-old", "organization": "test"}, now)
+            source["cloud_soc"]["discovery"]["collector_metrics"] = {"schema": 1, "state": "observed",
+                "counter_scope": "logged_interval_delta", "sampled_at": (now - timedelta(seconds=20)).isoformat(),
+                "interval_seconds": 30, "scan_partial": True, "queue_events": 37116, "queue_bytes": 71102543,
+                "queue_pct": .071, "queue_max_bytes": 1000000000, "output_total": 125, "output_acked": 125}
+            data = {"rows": [missing, project_health(source, {"agent_id": "synthetic-new", "organization": "test"}, now)], "next_cursor": None}
             return self.reply(200, json.dumps(data).encode(), "application/json")
         if parsed.path == "/api/logs":
             host = params.get("host", [""])[0]
@@ -72,10 +83,13 @@ class Preview(BaseHTTPRequestHandler):
             return self.reply(200, json.dumps(data).encode(), "application/json")
         assets = {"/logs.html": "text/html", "/logs.js": "text/javascript", "/logs.css": "text/css",
                   "/styles.css": "text/css", "/agents.css": "text/css", "/assets/mark.svg": "image/svg+xml",
-                  "/collection-health.html": "text/html", "/collection-health.js": "text/javascript", "/agent-status.css": "text/css"}
+                  "/collection-health.html": "text/html", "/collection-health.js": "text/javascript", "/agent-status.css": "text/css",
+                  "/shell.js": "text/javascript", "/shell.css": "text/css"}
         if parsed.path not in assets:
             return self.reply(404, b"Not found", "text/plain")
         data = (ROOT / "prototype" / parsed.path.lstrip("/")).read_bytes()
+        if assets[parsed.path] == "text/html":
+            data = data.replace(b'<main id="main"', '<p role="status">합성 UI 검증 전용 · 운영 데이터 아님</p><main id="main"'.encode())
         if parsed.path == "/logs.html":
             data = data.replace("관리자 전용 · 읽기 전용".encode(), "합성 UI 검증 전용 · 운영 데이터 아님".encode())
         if parsed.path == "/collection-health.html":

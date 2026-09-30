@@ -38,10 +38,12 @@ P1-01 계약을 기준으로 P1-02 API와 P1-03 화면 연결까지 구현했다
 | `host_name`, `host_ips` | 수집 호스트 정보. 네트워크 통신 상대의 정보가 아님 |
 | `os`, `os_basis`, `os_name` | OS 분류, 분류에 쓴 필드 경로, 표시용 `host.os.name` |
 | `channel`, `file_path`, `dataset` | `winlog.channel`, `log.file.path`, `event.dataset`. 각각 별도 보존 |
-| `event_code`, `action`, `outcome`, `user` | 대응하는 명시적 ECS 필드만 사용. `winlog.event_data` 안의 사용자 역할을 임의 선택하지 않음 |
+| `event_code`, `provider`, `action`, `outcome`, `user` | 원본 ECS 메타데이터. 이벤트 ID는 ECS 코드가 없으면 Windows의 유효한 `winlog.event_id`, 클라우드는 `event.id`를 사용. 공급자는 `winlog.provider_name`/`event.provider`. Windows opcode의 None/null/- 문자열은 행위 정보로 표시하지 않음 |
+| `actor_id` | 원본 `user.id`. Windows 이벤트에서 이름이 없으면 형식이 유효한 `winlog.user.identifier` SID를 주체 ID로 표시하며 계정 이름으로 바꾸지 않음 |
+| `interpretation` | 실제 목록/상세 API는 기존 허용 목록의 보안 해석기를 재사용하여 `status`, `adapter`, 제한된 행위/결과·주체/대상 계정·IP만 별도로 투영. 공급자·채널·코드 충돌/소스 그룹 불일치/미지원은 unsupported. 원본 행의 필드와 문서는 덮어쓰지 않음 |
 | `source_ip`, `destination_ip` | 유효한 단일 IP. 본문이나 `host.ip`에서 대신 채우지 않음 |
 | `transport`, `protocol`, `flow_final` | 대응하는 network/flow 필드. `false`와 누락을 구분 |
-| `parse_status` | 현재 항상 `not_evaluated`. 수집/JSON 해석만으로 보안 파싱 완료라 하지 않음 |
+| `parse_status` | 순수 `project_hit()`는 `not_evaluated`. 목록/상세의 `project_list_hit()`는 recognized/partial/unsupported를 반환. 지원 이벤트 해석·필드 누락 부분 해석·메타데이터만 표시를 구분하며 탐지/정규화 처리 완료 판정이 아님 |
 | `quality.invalid_fields`, `quality.truncated_fields` | 검사한 필드의 형식 문제/표시 길이 제한. 원문 변경이나 수집 손실을 뜻하지 않음 |
 
 OS 우선순위는 지원되는 `host.os.type` → `labels.sensor_platform` → 지원되는 `labels.log_source` → `unknown`이다. Packetbeat 허용 목록에 `host.os.type`이 없으므로 센서 태그가 필요하다. 호스트명, 인덱스명, OS 이름 문자열을 추측해 분류하지 않는다. 이 태그는 인증된 OS 증명이 아닌 수집 메타데이터다.

@@ -23,9 +23,10 @@ SOURCE_FIELDS = (
     "@timestamp", "event.ingested", "organization.id", "agent.id", "agent.type",
     "host.name", "host.ip", "host.os.type", "host.os.name", "labels.log_source",
     "labels.sensor_platform", "winlog.channel", "log.file.path", "event.dataset",
-    "event.code", "event.action", "event.outcome", "user.name", "source.ip",
+    "event.code", "event.id", "event.action", "event.outcome", "event.provider", "user.name", "source.ip",
     "destination.ip", "network.transport", "network.protocol", "flow.final",
     "cloud.provider", "cloud.account.id", "cloud.region", "cloud.service.name", "user.id",
+    "winlog.provider_name", "winlog.event_id", "winlog.user.identifier",
 )
 
 
@@ -189,6 +190,22 @@ def project_hit(hit):
     if final is not None and type(final) is not bool:
         invalid.append("flow.final")
         final = None
+    action = string("event.action")
+    if action is not None and action.strip().lower() in {"none", "null", "-"}:
+        action = None
+    code = string("event.code")
+    if code is None and stream == "cloud":
+        code = string("event.id")
+    win_code = field(source, "winlog.event_id")
+    if code is None and kind == "windows_event":
+        if type(win_code) is int and 0 <= win_code <= 65535:
+            code = str(win_code)
+        elif isinstance(win_code, str) and re.fullmatch(r"[0-9]{1,5}", win_code) and int(win_code) <= 65535:
+            code = win_code
+    actor_id = string("user.id")
+    sid = string("winlog.user.identifier") if kind == "windows_event" else None
+    if actor_id is None and sid and re.fullmatch(r"S-[0-9]+(?:-[0-9]+){2,15}", sid):
+        actor_id = sid
     row = {
         "reference": reference, "stream": stream, "source_kind": kind,
         "source_label": source_name, "received_at": timestamp("event.ingested"),
@@ -197,14 +214,15 @@ def project_hit(hit):
         "host_name": string("host.name"), "host_ips": addresses("host.ip", many=True),
         "os": os_type, "os_basis": os_basis, "os_name": string("host.os.name"),
         "channel": string("winlog.channel"), "file_path": string("log.file.path"),
-        "dataset": string("event.dataset"), "event_code": string("event.code"),
-        "action": string("event.action"), "outcome": outcome or "unknown",
+        "dataset": string("event.dataset"), "event_code": code,
+        "provider": string("winlog.provider_name") or string("event.provider"),
+        "action": action, "outcome": outcome or "unknown",
         "user": string("user.name"), "source_ip": addresses("source.ip"),
         "destination_ip": addresses("destination.ip"),
         "transport": string("network.transport"), "protocol": string("network.protocol"),
         "flow_final": final, "parse_status": "not_evaluated",
         "cloud_provider": string("cloud.provider"), "cloud_account": string("cloud.account.id"), "cloud_region": string("cloud.region"),
-        "cloud_service": string("cloud.service.name"), "actor_id": string("user.id"),
+        "cloud_service": string("cloud.service.name"), "actor_id": actor_id,
     }
     row["quality"] = {"invalid_fields": sorted(set(invalid)), "truncated_fields": sorted(set(truncated))}
     return row

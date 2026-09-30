@@ -19,7 +19,7 @@
   <div id="app-shell"></div>
   <main id="main" class="main-content agents-main logs-main">
     <div class="page-heading"><div><p class="eyebrow">LOG EXPLORER</p><h1>통합 로그</h1><p class="subheading">호스트 로그·네트워크 관측·AWS/OCI 감사 이벤트를 하나의 표에서 조회합니다.</p></div><button id="log-refresh" class="primary-button" type="button">새로고침</button></div>
-    <section class="log-scope-note panel" aria-label="조회 범위"><h2>수집된 기록과 해석 결과는 다릅니다.</h2><p>실제 수신 인덱스의 메타데이터만 표시합니다. IP·사용자·결과가 없으면 미관측으로 남기며, 수집 성공을 파싱 완료나 안전 판정으로 표시하지 않습니다.</p><p>민감정보 보호 정책 검증 전까지 메시지 본문·전체 원문·내보내기는 제한됩니다. 네트워크 기록은 흐름·DNS·TLS 메타데이터이며 원본 PCAP이 아닙니다.</p></section>
+    <section class="log-scope-note panel" aria-label="조회 범위"><h2>수집된 기록과 해석 결과는 다릅니다.</h2><p>실제 수신 인덱스의 메타데이터와 지원되는 보안 이벤트 해석을 표시합니다. 행위 해석 미지원은 수집 실패가 아닙니다. 이벤트 ID·공급자로 기록을 구분하며, 없는 IP·계정·결과를 추측하거나 안전 판정으로 표시하지 않습니다.</p><p>행위·결과는 지원 해석기가 있으면 그 근거를 사용하고, 없으면 원본 필드를 표시합니다. Windows SID는 이름으로 확인되지 않은 주체 ID입니다. IP 검색은 원본의 호스트·출발지·목적지 IP 필드 기준입니다. 민감정보 보호 정책 검증 전까지 메시지 본문·전체 원문·내보내기는 제한됩니다. 네트워크 기록은 흐름·DNS·TLS 메타데이터이며 원본 PCAP이 아닙니다.</p></section>
     <section class="panel log-workspace" id="log-panel" aria-labelledby="log-list-title" aria-busy="true">
       <div class="log-list-heading"><div><h2 id="log-list-title">수신 로그 목록</h2><p>조회 시점의 스냅샷을 시간 내림차순으로 탐색합니다. 새 로그는 새로고침 후 표시됩니다.</p></div><span id="log-state-label" role="status">조회 준비</span></div>
       <form id="log-filters" class="log-filters" role="search" aria-label="로그 메타데이터 검색">
@@ -37,7 +37,7 @@
       <div class="log-query-summary"><span id="log-query-range">조회 범위 확인 중</span><span>본문 검색·임의 열 정렬: 미지원</span></div>
       <div id="log-error" role="alert" hidden></div>
       <div class="table-scroll log-sheet-scroll" tabindex="0" aria-label="로그 표 가로 스크롤 영역">
-        <table class="log-sheet"><caption class="sr-only">수신된 로그의 제한된 메타데이터. 문서 ID를 누르면 상세를 조회합니다.</caption><thead><tr><th scope="col">문서 ID</th><th scope="col">서버 수신 시각 (KST)</th><th scope="col">로그 기준 시각 (KST)</th><th scope="col">호스트 / 클라우드 계정·리전</th><th scope="col">OS / 영역</th><th scope="col">수집기</th><th scope="col">소스</th><th scope="col">채널 / 파일 / 데이터셋</th><th scope="col">출발지 IP</th><th scope="col">목적지 IP</th><th scope="col">사용자 / 주체 ID</th><th scope="col">행위 / 결과</th><th scope="col">해석 상태</th></tr></thead><tbody id="log-rows"></tbody></table>
+        <table class="log-sheet"><caption class="sr-only">수신된 로그의 제한된 메타데이터. 문서 ID를 누르면 상세를 조회합니다.</caption><thead><tr><th scope="col">문서 ID</th><th scope="col">서버 수신 시각 (KST)</th><th scope="col">로그 기준 시각 (KST)</th><th scope="col">호스트 / 클라우드 계정·리전</th><th scope="col">OS / 영역</th><th scope="col">수집기</th><th scope="col">소스</th><th scope="col">채널 / 파일 / 데이터셋</th><th scope="col">이벤트 ID / 공급자</th><th scope="col">출발지 IP</th><th scope="col">목적지 IP</th><th scope="col">사용자 / 주체 ID</th><th scope="col">행위 / 결과</th><th scope="col">해석 상태</th></tr></thead><tbody id="log-rows"></tbody></table>
       </div>
       <div id="log-empty" class="empty-state" hidden><strong>해당 조건의 로그가 없습니다.</strong><p>기간과 시간 기준을 확인하세요. 수신 시각이 없는 과거 문서는 로그 기준 시각으로 조회할 수 있습니다.</p></div>
       <div class="log-pagination"><span id="log-result" role="status">불러오는 중</span><div><button id="log-prev" type="button" disabled>이전</button><span id="log-page-label">1 페이지</span><button id="log-next" type="button" disabled>다음</button></div></div>
