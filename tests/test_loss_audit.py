@@ -49,6 +49,12 @@ class LossAuditTests(unittest.TestCase):
             self.assertIn({"term": {"agent.id": AGENT}}, call["query"]["bool"]["filter"])
         self.assertIn("event.ingested", str(client.calls[0]))
         self.assertIn("@timestamp", str(client.calls[1]))
+        self.assertNotIn("runtime_mappings", client.calls[0])
+        runtime=client.calls[1]["runtime_mappings"]
+        self.assertEqual(set(runtime), {"soc_loss_channel", "soc_loss_record_id", "soc_loss_provider", "soc_loss_event_code"})
+        self.assertTrue(all(item["type"] == "keyword" for item in runtime.values()))
+        self.assertTrue(all("params._source" in item["script"]["source"] for item in runtime.values()))
+        self.assertNotIn("Synthetic", str(runtime))
 
     def test_invalid_inputs_never_query(self):
         for agent, start, end, refs in (

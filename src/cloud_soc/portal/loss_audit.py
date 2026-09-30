@@ -14,6 +14,19 @@ import uuid
 
 INDICES = "soc-host-raw-windows-*"
 MAX_REFERENCES = 200
+REFERENCE_FIELDS = {
+    "channel": ("winlog", "channel"), "provider": ("winlog", "provider_name"),
+    "record_id": ("winlog", "record_id"), "event_code": ("event", "code"),
+}
+# Fixed source-based keyword fields cover text/keyword and ignored-field drift.
+REFERENCE_RUNTIME = {
+    "soc_loss_" + name: {"type": "keyword", "script": {"source": (
+        "def parent=params._source.get('" + parent + "'); "
+        "if (!(parent instanceof Map)) return; def v=parent.get('" + field + "'); "
+        "if (v instanceof String && v.length()<=256) emit(v); "
+        "else if (v instanceof Number) emit(v.toString());"
+    )}} for name, (parent, field) in REFERENCE_FIELDS.items()
+}
 
 
 class AuditError(Exception):
@@ -57,13 +70,14 @@ def references(values):
     return result
 
 
-def count(client, filters, deadline):
+def count(client, filters, deadline, *, runtime=None):
     if time.monotonic() >= deadline:
         raise AuditError("Audit time limit exceeded; no complete result.")
     response = client.search(
         index=INDICES, query={"bool": {"filter": filters}}, size=0, source=False,
         track_total_hits=True, timeout="5s", allow_partial_search_results=False,
         ignore_unavailable=True, allow_no_indices=True,
+        **({"runtime_mappings": runtime} if runtime is not None else {}),
     )
     if time.monotonic() >= deadline:
         raise AuditError("Audit time limit exceeded; no complete result.")
@@ -103,11 +117,9 @@ def inspect_window(client, agent_id, since, until, candidates=None):
         "recovery_ready": False, "replay_performed": False,
     }
     for reference in refs:
-        filters = [agent, *({"term": {field: reference[key]}} for field, key in (
-            ("winlog.channel", "channel"), ("winlog.record_id", "record_id"),
-            ("winlog.provider_name", "provider"), ("event.code", "event_code"), ("@timestamp", "occurred_at"),
-        ))]
-        found, _ = count(client, filters, deadline)
+        filters = [agent, {"term": {"@timestamp": reference["occurred_at"]}},
+                   *({"term": {"soc_loss_" + key: str(reference[key])}} for key in REFERENCE_FIELDS)]
+        found, _ = count(client, filters, deadline, runtime=REFERENCE_RUNTIME)
         report["reference_matches" if found else "reference_not_found"] += 1
         if found > 1:
             report["multiple_reference_matches"] += 1
