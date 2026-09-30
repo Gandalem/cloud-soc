@@ -9,6 +9,9 @@ param(
     [switch]$AllowUnavailableRevocation,
     [switch]$Repair,
     [switch]$UpdateDiscovery,
+    [switch]$PreflightOnly,
+    [switch]$PrepareOnly,
+    [string]$PreparedReceipt,
     [switch]$DryRun
 )
 
@@ -22,6 +25,7 @@ $DiscoveryTask = 'Cloud-SOC-Discovery'
 . (Join-Path $PSScriptRoot 'transaction-windows.ps1')
 . (Join-Path $PSScriptRoot 'repair-windows.ps1')
 . (Join-Path $PSScriptRoot 'update-discovery-windows.ps1')
+. (Join-Path $PSScriptRoot 'bundle-windows.ps1')
 $Root = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Cloud-SOC-Agent'
 $FinalRoot = $Root
 $Stage = $null
@@ -152,6 +156,9 @@ function Test-DiscoveryTask {
 
 try {
     Assert-Arguments
+    if (($PrepareOnly -or $PreflightOnly) -and ($Repair -or $UpdateDiscovery -or $DryRun)) { throw 'Preparation modes cannot repair, update or preview an existing installation.' }
+    if ($PrepareOnly) { Assert-SocReceiptDestination $PreparedReceipt }
+    elseif ($PreparedReceipt) { throw 'Receipt requires -PrepareOnly.' }
     if ($Repair -and $UpdateDiscovery) { throw 'Choose either -Repair or -UpdateDiscovery, not both.' }
     if ($UpdateDiscovery) {
         Invoke-SocDiscoveryUpdate -Root $Root -Source $PSScriptRoot -Endpoint $Endpoint -CaPath $CaPath -Organization $Organization `
@@ -183,6 +190,7 @@ try {
     if (-not (Test-Path -LiteralPath $CaPath -PathType Leaf)) { throw 'CA certificate file does not exist.' }
     Test-SocServerTls -Endpoint $Endpoint -CaPath $CaPath -AllowUnavailableRevocation:$AllowUnavailableRevocation
     $null = Get-SourceDiscovery -LogRoots $LogRoots -RequiredChannels $Channels
+    if ($PreflightOnly) { Write-Host 'Host OS/admin/source/TLS preflight passed; SYSTEM/key/config checks are still pending.'; exit 0 }
 
     $Stage = New-SocStage
     Set-AgentPaths $Stage.Path
@@ -217,6 +225,12 @@ try {
     [IO.File]::WriteAllText($ConfigPath, (Get-AgentConfig | ConvertTo-Json -Depth 12), $utf8)
     Invoke-Beat -BeatArguments @('test', 'config')
     Invoke-Beat -BeatArguments @('test', 'output')
+
+    if ($PrepareOnly) {
+        Write-SocPreparedReceipt -Path $PreparedReceipt -Stage $Stage -Kind 'host'
+        Write-Host 'Filebeat prepared in protected staging. No collector service was created or started.'
+        exit 0
+    }
 
     # Recheck immediately before promotion. Move never merges into an existing path.
     if (Test-Path -LiteralPath $FinalRoot) { throw 'Final destination appeared during preparation; installation stopped.' }

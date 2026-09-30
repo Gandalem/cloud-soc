@@ -1,0 +1,127 @@
+# Fully mocked host boundary: no downloads, credentials, tasks, services, NICs or capture.
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot '../bundle-windows.ps1')
+$testRoot = Join-Path ([IO.Path]::GetTempPath()) ('cloud-soc-bundle-test-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $testRoot | Out-Null
+$oldProgramData = $env:ProgramData
+$env:ProgramData = $testRoot
+function Step([string]$Name) {
+    $global:Calls.Add($Name)
+    if ($Name -ceq $global:Failure) { throw "Injected $Name" }
+}
+function Assert-SocAdministrator { Step 'admin' }
+function Assert-SocLocalPath { param($Path) }
+function Select-SocInterface { Step 'nic'; return '11111111-1111-1111-1111-111111111111' }
+function New-SocStage {
+    $token = [guid]::NewGuid().ToString('N')
+    $path = Join-Path $testRoot ('Cloud-SOC\staging\' + $token)
+    New-Item -ItemType Directory -Path $path -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $path 'install-owner.txt'), $token)
+    return @{Path=$path;Token=$token}
+}
+function Read-SocPreparedReceipt { param($Path,$Kind)
+    Step ($Kind + '-receipt')
+    return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+}
+function Move-SocBundleMember { param($Member) Step ($Member.Kind + '-move'); $Member.Promoted=$true }
+function Test-SocBundleMember { param($Root,$Beat) Step ($Beat + '-validate') }
+function Assert-SocBundleService { param($Member) Step ($Member.Beat + '-ownership') }
+function Remove-SocBundleService { param($Member) Step ($Member.Beat + '-delete'); $global:Services.Remove($Member.Service) }
+function Remove-SocOwnedDirectory { param($Path,$ExpectedPath,$Token)
+    Step 'remove-owned'
+    # Simulated final roots must never be touched by this test harness.
+    if ($Path.StartsWith($testRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        if ([IO.File]::ReadAllText((Join-Path $Path 'install-owner.txt')) -cne $Token) { throw 'Bad test ownership' }
+        Remove-Item -LiteralPath $Path -Recurse -Force
+    }
+}
+function Save-SocBundleJournal { param($Transaction,$Phase,$StartAttempted) Step ('journal-' + $Phase) }
+function Get-Service { param($Name,$ErrorAction)
+    if ($global:Services.ContainsKey($Name)) {
+        $result = [pscustomobject]@{Status='Running'}
+        $result | Add-Member ScriptMethod WaitForStatus { param($State,$Timeout) }
+        return $result
+    }
+}
+function New-Service { param($Name,$DisplayName,$BinaryPathName,$StartupType,$DependsOn)
+    Step ($Name + '-create'); $global:Services[$Name]=$true
+}
+function Start-Service { param($Name) Step ($Name + '-start') }
+function Stop-Service { param($Name,$ErrorAction) Step ($Name + '-stop') }
+function Set-Service { param($Name,$StartupType) Step ($Name + '-' + $StartupType) }
+function Start-Sleep { param($Seconds) }
+function Get-ScheduledTask { param($TaskName,$ErrorAction) if ($global:Task) { return @{State='Ready'} } }
+function New-SocNativeDiscoveryAction { param($Root) return @{} }
+function New-ScheduledTaskPrincipal { param($UserId,$LogonType,$RunLevel) return @{} }
+function New-ScheduledTaskSettingsSet { param($MultipleInstances,$ExecutionTimeLimit,[switch]$StartWhenAvailable) return @{} }
+function Register-ScheduledTask { param($TaskName,$Action,$Principal,$Settings) Step 'task-register'; $global:Task=$true }
+function Export-ScheduledTask { param($TaskName) return '<synthetic />' }
+function Start-ScheduledTask { param($TaskName) Step 'task-start' }
+function Wait-SocTask { param($Name,$Started) Step 'task-wait' }
+function Assert-SocBundleTask { param($OriginalXml) Step 'task-ownership' }
+function Assert-SocBundleFreshReport { param($Root,$Started) Step 'task-report' }
+function Stop-ScheduledTask { param($TaskName) Step 'task-stop' }
+function Unregister-ScheduledTask { param($TaskName,$Confirm) Step 'task-delete'; $global:Task=$false }
+function New-ScheduledTaskTrigger { param([switch]$Once,$At,$RepetitionInterval) return @{} }
+function Set-ScheduledTask { param($TaskName,$Trigger) Step 'task-trigger' }
+try {
+    $stub = @'
+param($Endpoint,$CaPath,$Organization,$InterfaceGuid,[switch]$AllowUnavailableRevocation,
+    [switch]$PreflightOnly,[switch]$PrepareOnly,$PreparedReceipt,[switch]$DryRun)
+$kind = if ($PSCommandPath -like '*network*') { 'network' } else { 'host' }
+$phase = if ($DryRun) { 'preview' } elseif ($PreflightOnly) { 'preflight' } else { 'prepare' }
+Step ($kind + '-' + $phase)
+if ($PrepareOnly) {
+    $stage = New-SocStage
+    @{path=$stage.Path;token=$stage.Token} | ConvertTo-Json | Set-Content -LiteralPath $PreparedReceipt
+}
+$global:LASTEXITCODE = 0
+exit 0
+'@
+    foreach ($name in @('install-windows.ps1','install-network-windows.ps1')) {
+        [IO.File]::WriteAllText((Join-Path $testRoot $name), $stub)
+    }
+    $canary = Join-Path $testRoot 'existing-queue-and-key.canary'
+    [IO.File]::WriteAllText($canary,'existing-state-unchanged')
+    foreach ($failure in @('', 'host-preflight','network-preflight','host-prepare','network-prepare',
+        'host-move','network-move','filebeat-validate','packetbeat-validate','cloud-soc-filebeat-create',
+        'cloud-soc-packetbeat-create','task-register','task-wait','task-report','cloud-soc-filebeat-start',
+        'cloud-soc-packetbeat-start','cloud-soc-packetbeat-Automatic','task-trigger')) {
+        $global:Calls = New-Object 'Collections.Generic.List[string]'
+        $global:Failure = $failure
+        $global:Services = @{}
+        $global:Task = $false
+        $failed = $false
+        $pending = Join-Path $testRoot 'Cloud-SOC\bundle-pending.json'
+        if (Test-Path -LiteralPath $pending) { Remove-Item -LiteralPath $pending }
+        try {
+            Invoke-SocWindowsBundle -Source $testRoot -Endpoint 'https://soc.example.invalid:9200' -CaPath 'C:\synthetic\ca.crt' -Organization 'synthetic'
+        } catch { $failed=$true; if (-not $failure) { throw } }
+        if ($failed -ne [bool]$failure) { throw "Wrong result for $failure" }
+        $start = $Calls.IndexOf('cloud-soc-filebeat-start')
+        if ($start -ge 0) {
+            foreach ($step in @('host-prepare','network-prepare','filebeat-validate','packetbeat-validate','task-wait')) {
+                if ($Calls.IndexOf($step) -lt 0 -or $Calls.IndexOf($step) -gt $start) { throw "Started before $step" }
+            }
+            if ($failed -and (($Calls -join ',') -match '(filebeat|packetbeat)-delete|remove-owned')) { throw 'Post-start data/service removed' }
+            if ($failed -and -not (Test-Path -LiteralPath $pending)) { throw 'Post-start recovery receipt missing' }
+        } elseif ($failed -and ($Calls -contains 'cloud-soc-packetbeat-start')) { throw 'Network started early' }
+        if ([IO.File]::ReadAllText($canary) -cne 'existing-state-unchanged') { throw 'Existing state changed' }
+    }
+    $global:Failure=''; $global:Calls.Clear()
+    [IO.File]::WriteAllText($pending,'retained-interrupted-fixture')
+    try { Invoke-SocWindowsBundle -Source $testRoot -Endpoint 'https://soc.example.invalid' -CaPath 'C:\synthetic\ca.crt' -Organization 'synthetic'; throw 'Missing block' }
+    catch { if ($_.Exception.Message -notmatch 'receipt requires recovery') { throw } }
+    if (($Calls -join ',') -match 'prepare|start|remove') { throw 'Interrupted state was adopted' }
+    $global:Calls.Clear()
+    try { Invoke-SocWindowsBundle -Source $testRoot -Endpoint 'https://soc.example.invalid' -CaPath 'C:\synthetic\ca.crt' -Organization 'synthetic' -Repair; throw 'Missing repair block' }
+    catch { if ($_.Exception.Message -notmatch 'Combined repair') { throw } }
+    if ($Calls.Count) { throw 'Unsupported repair changed host' }
+    Write-Host 'Bundle mocked phase ordering, failures, preservation and retry guards: passed.'
+} finally {
+    $env:ProgramData = $oldProgramData
+    # Exact test-owned temporary root, never Program Files or real ProgramData.
+    if ((Split-Path -Leaf $testRoot) -cnotmatch '^cloud-soc-bundle-test-[a-f0-9]{32}$') { throw 'Unsafe test cleanup' }
+    Remove-Item -LiteralPath $testRoot -Recurse -Force
+}

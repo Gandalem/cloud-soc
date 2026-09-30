@@ -6,6 +6,8 @@ param(
     [Parameter(Mandatory = $true)][string]$Organization,
     [string]$InterfaceGuid,
     [switch]$PreflightOnly,
+    [switch]$PrepareOnly,
+    [string]$PreparedReceipt,
     [switch]$AllowUnavailableRevocation,
     [switch]$DryRun
 )
@@ -14,6 +16,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'download-windows.ps1')
 . (Join-Path $PSScriptRoot 'transaction-windows.ps1')
+. (Join-Path $PSScriptRoot 'repair-windows.ps1')
+. (Join-Path $PSScriptRoot 'bundle-windows.ps1')
 $Version = '9.5.2'
 $ServiceName = 'cloud-soc-packetbeat'
 $Root = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Cloud-SOC-Network'
@@ -120,6 +124,9 @@ function Set-ProtectedDirectory([string]$Path) {
 try {
     if ($DryRun -and -not $InterfaceGuid) { $InterfaceGuid = '11111111-1111-1111-1111-111111111111' }
     Assert-Arguments
+    if ($PrepareOnly -and ($PreflightOnly -or $DryRun)) { throw 'Choose one preparation mode.' }
+    if ($PrepareOnly) { Assert-SocReceiptDestination $PreparedReceipt }
+    elseif ($PreparedReceipt) { throw 'Receipt requires -PrepareOnly.' }
     $config = Get-AgentConfig | ConvertTo-Json -Depth 16
     if ($DryRun) {
         $config
@@ -169,6 +176,11 @@ try {
     [IO.File]::WriteAllText($ConfigPath, (Get-AgentConfig | ConvertTo-Json -Depth 16), $utf8)
     Invoke-Beat -BeatArguments @('test', 'config')
     Invoke-Beat -BeatArguments @('test', 'output')
+    if ($PrepareOnly) {
+        Write-SocPreparedReceipt -Path $PreparedReceipt -Stage $Stage -Kind 'network'
+        Write-Host 'Packetbeat prepared in protected staging. No collector service was created or started.'
+        exit 0
+    }
     if (Test-Path -LiteralPath $FinalRoot) { throw 'Final destination appeared during preparation; installation stopped.' }
     Assert-SocLocalPath $FinalRoot
     [IO.Directory]::Move($Root, $FinalRoot)

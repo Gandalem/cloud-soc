@@ -15,7 +15,7 @@ import zipfile
 
 VERSION = "9.5.2"
 FILES = {
-    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "repair-windows.ps1", "update-discovery-windows.ps1", "native-windows.ps1", "discovery-native.cs", "privacy.js", "policy.py"],
+    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "repair-windows.ps1", "update-discovery-windows.ps1", "bundle-windows.ps1", "native-windows.ps1", "discovery-native.cs", "enable-rejection-evidence.ps1", "privacy.js", "policy.py"],
     "ubuntu": ["install-ubuntu.sh", "discover-linux.sh", "privacy.js", "policy.py"],
 }
 NETWORK_FILES = {
@@ -83,21 +83,15 @@ if ($UpdateDiscovery) {{
 '''
     if spec["network"]:
         text += '''. (Join-Path $PSScriptRoot 'transaction-windows.ps1')
-if (-not $DryRun) { Assert-SocAdministrator }
-if (-not $InterfaceGuid) {
-    if ($DryRun) { $InterfaceGuid = '11111111-1111-1111-1111-111111111111' }
-    else { $InterfaceGuid = Select-SocInterface }
-}
-$networkInstaller = Join-Path $PSScriptRoot 'install-network-windows.ps1'
-if ($DryRun) { & $networkInstaller @common -InterfaceGuid $InterfaceGuid -DryRun | Out-Null }
-else { & $networkInstaller @common -InterfaceGuid $InterfaceGuid -PreflightOnly }
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+. (Join-Path $PSScriptRoot 'repair-windows.ps1')
+. (Join-Path $PSScriptRoot 'bundle-windows.ps1')
+try {
+    Invoke-SocWindowsBundle @common -Source $PSScriptRoot -InterfaceGuid $InterfaceGuid -DryRun:$DryRun -Repair:$Repair
+    exit 0
+} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
 '''
-    text += '''& (Join-Path $PSScriptRoot 'install-windows.ps1') @common -DryRun:$DryRun -Repair:$Repair
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-'''
-    if spec["network"]:
-        text += '''& $networkInstaller @common -InterfaceGuid $InterfaceGuid -DryRun:$DryRun
+    else:
+        text += '''& (Join-Path $PSScriptRoot 'install-windows.ps1') @common -DryRun:$DryRun -Repair:$Repair
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 '''
     return "install.ps1", text
@@ -131,7 +125,10 @@ def build_bundle(spec, source, ca):
         "Recovery preserves server, organization, CA, key and queues; it is not server migration or a network repair.\n"
         "Network collection requires an explicit NIC; Windows also needs approved Npcap.\n"
         "Enter the host key at Filebeat's keystore prompt; enter the separate network key at Packetbeat's prompt.\n"
-        "If network installation fails after Filebeat succeeds, Filebeat remains running.\n"
+        "Fresh Windows network bundles prepare both collectors before any permanent collector service starts.\n"
+        "Before startup, owned preparation is rolled back; after a start attempt, queues/keys are retained and owned services disabled.\n"
+        "Combined existing-installation repair and interrupted resume are not yet supported; a pending receipt blocks unsafe retry.\n"
+        "Linux network installation is still sequential; a network failure can leave Filebeat running.\n"
         "Deleting this package does not uninstall an agent or revoke its API keys.\n"
     ).encode("utf-8")
     members["SHA256SUMS"] = "".join(f"{hashlib.sha256(data).hexdigest()}  {name}\n" for name, data in sorted(members.items())).encode()
