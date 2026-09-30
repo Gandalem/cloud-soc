@@ -2,6 +2,16 @@
 
 ## 현재 결과
 
+### 2026-09-30 재점검
+
+관리자 읽기 전용 검사에서 현재 진단 파일 8개, 64,338,484 bytes, 완전한 행 933개를 확인했습니다. 읽은 시각 범위는 9월 30일 09:18~11:33 KST이며, 요청한 9월 28일 13:55:40~13:56:27 KST는 관측되지 않았습니다. `evidence_state=requested_window_not_observed`, `truncated=true`, `historical_loss_count=null`, `recovery_ready=false`입니다. 기본 진단 위치와 알려진 배포본/기존 보호 복구 백업의 로그 위치에서 당시 거절 근거를 찾지 못했고, 별도 이벤트 진단 위치/이름 설정은 없었습니다. 회전·삭제의 정확한 원인은 확정하지 않았습니다.
+
+Application·Security·System·PowerShell Operational의 OS 로그는 조회 가능하고 보존 시각 경계가 당시 진단 시점을 포함했습니다. 이는 특정 거절 이벤트가 남아 있거나 같은 내용이라는 증거가 아닙니다. 예전 보고서는 1,798이라는 집계만 남겼고 200개 참조의 실제 식별값·내용 지문은 내보내지 않았으므로 현재 동일 후보의 중앙 중복/유실을 확정할 수 없습니다.
+
+**결론: 알려진 거절 흔적은 있으나 전체 고유 유실량과 안전한 재전송 대상은 미확정입니다.** 설정·CA·keystore 해시와 실행 정책은 전후 동일하고 Filebeat는 계속 Running입니다. 전체 재수집/큐 초기화/추정 재전송은 수행하지 않았습니다. P0C-16의 실제 복구/재수신 완료 기준은 유지하며 미완료로 남깁니다. 내부 관리자 점검이며 일반 사용자 화면을 추가하지 않습니다.
+
+### 이전 점검 이력
+
 2026-09-28 P0C-15의 Elasticsearch 동적 필드 한도 보존형 대응 후, 기존 Windows Filebeat는 실행 중입니다. 과거 거절 이벤트가 자동으로 되살아난 것은 아닙니다.
 
 P0C-16 읽기 전용 점검에서 보존된 진단 파일 10개, 약 21MiB, 완전한 행 4,487개를 읽었습니다. 필드 한도 거절 기록 1,798개를 확인했고, 그중 채널/레코드 ID 참조 200개는 Windows에서 조회됐습니다. 원본 본문·채널명·호스트 식별정보는 결과에 넣지 않았습니다.
@@ -15,11 +25,35 @@ P0C-16 읽기 전용 점검에서 보존된 진단 파일 10개, 약 21MiB, 완�
 ```powershell
 # 관리자 PowerShell. 결과 파일은 새 이름으로 지정합니다.
 .\deploy\agents\audit-windows-loss.ps1 -ResultPath .\state\loss-audit-new.json
+# 특정 기간과 이전 비밀 제외 집계 보고서를 대조할 때
+.\deploy\agents\audit-windows-loss.ps1 `
+  -Since '2026-09-28T04:55:40Z' -Until '2026-09-28T04:56:27Z' `
+  -BaselinePath .\state\p0c16-loss-audit.json `
+  -ResultPath .\state\loss-audit-history-new.json
 ```
 
 이 도구는 설치 경로의 일반/이벤트 오류 진단 로그만 읽고 서비스·설정·키·registry·큐·실행 정책을 바꾸지 않습니다. 전체 드라이브나 개인 문서를 탐색하지 않습니다. 원문/인증정보를 출력하거나 네트워크로 전송하지 않습니다. 운영 진단 로그에는 민감 내용이 있을 수 있으므로 원본 파일을 공개 이슈/대화에 붙이지 마세요.
 
-상한: 최근 파일 32개, 파일당 앞부분 8MiB, 전체 64MiB, 행당 512KiB, 이벤트 참조 최대 200개, 기본 실행 시간 60초. OS 읽기 한 번의 제한 시간은 1초이며 API/디스크 지연으로 전체 벽시계 제한을 조금 넘을 수 있습니다. 마지막 불완전 행은 무시합니다. 결과의 `truncated`, `references_limited`와 `complete_loss_count=false`를 함께 해석해야 합니다. 손상·파일 접근 실패는 성공/전체 확인으로 간주하지 않습니다. 기존 결과 파일은 덮어쓰지 않습니다.
+상한: 이벤트 거절 진단을 우선한 최대 파일 32개, 파일당 앞부분 8MiB, 전체 64MiB, 행당 512KiB, 이벤트 참조 최대 200개, 기본 실행 시간 60초. OS 읽기 한 번의 제한 시간은 1초이며 API/디스크 지연으로 전체 벽시계 제한을 조금 넘을 수 있습니다. 마지막 불완전 행은 무시합니다. 결과의 `truncated`, `references_limited`와 `complete_loss_count=false`를 함께 해석해야 합니다. 손상·파일 접근 실패는 성공/전체 확인으로 간주하지 않습니다. 기존 결과 파일은 `CreateNew`로 덮어쓰지 않으며 진단 입력 폴더에는 결과를 쓸 수 없습니다. 기간은 명시적 시간대 포함 ISO 시각과 최대 31일로 제한합니다.
+
+schema 2의 `prior_field_limit_entries`는 이전 집계이지 새 고유 유실량이 아닙니다. `rejections_observed_identity_unverified`는 거절 관측·동일성 미확인, `no_rejections_observed_in_read_subset`는 읽은 부분에서 거절 미관측, `requested_window_not_observed`는 요청한 기간의 근거 미관측입니다. 어느 상태도 전체 무손실이나 자동 복구를 보장하지 않습니다. PowerShell 5.1/7의 날짜 변환 차이와 실제 Elastic `+0900` 시각을 회귀 검증합니다.
+
+## 중앙 읽기 전용 대조
+
+포털 이미지에 배포되는 `cloud_soc.portal.loss_audit`는 기존 monitor 조회 계정과 내부 HTTPS/CA를 사용합니다. 발급/관리자 계정 권한을 넓히지 않고 패키지/사건 DB를 열거나 문서를 쓰지 않습니다.
+
+```bash
+# <collector-uuid>는 해당 수집기의 정확한 agent.id. 비밀번호나 API 키를 넣지 않음.
+sudo docker exec cloud-soc-central-portal-1 python -m cloud_soc.portal.loss_audit \
+  --agent-id '<collector-uuid>' \
+  --since '2026-09-28T04:45:00Z' --until '2026-09-28T05:00:00Z'
+```
+
+`stored_documents_in_receipt_window`는 **서버 수신 시각**으로 조회한 실제 저장 문서 수이며, 거절 횟수나 유실량과 빼기/합산하지 않습니다. 이벤트 발생 시각·진단 오류 시각·서버 수신 시각은 별개입니다. 결과는 수집기 식별값을 해시 요약만 출력하고 본문을 반환하지 않습니다.
+
+검증된 후보 메타데이터를 확보했다면 `--references-stdin`으로 최대 200개의 `channel`, `record_id`, `provider`, `event_code`, `occurred_at`만 전달할 수 있습니다. stdin 입력은 최대 128KiB, 전체 대조 예산은 60초이며 마지막 네트워크 요청 지연 때문에 벽시계가 조금 길 수 있습니다. 타임아웃·부분 shard 실패·정확하지 않은 집계는 실패 종료하고 불완전 결과를 성공 보고하지 않습니다. 중복 참조는 제거하며, 같은 수집기·채널·번호·공급자·이벤트 번호·발생 시각을 모두 조건으로 조회합니다. 참조 일치는 내용 동일성 증명이 아니고 미조회도 유실 확정이 아닙니다. 보호된 관리자 입력만 사용하고 실제 식별값·진단 본문을 Git/공개 대화에 넣지 마세요.
+
+Filebeat 진단은 크기/개수에 따라 회전하며 이벤트 본문 오류는 별도 진단 파일에 기록될 수 있습니다. 정해진 보존 기간을 보장하는 기능이 아니므로 향후 거절 발생 시 보호된 참조/내용 지문을 조기에 보존하는 운영 절차가 필요합니다. 저장량과 민감정보 영향을 검토하기 전 전체 원문 진단의 장기 보존을 자동 적용하지 않습니다. [공식 로깅 설정](https://www.elastic.co/guide/en/beats/filebeat/current/configuration-logging.html), [설정 참조](https://www.elastic.co/docs/reference/beats/filebeat/filebeat-reference-yml).
 
 ## 안전한 복구의 선행 조건
 

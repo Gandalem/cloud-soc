@@ -588,3 +588,5 @@ Windows에서는 Git Bash와 `pwsh`가 필요합니다. `BASH_EXE`, `POWERSHELL_
 - API 키·비밀번호·개인키·실제 운영 로그는 Git에 올리지 않습니다. `.env`는 추적하지 않고 서버별로 관리합니다.
 
 설치 세부 동작과 보안 제약은 [에이전트 상세 안내](deploy/agents/README.md)를 참고하세요.
+
+과거 저장 거절의 근거·복구 가능성을 점검하는 내부 관리자 절차는 [Windows 거절 로그 점검](docs/windows_log_loss_audit.md)을 참고하세요. 현재 수집 정상과 과거 무손실은 별개이며, 근거가 없는 로그를 전체 재수집하지 않습니다.
