@@ -48,7 +48,22 @@ class KeyManagementTests(unittest.TestCase):
         self.client = create_app(self.settings, issuer=self.issuer).test_client()
         self.assertEqual(self.history()["host-id"]["status"], "revoked")
         self.assertEqual(self.request("POST", "/api/keys/host-id/revoke", {}).status_code, 200)
-        self.issuer.security.invalidate_api_key.assert_called_once_with(ids=["host-id"])
+        self.issuer.security.invalidate_api_key.assert_called_once_with(ids=["host-id"], owner=True)
+
+    def test_minimum_permission_issuer_requires_owner_scoped_revocation(self):
+        self.issue()
+
+        def invalidate(*, ids, owner=False):
+            if owner is not True:
+                raise PermissionError("manage_own_api_key requires owner=true")
+            return {"error_count": 0, "invalidated_api_keys": ids, "previously_invalidated_api_keys": []}
+
+        self.issuer.security.invalidate_api_key.side_effect = invalidate
+        result = self.request("POST", "/api/keys/host-id/revoke", {})
+        self.assertEqual(result.status_code, 200)
+        self.assertTrue(result.json["revoked"])
+        self.assertEqual(self.history()["host-id"]["status"], "revoked")
+        self.issuer.security.invalidate_api_key.assert_called_once_with(ids=["host-id"], owner=True)
 
     def test_revocation_requires_exact_success_and_preserves_failed_history(self):
         self.issue()

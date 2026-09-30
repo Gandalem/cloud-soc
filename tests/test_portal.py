@@ -230,7 +230,7 @@ class PortalTests(unittest.TestCase):
         response = self.request("POST", f"/api/packages/{item['id']}/keys", {"days": 7})
         self.assertEqual(response.status_code, 503)
         self.assertNotIn("SECRET", response.get_data(as_text=True))
-        self.issuer.security.invalidate_api_key.assert_called_once_with(ids=["first"])
+        self.issuer.security.invalidate_api_key.assert_called_once_with(ids=["first"], owner=True)
 
     def test_key_lifetime_validation_and_revocation_scope(self):
         item = self.package()

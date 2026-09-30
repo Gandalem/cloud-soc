@@ -27,8 +27,15 @@ test('P2C-07 verifier is read-only against protected Windows state', () => {
 
 for (const shell of ['powershell.exe', 'pwsh']) {
   test(`P2C-07 verifier synthetic pass/fail matrix: ${shell}`, { skip: process.platform !== 'win32' }, () => {
+    const env = { ...process.env };
+    // Let Windows PowerShell use its own modules rather than inherited PS7 modules.
+    if (shell === 'powershell.exe') {
+      for (const key of Object.keys(env)) {
+        if (key.toLowerCase() === 'psmodulepath') delete env[key];
+      }
+    }
     const run = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-File', fixture], {
-      encoding: 'utf8', windowsHide: true, timeout: 60000,
+      encoding: 'utf8', windowsHide: true, timeout: 60000, env,
     });
     assert.ifError(run.error);
     assert.equal(run.status, 0, run.stdout + run.stderr);

@@ -261,7 +261,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         except Exception:
             if issued:
                 try:
-                    issuer.security.invalidate_api_key(ids=[key["id"] for key in issued])
+                    issuer.security.invalidate_api_key(ids=[key["id"] for key in issued], owner=True)
                 except Exception:
                     app.logger.error("Partial API key issue failed; administrator must audit keys for package %s", identifier)
             # Never include upstream request/response bodies or API secrets in errors.
@@ -274,7 +274,8 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         if found["revoked_at"]:
             return jsonify(revoked=True, key=found)
         try:
-            result = issuer.security.invalidate_api_key(ids=[identifier])
+            # manage_own_api_key requires an explicitly owner-scoped request.
+            result = issuer.security.invalidate_api_key(ids=[identifier], owner=True)
             invalidated = result.get("invalidated_api_keys", [])
             previous = result.get("previously_invalidated_api_keys", [])
             if (not isinstance(invalidated, list) or not isinstance(previous, list)

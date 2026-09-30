@@ -28,7 +28,9 @@ def main():
         store.record_keys(package["id"], [{"id": "synthetic-legacy"}, {"id": "synthetic-revoked", "scope": "host"}])
         store.mark_revoked("synthetic-revoked")
 
-        def revoke(*, ids):
+        def revoke(*, ids, owner=False):
+            if owner is not True:
+                raise PermissionError("Synthetic owner-scoping failure")
             if ids == ["synthetic-network"]:
                 raise RuntimeError("Synthetic connection failure")
             return {"error_count": 0, "invalidated_api_keys": ids, "previously_invalidated_api_keys": []}
