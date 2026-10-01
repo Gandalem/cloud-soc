@@ -27,7 +27,7 @@ class ServerPreparationTests(unittest.TestCase):
         self.state = Path(self.temp.name) / "server"
 
     def run_main(self, entries, error=None):
-        args = argparse.Namespace(host="soc.example.test", bind_ip="10.0.0.5", state=self.state)
+        args = argparse.Namespace(host="soc.example.test", agent_host=None, bind_ip="10.0.0.5", state=self.state)
         stdout, stderr = io.StringIO(), io.StringIO()
         with patch.object(prepare.argparse.ArgumentParser, "parse_args", return_value=args), \
                 patch.object(prepare, "os", SimpleNamespace(name="posix", geteuid=lambda: 0)), \
@@ -171,6 +171,30 @@ class ServerPreparationTests(unittest.TestCase):
         self.assertNotIn("SYNTHETIC_CREDENTIAL", output.getvalue())
         self.assertNotIn("SYNTHETIC_HASH", output.getvalue())
         self.assertNotIn(PASSWORD, output.getvalue())
+
+    def test_independent_agent_host_is_in_certificate_and_environment(self):
+        def fake_openssl(command, **_kwargs):
+            for option in ("-keyout", "-out"):
+                if option in command:
+                    Path(command[command.index(option) + 1]).write_text("synthetic certificate", encoding="ascii")
+
+        with patch.object(prepare.shutil, "which", return_value="openssl"), \
+                patch.object(prepare.subprocess, "run", side_effect=fake_openssl), \
+                patch.object(prepare, "password_hash", return_value="SYNTHETIC_HASH"), \
+                patch.object(prepare.os, "umask"), patch.object(prepare.os, "chown", create=True), \
+                patch.object(Path, "chmod", autospec=True), redirect_stdout(io.StringIO()):
+            prepare.prepare("dashboard.example.test", "10.0.0.5", self.state, PASSWORD, agent_host="10.0.0.5")
+        extensions = (self.state / "private/server.ext").read_text(encoding="ascii")
+        self.assertIn("DNS:dashboard.example.test,IP:10.0.0.5", extensions)
+        env = (self.state / "compose.env").read_text(encoding="utf-8")
+        self.assertIn("SOC_PUBLIC_HOST=dashboard.example.test\n", env)
+        self.assertIn("SOC_AGENT_ENDPOINT=https://10.0.0.5:9200\n", env)
+
+    def test_invalid_agent_host_creates_no_state(self):
+        for host in ("https://receiver:9200", "receiver/path", "receiver\nOTHER=value", "bad-.test"):
+            with self.subTest(host=host), self.assertRaises(prepare.PreparationError):
+                prepare.prepare("dashboard.example.test", "10.0.0.5", self.state, PASSWORD, agent_host=host)
+            self.assertFalse(self.state.exists())
 
     def test_elastic_secret_ownership_failure_preserves_state_without_weakening_mode(self):
         with patch.object(prepare.shutil, "which", return_value="openssl"), \

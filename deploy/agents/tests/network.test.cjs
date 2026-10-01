@@ -45,6 +45,7 @@ function assertSafe(c, platform) {
   }
   assert.equal(c['packetbeat.protocols'][1].include_raw_certificates, false);
   const fields = c.processors.find(p => p.include_fields).include_fields.fields;
+  assert.ok(!fields.includes('@timestamp'), 'Native Beat timestamp is always exported; explicitly copying it duplicates the JSON key');
   assert.equal(c.processors.at(-2).script.file, 'privacy.js');
   assert.equal(c.processors.at(-1).drop_event.when.contains.tags, '_privacy_error');
   for (const required of ['source.ip', 'destination.ip', 'flow.final', 'dns.question.name', 'tls.client.server_name', 'organization.id']) assert.ok(fields.includes(required));
@@ -105,7 +106,7 @@ test('Windows helper behavior and PowerShell 5.1 syntax', { skip: !windows }, ()
 test('Network publisher and mapped metadata do not expand host-log permissions', () => {
   const read = name => JSON.parse(readFileSync(path.join(root, name), 'utf8'));
   const role = read('network-publisher-role.json');
-  assert.deepEqual(role.cluster, ['monitor']);
+  assert.deepEqual(role.cluster, ['monitor', 'read_pipeline']);
   assert.deepEqual(role.indices, [{ names: ['soc-network-*'], privileges: ['auto_configure', 'create_doc'] }]);
   assert.deepEqual(read('publisher-role.json').indices[0].names, ['soc-host-raw-*', 'soc-agent-health-*']);
   const template = read('network-index-template.json');

@@ -7,6 +7,7 @@ from pathlib import Path
 from elasticsearch import Elasticsearch
 from cloud_soc.portal.status_setup import SetupConflict, inspect_existing, install_receipt_pipeline, configure_template, configure_reader
 from cloud_soc.processing.setup import prepare as prepare_processing
+from cloud_soc.portal.network_setup import install_network_pipelines
 
 
 def main():
@@ -19,8 +20,9 @@ def main():
         existing = inspect_existing(client)
         monitor_password = secret("monitor_password")
         install_receipt_pipeline(client, existing)
+        install_network_pipelines(client, Path('/app/deploy/agents/packetbeat-pipelines-9.5.2.json'))
         client.security.change_password(username="kibana_system", password=secret("kibana_password"))
-        client.security.put_role(name="cloud_soc_issuer", cluster=["monitor", "manage_own_api_key"],
+        client.security.put_role(name="cloud_soc_issuer", cluster=["monitor", "read_pipeline", "manage_own_api_key"],
                                  indices=[{"names": ["soc-host-raw-*", "soc-network-*", "soc-agent-health-*"], "privileges": ["auto_configure", "create_doc"]}])
         client.security.put_user(username="cloud_soc_issuer", password=secret("issuer_password"), roles=["cloud_soc_issuer"])
         client.security.put_role(name="cloud_soc_reader", cluster=["monitor"], indices=[{

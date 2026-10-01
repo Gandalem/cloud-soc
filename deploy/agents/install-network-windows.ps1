@@ -5,6 +5,9 @@ param(
     [Parameter(Mandatory = $true)][string]$CaPath,
     [Parameter(Mandatory = $true)][string]$Organization,
     [string]$InterfaceGuid,
+    [Security.SecureString]$NetworkApiKey,
+    [string]$InstallationProbe,
+    [string]$ArchivePath,
     [switch]$PreflightOnly,
     [switch]$PrepareOnly,
     [string]$PreparedReceipt,
@@ -35,6 +38,7 @@ $ServiceCreated = $false
 $RootCreated = $false
 
 function Assert-Arguments {
+    if ($InstallationProbe -and $InstallationProbe -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid installation probe.' }
     if ($Endpoint -cnotmatch '^https://([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?)(:([0-9]{1,5}))?/?\z') { throw 'Use an HTTPS DNS/IPv4 endpoint without credentials, path, query or fragment.' }
     $portValue = $Matches[4]
     if ($portValue -and ([int]$portValue -lt 1 -or [int]$portValue -gt 65535)) { throw 'Invalid endpoint port.' }
@@ -59,6 +63,7 @@ function Get-AgentConfig {
     $config.'packetbeat.interfaces'.device = '\Device\NPF_{' + $InterfaceGuid.ToUpperInvariant() + '}'
     $config.processors[1].add_fields.fields.id = $Organization
     $config.processors[2].add_fields.fields.sensor_platform = 'windows'
+    if ($InstallationProbe) { $config.processors[2].add_fields.fields | Add-Member -NotePropertyName installation_probe -NotePropertyValue $InstallationProbe }
     $config.'output.elasticsearch'.hosts = @($Endpoint.TrimEnd('/'))
     $config.'output.elasticsearch'.'ssl.certificate_authorities' = @((Join-Path $Root 'ca.crt'))
     $config.'output.elasticsearch'.index = "soc-network-windows-$Version-%{+yyyy.MM.dd}"
@@ -154,7 +159,13 @@ try {
     foreach ($path in @($DataPath, $LogsPath)) { New-Item -ItemType Directory -Path $path | Out-Null }
     $package = "packetbeat-$Version-windows-x86_64.zip"
     $archive = Join-Path $Root $package
-    Receive-CloudSocArchive -Uri "https://artifacts.elastic.co/downloads/beats/packetbeat/$package" -OutFile $archive
+    if ($ArchivePath) {
+        Assert-SocLocalPath $ArchivePath
+        Assert-ArchiveHash $ArchivePath $Hash
+        Copy-Item -LiteralPath $ArchivePath -Destination $archive
+    } else {
+        Receive-CloudSocArchive -Uri "https://artifacts.elastic.co/downloads/beats/packetbeat/$package" -OutFile $archive
+    }
     Assert-ArchiveHash $archive $Hash
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::OpenRead($archive)
@@ -171,8 +182,23 @@ try {
     # Even preflight commands receive never_install, never an empty default config.
     [IO.File]::WriteAllText($ConfigPath, '{"packetbeat.npcap.never_install":true}', $utf8)
     Invoke-Beat -BeatArguments @('keystore', 'create')
-    Write-Host 'Enter the network-only publisher API key as id:api_key (not encoded).'
-    Invoke-Beat -BeatArguments @('keystore', 'add', 'CLOUD_SOC_NETWORK_API_KEY')
+    if ($NetworkApiKey) {
+        $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($NetworkApiKey)
+        $plain = $null
+        try {
+            $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+            if ($plain -cnotmatch '^[A-Za-z0-9_-]+:[A-Za-z0-9_-]+$') { throw 'Invalid network key format; use id:api_key.' }
+            Assert-Npcap
+            $plain | & $Exe @CommonArgs keystore add CLOUD_SOC_NETWORK_API_KEY --stdin
+            if ($LASTEXITCODE -ne 0) { throw 'Network keystore input failed.' }
+        } finally {
+            $plain = $null
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
+        }
+    } else {
+        Write-Host 'Enter the network-only publisher API key as id:api_key (not encoded).'
+        Invoke-Beat -BeatArguments @('keystore', 'add', 'CLOUD_SOC_NETWORK_API_KEY')
+    }
     [IO.File]::WriteAllText($ConfigPath, (Get-AgentConfig | ConvertTo-Json -Depth 16), $utf8)
     Invoke-Beat -BeatArguments @('test', 'config')
     Invoke-Beat -BeatArguments @('test', 'output')

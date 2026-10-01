@@ -25,7 +25,14 @@ $CaPath = 'C:\certs\ca.crt'
 $Root = 'C:\Program Files\Cloud-SOC-Agent'
 $Channels = @('Application', 'Security', 'System')
 $LogRoots = @(Get-DefaultLogRoots)
+$InstallationProbe = ''
+$HostApiKey = $null
+$Repair = $false
+$UpdateDiscovery = $false
 Assert-Arguments
+$InstallationProbe = 'invalid'
+Assert-Throws { Assert-Arguments } 'installation probe'
+$InstallationProbe = ''
 $Endpoint = "https://soc.example.invalid`n"
 Assert-Throws { Assert-Arguments } 'HTTPS'
 $Endpoint = 'https://soc.example.invalid:9200'

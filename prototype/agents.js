@@ -29,7 +29,7 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
   if (typeof document === 'undefined') return;
   const $ = selector => document.querySelector(selector);
   const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-  const state = { packages: [], selected: new Set(), page: 1, size: 25, detail: null, pendingDelete: [], keyPackage: null, keyGeneration: 0, loadGeneration: 0, keys: [], historyGeneration: 0, keyBusy: new Set(), keyDrafts: new Map(), pendingRevoke: null };
+  const state = { packages: [], selected: new Set(), page: 1, size: 25, detail: null, pendingDelete: [], keyPackage: null, keyGeneration: 0, loadGeneration: 0, keys: [], historyGeneration: 0, keyBusy: new Set(), keyDrafts: new Map(), pendingRevoke: null, enrollmentEnabled: false, enrollmentPackage: null, enrollmentGeneration: 0 };
   let toastTimer;
   function toast(text) { $('#agent-toast').textContent = text; $('#agent-toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#agent-toast').hidden = true; }, 4500); }
   const date = value => new Intl.DateTimeFormat('ko-KR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
@@ -47,7 +47,10 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
   }
   function commands(item) {
     const directory = `${item.name}-agent`;
-    if (item.os === 'windows') return `# 관리자 PowerShell, 다운로드 폴더에서 실행\n& {\n$ErrorActionPreference = 'Stop'\nif ((Get-FileHash -LiteralPath '.\\${item.filename}' -Algorithm SHA256).Hash -ne '${item.sha256}') { throw 'SHA-256 mismatch; stop installation.' }\nExpand-Archive -LiteralPath '.\\${item.filename}' -DestinationPath '.\\${directory}'\nSet-Location '.\\${directory}'\n${item.network ? "# 승인된 Npcap을 먼저 준비. 표시되는 활성 물리 NIC를 확인해 선택\n.\\install.ps1" : '.\\install.ps1'}\n}\n# 새 패키지 기준. 가상/VPN NIC는 -InterfaceGuid를 명시\n# 먼저 설정만 확인하려면 install.ps1 명령에 -DryRun 추가`;
+    if (item.os === 'windows') {
+      const enroll = state.enrollmentEnabled && item.enrollment_protocol === 1;
+      return `# 관리자 PowerShell, 다운로드 폴더에서 실행${enroll ? '\n# 먼저 포털의 설치 토큰을 발급. 토큰은 실행 후 숨김 입력 창에 붙여 넣기' : ''}\n& {\n$ErrorActionPreference = 'Stop'\nif ((Get-FileHash -LiteralPath '.\\${item.filename}' -Algorithm SHA256).Hash -ne '${item.sha256}') { throw 'SHA-256 mismatch; stop installation.' }\nExpand-Archive -LiteralPath '.\\${item.filename}' -DestinationPath '.\\${directory}'\nSet-Location '.\\${directory}'\n${item.network ? '# 승인된 Npcap을 먼저 준비. 표시되는 활성 물리 NIC를 확인해 선택\n' : ''}.\\install.ps1${enroll ? ` -Enroll -PackageSha256 '${item.sha256}'` : ''}\n}\n# 새 패키지 기준. 가상/VPN NIC는 -InterfaceGuid를 명시\n# 먼저 설정만 확인하려면 install.ps1 명령에 -DryRun 추가`;
+    }
     return `# 다운로드 폴더에서 실행. 공백 없는 경로를 사용\n(\nset -e\nprintf '%s  %s\\n' '${item.sha256}' '${item.filename}' | sha256sum --check\nmkdir '${directory}'\ntar -xzf '${item.filename}' -C '${directory}'\ncd '${directory}'\n${item.network ? "ip -brief link\n# ens3를 실제 수집 NIC로 교체 (전체 로컬 NIC는 any를 명시)\nsudo bash install.sh --interface ens3" : 'sudo bash install.sh'}\n)\n# 먼저 설정만 확인하려면 install.sh 명령에 --dry-run 추가`;
   }
   function render() {
@@ -57,7 +60,7 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
     state.page = Math.min(state.page, pages);
     const page = rows.slice((state.page - 1) * state.size, state.page * state.size);
     $('#package-total').textContent = `전체 ${state.packages.length}개 · 검색 ${rows.length}개`;
-    $('#package-rows').innerHTML = page.map(item => `<tr><td><input type="checkbox" data-select="${item.id}" aria-label="${escape(item.filename)} 선택" ${state.selected.has(item.id) ? 'checked' : ''}></td><td><span class="os-tag ${item.os === 'ubuntu' ? 'ubuntu' : ''}">${item.os === 'ubuntu' ? 'UBUNTU' : 'WINDOWS'}</span></td><td><button class="file-name" data-info="${item.id}">${escape(item.filename)}</button></td><td title="${escape(item.endpoint)}">${escape(item.endpoint)}</td><td>${escape(item.organization)}</td><td>${item.network ? '로그 + 네트워크' : '로그'}</td><td>${escape(item.version)}</td><td>${escape(date(item.created_at))}</td><td><div class="package-actions"><a href="/api/packages/${item.id}/download" download>다운로드</a><button data-command="${item.id}">설치 명령</button><button data-keys="${item.id}">키 발급</button><button data-delete="${item.id}" aria-label="${escape(item.filename)} 삭제">삭제</button></div></td></tr>`).join('');
+    $('#package-rows').innerHTML = page.map(item => `<tr><td><input type="checkbox" data-select="${item.id}" aria-label="${escape(item.filename)} 선택" ${state.selected.has(item.id) ? 'checked' : ''}></td><td><span class="os-tag ${item.os === 'ubuntu' ? 'ubuntu' : ''}">${item.os === 'ubuntu' ? 'UBUNTU' : 'WINDOWS'}</span></td><td><button class="file-name" data-info="${item.id}">${escape(item.filename)}</button></td><td title="${escape(item.endpoint)}">${escape(item.endpoint)}</td><td>${escape(item.organization)}</td><td>${item.network ? '로그 + 네트워크' : '로그'}</td><td>${escape(item.version)}</td><td>${escape(date(item.created_at))}</td><td><div class="package-actions"><a href="/api/packages/${item.id}/download" download>다운로드</a><button data-command="${item.id}">설치 명령</button>${state.enrollmentEnabled && item.enrollment_protocol === 1 ? `<button data-enrollment="${item.id}">설치 토큰</button>` : ''}<button data-keys="${item.id}">수동 키 발급</button><button data-delete="${item.id}" aria-label="${escape(item.filename)} 삭제">삭제</button></div></td></tr>`).join('');
     $('#empty-state').hidden = rows.length !== 0;
     $('#empty-state strong').textContent = state.packages.length ? '검색 결과가 없습니다.' : '등록된 설치 파일이 없습니다.';
     $('#page-number').textContent = `${state.page} / ${pages}`;
@@ -77,6 +80,7 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
       const data = await api('/api/portal');
       if (generation !== state.loadGeneration) return;
       state.packages = data.packages;
+      state.enrollmentEnabled = data.enrollment_enabled === true;
       state.selected = new Set([...state.selected].filter(id => state.packages.some(item => item.id === id)));
       $('#server-endpoint').textContent = data.endpoint;
       $('#form-endpoint').value = data.endpoint;
@@ -161,7 +165,59 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
     if (button.dataset.info || button.dataset.command) detail(button.dataset.info || button.dataset.command);
     if (button.dataset.delete) confirmDelete([button.dataset.delete]);
     if (button.dataset.keys) openKeys(button.dataset.keys);
+    if (button.dataset.enrollment) openEnrollment(button.dataset.enrollment);
   });
+  async function enrollmentHistory(generation) {
+    try {
+      const data = await api('/api/enrollments');
+      if (generation !== state.enrollmentGeneration || !$('#enrollment-dialog').open) return;
+      const labels = { unused: '사용 전', issuing: '발급 진행 / 중단 확인 필요', issued: '키 전달 · 중앙 수신 대기', complete: '중앙 수신 확인 완료', cancelled: '취소·폐기 확인', expired: '토큰 만료', cleanup_pending: '키 폐기 확인 필요' };
+      $('#enrollment-history').innerHTML = data.enrollments.filter(item => item.package_id === state.enrollmentPackage).map(item =>
+        `<article class="history-row"><strong>${escape(item.target_label || '대상 미지정')}</strong><p>${escape(labels[item.state] || '상태 미확인')} · 토큰 만료 ${escape(date(item.expires * 1000))}</p><code>${escape(item.id)}</code>${['unused','issuing','issued','cleanup_pending'].includes(item.state) ? `<button data-cancel-enrollment="${escape(item.id)}" class="danger-button">설치 취소 · 발급 키 폐기</button>` : ''}</article>`).join('') || '<p>이 패키지의 설치 토큰 이력이 없습니다.</p>';
+    } catch { if (generation === state.enrollmentGeneration) $('#enrollment-history').textContent = '토큰 이력을 확인하지 못했습니다. 새 발급을 반복하기 전에 다시 조회하세요.'; }
+  }
+  function openEnrollment(id) {
+    const item = state.packages.find(row => row.id === id);
+    if (!item || !state.enrollmentEnabled || item.enrollment_protocol !== 1) return;
+    state.enrollmentPackage = id;
+    const generation = ++state.enrollmentGeneration;
+    $('#enrollment-package').textContent = item.filename;
+    $('#enrollment-token').value = '';
+    $('#enrollment-target').value = '';
+    $('#enrollment-message').textContent = '신규 Windows 로그+네트워크 설치 전용입니다. 기존 설치·복구에는 사용하지 마세요.';
+    $('#mint-enrollment').disabled = false;
+    $('#enrollment-command').textContent = `.\\install.ps1 -Enroll -PackageSha256 '${item.sha256}'`;
+    $('#enrollment-dialog').showModal();
+    enrollmentHistory(generation);
+  }
+  $('#mint-enrollment').addEventListener('click', async () => {
+    const generation = state.enrollmentGeneration;
+    $('#mint-enrollment').disabled = true;
+    $('#enrollment-message').textContent = '일회용 설치 토큰 발급 중';
+    try {
+      const result = await api(`/api/packages/${state.enrollmentPackage}/enrollment`, {method: 'POST', data: { days: Number($('#enrollment-days').value), target_label: $('#enrollment-target').value }});
+      if (generation !== state.enrollmentGeneration) return;
+      $('#enrollment-token').value = result.token;
+      $('#enrollment-message').textContent = `${result.warning} 만료: ${date(result.expires * 1000)}`;
+      enrollmentHistory(generation);
+    } catch (error) { if (generation === state.enrollmentGeneration) { $('#enrollment-message').textContent = error.message; $('#mint-enrollment').disabled = false; } }
+  });
+  $('#copy-enrollment').addEventListener('click', () => { if ($('#enrollment-token').value) copy($('#enrollment-token').value); });
+  $('#refresh-enrollment').addEventListener('click', () => enrollmentHistory(state.enrollmentGeneration));
+  $('#enrollment-history').addEventListener('click', async event => {
+    const button = event.target.closest('[data-cancel-enrollment]');
+    if (!button || !window.confirm('이 설치를 취소하고 발급된 로그·네트워크 키를 폐기할까요? 해당 키의 전송이 중단됩니다.')) return;
+    const generation = state.enrollmentGeneration;
+    button.disabled = true;
+    try {
+      await api(`/api/enrollments/${encodeURIComponent(button.dataset.cancelEnrollment)}/cancel`, {method: 'POST', data: {}});
+      if (generation !== state.enrollmentGeneration) return;
+      $('#enrollment-token').value = '';
+      $('#enrollment-message').textContent = '취소·키 폐기를 확인했습니다. 재설치 전에 보존된 설치 상태를 확인하세요.';
+    } catch (error) { if (generation === state.enrollmentGeneration) $('#enrollment-message').textContent = error.message; }
+    finally { if (generation === state.enrollmentGeneration) enrollmentHistory(generation); }
+  });
+  $('#enrollment-dialog').addEventListener('close', () => { state.enrollmentGeneration++; $('#enrollment-token').value = ''; $('#enrollment-message').textContent = ''; });
   $('#delete-selected').addEventListener('click', () => confirmDelete([...state.selected]));
   $('#confirm-delete').addEventListener('click', async () => {
     $('#confirm-delete').disabled = true;

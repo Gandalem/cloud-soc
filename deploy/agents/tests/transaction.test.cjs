@@ -5,6 +5,21 @@ const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 
+test('IP SAN fallback preserves native name checks, CA identity and strict chain status', () => {
+  const source = readFileSync(path.join(root, 'transaction-windows.ps1'), 'utf8');
+  assert.match(source, /\$curlExit -eq 60 -and \[Net.IPAddress\]::TryParse/);
+  assert.match(source, /\$address.AddressFamily -eq \[Net.Sockets.AddressFamily\]::InterNetwork/);
+  assert.match(source, /CloudSocTlsProbe\]::Check\(\$Endpoint, \$CaPath, \[bool\]\$AllowUnavailableRevocation\)/);
+  const native = readFileSync(path.join(root, 'tls-probe.cs'), 'utf8');
+  assert.match(native, /errors & ~SslPolicyErrors.RemoteCertificateChainErrors/);
+  assert.match(native, /root.RawData/);
+  assert.match(native, /ca.RawData/);
+  assert.match(native, /X509RevocationMode.Online/);
+  assert.match(native, /X509VerificationFlags.NoFlag/);
+  assert.match(native, /status.Status & ~permitted/);
+  assert.doesNotMatch(native, /X509Store|ServicePointManager|NoCheck|IgnoreNotTimeValid|AllowUnknownCertificateAuthority/);
+});
+
 test('private CA compatibility is opt-in in both installers and never added to public downloads', () => {
   for (const name of ['install-windows.ps1','install-network-windows.ps1']) {
     const source = readFileSync(path.join(root,name),'utf8');

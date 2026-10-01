@@ -1,5 +1,6 @@
 # Shared installation scratch space and SYSTEM probe. No top-level host changes.
 . (Join-Path $PSScriptRoot 'native-windows.ps1')
+. (Join-Path $PSScriptRoot 'download-windows.ps1')
 function Assert-SocAdministrator {
     if (-not [Environment]::Is64BitOperatingSystem -or -not [Environment]::Is64BitProcess -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Use 64-bit PowerShell on Windows x86_64.' }
     $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -54,7 +55,23 @@ function Test-SocServerTls([string]$Endpoint, [string]$CaPath, [switch]$AllowUna
     }
     $status = & $curl --disable --silent --show-error --proto '=https' --tlsv1.2 --retry 0 --max-redirs 0 `
         --connect-timeout 10 --max-time 20 --cacert $CaPath @revocationOptions --output NUL --write-out '%{http_code}' -- ($Endpoint.TrimEnd('/') + '/')
-    if ($LASTEXITCODE -ne 0 -or $status -notin @('200', '401')) { throw 'Central TLS/connectivity preflight failed. Check server address, CA and connectivity; no credentials were sent. For an approved private CA with unavailable revocation information only, see -AllowUnavailableRevocation in the recovery guide; other certificate errors must be fixed.' }
+    $curlExit = $LASTEXITCODE
+    $address = $null
+    if ($curlExit -eq 60 -and [Net.IPAddress]::TryParse(([uri]$Endpoint).Host, [ref]$address) -and
+        $address.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork) {
+        # Older Windows curl/Schannel builds can reject a valid IP SAN with --cacert.
+        # The fallback independently verifies the name, pinned CA and chain status.
+        try {
+            if (-not ('CloudSocTlsProbe' -as [type])) {
+                $compile=@{Path=(Join-Path $PSScriptRoot 'tls-probe.cs');ErrorAction='Stop'}
+                if ($PSVersionTable.PSEdition -eq 'Core') { $compile.CompilerOptions=@('/nowarn:SYSLIB0057') }
+                Add-Type @compile
+            }
+            $status = [CloudSocTlsProbe]::Check($Endpoint, $CaPath, [bool]$AllowUnavailableRevocation).ToString()
+            $curlExit = 0
+        } catch { $curlExit = 60 }
+    }
+    if ($curlExit -ne 0 -or $status -notin @('200', '401')) { throw 'Central TLS/connectivity preflight failed. Check server address, CA and connectivity; no credentials were sent. For an approved private CA with unavailable revocation information only, see -AllowUnavailableRevocation in the recovery guide; other certificate errors must be fixed.' }
     Write-Host '[OK] Central server TLS (API authentication still pending).'
 }
 
@@ -89,17 +106,20 @@ function Remove-SocOwnedDirectory([string]$Path, [string]$ExpectedPath, [string]
     Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
 }
 
-function Wait-SocTask([string]$Name, [datetime]$Started, [int]$TimeoutSeconds = 300) {
-    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+function Wait-SocTask([string]$Name, [datetime]$Started, [int]$TimeoutSeconds = 300, [datetime]$PreviousRun) {
+    $timer = [Diagnostics.Stopwatch]::StartNew()
     do {
         Start-Sleep -Seconds 1
         $info = Get-ScheduledTaskInfo -TaskName $Name
         $task = Get-ScheduledTask -TaskName $Name
-        if ($info.LastRunTime -ge $Started -and $task.State -notin @('Running', 'Queued')) {
+        # Task Scheduler timestamps can lag the VM clock; require a new run, not a stale success.
+        $ran = if ($PSBoundParameters.ContainsKey('PreviousRun')) { $info.LastRunTime -ne $PreviousRun }
+               else { $info.LastRunTime -ge $Started }
+        if ($ran -and $task.State -notin @('Running', 'Queued')) {
             if ($info.LastTaskResult -ne 0) { throw "SYSTEM Discovery failed (exit $($info.LastTaskResult)). Inspect protected discovery-diagnostic.json and Windows application-control/task history. No policy was changed." }
             return
         }
-    } while ((Get-Date) -lt $deadline)
+    } while ($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
     throw 'SYSTEM Discovery timed out.'
 }
 
@@ -113,9 +133,10 @@ function Invoke-SocDiscoveryProbe([string]$Root) {
         [IO.File]::WriteAllText((Join-Path $Root 'probe-active.txt'), $name)
         Register-ScheduledTask -TaskName $name -Action $action -Principal $principal -Settings $settings | Out-Null
         $created = $true
+        $previousRun = (Get-ScheduledTaskInfo -TaskName $name).LastRunTime
         $started = (Get-Date).AddSeconds(-1)
         Start-ScheduledTask -TaskName $name
-        Wait-SocTask -Name $name -Started $started
+        Wait-SocTask -Name $name -Started $started -PreviousRun $previousRun
         $report = Get-Content -LiteralPath (Join-Path $Root 'discovery-report.json') -Raw | ConvertFrom-Json
         # PowerShell 7 may deserialize ISO timestamps as DateTime rather than string.
         $generated = if ($report.generated_at -is [datetime]) { $report.generated_at.ToUniversalTime() }

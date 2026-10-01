@@ -119,6 +119,34 @@ sudo sysctl -w vm.max_map_count=1048576
 
 ## 2. 최초 인증서·비밀번호 준비 (수동 설치)
 
+### 대시보드 주소와 에이전트 수신 주소 분리
+
+웹 공개 주소와 로그 수신 주소는 다를 수 있습니다. 예를 들어 ngrok 웹 주소로 대시보드를 열어도 ngrok의 `:9200`이 자동으로 Elasticsearch에 연결되는 것은 아닙니다. **에이전트가 실제 접근할 HTTPS 수신 주소**를 별도로 지정합니다. 내부 IP는 같은 LAN/VPN에서만 사용할 수 있으며 외부 PC에는 별도의 승인된 수신 경로가 필요합니다.
+
+새 서버 준비에서는 `--agent-host`를 사용합니다. 생략하면 기존처럼 `--host`와 같습니다. 두 주소 모두 최초 서버 인증서의 SAN에 포함하며 방화벽/터널을 자동으로 열지 않습니다.
+
+```bash
+# 새 서버에서만: DNS/IP는 실제 환경 값으로 교체
+sudo sh deploy/server/install-ubuntu.sh --host dashboard.example.com --agent-host 10.0.0.10 --bind-ip 10.0.0.10
+```
+
+이미 운영 중인 서버에서는 설치기나 `prepare.py`를 다시 실행하지 않습니다. 변경 코드 반영 및 [포털 보호 백업](../../docs/portal_backup.md) 후 기존 CA로 수신 주소를 먼저 검증합니다. 아래 내부망 예시는 같은 LAN/VPN의 에이전트 전용입니다.
+
+```bash
+# 읽기 전용 검사: 인증정보 전송·상태 파일 변경 없음
+sudo python3 deploy/server/configure-agent-endpoint.py --endpoint https://192.168.32.60:9200 --check
+# 검사 통과 후 명시 적용: compose.env만 보호 백업하고 주소 저장
+sudo python3 deploy/server/configure-agent-endpoint.py --endpoint https://192.168.32.60:9200 --apply
+sudo docker compose --env-file state/server/compose.env -f deploy/server/compose.yaml config --quiet
+# 포털만 재빌드/교체: 수집기·ES·Kibana·gateway는 재시작하지 않음
+sudo docker compose --env-file state/server/compose.env -f deploy/server/compose.yaml build portal
+sudo docker compose --env-file state/server/compose.env -f deploy/server/compose.yaml up -d --no-deps portal
+```
+
+검사는 CA·주소·유효기간을 검증한 TLS에서 인증 필수 Elasticsearch 응답을 확인합니다. 키 인증·실제 수신 검증은 아닙니다. 인증서가 해당 주소를 포함하지 않거나 연결되지 않으면 적용하지 않습니다. `-k`/검증 비활성화나 CA 자동 재생성으로 해결하지 마세요. 환경 파일의 링크·약한 권한·중복 키·검사 중 변경도 거부합니다.
+
+`SOC_AGENT_ENDPOINT`는 **새 패키지의 수신 주소**만 결정합니다. 미설정된 구 서버는 기존 `SOC_ELASTIC_ENDPOINT` 설정을 사용합니다. `SOC_PUBLIC_HOST`, 포털 Host/Origin 제한 및 내부 ES 관리 주소는 그대로 유지합니다. 포털에서 표시하는 수신 주소를 확인한 뒤 **다른 이름으로 새 패키지**를 생성·다운로드·해시 검증하세요. 기존 ZIP/발급 키/설치된 PC 설정은 자동으로 바뀌지 않습니다. 되돌릴 때는 출력된 `compose.env.before-agent-*` 보호 사본을 검토하고 포털만 이전 설정으로 교체합니다. 재부팅이나 설치 자체가 중단된 기록의 자동 Repair는 지원하지 않습니다.
+
 ```bash
 git clone https://github.com/Gandalem/cloud-soc.git
 cd cloud-soc

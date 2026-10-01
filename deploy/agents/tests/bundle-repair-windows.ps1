@@ -79,8 +79,12 @@ function Register-SocRepairDiscovery { param($Root) Step 'task-register'; $scrip
 function Start-ScheduledTask { param($TaskName,$TaskPath,$ErrorAction) Step 'task-start' }
 function Stop-ScheduledTask { param($TaskName,$TaskPath,$ErrorAction) Step 'task-stop' }
 function Unregister-ScheduledTask { param($TaskName,$TaskPath,$Confirm,$ErrorAction) Step 'task-delete'; $script:task=$null }
-function Wait-SocTask { param($Name,$Started) Step 'task-wait' }
-function Assert-SocBundleFreshReport { param($Root,$Started) Step 'task-report' }
+function Get-ScheduledTaskInfo { param($TaskName,$TaskPath) return @{LastRunTime=[datetime]'2000-01-01'} }
+function Wait-SocTask { param($Name,$Started,$PreviousRun) Step 'task-wait' }
+function Assert-SocBundleFreshReport { param($Root,$Started)
+    Step 'task-report'
+    if ($script:failure -ceq 'external-task-start') { Start-ExternalCollector }
+}
 function Assert-SocBundleRepairNetwork { param($InterfaceGuid) Step 'network'; if ($InterfaceGuid -cne $nic) { throw 'Wrong existing NIC' } }
 function Test-SocServerTls { param($Endpoint,$CaPath,[switch]$AllowUnavailableRevocation) Step 'tls' }
 function Invoke-SocDiscoveryProbe { param($Root)
@@ -90,6 +94,13 @@ function Invoke-SocDiscoveryProbe { param($Root)
 function Test-SocBundleMember { param($Root,$Beat)
     Step ($Beat+'-config-auth')
     if ($script:failure -ceq 'change-config' -and $Beat -eq 'packetbeat') { [IO.File]::AppendAllText((Join-Path $Root 'packetbeat.yml'),' ') }
+    if ($script:failure -ceq 'external-auth-start' -and $Beat -eq 'packetbeat') { Start-ExternalCollector }
+    if ($script:failure -ceq 'external-start-mode' -and $Beat -eq 'packetbeat') { $script:services['cloud-soc-packetbeat'].StartMode='Auto' }
+}
+function Start-ExternalCollector {
+    $script:services['cloud-soc-packetbeat'].State='Running'; $script:services['cloud-soc-packetbeat'].ProcessId=456
+    $root=Join-Path $env:ProgramFiles 'Cloud-SOC-Network'
+    [IO.File]::WriteAllText((Join-Path $root 'data\queue.canary'),'external-new-queue')
 }
 function Set-Service { param($Name,$StartupType,$ErrorAction)
     Step ($Name+'-'+$StartupType)
@@ -100,6 +111,7 @@ function Start-Service { param($Name,$ErrorAction)
     $member=@(Get-SocBundleMembers | Where-Object Service -eq $Name)[0]
     [IO.File]::WriteAllText((Join-Path $member.Root 'data\queue.canary'),'newer-queue')
     Step ($Name+'-start')
+    if ($script:failure -ceq 'external-between-starts' -and $Name -eq 'cloud-soc-filebeat') { Start-ExternalCollector }
 }
 function Stop-Service { param($Name,$ErrorAction)
     Step ($Name+'-stop'); if ($script:cleanupFailure) { throw 'Injected cleanup failure' }
@@ -204,6 +216,22 @@ try {
     Reset-Fixture; $script:failure='change-config'
     Assert-Throws { Invoke-SocBundleRepairCore @params } 'changed during recovery'
     if (($calls -join ',') -match 'filebeat-start|packetbeat-start' -or -not (Test-Path -LiteralPath (Join-Path $env:ProgramData 'Cloud-SOC\bundle-repair-pending.json'))) { throw 'Changed configuration started/overwritten' }
+    foreach ($phase in @('external-auth-start','external-task-start','external-between-starts')) {
+        Reset-Fixture; $script:failure=$phase
+        Assert-Throws { Invoke-SocBundleRepairCore @params } 'started outside recovery'
+        if ($services['cloud-soc-packetbeat'].State -ne 'Running' -or $services['cloud-soc-packetbeat'].ProcessId -ne 456 -or
+            ($calls -contains 'cloud-soc-packetbeat-stop') -or ($calls -contains 'cloud-soc-packetbeat-start')) {
+            throw 'Externally started collector was stopped/adopted'
+        }
+        $networkRoot=Join-Path $env:ProgramFiles 'Cloud-SOC-Network'
+        if ([IO.File]::ReadAllText((Join-Path $networkRoot 'data\queue.canary')) -cne 'external-new-queue' -or
+            -not (Test-Path -LiteralPath (Join-Path $env:ProgramData 'Cloud-SOC\bundle-repair-pending.json'))) { throw 'External activity lost its queue/guard' }
+        if ($phase -ne 'external-between-starts' -and ($calls -contains 'cloud-soc-filebeat-start')) { throw 'Pair started before quiescent check' }
+        if ($phase -eq 'external-between-starts' -and $services['cloud-soc-filebeat'].State -ne 'Stopped') { throw 'Owned Filebeat start not rolled back' }
+    }
+    Reset-Fixture; $script:failure='external-start-mode'
+    Assert-Throws { Invoke-SocBundleRepairCore @params } 'start mode changed'
+    if ($services['cloud-soc-packetbeat'].StartMode -cne 'Auto' -or ($calls -contains 'cloud-soc-filebeat-start')) { throw 'External start mode adopted/overwritten' }
     Reset-Fixture; $tx=Add-PendingFixture; $members=Get-SocBundleMembers
     $identity=Join-Path $tx.Path 'bundle-recovery.json'
     $original=[IO.File]::ReadAllText($identity)

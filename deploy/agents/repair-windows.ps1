@@ -259,9 +259,10 @@ function Invoke-SocFilebeatRepairCore {
             Register-SocRepairDiscovery $Root
             $taskCreated = $true
         }
+        $previousRun = (Get-ScheduledTaskInfo -TaskName 'Cloud-SOC-Discovery' -TaskPath '\').LastRunTime
         $started = (Get-Date).AddSeconds(-1)
         Start-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop
-        try { Wait-SocTask -Name 'Cloud-SOC-Discovery' -Started $started }
+        try { Wait-SocTask -Name 'Cloud-SOC-Discovery' -Started $started -PreviousRun $previousRun }
         catch { Write-SocDiscoveryFailureSummary -Root $Root -Since $started; throw }
         $serviceTouched = $true
         Set-Service -Name 'cloud-soc-filebeat' -StartupType Manual -ErrorAction Stop

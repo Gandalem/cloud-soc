@@ -42,7 +42,7 @@
       "sensor_platform": "__PLATFORM__"
     }}},
     {"include_fields": {"fields": [
-      "@timestamp", "ecs.version", "agent.id", "agent.ephemeral_id", "agent.name", "agent.type", "agent.version",
+      "ecs.version", "agent.id", "agent.ephemeral_id", "agent.name", "agent.type", "agent.version",
       "host.id", "host.name", "host.ip", "host.os.name", "host.os.version", "organization.id", "labels",
       "event.kind", "event.category", "event.type", "event.dataset", "event.action", "event.outcome",
       "event.start", "event.end", "event.duration", "event.created",

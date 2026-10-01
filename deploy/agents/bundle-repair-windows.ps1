@@ -168,6 +168,35 @@ function Assert-SocBundleRepairNetwork([string]$InterfaceGuid) {
     if ($adapters.Count -ne 1 -or $adapters[0].Status -ne 'Up') { throw 'Existing capture NIC is unavailable; recovery does not select a different NIC.' }
 }
 
+function Assert-SocBundleRepairQuiescent($Member, [switch]$IgnoreStartMode, [switch]$AllowUnregistered) {
+    $service=Get-CimInstance Win32_Service -Filter ("Name='{0}'" -f $Member.Service) -ErrorAction Stop
+    if (-not $service) {
+        if ($Member.InitiallyMissing -and ($AllowUnregistered -or -not $Member.RepairCreated)) { return }
+        throw 'Collector disappeared during recovery; retained state was not adopted.'
+    }
+    if ($Member.InitiallyMissing -and -not $Member.RepairCreated) { throw 'Unowned collector appeared during recovery.' }
+    Assert-SocBundleService $Member
+    if ($service.State -ne 'Stopped' -or $service.ProcessId -ne 0) {
+        throw 'Collector started outside recovery; it was not stopped or adopted.'
+    }
+    $expected=if ($Member.InitiallyMissing) {'Manual'} else {$Member.OriginalService.StartMode}
+    if (-not $IgnoreStartMode -and $service.StartMode -cne $expected) { throw 'Collector start mode changed before recovery start.' }
+    if ($Member.Kind -eq 'network') {
+        $dependencies=@((Get-Service -Name $Member.Service -ErrorAction Stop).ServicesDependedOn | ForEach-Object Name)
+        if ($dependencies.Count -ne 1 -or $dependencies[0] -ine 'npcap') { throw 'Packetbeat dependency changed before recovery start.' }
+    }
+}
+
+function Assert-SocBundleRepairReady($Members) {
+    foreach ($member in $Members) {
+        Assert-SocBundleStableFiles $member
+        Assert-SocBundleRepairQuiescent $member
+    }
+    if (@(Get-Process -ErrorAction Stop | Where-Object ProcessName -In @('filebeat','packetbeat','elastic-agent')).Count) {
+        throw 'A collector process started during recovery; state retained.'
+    }
+}
+
 function Invoke-SocBundleRepairCore([string]$Source, [string]$Endpoint, [string]$CaPath, [string]$Organization,
     [string]$InterfaceGuid, [switch]$AllowUnavailableRevocation, [switch]$DryRun, [switch]$ResumeRepair) {
     Assert-SocAdministrator
@@ -236,6 +265,7 @@ function Invoke-SocBundleRepairCore([string]$Source, [string]$Endpoint, [string]
         Write-Host '[1/3] Both protected backups verified; existing keys, configuration and queues retained.'
         Invoke-SocDiscoveryProbe $members[0].Root
         foreach ($member in $members) { Test-SocBundleMember $member.Root $member.Beat }
+        Assert-SocBundleRepairReady $members
         Save-SocRepairResumeRecord $transaction $members $Endpoint $Organization $backups $originalXml $taskXml 'validated'
         foreach ($member in $members) {
             if ($member.InitiallyMissing) {
@@ -259,15 +289,17 @@ function Invoke-SocBundleRepairCore([string]$Source, [string]$Endpoint, [string]
         }
         $taskXml=Export-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop
         Save-SocRepairResumeRecord $transaction $members $Endpoint $Organization $backups $originalXml $taskXml 'task_ready'
+        $previousRun = (Get-ScheduledTaskInfo -TaskName 'Cloud-SOC-Discovery' -TaskPath '\').LastRunTime
         $started = (Get-Date).AddSeconds(-1)
         Start-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop
-        Wait-SocTask -Name 'Cloud-SOC-Discovery' -Started $started
+        Wait-SocTask -Name 'Cloud-SOC-Discovery' -Started $started -PreviousRun $previousRun
         Assert-SocBundleFreshReport $members[0].Root $started
         Write-Host '[2/3] SYSTEM Discovery and both configuration/authentication checks passed.'
-        foreach ($member in $members) { Assert-SocBundleStableFiles $member }
+        Assert-SocBundleRepairReady $members
         Save-SocRepairResumeRecord $transaction $members $Endpoint $Organization $backups $originalXml $taskXml 'starting'
         foreach ($member in $members) {
-            Assert-SocBundleService $member
+            Assert-SocBundleStableFiles $member
+            Assert-SocBundleRepairQuiescent $member
             $startedMembers.Add($member)
             Set-Service -Name $member.Service -StartupType Manual -ErrorAction Stop
             Start-Service -Name $member.Service -ErrorAction Stop
@@ -320,7 +352,13 @@ function Invoke-SocBundleRepairCore([string]$Source, [string]$Endpoint, [string]
                 if ($taskCreated) { Unregister-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -Confirm:$false -ErrorAction Stop }
             }
             if (-not $safe -or (Test-Path -LiteralPath (Join-Path $members[0].Root 'probe-active.txt'))) { throw 'Collector/probe cleanup incomplete.' }
-            foreach ($member in $members) { Assert-SocBundleStableFiles $member }
+            foreach ($member in $members) {
+                Assert-SocBundleStableFiles $member
+                Assert-SocBundleRepairQuiescent $member -IgnoreStartMode -AllowUnregistered
+            }
+            if (@(Get-Process -ErrorAction Stop | Where-Object ProcessName -In @('filebeat','packetbeat','elastic-agent')).Count) {
+                throw 'Active collector prevents file rollback; current files and backup retained.'
+            }
             if ($backups.ContainsKey('host')) { Restore-SocRepairFiles $members[0].Root $backups.host }
             if ($taskTouched -and $originalEnabled) { Enable-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop | Out-Null }
             if ($taskTouched) { Assert-SocBundleTask $originalXml }

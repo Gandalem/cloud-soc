@@ -2,6 +2,7 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot '../transaction-windows.ps1')
+if (-not (Get-Command Get-SystemCurl -CommandType Function -ErrorAction SilentlyContinue)) { throw 'Standalone TLS helper dependency missing' }
 function Assert-Throws([scriptblock]$Action, [string]$Pattern) {
     try { & $Action } catch { if ($_.Exception.Message -notmatch $Pattern) { throw }; return }
     throw "Expected failure: $Pattern"
@@ -54,14 +55,14 @@ try {
         if ($UserId -ne 'SYSTEM' -or $LogonType -ne 'ServiceAccount') { throw 'Wrong identity' }; return @{}
     }
     function New-ScheduledTaskSettingsSet { param($ExecutionTimeLimit, $MultipleInstances) return @{} }
-    function Register-ScheduledTask { param($TaskName, $Action, $Principal, $Settings) $script:Calls.Add('register'); $script:ProbeName = $TaskName }
-    function Start-ScheduledTask { param($TaskName) $script:Calls.Add('start') }
+    function Register-ScheduledTask { param($TaskName, $Action, $Principal, $Settings) $script:Calls.Add('register'); $script:ProbeName = $TaskName; $script:TaskStarted = $false }
+    function Start-ScheduledTask { param($TaskName) $script:Calls.Add('start'); $script:TaskStarted = $true }
     function Stop-ScheduledTask { param($TaskName, $ErrorAction) $script:Calls.Add('stop') }
     function Unregister-ScheduledTask { param($TaskName, $Confirm, $ErrorAction) $script:Calls.Add('unregister') }
     function Get-ScheduledTask { param($TaskName) return @{ State = 'Ready' } }
     function Start-Sleep { param($Seconds) }
     $script:ExitCode = 1
-    function Get-ScheduledTaskInfo { param($TaskName) return @{ LastRunTime = Get-Date; LastTaskResult = $script:ExitCode } }
+    function Get-ScheduledTaskInfo { param($TaskName) return @{ LastRunTime = $(if ($script:TaskStarted) { Get-Date } else { [datetime]'1999-11-30' }); LastTaskResult = $script:ExitCode } }
     Assert-Throws { Invoke-SocDiscoveryProbe $root } 'SYSTEM Discovery failed'
     if (($Calls -join ',') -ne 'register,start,stop,unregister') { throw 'Failure did not clean owned task' }
     if ($ProbeName -notmatch '^Cloud-SOC-Preflight-[a-f0-9]{32}$') { throw 'Task name not unique' }
@@ -85,7 +86,13 @@ try {
     function Get-ScheduledTask { param($TaskName) return @{ State = 'Ready' } }
     function Get-ScheduledTaskInfo { param($TaskName) return @{ LastRunTime = [datetime]'2000-01-01'; LastTaskResult = 0 } }
     Assert-Throws { Wait-SocTask -Name 'synthetic' -Started (Get-Date) -TimeoutSeconds 0 } 'timed out'
-    function Get-ScheduledTaskInfo { param($TaskName) return @{ LastRunTime = Get-Date; LastTaskResult = $script:ExitCode } }
+    Assert-Throws { Wait-SocTask -Name 'synthetic' -Started (Get-Date) -PreviousRun ([datetime]'2000-01-01') -TimeoutSeconds 0 } 'timed out'
+    Wait-SocTask -Name 'synthetic' -Started (Get-Date) -PreviousRun ([datetime]'1999-01-01') -TimeoutSeconds 0
+    $script:ExitCode = 1
+    function Get-ScheduledTaskInfo { param($TaskName) return @{ LastRunTime = [datetime]'2000-01-01'; LastTaskResult = $script:ExitCode } }
+    Assert-Throws { Wait-SocTask -Name 'synthetic' -Started (Get-Date) -PreviousRun ([datetime]'1999-01-01') -TimeoutSeconds 0 } 'SYSTEM Discovery failed'
+    $script:ExitCode = 0
+    function Get-ScheduledTaskInfo { param($TaskName) return @{ LastRunTime = $(if ($script:TaskStarted) { Get-Date } else { [datetime]'1999-11-30' }); LastTaskResult = $script:ExitCode } }
     [IO.File]::WriteAllText((Join-Path $root 'discovery-report.json'), '{"generated_at":"2000-01-01T00:00:00Z"}')
     Assert-Throws { Invoke-SocDiscoveryProbe $root } 'fresh report'
     [IO.File]::WriteAllText((Join-Path $root 'discovery-report.json'), ('{"generated_at":"' + [DateTime]::UtcNow.ToString('o') + '"}'))

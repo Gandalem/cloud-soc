@@ -5,7 +5,8 @@ set -eu
 usage() {
     printf '%s\n' \
         'Usage: sudo sh deploy/server/install-ubuntu.sh [options]' \
-        '  --host HOST        Public DNS/IPv4 used by administrators and agents' \
+        '  --host HOST        Dashboard DNS/IPv4' \
+        '  --agent-host HOST  Agent-reachable DNS/IPv4 for HTTPS 9200 (default: --host)' \
         '  --bind-ip IP       IPv4 on this Ubuntu host (default: prompt / loopback)' \
         '  --dry-run          Print the plan only; no root, writes, downloads or checks' \
         '  --prepare-only     Install dependencies and prepare state; do not start the SOC stack' \
@@ -56,6 +57,7 @@ validate_addresses() {
 show_plan() {
     printf '%s\n' \
         "Public host: ${HOST:-<prompt required>}" \
+        "Agent receiver host: ${AGENT_HOST:-${HOST:-<same as public host>}}" \
         "Local bind IP: ${BIND_IP:-<prompt; blank selects 127.0.0.1>}" \
         "State: $STATE" \
         "Ubuntu release/suite: ${UBUNTU_VERSION:-<checked at install>} / ${UBUNTU_SUITE:-<checked at install>}" \
@@ -144,7 +146,7 @@ check_resources_and_network() {
 docker_local() { docker --host unix:///var/run/docker.sock "$@"; }
 compose() (
     # Shell overrides must not redirect the reviewed stack to a different state/host.
-    unset SOC_PUBLIC_HOST SOC_BIND_IP SOC_STATE_DIR COMPOSE_PROFILES COMPOSE_FILE COMPOSE_PROJECT_NAME
+    unset SOC_PUBLIC_HOST SOC_AGENT_ENDPOINT SOC_ELASTIC_ENDPOINT SOC_BIND_IP SOC_STATE_DIR COMPOSE_PROFILES COMPOSE_FILE COMPOSE_PROJECT_NAME
     docker_local compose --project-name cloud-soc-central --env-file "$STATE/compose.env" -f "$ROOT/deploy/server/compose.yaml" "$@"
 )
 
@@ -262,7 +264,11 @@ configure_kernel() {
 
 prepare_state() {
     check_fresh_state
-    python3 "$ROOT/deploy/server/prepare.py" --host "$HOST" --bind-ip "$BIND_IP"
+    if [ -n "${AGENT_HOST:-}" ]; then
+        python3 "$ROOT/deploy/server/prepare.py" --host "$HOST" --agent-host "$AGENT_HOST" --bind-ip "$BIND_IP"
+    else
+        python3 "$ROOT/deploy/server/prepare.py" --host "$HOST" --bind-ip "$BIND_IP"
+    fi
     # The export remains inside protected state; the guide copies only this public file.
     openssl x509 -in "$STATE/tls/ca.crt" -outform DER -out "$STATE/tls/ca.cer"
     chmod 0644 "$STATE/tls/ca.cer"
@@ -313,7 +319,7 @@ finish() {
 }
 
 main() {
-    HOST= BIND_IP= DRY_RUN=no PREPARE_ONLY=no YES=no TEMP= STAGE=arguments
+    HOST= AGENT_HOST= BIND_IP= DRY_RUN=no PREPARE_ONLY=no YES=no TEMP= STAGE=arguments
     UBUNTU_VERSION= UBUNTU_SUITE=
     APT_ROOT=/etc/apt
     KEY_FILE=$APT_ROOT/keyrings/cloud-soc-docker.asc
@@ -327,6 +333,7 @@ main() {
     while [ "$#" -gt 0 ]; do
         case "$1" in
             --host) [ "$#" -ge 2 ] && [ -n "$2" ] && [ -z "$HOST" ] || die 'Provide --host once, with a value.'; HOST=$2; shift 2 ;;
+            --agent-host) [ "$#" -ge 2 ] && [ -n "$2" ] && [ -z "$AGENT_HOST" ] || die 'Provide --agent-host once, with a value.'; AGENT_HOST=$2; shift 2 ;;
             --bind-ip) [ "$#" -ge 2 ] && [ -n "$2" ] && [ -z "$BIND_IP" ] || die 'Provide --bind-ip once, with a value.'; BIND_IP=$2; shift 2 ;;
             --dry-run) DRY_RUN=yes; shift ;;
             --prepare-only) PREPARE_ONLY=yes; shift ;;
@@ -336,6 +343,13 @@ main() {
         esac
     done
     validate_addresses
+    if [ -n "$AGENT_HOST" ]; then
+        PUBLIC_HOST=$HOST
+        HOST=$AGENT_HOST
+        validate_addresses
+        AGENT_HOST=$HOST
+        HOST=$PUBLIC_HOST
+    fi
     if [ "$DRY_RUN" = yes ]; then
         printf '%s\n' 'DRY RUN: plan only; actual OS, addresses, files, ports and dependencies have NOT been checked.'
         show_plan
@@ -389,7 +403,7 @@ main() {
         STAGE=readiness
         check_ready
     fi
-    printf '\nPortal: https://%s\nKibana: https://%s:5601\nReceiver: https://%s:9200\n' "$HOST" "$HOST" "$HOST"
+    printf '\nPortal: https://%s\nKibana: https://%s:5601\nReceiver: https://%s:9200\n' "$HOST" "$HOST" "${AGENT_HOST:-$HOST}"
     printf '%s\n' 'Trust the verified public CA first. Keep private/ and secrets/ on the server.' \
         'Next: docs/aws_windows_e2e_test.md section 6 (Windows CA trust and agent testing).'
 }

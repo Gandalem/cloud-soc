@@ -61,7 +61,8 @@ function New-ScheduledTaskSettingsSet { param($MultipleInstances,$ExecutionTimeL
 function Register-ScheduledTask { param($TaskName,$Action,$Principal,$Settings) Step 'task-register'; $global:Task=$true; Step 'task-register-after' }
 function Export-ScheduledTask { param($TaskName) return '<synthetic />' }
 function Start-ScheduledTask { param($TaskName) Step 'task-start' }
-function Wait-SocTask { param($Name,$Started) Step 'task-wait' }
+function Get-ScheduledTaskInfo { param($TaskName) return @{LastRunTime=[datetime]'2000-01-01'} }
+function Wait-SocTask { param($Name,$Started,$PreviousRun) Step 'task-wait' }
 function Assert-SocBundleTask { param($OriginalXml) Step 'task-ownership' }
 function Assert-SocBundleFreshReport { param($Root,$Started) Step 'task-report' }
 function Stop-ScheduledTask { param($TaskName) Step 'task-stop' }
@@ -71,7 +72,8 @@ function Set-ScheduledTask { param($TaskName,$Trigger) Step 'task-trigger' }
 try {
     $stub = @'
 param($Endpoint,$CaPath,$Organization,$InterfaceGuid,[switch]$AllowUnavailableRevocation,
-    [switch]$PreflightOnly,[switch]$PrepareOnly,$PreparedReceipt,[switch]$DryRun)
+    [switch]$PreflightOnly,[switch]$PrepareOnly,$PreparedReceipt,[switch]$DryRun,
+    [Security.SecureString]$HostApiKey,[Security.SecureString]$NetworkApiKey,$InstallationProbe)
 $kind = if ($PSCommandPath -like '*network*') { 'network' } else { 'host' }
 $phase = if ($DryRun) { 'preview' } elseif ($PreflightOnly) { 'preflight' } else { 'prepare' }
 Step ($kind + '-' + $phase)
@@ -123,6 +125,23 @@ exit 0
     $global:Calls.Clear()
     Invoke-SocWindowsBundle -Source $testRoot -Endpoint 'https://soc.example.invalid' -CaPath 'C:\synthetic\ca.crt' -Organization 'synthetic' -Repair -DryRun
     if (($Calls -join ',') -cne 'repair-dispatch') { throw 'Repair preview entered the fresh-install flow' }
+    foreach ($failure in @('','enrollment-start','network-prepare','enrollment-receipt')) {
+        if (Test-Path -LiteralPath $pending) { Remove-Item -LiteralPath $pending }
+        $global:Calls.Clear(); $global:Services=@{}; $global:Task=$false; $global:Failure=$failure
+        $start = { Step 'enrollment-start'; return @{host=(ConvertTo-SecureString 'synthetic:host' -AsPlainText -Force);network=(ConvertTo-SecureString 'synthetic:network' -AsPlainText -Force);Probe=('a' * 64)} }
+        $receipt = { param($Members) Step 'enrollment-receipt' }
+        $abort = { Step 'enrollment-abort' }
+        $failed=$false
+        try {
+            Invoke-SocWindowsBundle -Source $testRoot -Endpoint 'https://soc.example.invalid' -CaPath 'C:\synthetic\ca.crt' -Organization 'synthetic' `
+                -EnrollmentStart $start -EnrollmentReceipt $receipt -EnrollmentAbort $abort
+        } catch { $failed=$true; if (-not $failure) { throw } }
+        if ($failed -ne [bool]$failure) { throw 'Wrong enrollment result.' }
+        if ($Calls.IndexOf('enrollment-start') -lt $Calls.IndexOf('network-preflight')) { throw 'Token requested before both preflights.' }
+        if ($failed -and -not ($Calls -contains 'enrollment-abort')) { throw 'Failed enrollment was not aborted.' }
+        if (-not $failed -and (($Calls -contains 'enrollment-abort') -or -not ($Calls -contains 'journal-committed_receipt_verified'))) { throw 'Verified installation mishandled.' }
+        if ($failure -eq 'enrollment-receipt' -and ((-not ($Calls -contains 'cloud-soc-filebeat-Disabled')) -or $Calls -contains 'remove-owned')) { throw 'Unverified started collectors were not safely retained/stopped.' }
+    }
     Write-Host 'Bundle mocked phase ordering, failures, preservation and retry guards: passed.'
 } finally {
     $env:ProgramData = $oldProgramData

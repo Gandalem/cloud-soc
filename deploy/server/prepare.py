@@ -61,8 +61,10 @@ def password_hash(password):
     return f"pbkdf2:sha256:600000${salt}${digest}"
 
 
-def prepare(host, bind_ip, state, password):
+def prepare(host, bind_ip, state, password, *, agent_host=None):
     san = validate_host(host)
+    agent_host = agent_host or host
+    agent_san = validate_host(agent_host)
     try:
         ipaddress.IPv4Address(bind_ip)
     except ValueError:
@@ -102,7 +104,8 @@ def prepare(host, bind_ip, state, password):
     openssl("req", "-x509", "-newkey", "rsa:3072", "-nodes", "-sha256", "-days", "3650", "-subj", "/CN=Cloud SOC Lab CA", "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign", "-keyout", ca_key, "-out", ca_crt)
     openssl("req", "-newkey", "rsa:3072", "-nodes", "-sha256", "-subj", f"/CN={host}", "-keyout", key, "-out", csr)
     extensions = state / "private/server.ext"
-    extensions.write_text(f"subjectAltName={san},DNS:elasticsearch,DNS:localhost,IP:127.0.0.1\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth,clientAuth\n", encoding="ascii")
+    sans = list(dict.fromkeys([san, agent_san, "DNS:elasticsearch", "DNS:localhost", "IP:127.0.0.1"]))
+    extensions.write_text(f"subjectAltName={','.join(sans)}\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth,clientAuth\n", encoding="ascii")
     openssl("x509", "-req", "-in", csr, "-CA", ca_crt, "-CAkey", ca_key, "-CAcreateserial", "-out", cert, "-days", "365", "-sha256", "-extfile", extensions)
     for file in (ca_crt, cert):
         file.chmod(0o644)
@@ -119,7 +122,7 @@ def prepare(host, bind_ip, state, password):
     }
     (state / "kibana.yml").write_text(json.dumps(kibana, indent=2), encoding="utf-8")
     (state / "kibana.yml").chmod(0o644)
-    (state / "compose.env").write_text(f"SOC_PUBLIC_HOST={host}\nSOC_BIND_IP={bind_ip}\nSOC_STATE_DIR={state.as_posix()}\n", encoding="utf-8")
+    (state / "compose.env").write_text(f"SOC_PUBLIC_HOST={host}\nSOC_AGENT_ENDPOINT=https://{agent_host}:9200\nSOC_BIND_IP={bind_ip}\nSOC_STATE_DIR={state.as_posix()}\n", encoding="utf-8")
     print(f"Protected server state created: {state}")
     print(f"CA SHA256: {hashlib.sha256(ca_crt.read_bytes()).hexdigest()}")
     print("No services started. Trust the public CA via an authenticated channel; never distribute private/ or secrets/.")
@@ -127,7 +130,8 @@ def prepare(host, bind_ip, state, password):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", required=True, help="DNS name or IPv4 reachable by agents")
+    parser.add_argument("--host", required=True, help="Dashboard DNS name or IPv4")
+    parser.add_argument("--agent-host", help="Agent-reachable DNS/IPv4 for HTTPS 9200; defaults to --host")
     parser.add_argument("--bind-ip", default="127.0.0.1", help="Publish ports only on this server-local IP; default is loopback")
     parser.add_argument("--state", type=Path, default=ROOT / "state" / "server")
     args = parser.parse_args()
@@ -135,7 +139,8 @@ def main():
         parser.error("Run with sudo on the Ubuntu central server")
     try:
         password = read_admin_password()
-        prepare(args.host, args.bind_ip, args.state, password)
+        options = {"agent_host": args.agent_host} if args.agent_host else {}
+        prepare(args.host, args.bind_ip, args.state, password, **options)
     except PreparationError as error:
         parser.exit(1, f"Preparation failed: {error}. Existing/partial state was not removed.\n")
     except getpass.GetPassWarning:

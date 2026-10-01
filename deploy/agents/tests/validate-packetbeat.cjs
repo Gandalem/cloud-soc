@@ -45,7 +45,11 @@ const args = ['--path.home', path.dirname(exe), '--path.config', dir, '--path.da
 const result = run(exe, [...args, 'run', '-I', pcap, '-t', '-l', '1', '-e'], 60000);
 fs.writeFileSync(path.join(dir, 'events.ndjson'), result.stdout, { mode: 0o600 });
 fs.writeFileSync(path.join(dir, 'diagnostics.log'), result.stderr, { mode: 0o600 });
-const events = result.stdout.split(/\r?\n/).filter(line => line.startsWith('{')).map(line => JSON.parse(line)).filter(event => event['@timestamp'] && !event['log.level']);
+const eventLines = result.stdout.split(/\r?\n/).filter(line => line.startsWith('{') && !JSON.parse(line)['log.level']);
+for (const line of eventLines) {
+  assert.equal((line.match(/"@timestamp"\s*:/g) || []).length, 1, 'Duplicate native timestamp; strict Elasticsearch JSON rejects it');
+}
+const events = eventLines.map(line => JSON.parse(line)).filter(event => event['@timestamp']);
 assert.ok(events.length > 0, 'No decoded synthetic events');
 assert.doesNotMatch(result.stdout, new RegExp(secret));
 assert.doesNotMatch(result.stdout, /"(http|request|response|answers|message|original|certificate_chain)"\s*:/);

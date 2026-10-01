@@ -127,7 +127,8 @@ try {
     }
     function Register-SocRepairDiscovery { param($Root) $script:task=New-FixtureTask; $script:task.Settings.Enabled=$true; $script:task.State='Ready'; $script:calls.Add('register') }
     function Start-ScheduledTask { param($TaskName,$TaskPath,$ErrorAction) $script:calls.Add('task-start') }
-    function Wait-SocTask { param($Name,$Started) if ($script:fail -eq 'task') { throw 'synthetic task failure' } }
+    function Get-ScheduledTaskInfo { param($TaskName,$TaskPath) return @{LastRunTime=[datetime]'2000-01-01'} }
+    function Wait-SocTask { param($Name,$Started,$PreviousRun) if ($script:fail -eq 'task') { throw 'synthetic task failure' } }
     function Stop-ScheduledTask { param($TaskName,$TaskPath,$ErrorAction) $script:calls.Add('task-stop') }
     function Unregister-ScheduledTask { param($TaskName,$TaskPath,$Confirm,$ErrorAction) $script:task=$false; $script:calls.Add('unregister') }
     function Set-Service { param($Name,$StartupType,$ErrorAction)

@@ -6,8 +6,24 @@ SETUP_INDICES = INDICES + ",soc-agent-health-*,soc-cloud-aws-*,soc-cloud-oci-*"
 
 PIPELINE_ID = "cloud-soc-received-at-v1"
 PIPELINE = {"description": "Server receipt time for collector activity; not a heartbeat",
-            "processors": [{"set": {"field": "event.ingested", "value": "{{{_ingest.timestamp}}}", "override": True}}]}
-RECEIPT_MAPPING = {"event": {"properties": {"ingested": {"type": "date"}}}}
+            "processors": [
+                {"set": {"field": "event.ingested", "value": "{{{_ingest.timestamp}}}", "override": True}},
+                {"remove": {"field": ["cloud_soc_enrollment", "_soc_auth"], "ignore_missing": True}},
+                {"set_security_user": {"field": "_soc_auth", "properties": ["api_key"]}},
+                {"script": {"lang": "painless", "source": """
+                    def key = ctx._soc_auth.api_key;
+                    if (key != null && key.metadata != null && key.metadata.enrollment_id != null) {
+                        ctx.cloud_soc_enrollment = ['id': key.metadata.enrollment_id,
+                            'key_id': key.id, 'scope': key.metadata.scope,
+                            'package_id': key.metadata.package_id];
+                        ctx.organization = ['id': key.metadata.organization];
+                    }
+                """}},
+                {"remove": {"field": "_soc_auth", "ignore_missing": True}},
+            ]}
+PROOF_MAPPING = {"properties": {name: {"type": "keyword"} for name in ("id", "key_id", "scope", "package_id")}}
+RECEIPT_MAPPING = {"event": {"properties": {"ingested": {"type": "date"}}}, "cloud_soc_enrollment": PROOF_MAPPING,
+                   "labels": {"properties": {"installation_probe": {"type": "keyword"}}}}
 
 
 class SetupConflict(RuntimeError):
@@ -29,6 +45,15 @@ def inspect_existing(client):
         field = mappings.get(name, {}).get("mappings", {}).get("properties", {}).get("event", {}).get("properties", {}).get("ingested")
         if field and field.get("type") != "date":
             raise SetupConflict("Existing event.ingested mapping requires manual review")
+        properties = mappings.get(name, {}).get("mappings", {}).get("properties", {})
+        proof = properties.get("cloud_soc_enrollment")
+        if proof and (proof.get("type", "object") != "object" or any(
+                name in proof.get("properties", {}) and proof["properties"][name].get("type") != "keyword"
+                for name in PROOF_MAPPING["properties"])):
+            raise SetupConflict("Existing enrollment proof mapping requires manual review")
+        label = properties.get("labels", {}).get("properties", {}).get("installation_probe")
+        if label and label.get("type") != "keyword":
+            raise SetupConflict("Existing installation probe mapping requires manual review")
     return sorted(settings)
 
 
@@ -43,6 +68,8 @@ def configure_template(template):
     template["template"]["settings"]["index.final_pipeline"] = PIPELINE_ID
     properties = template["template"]["mappings"]["properties"]
     properties.setdefault("event", {}).setdefault("properties", {})["ingested"] = {"type": "date"}
+    properties["cloud_soc_enrollment"] = PROOF_MAPPING
+    properties.setdefault("labels", {}).setdefault("properties", {})["installation_probe"] = {"type": "keyword"}
     return template
 
 

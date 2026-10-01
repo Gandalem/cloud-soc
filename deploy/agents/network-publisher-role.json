@@ -1,5 +1,5 @@
 {
-  "cluster": ["monitor"],
+  "cluster": ["monitor", "read_pipeline"],
   "indices": [
     {
       "names": ["soc-network-*"],

@@ -15,7 +15,7 @@ import zipfile
 
 VERSION = "9.5.2"
 FILES = {
-    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "repair-windows.ps1", "update-discovery-windows.ps1", "bundle-windows.ps1", "bundle-repair-windows.ps1", "bundle-resume-windows.ps1", "native-windows.ps1", "discovery-native.cs", "enable-rejection-evidence.ps1", "privacy.js", "policy.py"],
+    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "tls-probe.cs", "enrollment-http.cs", "enrollment-windows.ps1", "repair-windows.ps1", "update-discovery-windows.ps1", "bundle-windows.ps1", "bundle-repair-windows.ps1", "bundle-resume-windows.ps1", "native-windows.ps1", "discovery-native.cs", "enable-rejection-evidence.ps1", "privacy.js", "policy.py"],
     "ubuntu": ["install-ubuntu.sh", "discover-linux.sh", "privacy.js", "policy.py"],
 }
 NETWORK_FILES = {
@@ -73,10 +73,16 @@ bash "$HERE/install-network-ubuntu.sh" "${ARGS[@]}" --interface "$DEVICE" --dry-
             text += 'bash "$HERE/install-network-ubuntu.sh" "${ARGS[@]}" --interface "$DEVICE" "${DRY[@]}"\n'
         return "install.sh", text
     text = f'''#requires -Version 5.1
-param([string]$InterfaceGuid, [switch]$DryRun, [switch]$AllowUnavailableRevocation, [switch]$Repair, [switch]$UpdateDiscovery, [switch]$ResumeRepair)
+param([string]$InterfaceGuid, [switch]$DryRun, [switch]$AllowUnavailableRevocation, [switch]$Repair, [switch]$UpdateDiscovery, [switch]$ResumeRepair, [switch]$Enroll, [string]$PackageSha256)
 $ErrorActionPreference = 'Stop'
 if ($ResumeRepair -and (-not $Repair -or $UpdateDiscovery)) {{ throw 'Use -Repair -ResumeRepair together, without -UpdateDiscovery.' }}
 $common = @{{ Endpoint = '{endpoint}'; CaPath = (Join-Path $PSScriptRoot 'ca.crt'); Organization = '{org}'; AllowUnavailableRevocation = $AllowUnavailableRevocation }}
+if ($Enroll) {{
+    if ($Repair -or $UpdateDiscovery -or $ResumeRepair) {{ throw 'Enrollment is for a fresh installation only; existing keys are not replaced.' }}
+    . (Join-Path $PSScriptRoot 'enrollment-windows.ps1')
+    try {{ Invoke-SocEnrollmentInstall @common -Source $PSScriptRoot -InterfaceGuid $InterfaceGuid -PackageSha256 $PackageSha256 -DryRun:$DryRun; exit 0 }}
+    catch {{ [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}
+}}
 if ($UpdateDiscovery) {{
     & (Join-Path $PSScriptRoot 'install-windows.ps1') @common -UpdateDiscovery -DryRun:$DryRun -Repair:$Repair
     exit $LASTEXITCODE
@@ -127,6 +133,9 @@ def build_bundle(spec, source, ca):
         "Recovery preserves server, organization, CA, keys, capture NIC and queues; it is not migration or a Beat binary upgrade.\n"
         "Network collection requires an explicit NIC; Windows also needs approved Npcap.\n"
         "Enter the host key at Filebeat's keystore prompt; enter the separate network key at Packetbeat's prompt.\n"
+        "New compatible Windows pairs can optionally use -Enroll -PackageSha256 <public ZIP hash> on an enabled server.\n"
+        "Enrollment prompts for ONE hidden token, stores separate keys through keystore stdin, and requires actual central documents.\n"
+        "It is fresh-install only; Linux, log-only, Repair and updates retain their existing manual-key workflow.\n"
         "Fresh Windows network bundles prepare both collectors before any permanent collector service starts.\n"
         "Before startup, owned preparation is rolled back; after a start attempt, queues/keys are retained and owned services disabled.\n"
         "For a recognized stopped Windows pair, use install.ps1 -Repair -DryRun, then -Repair to accept protected backup/recovery.\n"
@@ -158,10 +167,11 @@ def build_bundle(spec, source, ca):
 class PackageStore:
     """SQLite holds small bundles atomically; no user-controlled filesystem paths."""
 
-    def __init__(self, root: Path, source: Path, ca: bytes, endpoint: str):
+    def __init__(self, root: Path, source: Path, ca: bytes, endpoint: str, *, portal_url=None):
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.database = root / "packages.sqlite3"
         self.source, self.ca, self.endpoint = source, ca, validate_endpoint(endpoint)
+        self.portal_url = validate_endpoint(portal_url) if portal_url else None
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("CREATE TABLE IF NOT EXISTS packages (id TEXT PRIMARY KEY, name TEXT NOT NULL, os TEXT NOT NULL, spec TEXT NOT NULL, filename TEXT NOT NULL, sha256 TEXT NOT NULL, created_at TEXT NOT NULL, archive BLOB NOT NULL, UNIQUE(name, os))")
@@ -195,8 +205,10 @@ class PackageStore:
 
     def create(self, data):
         spec = validate_spec(data, self.endpoint)
-        archive, filename = build_bundle(spec, self.source, self.ca)
         identifier = uuid.uuid4().hex
+        if self.portal_url and spec["os"] == "windows" and spec["network"]:
+            spec.update(package_id=identifier, portal_url=self.portal_url, enrollment_protocol=1)
+        archive, filename = build_bundle(spec, self.source, self.ca)
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             if db.execute("SELECT count(*) FROM packages").fetchone()[0] >= 200:

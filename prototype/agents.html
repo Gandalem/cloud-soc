@@ -42,6 +42,17 @@
       <label class="form-row"><span>유효 기간</span><select id="key-days"><option value="1">1일</option><option value="7">7일</option><option value="30" selected>30일</option><option value="90">90일</option></select></label><p class="field-note">만료되면 전송이 중단됩니다. 만료 전에 대상 서버의 keystore를 갱신해야 합니다. 자동 키 교체 기능은 없습니다.</p><div id="issued-keys"></div><p id="key-message" role="status"></p></div>
     <footer><button data-close="keys-dialog">닫기</button><button id="issue-keys" class="primary-button">새 키 발급</button></footer>
   </dialog>
+  <dialog id="enrollment-dialog" class="agent-dialog detail-dialog" aria-labelledby="enrollment-title">
+    <header><h2 id="enrollment-title">단일 설치 토큰</h2><button data-close="enrollment-dialog" aria-label="닫기">×</button></header>
+    <div class="dialog-body"><strong id="enrollment-package"></strong><p class="scope-note">새 Windows 로그+네트워크 패키지 전용 시험 기능입니다. ZIP 해시 확인·압축 해제 후 아래 명령을 실행하고 토큰 하나를 숨김 입력 창에 붙여 넣습니다. Npcap과 관리자 권한은 필요합니다. 기존 설치에는 재발급하지 마세요.</p>
+      <label class="form-row"><span>대상 별칭</span><input id="enrollment-target" maxlength="100" placeholder="예: 새 Windows 테스트 VM"></label>
+      <label class="form-row"><span>수집 키 유효 기간</span><select id="enrollment-days"><option value="1">1일 (시험)</option><option value="7">7일</option><option value="30">30일</option><option value="90">90일</option></select></label>
+      <p class="field-note">토큰은 발급 후 15분, 키 전달 후 수신 확인 세션은 30분입니다. 토큰을 명령줄·파일·ZIP에 넣지 마세요. 토큰/응답을 잃거나 설치가 중단됐다면 이력에서 취소·폐기를 먼저 확인하세요.</p>
+      <pre id="enrollment-command"></pre><label>설치 토큰 (한 번 표시)<input id="enrollment-token" type="password" readonly autocomplete="off"></label><button id="copy-enrollment">토큰 복사</button>
+      <p id="enrollment-message" role="status" aria-live="polite"></p><h3>최근 설치 토큰 이력</h3><button id="refresh-enrollment">이력 새로고침</button><div id="enrollment-history"></div>
+      <p class="scope-note">두 수집기의 실제 문서를 중앙에서 조회한 경우에만 완료합니다. 실행 중 서비스만으로 성공 처리하지 않습니다. 실패 시 큐는 보존되며, 토큰 취소는 에이전트 제거와 다릅니다.</p>
+    </div><footer><button data-close="enrollment-dialog">닫기</button><button id="mint-enrollment" class="primary-button">설치 토큰 발급</button></footer>
+  </dialog>
   <dialog id="history-dialog" class="agent-dialog detail-dialog" aria-labelledby="history-title">
     <header><h2 id="history-title">발급 키 관리</h2><button data-close="history-dialog" aria-label="닫기">×</button></header>
     <div class="dialog-body"><p class="scope-note">최근 발급 이력 최대 500개입니다. 키 원문은 저장하지 않습니다. ‘키 폐기’는 사용 중지이며 이력 삭제가 아닙니다. 패키지 삭제와 별개이고, 해당 키를 사용하는 수집기의 전송이 중단됩니다.</p>

@@ -19,11 +19,16 @@
 
 1. 기존 원격 로그 설치와 동일하게 HTTPS Elasticsearch·일치하는 인증서 SAN·신뢰 CA를 준비합니다. HTTP·인증 비활성 개발용 Compose를 외부에 공개하지 않습니다.
 2. 관리자가 `network-index-template.json` 본문을 `PUT /_index_template/cloud-soc-network`에 등록합니다. 설치기는 템플릿·수명 주기 정책을 변경하지 않습니다. 단일 노드 개발환경에서는 복제본 1개 때문에 yellow가 될 수 있으며 관리자가 환경에 맞게 조정합니다.
-3. `network-publisher-role.json`을 역할 설명자로 사용하는 **서버별 별도 API 키**를 발급합니다. `soc-network-*`에만 `auto_configure`·`create_doc`, 클러스터 `monitor` 권한이 필요합니다. 기존 `soc-host-raw-*` 전용 키는 네트워크 인덱스에 쓸 수 없습니다.
-4. 인덱스 보존 기간·삭제 정책·디스크 경보를 관리자가 설정합니다. 일별 인덱스 생성은 자동 삭제를 의미하지 않습니다. 로컬 큐 최대 1GB도 중앙 저장량 제한이 아닙니다.
-5. 검토한 `deploy/agents` 폴더와 CA 공개 인증서를 서버에 전달합니다. 설치기 옆에 `packetbeat.base.json`이 반드시 있어야 합니다.
+3. 중앙 관리자가 `packetbeat-pipelines-9.5.2.json`의 공식 파이프라인 17개를 먼저 준비합니다. 중앙 Compose의 새 bootstrap은 이를 수행하며, 기존 관리자가 수정한 동일 ID 정의와 다르면 덮어쓰지 않고 중단합니다. 구버전 서버는 보호 백업 후 별도 관리 단계에서 준비해야 합니다. 파이프라인 정의·라이선스·출처는 같은 폴더에 포함되어 있습니다.
+4. `network-publisher-role.json`을 역할 설명자로 사용하는 **서버별 별도 API 키**를 발급합니다. `soc-network-*`에만 `auto_configure`·`create_doc`, 클러스터 `monitor`·`read_pipeline` 권한이 필요합니다. 발급 계정의 상위 역할에도 `read_pipeline`이 있어야 합니다. 에이전트에는 파이프라인 생성/수정 권한을 주지 않습니다. 기존 키는 새 역할 파일만 수정해도 자동 갱신되지 않으므로 소유 계정으로 대상 네트워크 키의 역할을 보호 갱신하거나 별도 키를 재발급해야 합니다. 기존 `soc-host-raw-*` 전용 키는 네트워크 인덱스에 쓸 수 없습니다.
+5. 인덱스 보존 기간·삭제 정책·디스크 경보를 관리자가 설정합니다. 일별 인덱스 생성은 자동 삭제를 의미하지 않습니다. 로컬 큐 최대 1GB도 중앙 저장량 제한이 아닙니다.
+6. 검토한 `deploy/agents` 폴더와 CA 공개 인증서를 서버에 전달합니다. 설치기 옆에 `packetbeat.base.json`이 반드시 있어야 합니다.
+
+`@timestamp`는 Beats가 자동 보존하므로 `include_fields` 목록에 다시 넣지 않습니다. 9.5.2에서 명시적으로 복사하면 JSON 시각 키가 중복되어 중앙에서 거절될 수 있습니다. 기존 설치의 설정 갱신은 먼저 백업하고 해당 항목만 제거한 뒤 설정/출력 검사 및 Packetbeat 재시작으로 적용합니다. 키·큐 삭제로 해결하지 않습니다. 과거에 이미 포기된 흐름은 이후 수정으로 복구되지 않습니다.
 
 API 키는 설치 중 keystore 프롬프트에 `id:api_key` 형식으로 입력합니다. `encoded` 값이 아닙니다. 키를 명령 인자·설정 파일·Git에 넣지 않습니다. `organization.id`는 분류 정보이지 조직 간 접근 제어가 아닙니다.
+
+Windows 관리 자동화에서는 선택적으로 `-NetworkApiKey`에 메모리의 `SecureString`을 전달할 수 있습니다. 평문 키를 명령줄에 적지 않습니다. `-ArchivePath`는 사전에 내려받은 로컬 공식 ZIP을 재사용하며 고정 SHA-512 검사에 실패하면 실행하지 않습니다. 일반 설치는 기존 다운로드·키 입력 방식을 유지합니다.
 
 ## Ubuntu 22.04 설치
 

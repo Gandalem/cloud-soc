@@ -53,9 +53,11 @@ services:
     restart: unless-stopped
     depends_on:
       bootstrap: {condition: service_completed_successfully}
-    environment:
+    environment: &portal-environment
       SOC_PUBLIC_URL: https://${SOC_PUBLIC_HOST:?Run prepare.py first}
+      SOC_ENROLLMENT_ENABLED: ${SOC_ENROLLMENT_ENABLED:-0}
       SOC_ELASTIC_ENDPOINT: https://${SOC_PUBLIC_HOST}:9200
+      SOC_AGENT_ENDPOINT: ${SOC_AGENT_ENDPOINT:-}
       SOC_INTERNAL_ES_URL: https://elasticsearch:9200
       SOC_ADMIN_USER: admin
       SOC_ADMIN_HASH_FILE: /run/secrets/admin_hash
@@ -64,6 +66,25 @@ services:
       SOC_CA_FILE: /run/certs/ca.crt
       SOC_STATE_DIR: /data
     secrets: [admin_hash, issuer_password, monitor_password]
+    volumes:
+      - ${SOC_STATE_DIR}/portal:/data
+      - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
+  enrollment-cleanup:
+    profiles: [enrollment]
+    build:
+      context: ../..
+      dockerfile: deploy/server/Dockerfile
+    command: [python, /app/deploy/server/enrollment-maintenance.py]
+    restart: unless-stopped
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+    environment: *portal-environment
+    secrets: [issuer_password]
     volumes:
       - ${SOC_STATE_DIR}/portal:/data
       - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro

@@ -13,6 +13,7 @@ const portal = { packages: [{ id: 'pkg', name: 'lab', filename: 'lab-setup.zip',
 const ok = json => () => ({ ok: true, json: async () => json });
 const fail = error => () => ({ ok: false, status: 503, json: async () => ({ error }) });
 const settle = () => new Promise(resolve => setImmediate(resolve));
+const enrollmentPortal = { ...portal, enrollment_enabled: true, packages: [{ ...portal.packages[0], network: true, enrollment_protocol: 1, sha256: 'a'.repeat(64) }] };
 
 function browser(responses, initialHash = '') {
   const elements = new Map(), calls = [];
@@ -40,6 +41,61 @@ function browser(responses, initialHash = '') {
   }
   return { get, calls, action, context };
 }
+
+test('enrollment is opt-in, one hidden token is cleared on close and never sent in admin requests', async () => {
+  const token = 'SYNTHETIC_TEST_TOKEN';
+  const ui = browser([ok(enrollmentPortal), ok({enrollments: []}), ok({token, expires: 1900000000, warning: '15분 이내 사용'}), ok({enrollments: []})]);
+  await settle();
+  assert.match(ui.get('#package-rows').innerHTML, /data-enrollment="pkg"/);
+  ui.get('#package-rows').listeners.click({target: {closest: () => ({dataset: {enrollment: 'pkg'}})}});
+  await settle();
+  assert.match(ui.get('#enrollment-command').textContent, /-Enroll -PackageSha256/);
+  ui.get('#enrollment-days').value='1';
+  ui.get('#enrollment-target').value='test VM';
+  await ui.get('#mint-enrollment').listeners.click();
+  await settle();
+  assert.equal(ui.get('#enrollment-token').value, token);
+  assert.equal(ui.get('#mint-enrollment').disabled,true);
+  assert.deepEqual(JSON.parse(ui.calls[2].options.body), {days:1, target_label:'test VM'});
+  assert.ok(!JSON.stringify(ui.calls).includes(token));
+  ui.get('#enrollment-dialog').close();
+  assert.equal(ui.get('#enrollment-token').value,'');
+  const disabled = browser([ok({...enrollmentPortal, enrollment_enabled:false})]);
+  await settle();
+  assert.doesNotMatch(disabled.get('#package-rows').innerHTML,/data-enrollment/);
+});
+
+test('enrollment history escapes metadata, completed installs are not cancellable and failed cleanup stays visible', async () => {
+  const pending = {id:'session', package_id:'pkg', target_label:'<script>bad</script>', state:'cleanup_pending', expires:1900000000};
+  const ui = browser([ok(enrollmentPortal), ok({enrollments:[pending,{...pending,id:'completed',state:'complete'}]}), fail('키 폐기 확인 필요'), ok({enrollments:[pending]})]);
+  ui.context.window.confirm=()=>true;
+  await settle();
+  ui.get('#package-rows').listeners.click({target:{closest:()=>({dataset:{enrollment:'pkg'}})}});
+  await settle();
+  assert.doesNotMatch(ui.get('#enrollment-history').innerHTML,/<script>/);
+  assert.doesNotMatch(ui.get('#enrollment-history').innerHTML,/data-cancel-enrollment="completed"/);
+  const button={dataset:{cancelEnrollment:'session'},disabled:false};
+  await ui.get('#enrollment-history').listeners.click({target:{closest:()=>button}});
+  await settle();
+  assert.match(ui.get('#enrollment-message').textContent,/키 폐기 확인 필요/);
+  assert.equal(ui.calls[2].url,'/api/enrollments/session/cancel');
+  assert.match(ui.get('#enrollment-history').innerHTML,/data-cancel-enrollment="session"/);
+});
+
+test('late enrollment token response cannot refill a closed dialog', async () => {
+  let release;
+  const response=new Promise(resolve=>{release=resolve;});
+  const ui=browser([ok(enrollmentPortal),ok({enrollments:[]}),()=>response]);
+  await settle();
+  ui.get('#package-rows').listeners.click({target:{closest:()=>({dataset:{enrollment:'pkg'}})}});
+  await settle();
+  ui.get('#enrollment-days').value='1';
+  const pending=ui.get('#mint-enrollment').listeners.click();
+  ui.get('#enrollment-dialog').close();
+  release({ok:true,json:async()=>({token:'SYNTHETIC_LOST_TOKEN',expires:1900000000})});
+  await pending;
+  assert.equal(ui.get('#enrollment-token').value,'');
+});
 
 test('key purpose, label and package search; revoked filter is explicit', () => {
   const keys = [key, { ...key, id: 'network-id', scope: 'network', status: 'revoked' }];

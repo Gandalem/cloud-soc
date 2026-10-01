@@ -21,6 +21,7 @@ from cloud_soc.portal.log_query import LogReader, LogQueryError
 from cloud_soc.portal.collection_health import snapshot as health_snapshot
 from cloud_soc.portal.operations import Operations
 from cloud_soc.portal.cases import CaseStore, CaseError
+from cloud_soc.portal.enrollment import Enrollments, EnrollmentError
 
 PROJECT = Path(__file__).resolve().parents[3]
 
@@ -47,7 +48,8 @@ def settings_from_environment():
         "AGENT_SOURCE": PROJECT / "deploy" / "agents",
         "CA_BYTES": ca,
         "PUBLIC_URL": public_url,
-        "ENDPOINT": validate_endpoint(os.environ["SOC_ELASTIC_ENDPOINT"]),
+        "ENROLLMENT_ENABLED": os.environ.get("SOC_ENROLLMENT_ENABLED") == "1",
+        "ENDPOINT": validate_endpoint(os.environ.get("SOC_AGENT_ENDPOINT") or os.environ["SOC_ELASTIC_ENDPOINT"]),
         "ADMIN_USER": os.environ.get("SOC_ADMIN_USER", "admin"),
         "ADMIN_HASH": secret("SOC_ADMIN_HASH_FILE"),
         "ES_URL": os.environ["SOC_INTERNAL_ES_URL"],
@@ -61,7 +63,8 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     settings = settings if settings is not None else settings_from_environment()
     app = Flask(__name__, static_folder=None)
     app.config.update(MAX_CONTENT_LENGTH=8192, TRUSTED_HOSTS=[urlsplit(settings["PUBLIC_URL"]).hostname])
-    store = PackageStore(Path(settings["STATE_DIR"]), Path(settings["AGENT_SOURCE"]), settings["CA_BYTES"], settings["ENDPOINT"])
+    store = PackageStore(Path(settings["STATE_DIR"]), Path(settings["AGENT_SOURCE"]), settings["CA_BYTES"], settings["ENDPOINT"],
+                         portal_url=settings["PUBLIC_URL"] if settings["PUBLIC_URL"].startswith("https://") else None)
     app.extensions["packages"] = store
     if issuer is None:
         issuer = Elasticsearch(settings["ES_URL"], basic_auth=("cloud_soc_issuer", settings["ES_PASSWORD"]),
@@ -71,6 +74,8 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         monitor = Elasticsearch(settings["ES_URL"], basic_auth=("cloud_soc_agent_monitor", settings["MONITOR_PASSWORD"]),
                                 ca_certs=settings["CA_FILE"], request_timeout=5, max_retries=0)
     app.extensions["monitor"] = monitor
+    enrollments = Enrollments(store, issuer, monitor)
+    app.extensions["enrollments"] = enrollments
     log_reader = LogReader(monitor, secret=settings["ADMIN_HASH"],
                            principal=settings["PUBLIC_URL"] + "/" + settings["ADMIN_USER"])
     operations = Operations(monitor)
@@ -79,6 +84,10 @@ def create_app(settings=None, *, issuer=None, monitor=None):
 
     @app.errorhandler(CaseError)
     def case_error(error):
+        return jsonify(code=error.code, error=str(error)), error.status
+
+    @app.errorhandler(EnrollmentError)
+    def enrollment_error(error):
         return jsonify(code=error.code, error=str(error)), error.status
 
     def case_response(operation):
@@ -123,6 +132,22 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         # Exact authority check also blocks DNS rebinding and unexpected ports.
         if request.host.lower() != urlsplit(settings["PUBLIC_URL"]).netloc.lower():
             abort(400)
+        # Only these machine endpoints use token authentication. Admin routes
+        # retain Basic authentication and their existing CSRF/Origin checks.
+        if request.endpoint in {"enrollment_exchange", "enrollment_receipt", "enrollment_abort"}:
+            if not settings.get("ENROLLMENT_ENABLED"):
+                return jsonify(code="enrollment_disabled", error="단일 설치 토큰 기능은 아직 활성화되지 않았습니다."), 503
+            if (request.method != "POST" or not request.is_json or request.args
+                    or request.headers.get("Origin") or request.headers.get("Sec-Fetch-Site")
+                    or request.headers.get("X-Cloud-SOC") != "installer"):
+                abort(403)
+            if urlsplit(settings["PUBLIC_URL"]).scheme != "https":
+                return jsonify(code="enrollment_tls_required", error="설치 토큰은 HTTPS 중앙 포털에서만 사용할 수 있습니다."), 503
+            # Compose exposes only the TLS gateway; it replaces this header.
+            # Never publish the portal container's internal HTTP port directly.
+            if request.scheme != "https" and request.headers.get("X-Forwarded-Proto") != "https":
+                abort(403)
+            return
         credentials = request.authorization
         if (credentials is None or credentials.type.lower() != "basic"
                 or not secrets.compare_digest((credentials.username or "").encode("utf-8"), settings["ADMIN_USER"].encode("utf-8"))
@@ -162,6 +187,10 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def conflict(_error):
         return jsonify(error="같은 OS에 동일한 패키지명이 있습니다."), 409
 
+    @app.errorhandler(sqlite3.OperationalError)
+    def storage_unavailable(_error):
+        return jsonify(code="storage_unavailable", error="저장소가 일시적으로 사용 중이거나 접근할 수 없습니다. 같은 설치 시도로 재시도하세요."), 503
+
     @app.errorhandler(500)
     def failed(_error):
         return jsonify(error="서버 작업에 실패했습니다. 관리자 로그를 확인하세요."), 500
@@ -174,6 +203,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         except Exception:
             status = "unavailable"
         return jsonify(endpoint=settings["ENDPOINT"], version="9.5.2", elasticsearch=status,
+                       enrollment_enabled=bool(settings.get("ENROLLMENT_ENABLED")),
                        ca_sha256=hashlib.sha256(settings["CA_BYTES"]).hexdigest(),
                        packages=store.list(), max_packages=200)
 
@@ -229,6 +259,40 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     @app.post("/api/packages")
     def create_package():
         return jsonify(store.create(request.get_json())), 201
+
+    @app.post("/api/packages/<identifier>/enrollment")
+    def mint_enrollment(identifier):
+        if not settings.get("ENROLLMENT_ENABLED"):
+            raise EnrollmentError("enrollment_disabled", 503, "중앙 서버의 단일 설치 토큰 기능을 먼저 준비하세요.")
+        return jsonify(enrollments.mint(identifier, request.get_json())), 201
+
+    @app.get("/api/enrollments")
+    def enrollment_list():
+        return jsonify(enrollments=enrollments.listing())
+
+    @app.post("/api/enrollments/<identifier>/cancel")
+    def cancel_enrollment(identifier):
+        if request.get_json() != {}:
+            raise ValueError("취소 요청에는 비밀이나 추가 설정을 넣지 마세요.")
+        return jsonify(enrollment=enrollments.cancel(identifier))
+
+    def installer_token():
+        authorization = request.headers.get("Authorization", "")
+        if not authorization.startswith("Bearer "):
+            raise EnrollmentError("invalid_enrollment", 401, "설치 토큰 인증이 필요합니다.")
+        return authorization[7:]
+
+    @app.post("/api/installer/enroll")
+    def enrollment_exchange():
+        return jsonify(enrollments.exchange(installer_token(), request.get_json()))
+
+    @app.post("/api/installer/receipt")
+    def enrollment_receipt():
+        return jsonify(enrollments.receipt(installer_token(), request.get_json()))
+
+    @app.post("/api/installer/abort")
+    def enrollment_abort():
+        return jsonify(enrollment=enrollments.abort(installer_token(), request.get_json()))
 
     @app.delete("/api/packages/<identifier>")
     def delete_package(identifier):

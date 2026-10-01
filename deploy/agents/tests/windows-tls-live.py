@@ -4,6 +4,7 @@ Run with Python + cryptography on Windows. Temporary keys are synthetic and are
 removed after the test; never use these certificates for a deployed server.
 """
 from datetime import datetime, timedelta, timezone
+import base64
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
 import os
@@ -111,6 +112,38 @@ class SchannelTests(unittest.TestCase):
         assert self.root.parent == Path(tempfile.gettempdir()).resolve()
         assert self.root.name.startswith('cloud-soc-tls-')
         self.temp.cleanup()
+
+
+class NativeFallbackTests(SchannelTests):
+    def probe(self, url, *, compatibility=False, ca=None):
+        source = Path(__file__).resolve().parents[1] / 'tls-probe.cs'
+        escaped_source = str(source).replace("'", "''")
+        escaped_ca = str(ca or self.ca_path).replace("'", "''")
+        flag = '$true' if compatibility else '$false'
+        code = ("$ErrorActionPreference='Stop'; "
+                f"Add-Type -Path '{escaped_source}'; "
+                f"try {{ [CloudSocTlsProbe]::Check('{url}', '{escaped_ca}', {flag}) }} "
+                "catch { exit 60 }")
+        encoded = base64.b64encode(code.encode('utf-16le')).decode()
+        return subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+                              capture_output=True, text=True, timeout=40)
+
+    def test_private_ca_requires_explicit_compatibility(self):
+        url = self.serve()
+        self.assertEqual(self.probe(url).returncode, 60)
+        compatible = self.probe(url, compatibility=True)
+        self.assertEqual(compatible.returncode, 0, compatible.stderr)
+        self.assertEqual(compatible.stdout.strip(), '401')
+
+    def test_leaf_cannot_be_used_as_trust_anchor(self):
+        url = self.serve()
+        self.assertEqual(self.probe(url, compatibility=True, ca=self.root / 'server.crt').returncode, 60)
+
+    def test_multiple_ca_blocks_rejected(self):
+        url = self.serve()
+        path = self.root / 'multiple.crt'
+        path.write_bytes(self.ca_path.read_bytes() * 2)
+        self.assertEqual(self.probe(url, compatibility=True, ca=path).returncode, 60)
 
 
 if __name__ == '__main__':

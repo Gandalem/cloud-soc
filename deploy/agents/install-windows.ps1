@@ -6,6 +6,8 @@ param(
     [Parameter(Mandatory = $true)][string]$Organization,
     [string[]]$AdditionalChannel = @(),
     [string[]]$AdditionalLogRoot = @(),
+    [Security.SecureString]$HostApiKey,
+    [string]$InstallationProbe,
     [switch]$AllowUnavailableRevocation,
     [switch]$Repair,
     [switch]$UpdateDiscovery,
@@ -44,6 +46,8 @@ $RootCreated = $false
 $TaskCreated = $false
 
 function Assert-Arguments {
+    if ($InstallationProbe -and $InstallationProbe -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid installation probe.' }
+    if ($HostApiKey -and ($Repair -or $UpdateDiscovery)) { throw 'Enrollment cannot replace existing keys.' }
     if ($Endpoint -cnotmatch '^https://([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?)(:([0-9]{1,5}))?/?\z') {
         throw 'Use an HTTPS DNS/IPv4 endpoint without credentials, path, query or fragment.'
     }
@@ -72,7 +76,7 @@ function Set-AgentPaths([string]$Path) {
 }
 
 function Get-AgentConfig {
-    return @{
+    $config = @{
         'filebeat.config.inputs' = @{ enabled = $true; path = (Join-Path $Root 'inputs\*.yml'); 'reload.enabled' = $true; 'reload.period' = '10s' }
         processors = @(
             @{ add_host_metadata = @{} },
@@ -96,6 +100,8 @@ function Get-AgentConfig {
         'logging.to_eventlog' = $false
         'queue.disk' = @{ max_size = '1GB' }
     }
+    if ($InstallationProbe) { $config.processors += @{add_fields=@{target='labels';fields=@{installation_probe=$InstallationProbe}}} }
+    return $config
 }
 
 function Assert-NoInstallation {
@@ -220,8 +226,19 @@ try {
     $utf8 = New-Object System.Text.UTF8Encoding($false)
     [IO.File]::WriteAllText($ConfigPath, '{}', $utf8)
     Invoke-Beat -BeatArguments @('keystore', 'create')
-    Write-Host 'Enter the restricted Elasticsearch API key as id:api_key (not the encoded value).'
-    Invoke-Beat -BeatArguments @('keystore', 'add', 'CLOUD_SOC_API_KEY')
+    if ($HostApiKey) {
+        $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($HostApiKey)
+        $plain = $null
+        try {
+            $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+            if ($plain -cnotmatch '^[A-Za-z0-9_-]+:[A-Za-z0-9_-]+$') { throw 'Invalid host key format.' }
+            $plain | & $Exe @CommonArgs keystore add CLOUD_SOC_API_KEY --stdin
+            if ($LASTEXITCODE -ne 0) { throw 'Host keystore input failed.' }
+        } finally { $plain=$null; [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
+    } else {
+        Write-Host 'Enter the restricted Elasticsearch API key as id:api_key (not the encoded value).'
+        Invoke-Beat -BeatArguments @('keystore', 'add', 'CLOUD_SOC_API_KEY')
+    }
     [IO.File]::WriteAllText($ConfigPath, (Get-AgentConfig | ConvertTo-Json -Depth 12), $utf8)
     Invoke-Beat -BeatArguments @('test', 'config')
     Invoke-Beat -BeatArguments @('test', 'output')

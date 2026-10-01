@@ -69,6 +69,19 @@ test('POSIX sh syntax, LF checkout and help', () => {
   assert.match(ok(run([script, '--help'])), /--prepare-only/);
 });
 
+test('dashboard and receiver addresses are independent, without any installation', () => {
+  const output = ok(run([script, '--dry-run', '--host', 'dashboard.example.test', '--agent-host', '192.168.32.60', '--bind-ip', '10.0.0.5']));
+  assert.match(output, /Public host: dashboard\.example\.test/);
+  assert.match(output, /Agent receiver host: 192\.168\.32\.60/);
+  for (const value of ['https://receiver:9200', 'bad-.test', 'receiver/path', '0.0.0.0', 'host\nOTHER=value']) {
+    // Windows argument transport can split a newline; either path must stop.
+    fail(run([script, '--dry-run', '--agent-host', value]), /Host|DNS|host|IPv4|Unknown option/);
+  }
+  fail(run([script, '--dry-run', '--agent-host', 'a', '--agent-host', 'b']), /once/);
+  assert.match(source, /unset SOC_PUBLIC_HOST SOC_AGENT_ENDPOINT SOC_ELASTIC_ENDPOINT/);
+  assert.match(source, /--agent-host "\$AGENT_HOST"/);
+});
+
 test('confirmation accepts y and yes in any case, plus legacy INSTALL', () => {
   for (const answer of ['y', 'Y', 'yes', 'yeS', 'yEs', 'yES', 'Yes', 'YeS', 'YEs', 'YES', 'INSTALL']) {
     const output = ok(fixture(`

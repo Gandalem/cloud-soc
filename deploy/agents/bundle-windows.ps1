@@ -125,7 +125,9 @@ function Invoke-SocBundleSequence([scriptblock]$Prepare, [scriptblock]$Commit, [
 }
 
 function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$CaPath, [string]$Organization,
-    [string]$InterfaceGuid, [switch]$AllowUnavailableRevocation, [switch]$Repair, [switch]$DryRun, [switch]$ResumeRepair) {
+    [string]$InterfaceGuid, [switch]$AllowUnavailableRevocation, [switch]$Repair, [switch]$DryRun, [switch]$ResumeRepair,
+    [scriptblock]$EnrollmentStart, [scriptblock]$EnrollmentReceipt, [scriptblock]$EnrollmentAbort) {
+    if ($EnrollmentStart -and ($Repair -or $ResumeRepair -or -not $EnrollmentReceipt -or -not $EnrollmentAbort)) { throw 'Enrollment requires a fresh complete bundle and receipt/abort callbacks.' }
     if ($ResumeRepair -and -not $Repair) { throw 'Use -Repair -ResumeRepair together for verified interrupted recovery.' }
     if ($Repair) {
         Invoke-SocBundleRepair -Source $Source -Endpoint $Endpoint -CaPath $CaPath -Organization $Organization `
@@ -147,7 +149,7 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
     $held = $false
     $transaction = $null
     $pending = Join-Path $env:ProgramData 'Cloud-SOC\bundle-pending.json'
-    $state = @{ Started=$false; TaskCreated=$false; TaskRegistrationAttempted=$false; TaskXml=$null; CleanupSafe=$true }
+    $state = @{ Started=$false; TaskCreated=$false; TaskRegistrationAttempted=$false; TaskXml=$null; CleanupSafe=$true; Enrollment=$null }
     $members = Get-SocBundleMembers
     try {
         try { $held = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $held=$true; throw 'Interrupted bundle detected. State retained; automatic adoption is not supported.' }
@@ -170,10 +172,16 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
         foreach ($member in $members) { $member.Receipt = Join-Path $transaction.Path ($member.Kind + '-prepared.json') }
         Save-SocBundleJournal $transaction 'preparing' $false
         $prepare = {
-            & $hostInstaller @common -PrepareOnly -PreparedReceipt $members[0].Receipt
+            if ($EnrollmentStart) { $state.Enrollment = & $EnrollmentStart }
+            $hostOptions = @{}; $networkOptions = @{}
+            if ($state.Enrollment) {
+                $hostOptions=@{HostApiKey=$state.Enrollment.host;InstallationProbe=$state.Enrollment.Probe}
+                $networkOptions=@{NetworkApiKey=$state.Enrollment.network;InstallationProbe=$state.Enrollment.Probe}
+            }
+            & $hostInstaller @common @hostOptions -PrepareOnly -PreparedReceipt $members[0].Receipt
             if ($LASTEXITCODE -ne 0) { throw 'Host preparation failed.' }
             $members[0].Prepared = Read-SocPreparedReceipt $members[0].Receipt 'host'
-            & $networkInstaller @common -InterfaceGuid $InterfaceGuid -PrepareOnly -PreparedReceipt $members[1].Receipt
+            & $networkInstaller @common @networkOptions -InterfaceGuid $InterfaceGuid -PrepareOnly -PreparedReceipt $members[1].Receipt
             if ($LASTEXITCODE -ne 0) { throw 'Network preparation failed.' }
             $members[1].Prepared = Read-SocPreparedReceipt $members[1].Receipt 'network'
             Save-SocBundleJournal $transaction 'prepared' $false
@@ -201,9 +209,10 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
             Register-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -Action $action -Principal $principal -Settings $settings | Out-Null
             $state.TaskCreated=$true
             $state.TaskXml=Export-ScheduledTask -TaskName 'Cloud-SOC-Discovery'
+            $previousRun = (Get-ScheduledTaskInfo -TaskName 'Cloud-SOC-Discovery').LastRunTime
             $started = (Get-Date).AddSeconds(-1)
             Start-ScheduledTask -TaskName 'Cloud-SOC-Discovery'
-            Wait-SocTask -Name 'Cloud-SOC-Discovery' -Started $started
+            Wait-SocTask -Name 'Cloud-SOC-Discovery' -Started $started -PreviousRun $previousRun
             Assert-SocBundleFreshReport $members[0].Root $started
             Save-SocBundleJournal $transaction 'starting' $true
             $state.Started=$true
@@ -222,10 +231,13 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
             Assert-SocBundleTask $state.TaskXml
             Set-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -Trigger $trigger | Out-Null
             $state.TaskXml=Export-ScheduledTask -TaskName 'Cloud-SOC-Discovery'
-            Save-SocBundleJournal $transaction 'committed_receipt_unverified' $true
+            if ($EnrollmentReceipt) { & $EnrollmentReceipt $members }
+            $phase = if ($EnrollmentReceipt) { 'committed_receipt_verified' } else { 'committed_receipt_unverified' }
+            Save-SocBundleJournal $transaction $phase $true
             if ([IO.File]::ReadAllText($pending) -cne $transaction.Token) { throw 'Bundle reservation changed.' }
             Remove-Item -LiteralPath $pending
-            Write-Host 'Both collectors active. Local SYSTEM/config/auth checks passed; central document receipt is NOT yet verified.'
+            if ($EnrollmentReceipt) { Write-Host 'Cloud SOC installation completed. Both collectors active and central receipt verified.' }
+            else { Write-Host 'Both collectors active. Local SYSTEM/config/auth checks passed; central document receipt is NOT yet verified.' }
         }
         $rollback = {
             foreach ($member in $members) {
@@ -272,7 +284,15 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
             }
         }
         Invoke-SocBundleSequence $prepare $commit $rollback
+    } catch {
+        if ($EnrollmentAbort) { & $EnrollmentAbort }
+        throw
     } finally {
+        if ($state.Enrollment) {
+            $state.Enrollment.host.Dispose()
+            $state.Enrollment.network.Dispose()
+            $state.Enrollment=$null
+        }
         if ($held) { $mutex.ReleaseMutex() }
         $mutex.Dispose()
     }

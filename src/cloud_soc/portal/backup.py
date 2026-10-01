@@ -30,6 +30,7 @@ SCHEMAS = {
 MAX_BYTES = 1024 ** 3
 MANIFEST = "manifest.json"
 KEY_HISTORY_COLUMNS = SCHEMAS["packages.sqlite3"]["issued_keys"] + "scope expiration target_label package_name package_os organization revoked_at checked_at server_state".split()
+ENROLLMENT_COLUMNS = "id token_hash package_id package_sha256 spec target_label days created expires deadline state attempt_hash sealed nonce key_ids agents completed".split()
 
 
 class BackupError(Exception):
@@ -96,10 +97,14 @@ def inspect_database(path, name, budget):
         objects = db.execute("SELECT type,name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").fetchall()
         if any(kind not in ("table", "index") for kind, _ in objects):
             raise BackupError("Unexpected database schema objects.")
-        if {name for kind, name in objects if kind == "table"} != set(SCHEMAS[name]):
+        tables = {table for kind, table in objects if kind == "table"}
+        schema = dict(SCHEMAS[name])
+        if name == "packages.sqlite3" and "enrollments" in tables:
+            schema["enrollments"] = ENROLLMENT_COLUMNS
+        if tables != set(schema):
             raise BackupError("Unsupported database schema; use the matching application version.")
         counts = {}
-        for table, columns in SCHEMAS[name].items():
+        for table, columns in schema.items():
             accepted = [columns]
             if name == "packages.sqlite3" and table == "issued_keys":
                 accepted.append(KEY_HISTORY_COLUMNS)
@@ -227,7 +232,8 @@ def verify(source, *, seconds=60, max_bytes=MAX_BYTES):
         for entry in report["files"]:
             if (set(entry) != {"name", "bytes", "sha256", "counts"} or type(entry["bytes"]) is not int
                     or not 4096 <= entry["bytes"] <= max_bytes or not re.fullmatch("[0-9a-f]{64}", entry["sha256"])
-                    or set(entry["counts"]) != set(SCHEMAS[entry["name"]])
+                    or set(entry["counts"]) not in (set(SCHEMAS[entry["name"]]),
+                        set(SCHEMAS[entry["name"]]) | ({"enrollments"} if entry["name"] == "packages.sqlite3" else set()))
                     or any(type(n) is not int or n < 0 for n in entry["counts"].values())):
                 raise ValueError
     except (ValueError, TypeError, KeyError, AttributeError):

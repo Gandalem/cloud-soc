@@ -31,9 +31,10 @@ try {
     $principal = New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount -RunLevel Highest
     Register-ScheduledTask -TaskName $policyName -Action $action -Principal $principal | Out-Null
     $policyCreated = $true
+    $previousRun = (Get-ScheduledTaskInfo -TaskName $policyName).LastRunTime
     $started = (Get-Date).AddSeconds(-1)
     Start-ScheduledTask $policyName
-    Wait-SocTask -Name $policyName -Started $started -TimeoutSeconds 30
+    Wait-SocTask -Name $policyName -Started $started -PreviousRun $previousRun -TimeoutSeconds 30
     $result.policy_before = (Get-Content -LiteralPath $policyPath -Raw).Trim()
     Build-SocNativeDiscovery -Root $root -Source (Split-Path -Parent $PSScriptRoot)
     Invoke-SocDiscoveryProbe $root
@@ -49,9 +50,10 @@ try {
     if (-not $failed) { throw 'Invalid policy unexpectedly succeeded' }
     $diagnostic = Get-Content -LiteralPath (Join-Path $root 'discovery-diagnostic.json') -Raw | ConvertFrom-Json
     if ($diagnostic.status -ne 'error' -or $diagnostic.stage -ne 'settings' -or (Get-FileHash -LiteralPath $input).Hash -cne $beforeHash) { throw 'Error evidence or input preservation failed' }
+    $previousRun = (Get-ScheduledTaskInfo -TaskName $policyName).LastRunTime
     $started = (Get-Date).AddSeconds(-1)
     Start-ScheduledTask $policyName
-    Wait-SocTask -Name $policyName -Started $started -TimeoutSeconds 30
+    Wait-SocTask -Name $policyName -Started $started -PreviousRun $previousRun -TimeoutSeconds 30
     $result.policy_after = (Get-Content -LiteralPath $policyPath -Raw).Trim()
     if ($result.policy_before -ne $result.policy_after) { throw 'SYSTEM policy changed' }
     $result.passed = $true
