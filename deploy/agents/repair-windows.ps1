@@ -49,8 +49,9 @@ function Assert-SocRepairIdentity($Service, $Config, [string]$Command, [string]$
     if ($Config.'filebeat.config.inputs'.path -ine (Join-Path $Root 'inputs\*.yml')) { throw 'Unsupported input configuration path.' }
 }
 
-function Assert-SocRepairDistribution([string]$Root, [string]$Version, [string]$Hash) {
-    $archive = Join-Path $Root "filebeat-$Version-windows-x86_64.zip"
+function Assert-SocRepairDistribution([string]$Root, [string]$Version, [string]$Hash, [string]$Beat = 'filebeat') {
+    if ($Beat -notin @('filebeat','packetbeat')) { throw 'Unsupported recovery distribution.' }
+    $archive = Join-Path $Root "$Beat-$Version-windows-x86_64.zip"
     if ((Get-FileHash -LiteralPath $archive -Algorithm SHA512 -ErrorAction Stop).Hash -ine $Hash) { throw 'Existing distribution checksum mismatch; no code was executed.' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::OpenRead($archive)
@@ -58,7 +59,7 @@ function Assert-SocRepairDistribution([string]$Root, [string]$Version, [string]$
     try {
         $expected = @{}
         foreach ($entry in $zip.Entries) {
-            if (-not $entry.FullName.StartsWith("filebeat-$Version-windows-x86_64/", [StringComparison]::Ordinal) -or
+            if (-not $entry.FullName.StartsWith("$Beat-$Version-windows-x86_64/", [StringComparison]::Ordinal) -or
                 $entry.FullName -match '(^|/)\.\.(/|$)|[\\:]') { throw 'Invalid distribution member.' }
             if (-not $entry.Name) { continue }
             $path = Join-Path $Root ($entry.FullName.Replace('/', '\'))
@@ -67,7 +68,7 @@ function Assert-SocRepairDistribution([string]$Root, [string]$Version, [string]$
             if ((Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash -cne $digest) { throw 'Installed distribution was modified; automatic recovery refused.' }
             $expected[$path] = $true
         }
-        foreach ($file in Get-SocRepairTree (Join-Path $Root "filebeat-$Version-windows-x86_64")) {
+        foreach ($file in Get-SocRepairTree (Join-Path $Root "$Beat-$Version-windows-x86_64")) {
             if (-not $file.PSIsContainer -and -not $expected.ContainsKey($file.FullName)) { throw 'Unexpected installed distribution file.' }
         }
     } finally { $sha.Dispose(); $zip.Dispose() }

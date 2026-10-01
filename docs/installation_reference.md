@@ -140,7 +140,7 @@ Get-WinEvent -ListLog * -Force | Select-Object LogName,IsEnabled,LogType
 .\install.ps1 -UpdateDiscovery
 ```
 
-`-DryRun`은 읽기 전용 점검이며 SYSTEM 실행/중앙 수신 검증은 아닙니다. 갱신 완료 후 수집 품질 화면의 같은 수집기 보고 생성·수신 시각을 확인합니다. 중지된 설치는 지원 조건을 확인한 **로그 전용 패키지의 복구 경로**를 사용하며 `-Repair`와 `-UpdateDiscovery`를 함께 쓰지 않습니다. 실행 정책에 막히면 [미서명 스크립트 안내](#windows-미서명-스크립트-차단)부터 확인하세요. 상세 절차: [Discovery 갱신](windows_discovery_update.md), [중지 설치 복구](windows_install_recovery.md).
+`-DryRun`은 읽기 전용 점검이며 SYSTEM 실행/중앙 수신 검증은 아닙니다. 갱신 완료 후 수집 품질 화면의 같은 수집기 보고 생성·수신 시각을 확인합니다. Filebeat만 있는 중지 설치는 로그 전용 패키지의 복구 경로를 사용합니다. 두 서비스가 모두 있는 중지 설치는 2026-10-01 수정 코드로 새로 생성한 네트워크 포함 패키지의 제한적 통합 `-Repair`를 사용합니다(운영 배포·실제 통합 수신은 별도 검증). `-Repair`와 `-UpdateDiscovery`를 함께 쓰지 않습니다. 실행 정책에 막히면 [미서명 스크립트 안내](#windows-미서명-스크립트-차단)부터 확인하세요. 상세 절차: [Discovery 갱신](windows_discovery_update.md), [중지 설치 복구](windows_install_recovery.md).
 
 활성화된 PowerShell·Defender·Sysmon 등의 채널은 이름을 지정하지 않아도 탐색됩니다. `-AdditionalChannel`은 수집 범위를 제한하는 옵션이 아니라 **반드시 존재해야 하는 채널을 검사**하는 옵션입니다.
 
@@ -390,7 +390,7 @@ Get-Item -LiteralPath "$env:ProgramFiles\Cloud-SOC-Agent", "$env:ProgramFiles\Cl
     Select-Object FullName, LastWriteTime
 ```
 
-**폴더가 남아 있으면 바로 재설치하거나 재귀 삭제하지 않습니다.** 기존 `data`·keystore·서비스 유무와 pending 기록을 확인한 후 지원되는 복구 경로를 선택합니다. 이전 ZIP/순차 설치에서는 Filebeat 설치 후 Packetbeat 다운로드 실패 시 Filebeat만 실행 중일 수 있습니다. 최신 Windows 통합 ZIP은 두 준비가 끝난 뒤 서비스 등록을 진행하지만, 시작 후 실패·강제 종료에는 자료를 보존하고 자동 재개하지 않습니다. 어떤 경우에도 전체 설치를 무조건 되풀이하거나 pending 파일을 지워 우회하지 않습니다. 실제 전송 속도는 네트워크·프록시·Elastic 배포 서버에 따라 달라지며, 중앙 서버 캐시와 다운로드 이어받기는 아직 구현하지 않았습니다.
+**폴더가 남아 있으면 바로 재설치하거나 재귀 삭제하지 않습니다.** 기존 `data`·keystore·서비스 유무와 pending 기록을 확인한 후 지원되는 복구 경로를 선택합니다. 이전 ZIP/순차 설치에서는 Filebeat 설치 후 Packetbeat 다운로드 실패 시 Filebeat만 실행 중일 수 있습니다. 최신 Windows 통합 ZIP은 두 준비가 끝난 뒤 서비스 등록을 진행하지만, 시작 후 실패·강제 종료에는 자료를 보존합니다. 2026-10-01 로컬 수정본은 보호된 최종 준비 완료 기록과 중지된 설치가 일치하면 `-Repair`로 누락 서비스도 복원하며, 복구 자체 중단은 `-Repair -ResumeRepair -DryRun` 검사 후 명시적으로 재개합니다. 구버전·폴더 승격 도중 중단·누락 폴더·변조/불명확한 생성 상태·실행 중 수집기는 자동 채택하지 않습니다. [지원 조건과 명령](windows_install_recovery.md#복구-자체가-중단된-경우)을 먼저 확인하세요. 배포와 실제 두 서비스 검증은 별도입니다. 전체 설치를 무조건 되풀이하거나 pending 파일을 지워 우회하지 않습니다. 실제 전송 속도는 네트워크·프록시·Elastic 배포 서버에 따라 달라지며, 중앙 서버 캐시와 다운로드 이어받기는 아직 구현하지 않았습니다.
 
 ## 테스트와 현재 한계
 

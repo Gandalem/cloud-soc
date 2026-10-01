@@ -1,4 +1,14 @@
-# Fresh two-collector installation only. Existing installations are never adopted here.
+# Fresh installation and explicit recovery of a recognized stopped pair.
+. (Join-Path $PSScriptRoot 'bundle-repair-windows.ps1')
+
+function Get-SocBundleMembers {
+    return @(
+        @{Kind='host';Beat='filebeat';Service='cloud-soc-filebeat';Root=(Join-Path $env:ProgramFiles 'Cloud-SOC-Agent');Receipt=$null;Prepared=$null;Promoted=$false;Created=$false;
+          Hash='cdb07ad1e39e7c65cefcd7c71e1dfcfa4f92b00daafc132c78490e3e04f664f67403cdb925c5873a8441058d6de08d29790bf6776748edc63582f50174c508c8'},
+        @{Kind='network';Beat='packetbeat';Service='cloud-soc-packetbeat';Root=(Join-Path $env:ProgramFiles 'Cloud-SOC-Network');Receipt=$null;Prepared=$null;Promoted=$false;Created=$false;
+          Hash='d85de062273901fef2a1fe00b5b1dc4da01d764a65be72ccd2ae0e6d473e6a8cc8525244cf1c64a5f568416041118cef5ee44a2cd927a16315b255bad130cbac'}
+    )
+}
 function Assert-SocReceiptDestination([string]$Path) {
     Assert-SocLocalPath $Path
     $parent = Split-Path -Parent $Path
@@ -115,7 +125,13 @@ function Invoke-SocBundleSequence([scriptblock]$Prepare, [scriptblock]$Commit, [
 }
 
 function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$CaPath, [string]$Organization,
-    [string]$InterfaceGuid, [switch]$AllowUnavailableRevocation, [switch]$Repair, [switch]$DryRun) {
+    [string]$InterfaceGuid, [switch]$AllowUnavailableRevocation, [switch]$Repair, [switch]$DryRun, [switch]$ResumeRepair) {
+    if ($ResumeRepair -and -not $Repair) { throw 'Use -Repair -ResumeRepair together for verified interrupted recovery.' }
+    if ($Repair) {
+        Invoke-SocBundleRepair -Source $Source -Endpoint $Endpoint -CaPath $CaPath -Organization $Organization `
+            -InterfaceGuid $InterfaceGuid -AllowUnavailableRevocation:$AllowUnavailableRevocation -DryRun:$DryRun -ResumeRepair:$ResumeRepair
+        return
+    }
     $common = @{Endpoint=$Endpoint;CaPath=$CaPath;Organization=$Organization;AllowUnavailableRevocation=$AllowUnavailableRevocation}
     $hostInstaller = Join-Path $Source 'install-windows.ps1'
     $networkInstaller = Join-Path $Source 'install-network-windows.ps1'
@@ -126,17 +142,13 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
         if ($LASTEXITCODE -ne 0) { throw 'Network preview failed.' }
         return
     }
-    if ($Repair) { throw 'Combined repair is not yet supported. No collector was changed; use the supported log-only recovery package for Filebeat.' }
     Assert-SocAdministrator
     $mutex = New-Object Threading.Mutex($false, 'Global\Cloud-SOC-Bundle-Install')
     $held = $false
     $transaction = $null
     $pending = Join-Path $env:ProgramData 'Cloud-SOC\bundle-pending.json'
-    $state = @{ Started=$false; TaskCreated=$false; TaskXml=$null; CleanupSafe=$true }
-    $members = @(
-        @{Kind='host';Beat='filebeat';Service='cloud-soc-filebeat';Root=(Join-Path $env:ProgramFiles 'Cloud-SOC-Agent');Receipt=$null;Prepared=$null;Promoted=$false;Created=$false},
-        @{Kind='network';Beat='packetbeat';Service='cloud-soc-packetbeat';Root=(Join-Path $env:ProgramFiles 'Cloud-SOC-Network');Receipt=$null;Prepared=$null;Promoted=$false;Created=$false}
-    )
+    $state = @{ Started=$false; TaskCreated=$false; TaskRegistrationAttempted=$false; TaskXml=$null; CleanupSafe=$true }
+    $members = Get-SocBundleMembers
     try {
         try { $held = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $held=$true; throw 'Interrupted bundle detected. State retained; automatic adoption is not supported.' }
         if (-not $held) { throw 'Another bundle installation is active.' }
@@ -173,17 +185,19 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
             }
             # Both final configurations pass before any service is created or started.
             foreach ($member in $members) { Test-SocBundleMember $member.Root $member.Beat }
+            Save-SocBundleRecoveryIdentity $transaction $members
             if (Get-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -ErrorAction SilentlyContinue) { throw 'Discovery task appeared during preparation.' }
             foreach ($member in $members) {
                 $args = @{Name=$member.Service;DisplayName=('Cloud SOC ' + $member.Beat);BinaryPathName=(Get-SocBundleCommand $member.Root $member.Beat);StartupType='Manual'}
                 if ($member.Kind -eq 'network') { $args.DependsOn='npcap' }
-                New-Service @args | Out-Null
                 $member.Created=$true
+                New-Service @args | Out-Null
             }
             $action = New-SocNativeDiscoveryAction $members[0].Root
             $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
             $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -StartWhenAvailable
             # No repeating trigger until both services survive startup.
+            $state.TaskRegistrationAttempted=$true
             Register-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -Action $action -Principal $principal -Settings $settings | Out-Null
             $state.TaskCreated=$true
             $state.TaskXml=Export-ScheduledTask -TaskName 'Cloud-SOC-Discovery'
@@ -217,6 +231,8 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
             foreach ($member in $members) {
                 if (-not $member.Prepared -and (Test-Path -LiteralPath $member.Receipt)) { $state.CleanupSafe=$false }
             }
+            if ($state.TaskRegistrationAttempted -and -not $state.TaskCreated -and
+                (Get-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -ErrorAction SilentlyContinue)) { $state.CleanupSafe=$false }
             if ($state.TaskCreated) {
                 try {
                     Assert-SocBundleTask $state.TaskXml
@@ -228,6 +244,7 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
             foreach ($member in $members) {
                 if ($member.Created) {
                     try {
+                        if (-not (Get-Service -Name $member.Service -ErrorAction SilentlyContinue)) { continue }
                         Assert-SocBundleService $member
                         Stop-Service -Name $member.Service -ErrorAction Stop
                         (Get-Service -Name $member.Service).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))

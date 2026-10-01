@@ -147,6 +147,10 @@ class PortalTests(unittest.TestCase):
             self.assertIn("$LASTEXITCODE", launcher)
             self.assertIn("Invoke-SocWindowsBundle", launcher)
             self.assertIn("bundle-windows.ps1", archive.namelist())
+            self.assertEqual(archive.read("bundle-repair-windows.ps1"),
+                             (ROOT / "deploy/agents/bundle-repair-windows.ps1").read_bytes())
+            self.assertEqual(archive.read("bundle-resume-windows.ps1"),
+                             (ROOT / "deploy/agents/bundle-resume-windows.ps1").read_bytes())
             self.assertIn("[switch]$AllowUnavailableRevocation", launcher)
             self.assertIn("[switch]$Repair", launcher)
             self.assertIn("-Repair:$Repair", launcher)
@@ -204,6 +208,26 @@ class PortalTests(unittest.TestCase):
             self.assertNotIn("install-network-ubuntu.sh", archive.getnames())
             self.assertIn("discover-linux.sh", archive.getnames())
             self.assertNotIn(b"\r", archive.extractfile("install.sh").read())
+
+    def test_resume_flags_reject_unsafe_combinations_before_loading_collectors(self):
+        if os.name != "nt":
+            self.skipTest("Windows launcher")
+        for network in (False, True):
+            item = self.package({**SPEC, "name": f"resume-{network}", "network": network})
+            _, data = self.app.extensions["packages"].get(item["id"], archive=True)
+            with tempfile.TemporaryDirectory() as directory:
+                entry = Path(directory) / "install.ps1"
+                with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                    entry.write_bytes(archive.read("install.ps1"))
+                flags = [["-ResumeRepair"], ["-Repair", "-ResumeRepair", "-UpdateDiscovery"]]
+                if not network:
+                    flags.append(["-Repair", "-ResumeRepair"])
+                for shell in ("powershell.exe", "pwsh"):
+                    for arguments in flags:
+                        result = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-File", str(entry), *arguments],
+                                                capture_output=True, timeout=30)
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn(b"ResumeRepair", result.stderr)
 
     def test_invalid_spec_duplicate_and_delete(self):
         for change in ({"name": "../bad"}, {"name": "a\n"}, {"organization": "${SECRET}"}, {"os": "other"}, {"os": []}, {"os": {}}, {"network": "false"}, {"endpoint": "https://attacker.test"}, {"description": "x" * 501}):
@@ -267,7 +291,8 @@ class PortalTests(unittest.TestCase):
                     if platform == "windows":
                         with zipfile.ZipFile(io.BytesIO(data)) as archive:
                             archive.extractall(folder)
-                        args = [shell, "-NoProfile", "-NonInteractive", "-File", str(folder / "install.ps1"), "-DryRun", "-Repair"]
+                        # Fresh-install preview is distinct from read-only inspection of an existing stopped pair.
+                        args = [shell, "-NoProfile", "-NonInteractive", "-File", str(folder / "install.ps1"), "-DryRun"]
                         nic = ["-InterfaceGuid", "12345678-1234-1234-1234-123456789abc"]
                     else:
                         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:

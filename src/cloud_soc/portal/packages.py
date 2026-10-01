@@ -15,7 +15,7 @@ import zipfile
 
 VERSION = "9.5.2"
 FILES = {
-    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "repair-windows.ps1", "update-discovery-windows.ps1", "bundle-windows.ps1", "native-windows.ps1", "discovery-native.cs", "enable-rejection-evidence.ps1", "privacy.js", "policy.py"],
+    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "repair-windows.ps1", "update-discovery-windows.ps1", "bundle-windows.ps1", "bundle-repair-windows.ps1", "bundle-resume-windows.ps1", "native-windows.ps1", "discovery-native.cs", "enable-rejection-evidence.ps1", "privacy.js", "policy.py"],
     "ubuntu": ["install-ubuntu.sh", "discover-linux.sh", "privacy.js", "policy.py"],
 }
 NETWORK_FILES = {
@@ -73,8 +73,9 @@ bash "$HERE/install-network-ubuntu.sh" "${ARGS[@]}" --interface "$DEVICE" --dry-
             text += 'bash "$HERE/install-network-ubuntu.sh" "${ARGS[@]}" --interface "$DEVICE" "${DRY[@]}"\n'
         return "install.sh", text
     text = f'''#requires -Version 5.1
-param([string]$InterfaceGuid, [switch]$DryRun, [switch]$AllowUnavailableRevocation, [switch]$Repair, [switch]$UpdateDiscovery)
+param([string]$InterfaceGuid, [switch]$DryRun, [switch]$AllowUnavailableRevocation, [switch]$Repair, [switch]$UpdateDiscovery, [switch]$ResumeRepair)
 $ErrorActionPreference = 'Stop'
+if ($ResumeRepair -and (-not $Repair -or $UpdateDiscovery)) {{ throw 'Use -Repair -ResumeRepair together, without -UpdateDiscovery.' }}
 $common = @{{ Endpoint = '{endpoint}'; CaPath = (Join-Path $PSScriptRoot 'ca.crt'); Organization = '{org}'; AllowUnavailableRevocation = $AllowUnavailableRevocation }}
 if ($UpdateDiscovery) {{
     & (Join-Path $PSScriptRoot 'install-windows.ps1') @common -UpdateDiscovery -DryRun:$DryRun -Repair:$Repair
@@ -86,12 +87,13 @@ if ($UpdateDiscovery) {{
 . (Join-Path $PSScriptRoot 'repair-windows.ps1')
 . (Join-Path $PSScriptRoot 'bundle-windows.ps1')
 try {
-    Invoke-SocWindowsBundle @common -Source $PSScriptRoot -InterfaceGuid $InterfaceGuid -DryRun:$DryRun -Repair:$Repair
+    Invoke-SocWindowsBundle @common -Source $PSScriptRoot -InterfaceGuid $InterfaceGuid -DryRun:$DryRun -Repair:$Repair -ResumeRepair:$ResumeRepair
     exit 0
 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
 '''
     else:
-        text += '''& (Join-Path $PSScriptRoot 'install-windows.ps1') @common -DryRun:$DryRun -Repair:$Repair
+        text += '''if ($ResumeRepair) { throw 'ResumeRepair requires the complete Windows two-collector bundle.' }
+& (Join-Path $PSScriptRoot 'install-windows.ps1') @common -DryRun:$DryRun -Repair:$Repair
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 '''
     return "install.ps1", text
@@ -122,12 +124,16 @@ def build_bundle(spec, source, ca):
         "Discovery-only update preserves Filebeat, keys and queued data; network installation is skipped.\n"
         "Protected backup and isolated SYSTEM checks precede replacement; central receipt still needs verification.\n"
         "Windows .NET Framework 4.x compiler must be present and trusted; no PowerShell policy is changed.\n"
-        "Recovery preserves server, organization, CA, key and queues; it is not server migration or a network repair.\n"
+        "Recovery preserves server, organization, CA, keys, capture NIC and queues; it is not migration or a Beat binary upgrade.\n"
         "Network collection requires an explicit NIC; Windows also needs approved Npcap.\n"
         "Enter the host key at Filebeat's keystore prompt; enter the separate network key at Packetbeat's prompt.\n"
         "Fresh Windows network bundles prepare both collectors before any permanent collector service starts.\n"
         "Before startup, owned preparation is rolled back; after a start attempt, queues/keys are retained and owned services disabled.\n"
-        "Combined existing-installation repair and interrupted resume are not yet supported; a pending receipt blocks unsafe retry.\n"
+        "For a recognized stopped Windows pair, use install.ps1 -Repair -DryRun, then -Repair to accept protected backup/recovery.\n"
+        "Existing services must be stopped and recognized; running or unknown services are not replaced.\n"
+        "Missing services are recreated only for a final-ready bundle with matching protected ownership/file records and complete installed roots.\n"
+        "Interrupted Repair: first use -Repair -ResumeRepair -DryRun; then -Repair -ResumeRepair for a verified stopped state.\n"
+        "Legacy, ambiguous or changed interrupted states remain blocked; automatic boot resume and full binary upgrades are not supported.\n"
         "Linux network installation is still sequential; a network failure can leave Filebeat running.\n"
         "Deleting this package does not uninstall an agent or revoke its API keys.\n"
     ).encode("utf-8")

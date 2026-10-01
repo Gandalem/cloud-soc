@@ -37,6 +37,8 @@ function Remove-SocOwnedDirectory { param($Path,$ExpectedPath,$Token)
     }
 }
 function Save-SocBundleJournal { param($Transaction,$Phase,$StartAttempted) Step ('journal-' + $Phase) }
+function Save-SocBundleRecoveryIdentity { param($Transaction,$Members) Step 'recovery-identity' }
+function Invoke-SocBundleRepair { param($Source,$Endpoint,$CaPath,$Organization,$InterfaceGuid,[switch]$AllowUnavailableRevocation,[switch]$DryRun,[switch]$ResumeRepair) Step 'repair-dispatch' }
 function Get-Service { param($Name,$ErrorAction)
     if ($global:Services.ContainsKey($Name)) {
         $result = [pscustomobject]@{Status='Running'}
@@ -46,6 +48,7 @@ function Get-Service { param($Name,$ErrorAction)
 }
 function New-Service { param($Name,$DisplayName,$BinaryPathName,$StartupType,$DependsOn)
     Step ($Name + '-create'); $global:Services[$Name]=$true
+    Step ($Name + '-create-after')
 }
 function Start-Service { param($Name) Step ($Name + '-start') }
 function Stop-Service { param($Name,$ErrorAction) Step ($Name + '-stop') }
@@ -55,7 +58,7 @@ function Get-ScheduledTask { param($TaskName,$ErrorAction) if ($global:Task) { r
 function New-SocNativeDiscoveryAction { param($Root) return @{} }
 function New-ScheduledTaskPrincipal { param($UserId,$LogonType,$RunLevel) return @{} }
 function New-ScheduledTaskSettingsSet { param($MultipleInstances,$ExecutionTimeLimit,[switch]$StartWhenAvailable) return @{} }
-function Register-ScheduledTask { param($TaskName,$Action,$Principal,$Settings) Step 'task-register'; $global:Task=$true }
+function Register-ScheduledTask { param($TaskName,$Action,$Principal,$Settings) Step 'task-register'; $global:Task=$true; Step 'task-register-after' }
 function Export-ScheduledTask { param($TaskName) return '<synthetic />' }
 function Start-ScheduledTask { param($TaskName) Step 'task-start' }
 function Wait-SocTask { param($Name,$Started) Step 'task-wait' }
@@ -85,8 +88,8 @@ exit 0
     $canary = Join-Path $testRoot 'existing-queue-and-key.canary'
     [IO.File]::WriteAllText($canary,'existing-state-unchanged')
     foreach ($failure in @('', 'host-preflight','network-preflight','host-prepare','network-prepare',
-        'host-move','network-move','filebeat-validate','packetbeat-validate','cloud-soc-filebeat-create',
-        'cloud-soc-packetbeat-create','task-register','task-wait','task-report','cloud-soc-filebeat-start',
+        'host-move','network-move','filebeat-validate','packetbeat-validate','recovery-identity','cloud-soc-filebeat-create',
+        'cloud-soc-packetbeat-create','cloud-soc-filebeat-create-after','cloud-soc-packetbeat-create-after','task-register','task-register-after','task-wait','task-report','cloud-soc-filebeat-start',
         'cloud-soc-packetbeat-start','cloud-soc-packetbeat-Automatic','task-trigger')) {
         $global:Calls = New-Object 'Collections.Generic.List[string]'
         $global:Failure = $failure
@@ -108,6 +111,9 @@ exit 0
             if ($failed -and -not (Test-Path -LiteralPath $pending)) { throw 'Post-start recovery receipt missing' }
         } elseif ($failed -and ($Calls -contains 'cloud-soc-packetbeat-start')) { throw 'Network started early' }
         if ([IO.File]::ReadAllText($canary) -cne 'existing-state-unchanged') { throw 'Existing state changed' }
+        if ($failure -ceq 'task-register-after' -and (-not (Test-Path -LiteralPath $pending) -or $Calls -contains 'remove-owned')) {
+            throw 'Ambiguous task registration allowed unsafe directory deletion'
+        }
     }
     $global:Failure=''; $global:Calls.Clear()
     [IO.File]::WriteAllText($pending,'retained-interrupted-fixture')
@@ -115,9 +121,8 @@ exit 0
     catch { if ($_.Exception.Message -notmatch 'receipt requires recovery') { throw } }
     if (($Calls -join ',') -match 'prepare|start|remove') { throw 'Interrupted state was adopted' }
     $global:Calls.Clear()
-    try { Invoke-SocWindowsBundle -Source $testRoot -Endpoint 'https://soc.example.invalid' -CaPath 'C:\synthetic\ca.crt' -Organization 'synthetic' -Repair; throw 'Missing repair block' }
-    catch { if ($_.Exception.Message -notmatch 'Combined repair') { throw } }
-    if ($Calls.Count) { throw 'Unsupported repair changed host' }
+    Invoke-SocWindowsBundle -Source $testRoot -Endpoint 'https://soc.example.invalid' -CaPath 'C:\synthetic\ca.crt' -Organization 'synthetic' -Repair -DryRun
+    if (($Calls -join ',') -cne 'repair-dispatch') { throw 'Repair preview entered the fresh-install flow' }
     Write-Host 'Bundle mocked phase ordering, failures, preservation and retry guards: passed.'
 } finally {
     $env:ProgramData = $oldProgramData
