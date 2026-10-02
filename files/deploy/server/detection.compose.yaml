@@ -1,0 +1,18 @@
+# Optional overlay: prepare detector.key first. Runs separately from normalizer.
+services:
+  detector:
+    build:
+      context: ../..
+      dockerfile: deploy/server/Dockerfile
+    command: ["python", "-m", "cloud_soc.detection", "--run", "--es-url", "https://elasticsearch:9200", "--ca-file", "/run/certs/ca.crt", "--api-key-file", "/run/keys/detector.key", "--max-documents", "${SOC_DETECTION_MAX_DOCUMENTS:-20000}"]
+    restart: unless-stopped
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+    volumes:
+      - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+      - ${SOC_STATE_DIR}/secrets/detector.key:/run/keys/detector.key:ro
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    mem_limit: 512m
