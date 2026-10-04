@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="shell.css">
   <script src="shell.js" defer></script>
   <script src="logs.js" defer></script>
+  <script src="source-view.js" defer></script>
 </head>
 <body class="agents-page logs-page">
   <a class="skip-link" href="#main">본문으로 이동</a>
@@ -49,6 +50,15 @@
     <p id="log-detail-state" role="status">조회 중</p>
     <p class="log-detail-footnote">제한된 메타데이터 상세입니다. 메시지 본문·전체 원문은 제공하지 않습니다. 목록 이후 변경되거나 삭제된 문서는 상세 조회 시 결과가 달라질 수 있습니다.</p>
     <dl id="log-detail-fields"></dl>
+    <section id="source-panel" class="source-panel" aria-label="보호된 원문 필드" hidden>
+      <h3>보호된 원문 필드</h3>
+      <p>허용된 저장 필드만 표시합니다. 본문·명령 인자·비밀·알 수 없는 필드는 제외하며 전체 원본의 복사본이 아닙니다. 조회 사유와 접근 결과를 기록합니다.</p>
+      <label for="source-purpose">조회 사유</label>
+      <select id="source-purpose"><option value="investigation">사건 조사</option><option value="receipt_validation">수신 대조</option><option value="support">운영 지원</option></select>
+      <button id="source-read" type="button">원문 필드 조회</button>
+      <p id="source-state" role="status"></p>
+      <pre id="source-json" tabindex="0" aria-label="마스킹된 원문 필드 JSON" hidden></pre>
+    </section>
   </dialog>
   <noscript><p>로그 조회에는 JavaScript가 필요합니다. 이 페이지는 샘플 데이터를 대신 표시하지 않습니다.</p></noscript>
 </body>

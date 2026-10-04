@@ -26,7 +26,9 @@ SCHEMAS = {
         "case_history": "seq case_id actor at version action changes note".split(),
         "case_requests": "token actor fingerprint response".split(),
     },
+    "log-access.sqlite": {"source_access": "seq at actor role purpose reference_sha256 outcome policy_version".split()},
 }
+LEGACY_DATABASES = set(SCHEMAS) - {"log-access.sqlite"}
 MAX_BYTES = 1024 ** 3
 MANIFEST = "manifest.json"
 KEY_HISTORY_COLUMNS = SCHEMAS["packages.sqlite3"]["issued_keys"] + "scope expiration target_label package_name package_os organization revoked_at checked_at server_state".split()
@@ -169,6 +171,8 @@ def backup(source, target, *, seconds=60, max_bytes=MAX_BYTES):
     checked_path(source / names[0])
     if os.path.lexists(source / "cases.sqlite"):
         names.append("cases.sqlite")
+    if os.path.lexists(source / "log-access.sqlite"):
+        names.append("log-access.sqlite")
     sizes = []
     for name in names:
         path = checked_path(source / name)
@@ -181,8 +185,9 @@ def backup(source, target, *, seconds=60, max_bytes=MAX_BYTES):
         budget.check(size)
         sizes.append(size)
     target = destination(target, source, sum(sizes) * 2)
-    report = {"format": 1, "kind": "portal-sqlite-backup", "created_at": datetime.now(timezone.utc).isoformat(),
-              "consistency": "per_database", "missing": sorted(set(SCHEMAS) - set(names)), "files": []}
+    schema_names = set(SCHEMAS) if "log-access.sqlite" in names else LEGACY_DATABASES
+    report = {"format": 2 if "log-access.sqlite" in names else 1, "kind": "portal-sqlite-backup", "created_at": datetime.now(timezone.utc).isoformat(),
+              "consistency": "per_database", "missing": sorted(schema_names - set(names)), "files": []}
     for name in names:
         output = target / name
         with exclusive_file(output):
@@ -217,15 +222,16 @@ def verify(source, *, seconds=60, max_bytes=MAX_BYTES):
     try:
         report = json.loads(manifest.read_text(encoding="utf-8"))
         if (set(report) != {"format", "kind", "created_at", "consistency", "missing", "files"}
-                or type(report["format"]) is not int or report["format"] != 1
+                or type(report["format"]) is not int or report["format"] not in (1, 2)
                 or report["kind"] != "portal-sqlite-backup" or report["consistency"] != "per_database"
                 or not isinstance(report["created_at"], str)
                 or datetime.fromisoformat(report["created_at"]).tzinfo is None
-                or not isinstance(report["files"], list) or not 1 <= len(report["files"]) <= 2):
+                or not isinstance(report["files"], list) or not 1 <= len(report["files"]) <= (2 if report["format"] == 1 else 3)):
             raise ValueError
         names = [entry["name"] for entry in report["files"]]
-        if (len(names) != len(set(names)) or "packages.sqlite3" not in names or set(names) - set(SCHEMAS)
-                or report["missing"] != sorted(set(SCHEMAS) - set(names))):
+        schema_names = LEGACY_DATABASES if report["format"] == 1 else set(SCHEMAS)
+        if (len(names) != len(set(names)) or "packages.sqlite3" not in names or set(names) - schema_names
+                or report["missing"] != sorted(schema_names - set(names))):
             raise ValueError
         if {path.name for path in source.iterdir()} != set(names) | {MANIFEST}:
             raise ValueError

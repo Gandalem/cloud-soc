@@ -17,4 +17,5 @@ COPY deploy/server/enrollment-maintenance.py /app/deploy/server/enrollment-maint
 RUN find /app/src /app/prototype /app/deploy -type d -exec chmod 755 {} + \
     && find /app/src /app/prototype /app/deploy -type f -exec chmod 644 {} +
 USER 1000:1000
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "4", "--timeout", "60", "--access-logfile", "-", "cloud_soc.portal.app:create_app()"]
+# Do not log URLs/query strings, Basic usernames, Referer or request bodies.
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "4", "--timeout", "60", "--access-logfile", "-", "--access-logformat", "%(m)s %(s)s %(L)s", "cloud_soc.portal.app:create_app()"]

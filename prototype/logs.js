@@ -106,6 +106,7 @@
     $("#log-next").disabled = busy || page < 0 || (!pages[page]?.next_cursor && page >= pages.length - 1);
   }
   function clearDetail() {
+    window.cloudSocSource?.close();
     detailGeneration++; detailPending?.abort(); detailPending = null;
     $("#log-detail-fields").replaceChildren();
     $("#log-detail-state").textContent = "";
@@ -185,6 +186,7 @@
         $("#log-detail-fields").append(dt, dd);
       }
       $("#log-detail-state").textContent = "제한된 메타데이터 · 전체 원문 접근 제한";
+      window.cloudSocSource?.open(data.row.reference);
     } catch (error) {
       if (ticket === detailGeneration) $("#log-detail-state").textContent = error.name === "AbortError" || error instanceof TypeError ? "상세 조회 연결에 실패했습니다. 다시 열어 주세요." : error.message;
     }
@@ -206,7 +208,7 @@
     if (!busy && button && page >= 0) { const row = pages[page].rows[Number(button.dataset.row)]; if (row) detail(row); }
   });
   $("#log-detail-close").addEventListener("click", clearDetail);
-  $("#log-detail-dialog").addEventListener("cancel", () => { detailGeneration++; detailPending?.abort(); });
+  $("#log-detail-dialog").addEventListener("cancel", () => { detailGeneration++; detailPending?.abort(); window.cloudSocSource?.close(); });
   window.addEventListener("pagehide", () => { generation++; pending?.abort(); clearDetail(); pages = []; page = -1; clearRows(); });
   window.addEventListener("pageshow", event => { if (event.persisted) refresh(); });
   refresh();

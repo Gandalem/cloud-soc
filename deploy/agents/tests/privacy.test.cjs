@@ -33,7 +33,7 @@ test('privacy removes duplicate raw, arguments and structured credentials', () =
   assert.ok(!JSON.stringify(event.source).includes('CANARY'));
   assert.equal(event.source.event.code, '4625');
   assert.equal(event.source.message, undefined);
-  assert.equal(event.source.labels.privacy_policy, 'v2');
+  assert.equal(event.source.labels.privacy_policy, 'v3');
 });
 
 test('whole suspicious strings and oversized fields are withheld before queueing', () => {
@@ -70,4 +70,14 @@ test('native Linux audit argument records are withheld, not decoded and publishe
     assert.equal(run({labels: {log_source: 'linux_file'}, message: `type=${type} msg=audit(1790000000.1:1): proctitle=43414e415259`}).cancelled, true);
   }
   assert.equal(run({labels: {log_source: 'linux_file'}, message: 'type=SYSCALL msg=audit(1790000000.1:1): syscall=59'}).cancelled, false);
+});
+
+test('v3 also withholds secret options, non-HTTP URI credentials and hidden separators', () => {
+  for (const message of ['--password PRIVATE_CANARY', '/token PRIVATE_CANARY',
+    'postgres://user:PRIVATE_CANARY@host/db', 'ssh://host/path?unknown=PRIVATE_CANARY', 'abc\u200bPRIVATE_CANARY']) {
+    const event=run({message});
+    assert.equal(event.source.message,'[REDACTED]');
+    assert.equal(event.source.labels.privacy_policy,'v3');
+    assert.ok(!JSON.stringify(event.source).includes('PRIVATE_CANARY'));
+  }
 });
