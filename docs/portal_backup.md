@@ -6,6 +6,8 @@ P2-02 중 **사건/메모·패키지/키 발급 이력의 유실 방지**를 위
 
 2026-10-04 P2-01 후속 코드: `log-access.sqlite`의 보호된 원문 접근 감사도 백업한다. 감사 DB가 존재하면 manifest format 2로 최대 세 DB를 포함한다. 기존 format 1 백업의 verify/격리 restore는 유지한다. 새 포털은 원문 기능 차단 상태에서도 감사 DB를 만들므로 배포 버전과 맞는 백업 도구를 사용한다. 정책 파일·조회 계정 해시는 별도 보호 백업 대상이다. format 2 합성 감사 DB 백업/복원은 로컬 검증했으며 VM의 실제 감사 백업·배포·운영 복구 완료는 아니다([조회 정책](log_access_policy.md)).
 
+2026-10-04 실제 후속 검증: 위 문단의 로컬 단계 이후 지정 VMware에서 초기 format 1 및 새 감사 포함 format 2의 online/stopped/final backup·verify·새 경로 restore·verify를 통과했다. 실제 감사 34개 행의 모든 컬럼·순번과 기존 패키지 10/키 이력 18/등록 15·사건 테이블을 대조했다([보고서](p2_source_access_validation_20261004.md)). 복원은 격리 경로에만 했으며 운영 DB 교체·ES 스냅샷·외부 백업·보존 기간 승인은 별도다.
+
 | 대상 | 포함 여부 |
 | --- | --- |
 | `packages.sqlite3` | 설치 묶음 BLOB·설정·해시·발급한 키 ID 이력 포함, 필수 |

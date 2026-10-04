@@ -58,6 +58,10 @@ discover_linux_logs() {
                 status=symlink
             elif [[ ! -f $path || ! -r $path ]]; then
                 status=unreadable
+            # Provisioning output can embed user-data, configuration and multiline
+            # secrets. Exclude the whole source before reading or regex masking.
+            elif [[ ${path,,} == /var/log/installer/* || ${path,,} =~ /(autoinstall-user-data|user-data|cloud-init(-output)?\.log)(\.|/|$) ]]; then
+                status=binary_archive_or_secret
             elif [[ ${path,,} =~ \.(gz|xz|bz2|zip|zst|journal|journal~|db|sqlite|pem|key|crt|cer|der|p12|pfx|docx?|xlsx?|pdf|kdbx)$ || ${path,,} =~ /(wtmp|btmp|lastlog|faillog|tallylog|\.env|id_rsa|id_ed25519|id_ecdsa|credentials|secrets?)(\.|/|$) ]]; then
                 status=binary_archive_or_secret
             else

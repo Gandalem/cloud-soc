@@ -39,7 +39,7 @@
 #log-detail-fields dt { color:#667d95; }
 .source-panel { margin-top:24px; border-top:1px solid #c3d3e1; padding-top:16px; }
 .source-panel p { font-size:12px; line-height:1.8; color:#567086; }
-.source-panel select { max-width:100%; padding:8px; margin:8px; }
+.source-panel select { max-width:100%; padding:8px; margin:8px; background:#fff; color:#183b57; border:1px solid #c3d3e1; }
 #source-json { white-space:pre-wrap; overflow-wrap:anywhere; overflow:auto; max-width:100%; max-height:600px; font-size:11px; line-height:1.7; border:1px solid #c3d3e1; background:white; padding:12px; }
 @media (max-width:720px) {
   .log-list-heading { flex-direction:column; padding:16px; }
