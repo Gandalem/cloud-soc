@@ -6,13 +6,15 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+from uuid import uuid4
 
-from cloud_soc.detection.engine import detect_rule, event_matches_rule, event_fingerprint, parse_event_timestamp, event_evidence, build_group_key
+from cloud_soc.detection.engine import detect_rule, event_fingerprint, parse_event_timestamp, event_evidence, build_group_key, get_field_value, rule_revision
 from cloud_soc.detection.worker import approved_rules, ALERTS
 from cloud_soc.elastic.pagination import fetch_all_hits
 from cloud_soc.elastic.repository import ensure_provenance_mapping, save_security_alert
 from cloud_soc.main import make_alert_id, build_security_alert
 from cloud_soc.processing.contract import NORMALIZED, STATUS
+from cloud_soc.detection.telemetry import evaluate, exclusion, stats_for, runs, queue_committed_runs, flush_outbox
 
 
 def utc(value):
@@ -23,7 +25,7 @@ def utc(value):
 
 
 def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
-                    lateness_seconds=900, scanner=None, source_id='local', accept_legacy_exclusion=False, include_cloud=False):
+                    lateness_seconds=900, scanner=None, source_id='local', accept_legacy_exclusion=False, include_cloud=False, include_sequence=False):
     """Late events beyond the finalized frontier are counted, never silently replayed.
 
     A 15-minute normalization receipt overlap handles bounded refresh/write delays.
@@ -41,13 +43,15 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
         os.close(descriptor)
     except FileExistsError:
         pass
-    rules = approved_rules(include_cloud=include_cloud)
+    rules = approved_rules(include_cloud=include_cloud, include_sequence=include_sequence)
     identity = event_fingerprint({'rules': rules, 'start': start.isoformat(), 'lateness': lateness_seconds,
-                                  'index': NORMALIZED, 'source': source_id, 'legacy_exclusion': accept_legacy_exclusion})
+                                  'index': NORMALIZED, 'source': source_id, 'legacy_exclusion': accept_legacy_exclusion,
+                                  'runtime_contract': 2, 'rule_versions': [rule_revision(rule) for rule in rules]})
     with closing(sqlite3.connect(path, timeout=0)) as db:
         db.execute('PRAGMA journal_mode=WAL')
         db.execute('PRAGMA synchronous=FULL')
         db.execute('CREATE TABLE IF NOT EXISTS runtime (id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL)')
+        db.execute('CREATE TABLE IF NOT EXISTS telemetry_outbox (id TEXT PRIMARY KEY, body TEXT NOT NULL)')
         db.execute('BEGIN IMMEDIATE')
         row = db.execute('SELECT body FROM runtime WHERE id=1').fetchone()
         saved = json.loads(row[0]) if row else {'identity': identity, 'checkpoint': start.isoformat(),
@@ -62,21 +66,28 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
         end = min(now - timedelta(seconds=30), checkpoint + timedelta(minutes=5))
         lower = max(start, checkpoint - timedelta(minutes=15))
         counts = {'events': 0, 'created': 0, 'existing': 0, 'late': 0}
+        rule_stats = stats_for(rules)
+        run_id = str(uuid4())
 
         def publish(kind, error=None):
-            health = 'failed' if kind == 'failed' else 'delayed' if (now - utc(state['checkpoint'])).total_seconds() > 1200 else 'warning' if state['late_total'] or state.get('legacy_excluded') else 'healthy'
+            history_pending = db.execute('SELECT count(*) FROM telemetry_outbox').fetchone()[0]
+            health = 'failed' if kind == 'failed' else 'delayed' if (now - utc(state['checkpoint'])).total_seconds() > 1200 else 'warning' if history_pending or state.get('excluded_total') or state['late_total'] or state.get('legacy_excluded') else 'healthy'
             client.index(index=STATUS, id='detector', document={'@timestamp': now.isoformat(),
                 'state': kind, 'detection': ','.join(rule['id'] for rule in rules), 'checkpoint': state['checkpoint'],
                 'last_success': state['last_success'], 'error': error,
                 'health': health, 'legacy_excluded': state.get('legacy_excluded', 0),
                 'lag_seconds': max(0, int((now - utc(state['checkpoint'])).total_seconds())),
-                'late_total': state['late_total'], 'counts': counts}, refresh=False)
+                'late_total': state['late_total'], 'excluded_total': state.get('excluded_total', 0),
+                'history_pending': history_pending, 'counts': counts}, refresh=False)
 
         try:
             publish('running')
+            flush_outbox(client, db)
             if end <= checkpoint:
+                runs(client, rules, rule_stats, run_id=run_id, stamp=now.isoformat(), start=lower.isoformat(),
+                     end=checkpoint.isoformat(), state='waiting')
                 publish('waiting')
-                db.rollback()
+                db.commit()
                 return counts
             resolved = client.indices.resolve_index(name=NORMALIZED)
             if resolved.get('aliases') or resolved.get('data_streams') or [r['name'] for r in resolved.get('indices', [])] != [NORMALIZED]:
@@ -108,63 +119,111 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                 key = hit['_id']
                 if key in state['seen']:
                     continue
-                stamp = parse_event_timestamp(event)
                 event['_cloud_soc_meta'] = {'index': NORMALIZED, 'document_id': key}
                 if not event_evidence(event)['complete']:
                     raise ValueError('incomplete_evidence')
                 state['seen'][key] = received.isoformat()
                 counts['events'] += 1
-                matched_rules = [rule for rule in rules if event_matches_rule(event, rule)]
-                if not matched_rules:
-                    continue
-                organization = event.get('organization', {}).get('id')
-                if not isinstance(organization, str) or not organization.strip():
-                    raise ValueError('missing_organization')
-                for rule in matched_rules:
-                    if build_group_key(event, list(dict.fromkeys(['organization.id', *rule['group_by']]))) is None:
-                        raise ValueError('missing_detection_group')
-                if stamp < frontier:
+                try:
+                    stamp = parse_event_timestamp(event)
+                    time_reason = ('late_event' if stamp < frontier else
+                                   'future_event_clock' if stamp > now + timedelta(minutes=5) else None)
+                except (ValueError, TypeError):
+                    time_reason = 'invalid_event_time'
+                eligible = False
+                late = False
+                for rule in rules:
+                    metrics = rule_stats[rule['id']]
+                    metrics['input_events'] += 1
+                    outcome, missing = evaluate(event, rule)
+                    metrics[outcome] += 1
+                    if outcome == 'not_matched':
+                        continue
+                    group_fields = list(dict.fromkeys(['organization.id', *rule['group_by']]))
+                    group_missing = [f for f in group_fields if get_field_value(event, f) in (None, '')]
+                    organization = event.get('organization', {}).get('id')
+                    reason = ('missing_condition_fields' if outcome == 'unknown' else
+                              'missing_group_fields' if group_missing or not isinstance(organization, str) or not organization.strip() or build_group_key(event, group_fields) is None else time_reason)
+                    if reason:
+                        metrics['excluded'] += 1
+                        if reason == 'late_event':
+                            metrics['late'] += 1
+                            late = True
+                        exclusion(client, event, rule, reason, missing or group_missing, now.isoformat(), run_id)
+                    else:
+                        eligible = True
+                if late:
                     counts['late'] += 1
                     state['late_total'] += 1
-                    continue
-                if stamp > now + timedelta(minutes=5):
-                    raise ValueError('future_event_clock')
-                state['pending'][key] = event
+                if eligible:
+                    state['pending'][key] = event
             final = max(frontier, end - timedelta(seconds=lateness_seconds))
             ready = [e for e in state['pending'].values() if parse_event_timestamp(e) < final]
             # Stateful engine preserves the same event ordering and cooldown as batch detection.
             extra_groups = state.setdefault('rule_groups', {})
             runtimes = {rule['id']: state['groups'] if i == 0 else extra_groups.setdefault(rule['id'], {})
-                        for i, rule in enumerate(rules) if rule.get('type', 'threshold') == 'threshold'}
-            detections = [detection for rule in rules for detection in
-                          detect_rule(ready, rule, runtime=runtimes.get(rule['id']))]
+                        for i, rule in enumerate(rules) if rule.get('type', 'threshold') in ('threshold', 'sequence')}
+            detections = []
+            for rule in rules:
+                eligible_ready = [e for e in ready if evaluate(e, rule)[0] == 'matched' and
+                                  build_group_key(e, list(dict.fromkeys(['organization.id', *rule['group_by']]))) is not None and
+                                  all(get_field_value(e, f) not in (None, '') for f in ['organization.id', *rule['group_by']]) and
+                                  isinstance(get_field_value(e, 'organization.id'), str) and get_field_value(e, 'organization.id').strip()]
+                rule_stats[rule['id']]['evaluated_events'] = len(eligible_ready)
+                found = detect_rule(eligible_ready, rule, runtime=runtimes.get(rule['id']))
+                rule_stats[rule['id']]['detection_matches'] = len(found)
+                detections.extend(found)
             for detection in detections:
                 result = save_security_alert(client, build_security_alert(detection), index_name=ALERTS,
                     document_id=make_alert_id(detection), refresh=False, index_prepared=True)
                 if result['result'] not in ('created', 'existing'):
                     raise RuntimeError('unexpected_alert_write')
                 counts[result['result']] += 1
+                rule_stats[detection['rule_id']]['alerts_' + result['result']] += 1
             state['pending'] = {k: e for k, e in state['pending'].items() if parse_event_timestamp(e) >= final}
             for rule in rules:
                 groups = runtimes.get(rule['id'], {})
                 window = timedelta(seconds=rule['time_window']['seconds'])
                 cooldown = timedelta(seconds=rule.get('cooldown', {}).get('seconds', 0))
                 for key, group in list(groups.items()):
-                    group['window'] = [e for e in group['window'] if parse_event_timestamp(e) >= final - window]
-                    if not group['window'] and (not group['last_alert'] or utc(group['last_alert']) < final - cooldown):
+                    slot = 'failures' if rule.get('type') == 'sequence' else 'window'
+                    group[slot] = [e for e in group[slot] if parse_event_timestamp(e) >= final - window]
+                    if not group[slot] and (not group.get('last_alert') or utc(group['last_alert']) < final - cooldown):
                         del groups[key]
             state['seen'] = {k: t for k, t in state['seen'].items() if utc(t) >= end - timedelta(minutes=15)}
-            if len(state['pending']) + sum(len(g['window']) for groups in runtimes.values() for g in groups.values()) > max_documents:
+            if len(state['pending']) + sum(len(g.get('window', g.get('failures', []))) for groups in runtimes.values() for g in groups.values()) > max_documents:
                 raise ValueError('active_state_limit')
             state.update(checkpoint=end.isoformat(), frontier=final.isoformat(), last_success=now.isoformat())
+            state['excluded_total'] = state.get('excluded_total', 0) + sum(c['excluded'] for c in rule_stats.values())
+            runs(client, rules, rule_stats, run_id=run_id, stamp=now.isoformat(), start=lower.isoformat(),
+                 end=end.isoformat(), state='evaluated')
             # Publish before commit: a status/write failure must not advance the checkpoint.
             publish('success')
             db.execute('INSERT OR REPLACE INTO runtime VALUES(1,?)', (json.dumps(state),))
+            queue_committed_runs(db, rules, rule_stats, run_id=run_id, stamp=now.isoformat(),
+                                 start=lower.isoformat(), end=end.isoformat())
             db.commit()
+            # Checkpoint and delivery intent are now committed together. A later ES
+            # failure must not rewind them or label this completed run as failed.
+            try:
+                db.execute('BEGIN IMMEDIATE')
+                flush_outbox(client, db)
+                db.commit()
+            except Exception:
+                db.rollback()
+                try:
+                    publish('success', 'history_delivery_pending')
+                except Exception:
+                    pass
             return counts
         except Exception:
             db.rollback()
             state = saved
+            try:
+                runs(client, rules, rule_stats, run_id=run_id, stamp=now.isoformat(), start=lower.isoformat(),
+                     end=end.isoformat(), state='failed', error='incremental_cycle_failed')
+            except Exception:
+                pass
             try:
                 publish('failed', 'incremental_cycle_failed')
             except Exception:

@@ -131,7 +131,7 @@ def validate_rule(
         )
 
     kind = rule.get('type', 'threshold')
-    if kind not in ('single', 'threshold'):
+    if kind not in ('single', 'threshold', 'sequence'):
         raise ValueError('Unsupported rule type')
     if kind == 'single':
         rule.setdefault('group_by', ['organization.id', 'cloud.account.id'])
@@ -140,6 +140,8 @@ def validate_rule(
         rule.setdefault('cooldown', {'seconds': 0})
         if rule['threshold'] != {'count': 1} or rule['cooldown'] != {'seconds': 0}:
             raise ValueError('Single event rules cannot aggregate or suppress independent events')
+    if kind == 'sequence' and rule.get('cooldown', {'seconds': 0}) != {'seconds': 0}:
+        raise ValueError('Failure-success sequences reset on successful authentication; cooldown must be zero')
 
     required_fields = [
         "id",

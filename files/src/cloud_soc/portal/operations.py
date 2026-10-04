@@ -11,6 +11,7 @@ from cloud_soc.portal.log_query import LogQueryError, bounded_json
 from cloud_soc.portal.security_detail import DETAIL_FIELDS, security_detail, text
 from cloud_soc.processing.contract import NORMALIZED, RECORDS, STATUS
 from cloud_soc.processing.worker import checked
+from cloud_soc.detection.engine import event_fingerprint
 
 ALERT = "security-alerts"
 INDEX_PATH_BUDGET = 3000
@@ -84,7 +85,8 @@ class Operations:
         if not exact_indices(self.client, [index]):
             return None
         try:
-            return self.client.get(index=index, id=identifier(doc_id), source_includes=fields)["_source"]
+            options = {"source_includes": fields} if fields is not None else {}
+            return self.client.get(index=index, id=identifier(doc_id), **options)["_source"]
         except NotFoundError:
             return None
 
@@ -147,7 +149,7 @@ class Operations:
                 "rows": rows, "statuses": [{"key": key, "doc_count": statuses[key]} for key in sorted(statuses)]}
 
     def worker_status(self, worker):
-        value = self.get(STATUS, worker, ["@timestamp", "state", "last_success", "checkpoint", "error", "detection", "health", "lag_seconds", "late_total", "legacy_excluded"])
+        value = self.get(STATUS, worker, ["@timestamp", "state", "last_success", "checkpoint", "error", "detection", "health", "lag_seconds", "late_total", "legacy_excluded", "excluded_total", "history_pending"])
         if value is None:
             return {"state": "not_started"}
         stamp = parse_time(value.get("@timestamp"))
@@ -160,8 +162,12 @@ class Operations:
         late = late if type(late) is int and late >= 0 else 0
         legacy = value.get('legacy_excluded')
         legacy = legacy if type(legacy) is int and legacy >= 0 else 0
-        health = 'failed' if state == 'failed' else 'stale' if state == 'stale' else 'delayed' if lag is not None and lag > 1200 else 'warning' if late or legacy else 'healthy'
-        return {"state": state, "health": health, "lag_seconds": lag, "late_total": late, "legacy_excluded": legacy,
+        excluded = value.get('excluded_total')
+        excluded = excluded if type(excluded) is int and excluded >= 0 else 0
+        pending = value.get('history_pending')
+        pending = pending if type(pending) is int and pending >= 0 else 0
+        health = 'failed' if state == 'failed' else 'stale' if state == 'stale' else 'delayed' if lag is not None and lag > 1200 else 'warning' if late or legacy or excluded or pending else 'healthy'
+        return {"state": state, "health": health, "lag_seconds": lag, "late_total": late, "legacy_excluded": legacy, "excluded_total": excluded, "history_pending": pending,
                 "detection": text(value.get('detection')),
                 "last_success": text(value.get("last_success")), "checkpoint": text(value.get("checkpoint")),
                 "error": text(value.get('error'))}
@@ -205,11 +211,16 @@ class Operations:
         try:
             pairs = list(pairs)
             values = dict(pairs)
-            if len(pairs) != len(values) or set(values) not in ({"id"}, {"id", "evidence"}):
+            if len(pairs) != len(values) or 'id' not in values or set(values) - {'id', 'evidence', 'offset', 'limit'} or ('evidence' in values and set(values) != {'id', 'evidence'}):
                 raise ValueError()
             doc_id = identifier(values["id"])
             position = values.get("evidence")
-            if position is not None and not re.fullmatch(r"[0-9]{1,3}", position):
+            if position is not None and not re.fullmatch(r"[0-9]{1,9}", position):
+                raise ValueError()
+            if any(not re.fullmatch(r'[0-9]{1,9}', values[k]) for k in ('offset', 'limit') if k in values):
+                raise ValueError()
+            offset, limit = int(values.get('offset', '0')), int(values.get('limit', '25'))
+            if not 1 <= limit <= 100:
                 raise ValueError()
         except ValueError:
             raise LogQueryError("invalid_alert_query", 400, "경보 참조를 확인하세요.") from None
@@ -225,9 +236,14 @@ class Operations:
                       "engine_version": text(field(source, "cloud_soc.provenance.engine_version")),
                       "condition": {k: field(source, "cloud_soc." + k) for k in ("event_count", "threshold", "time_window_seconds")
                                     if type(field(source, "cloud_soc." + k)) is int}}
+            if offset > len(evidence):
+                raise LogQueryError('invalid_evidence_offset', 400, '근거 페이지 범위를 확인하세요.')
+            last = min(offset + limit, len(evidence))
+            result['evidence_page'] = {'offset': offset, 'limit': limit, 'total': len(evidence),
+                                       'positions': list(range(offset, last)), 'next_offset': last if last < len(evidence) else None}
             if position is not None:
                 number = int(position)
-                if number >= min(len(evidence), 100):
+                if number >= len(evidence):
                     raise LogQueryError("evidence_missing", 404, "요청한 근거 참조가 없습니다.")
                 result["evidence"] = self.evidence(evidence[number])
             return bounded_json(result)
@@ -250,17 +266,32 @@ class Operations:
                 raw = document_reference(raw.get("index"), raw.get("id"))
         except (ValueError, AttributeError):
             return {"state": "unsupported_or_invalid_reference"}
-        norm = self.get(normalized["index"], normalized["id"], ["@timestamp", "event.category", "event.action", "event.outcome", "cloud_soc.provenance.raw"])
+        norm = self.get(normalized["index"], normalized["id"], None)
         if norm is None:
             return {"state": "normalized_missing_or_expired", "normalized": normalized, "raw": raw}
         if field(norm, "cloud_soc.provenance.raw") != raw:
             return {"state": "provenance_mismatch"}
+        expected_hash = reference.get('event_hash')
+        if expected_hash is None:
+            integrity = 'unverified_legacy'
+        elif not isinstance(expected_hash, str) or not re.fullmatch(r'[0-9a-f]{64}', expected_hash):
+            return {'state': 'invalid_evidence_hash'}
+        else:
+            # Reproduce the detector's exact _source plus its injected document locator.
+            # Hash before any privacy projection, but never return this complete source.
+            from copy import deepcopy
+            hashed = deepcopy(norm)
+            hashed['_cloud_soc_meta'] = {'index': normalized['index'], 'document_id': normalized['id']}
+            if event_fingerprint(hashed) != expected_hash:
+                return {'state': 'normalized_hash_mismatch', 'normalized': normalized, 'raw': raw}
+            integrity = 'normalized_hash_verified'
         source = self.get(raw["index"], raw["id"], list(SOURCE_FIELDS + DETAIL_FIELDS))
         if source is None:
             return {"state": "raw_missing_or_expired", "normalized": normalized, "raw": raw}
         metadata = ({path: text(field(source, path)) for path in ("@timestamp", "host.name", "user.name", "event.action")}
                     if raw["index"].startswith("raw-logs-") else project_hit({"_index": raw["index"], "_id": raw["id"], "_source": source}))
         return {"state": "exact_reference", "normalized": normalized, "raw": raw,
+                "integrity": integrity, "raw_integrity": 'not_hashed_at_detection',
                 "normalized_event": {"timestamp": text(norm.get("@timestamp")), "action": text(field(norm, "event.action")),
                                      "outcome": text(field(norm, "event.outcome"))},
                 "metadata": metadata,

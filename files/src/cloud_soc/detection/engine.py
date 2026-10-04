@@ -14,6 +14,18 @@ from cloud_soc.elastic.pagination import fetch_all_hits
 ENGINE_VERSION = "threshold-v2"
 
 
+def rule_engine_version(rule):
+    if rule.get('type') == 'sequence':
+        return 'failure-success-v1'
+    if rule.get('type') == 'single':
+        return 'single-v1'
+    return 'threshold-v3' if any(c['operator'] in ('exists', 'not_equals') for c in rule['conditions']) else ENGINE_VERSION
+
+
+def rule_revision(rule):
+    return event_fingerprint({'engine': rule_engine_version(rule), 'rule': rule})
+
+
 def event_fingerprint(event: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(
         event, sort_keys=True, ensure_ascii=True, separators=(",", ":"),
@@ -271,6 +283,9 @@ def detect_rule(
         Threshold 검사
     """
 
+    if rule.get('type') == 'sequence':
+        from cloud_soc.detection.sequence import detect_sequence
+        return detect_sequence(events, rule, runtime if runtime is not None else {})
     if rule.get('type') == 'single' and not _single_event:
         return [match for event in events for match in detect_rule([event], rule, _single_event=True)]
 
@@ -289,9 +304,8 @@ def detect_rule(
     # Organization scope is mandatory even when a rule omits it.
     group_by = list(dict.fromkeys(["organization.id", *rule["group_by"]]))
     rule_snapshot = deepcopy(rule)
-    engine_version = ('single-v1' if rule.get('type') == 'single' else
-                      'threshold-v3' if any(c['operator'] in ('exists', 'not_equals') for c in rule['conditions']) else ENGINE_VERSION)
-    rule_version = event_fingerprint({"engine": engine_version, "rule": rule_snapshot})
+    engine_version = rule_engine_version(rule)
+    rule_version = rule_revision(rule_snapshot)
 
     # --------------------------------------------------------
     # 1. Rule 조건과 일치하는 이벤트를 그룹별로 저장

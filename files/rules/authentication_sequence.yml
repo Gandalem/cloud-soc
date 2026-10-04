@@ -1,0 +1,19 @@
+rules:
+  - id: AUTH-SEQ-001
+    type: sequence
+    name: SSH repeated failures followed by successful authentication
+    enabled: true
+    severity: high
+    group_by: [organization.id, host.id, user.name, source.ip]
+    threshold: {count: 5}
+    time_window: {seconds: 300}
+    cooldown: {seconds: 0}
+    conditions:
+      - {field: event.category, operator: contains, value: authentication}
+      - {field: network.protocol, operator: equals, value: ssh}
+      - {field: event.outcome, operator: in, value: [failure, success]}
+    alert:
+      title: 반복 SSH 인증 실패 후 성공
+      message: 동일 조직·호스트·계정·출발지 IP에서 5분 안에 실패 5건 이상 뒤 성공이 관측되었습니다. 정상 재시도 여부와 성공 후 활동을 조사하세요. 계정 탈취 성공을 확정하지 않습니다.
+      category: authentication
+      tags: [ssh, failure-success, sequence]

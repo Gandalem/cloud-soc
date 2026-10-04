@@ -73,3 +73,18 @@ test('alert IDs are encoded and untrusted titles are text nodes',async()=>{
   assert.equal(investigation.searchParams.get('return_page'),'index.html');
   assert.match(ui.get('ops-detail-state').textContent,/주변 로그로 대체하지/);
 });
+
+test('evidence pagination reaches global positions and reports normalized integrity',async()=>{
+ const row={id:'alert',title:'sequence',timestamp:data.start};
+ const ui=browser([ok({...data,sections:{...data.sections,alerts:{...section,rows:[row]}}}),
+ ok({alert:row,condition:{},evidence_count:251,evidence_page:{positions:[0],next_offset:250}}),
+ ok({evidence_count:251,evidence_page:{positions:[250],next_offset:null}}),
+ ok({evidence:{state:'exact_reference',integrity:'normalized_hash_verified'}})]);await settle();
+ ui.get('ops-alert-rows').children[0].children[5].children[0].listeners.click();await settle();
+ const content=ui.get('ops-detail-content');const container=content.children[3],nav=content.children[4];
+ nav.children[0].listeners.click();await settle();
+ assert.equal(new URL(ui.calls[2].url,'https://test').searchParams.get('offset'),'250');
+ container.children[1].children[0].listeners.click();await settle();
+ assert.equal(new URL(ui.calls[3].url,'https://test').searchParams.get('evidence'),'250');
+ assert.match(allText(container.children[1]),/해시 일치.*원본 내용 해시는 미검증/);
+});

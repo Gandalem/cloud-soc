@@ -2,6 +2,7 @@
 
 from cloud_soc.portal.log_contract import INDICES
 from cloud_soc.processing.contract import NORMALIZED, RECORDS, STATUS
+from cloud_soc.detection.telemetry import RUNS, EXCLUSIONS
 
 ROLE = {"cluster": [], "indices": [
     {"names": list(INDICES), "privileges": ["read", "view_index_metadata"]},
@@ -14,6 +15,16 @@ KEYWORD = {"type": "keyword", "ignore_above": 1024}
 
 def prepare(client):
     mappings = {
+        RUNS: {'@timestamp': DATE, 'record_id': KEYWORD, 'run_id': KEYWORD, 'state': KEYWORD, 'error': KEYWORD,
+               'engine_version': KEYWORD, 'rule_snapshot': {'type': 'object', 'enabled': False},
+               'range_start': DATE, 'range_end': DATE,
+               'rule': {'properties': {'id': KEYWORD, 'version': KEYWORD}},
+               'counts': {'type': 'object', 'enabled': False}},
+        EXCLUSIONS: {'@timestamp': DATE, 'record_id': KEYWORD, 'run_id': KEYWORD, 'reason': KEYWORD, 'missing_fields': KEYWORD,
+                     'event_time': DATE, 'event_hash': KEYWORD,
+                     'rule': {'properties': {'id': KEYWORD, 'version': KEYWORD}},
+                     'normalized': {'type': 'object', 'enabled': False},
+                     'raw': {'type': 'object', 'enabled': False}},
         NORMALIZED: {"@timestamp": DATE, "organization": {"properties": {"id": KEYWORD}},
                      "event": {"properties": {"ingested": DATE, **{k: KEYWORD for k in ("kind", "category", "action", "outcome", "code", "dataset", "provider")}}},
                      **{name: {"properties": {"ip": {"type": "ip"}, "port": {"type": "long"}}} for name in ("source", "destination")},
@@ -30,6 +41,8 @@ def prepare(client):
         STATUS: {"@timestamp": DATE, "last_success": DATE, "checkpoint": DATE,
                  "health": KEYWORD, "lag_seconds": {"type": "long"}, "late_total": {"type": "long"},
                  "legacy_excluded": {"type": "long"},
+                 "excluded_total": {"type": "long"},
+                 "history_pending": {"type": "long"},
                  "counts": {"type": "object", "enabled": False},
                  "state": KEYWORD, "error": KEYWORD, "detection": KEYWORD},
     }
@@ -44,5 +57,7 @@ def prepare(client):
             if name == NORMALIZED:
                 client.indices.put_mapping(index=name, properties={"cloud_soc": {"properties": {"normalized_at": DATE}}})
             if name == STATUS:
-                client.indices.put_mapping(index=name, properties={k: properties[k] for k in ('health', 'lag_seconds', 'late_total', 'legacy_excluded', 'counts')})
+                client.indices.put_mapping(index=name, properties={k: properties[k] for k in ('health', 'lag_seconds', 'late_total', 'legacy_excluded', 'excluded_total', 'history_pending', 'counts')})
+            if name in (RUNS, EXCLUSIONS):
+                client.indices.put_mapping(index=name, properties=properties)
     client.security.put_role(name="cloud_soc_normalizer", **ROLE)

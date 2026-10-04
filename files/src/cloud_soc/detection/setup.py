@@ -10,11 +10,13 @@ from cloud_soc.elastic.repository import ensure_security_alerts_index, ensure_pr
 from cloud_soc.processing.contract import NORMALIZED, STATUS
 from cloud_soc.processing.setup import ROLE as NORMALIZER_ROLE
 from cloud_soc.processing.setup import prepare as prepare_processing
+from cloud_soc.detection.telemetry import RUNS, EXCLUSIONS
 
 ROLE = {"cluster": [], "indices": [
     {"names": [NORMALIZED], "privileges": ["read", "view_index_metadata"]},
     {"names": ["security-alerts"], "privileges": ["create_doc", "view_index_metadata"]},
     {"names": [STATUS], "privileges": ["index"]},
+    {"names": [RUNS, EXCLUSIONS], "privileges": ["create_doc"]},
 ]}
 
 

@@ -1,0 +1,2497 @@
+diff --git a/deploy/server/detection.compose.yaml b/deploy/server/detection.compose.yaml
+index f0de443..251ee7d 100644
+--- a/deploy/server/detection.compose.yaml
++++ b/deploy/server/detection.compose.yaml
+@@ -4,13 +4,14 @@ services:
+     build:
+       context: ../..
+       dockerfile: deploy/server/Dockerfile
+-    command: ["python", "-m", "cloud_soc.detection", "--run", "--es-url", "https://elasticsearch:9200", "--ca-file", "/run/certs/ca.crt", "--api-key-file", "/run/keys/detector.key", "--max-documents", "${SOC_DETECTION_MAX_DOCUMENTS:-20000}"]
++    command: ["python", "-m", "cloud_soc.detection", "--run", "--es-url", "https://elasticsearch:9200", "--ca-file", "/run/certs/ca.crt", "--api-key-file", "/run/keys/detector.key", "--state", "/data/runtime.sqlite", "--start", "${SOC_DETECTION_START:?Set an explicit normalization UTC start}", "--max-documents", "${SOC_DETECTION_MAX_DOCUMENTS:-20000}"]
+     restart: unless-stopped
+     depends_on:
+       bootstrap: {condition: service_completed_successfully}
+     volumes:
+       - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+       - ${SOC_STATE_DIR}/secrets/detector.key:/run/keys/detector.key:ro
++      - ${SOC_STATE_DIR}/detection:/data
+     read_only: true
+     tmpfs: [/tmp]
+     security_opt: ["no-new-privileges:true"]
+diff --git a/docs/work_tracker.md b/docs/work_tracker.md
+index 038c495..5440949 100644
+--- a/docs/work_tracker.md
++++ b/docs/work_tracker.md
+@@ -1,5 +1,19 @@
+ # Cloud SOC 작업 목록
+ 
++2026-10-04 P5 후속 코드·합성 검증: 근거 event_hash 재계산/전체 페이지, 규칙별 evaluated/committed 이력과 원자적 전달 큐·개별 제외 참조, AUTH-SEQ-001 실패 5회 뒤 성공 선택 규칙 구현. 관련 Python 158건·화면 로직 79건 통과, 6개 규칙 오프라인 검사. 전체 최초 Python 407건은 391 통과/10 생략/3 실패/3 오류; 권한 목록 시험 1건 수정 후 관련 통과, 기존 수집기 정책 3 오류·Windows 실행 정책 설치기 2 실패는 미해결. runtime 계약 변경은 새 명시적 상태 필요. 실제 ES/운영 전환/배포/브라우저 실증 미수행으로 전체 완료 체크 유지. docs/investigation_quality.md 참고.
++
++2026-10-04 P5-04/P5-02/P5-03 후속 진행: 사용자 요청으로 근거 무결성·전체 페이지 조회, 규칙별 실행 이력/제외 이벤트, 인증 실패 후 성공 순차 탐지를 서버 접속 없이 코드·합성 시험으로 구현한다. 기존 변경 보존, 운영 배포·실제 ES/기존 데이터 전환은 보류 유지.
++
++2026-10-04 P5-03 진행: 사용자가 VM IP 변경으로 운영 배포를 보류하고 다음 프로세스 진행을 요청했다. 클라우드 핵심 규칙·명시적 단일 이벤트 유형·증분 다중 규칙 연결과 합성 검증을 구현한다. 운영 배포/실제 ES 인수는 미완료 유지, 새 클라우드 규칙은 명시적 실행 옵션으로 선택하며 기본 SSH 동작은 유지한다.
++
++2026-10-04 P5-03 코드·격리 검증: AWS 관리형 고권한 정책 연결·Trail 중지/삭제·전체 주소 SSH/RDP 허용, OCI IAM 정책 변경의 single 규칙 4개와 --include-cloud 선택, 규칙별 runtime/불변 근거·다중 프로필 포털 표시 구현. API provider/outcome 및 타입/필드 조건을 구분하고 missing not_equals를 false로 수정, exists 추가. AWS 요청 전체 대신 평가 불리언/선택 대상만 보존한다. 신규 cloud 14건, 증분 14건, 기존 탐지 24건, 정규화 14건, 보안 상세 14건, AWS 수집 15건 통과/1 opt-in 생략, 운영 API 11건, 신뢰성 40건 통과: Python 통과 146건·생략 1건. 운영 UI 9건 통과. CLI --include-cloud 오프라인 5개 규칙 검증 및 패치 적용 확인. 실제 ES/클라우드 로그·VM 배포와 기존 자료 전환 미수행. 승인 변경 자동 억제/고객 관리형·inline 정책 분석/OCI 정책 본문·네트워크 상세 위험 판정은 후속 과제이며 P5-03 전체 완료 체크하지 않는다. docs/cloud_detection.md 참고.
++
++2026-10-04 P5-02 운영 인수 진행: 사용자 요청으로 운영 배포·기존 데이터 전환·실제 Elasticsearch 검증을 승인받아 이전 '배포 범위 밖' 제한을 이번 단계에 한해 대체한다. 현재 환경에 SSH 설정/키 경로가 없고 기존 기록의 192.168.32.60:22는 4초 연결 시간 초과다. 현재 SSH 주소/계정/인증 경로를 사용자에게 요청했다. deploy/server/preflight-detection.py와 docs/detection_deployment_runbook.md를 준비하고 Python 구문 검사만 통과했다. 서버 접속·ES 조회·백업/전환/배포/키 발급은 수행하지 않았다. 기존 정규화 문서에 필드 추가를 하면 경보 event_hash가 바뀔 수 있어 직접 덮어쓰기보다 별도 이행 저장소/수신 목록을 실제 자료에 맞춰 검증해야 한다. P5-02 미완료 유지.
++
++2026-10-04 P5-02 진행: 사용자 요청으로 영속 증분 탐지와 포털 장애 알림을 구현한다. 배치 경계, 재시작, 실패 재시도, 지연 이벤트 정책을 격리 검증한다. 기존 규칙 유지, 운영 배포·키 발급·Git push는 범위 밖이며 실제 운영 인수 전 전체 완료로 표시하지 않는다.
++
++2026-10-04 P5-02 코드·격리 검증: SQLite 영속 시간 창/cooldown/지연 버퍼/체크포인트와 create-only 재시도, 정규화 시각 매핑·15분 중첩 조회, 과거 필드 없는 자료의 명시적 제외 검사, Compose 상태 볼륨, 포털 실패/상태 중단/처리 지연/제외 경고 구현. 증분 14건, 기존 탐지 24건, 정규화 14건, 운영 API 11건 통과(합계 Python 63건). 운영 UI 8건 통과. P5-02 전체 완료 체크는 유지하지 않음: 실제 ES 최소 권한·Compose 재시작·운영 수집·브라우저 렌더링 미검증, 15분 초과 저장 가시성 지연과 과거 데이터 재평가/외부 알림 전송은 미지원. 적용 안내 docs/incremental_detection.md. 운영 서버·원격 Git 변경 없음.
++
+ 2026-10-01 Git 인계 준비(사용자 요청: 커밋·푸시만, 배포 없음): 누적 P0C-02 설치/복구 안정화 소스와 P0C-03 Windows 신규 통합 설치의 단일 토큰·자동 중앙 수신 확인 1차 구현을 함께 버전 관리한다. 개인 Word 문서, 개인 검증 JSON, state/비밀/실제 로그는 제외한다. 아래의 과거 "커밋/푸시 없음"은 각 검증 시점의 이력이며 이번 인계와 구분한다. P0C-02 완료 이력은 유지하고 P0C-03은 실제 배포/수신 및 Linux 지원이 남아 미완료다.
+ 
+ 새 채팅 재개 순서: 먼저 이 작업 목록과 docs/agent_enrollment.md를 읽고 최신 Git 상태/커밋을 확인한다. 집 환경에서 중앙 서버 접속 경로와 인증서 신뢰·접근 권한을 다시 확인한다(사설 IP/기존 접속이 계속 유효하다고 가정하지 않는다). 이후 사용자 요청 시 보호 백업 → 새 Docker 이미지와 인증 메타데이터 final pipeline/최소 권한 검증 → enrollment 기능·정리 서비스 명시 활성화 → 새 Windows 통합 ZIP 생성 → 승인된 빈/스냅샷 시험 VM에서 단일 토큰 설치·로그/네트워크 실제 중앙 수신 및 실패 키 폐기 확인 순서로 진행한다. 기존 설치에는 신규 Enroll을 재실행하지 않는다. 마지막으로 Linux/로그 전용 토큰 지원과 실패 설치의 새 키 재등록 UX를 보완한다. 이번에는 원격 배포·수집기 갱신·토큰 활성화를 수행하지 않는다. 전체 Python의 OCI 바이너리 호환 오류 3건도 별도로 확인해야 한다. 이전 시험 VM의 하루 키는 2026-10-02 약 14:17 KST 만료 예정이며 자동 연장된 것으로 간주하지 않는다.
+diff --git a/prototype/investigation.js b/prototype/investigation.js
+index 13284c9..c9f72fa 100644
+--- a/prototype/investigation.js
++++ b/prototype/investigation.js
+@@ -4,7 +4,7 @@
+   const states={new:"신규",triage:"초기 분류",investigating:"조사 중",escalated:"상위 이관",closed:"종결"};
+   const verdicts={unreviewed:"미판정",malicious:"악성",benign:"정상",false_positive:"오탐",inconclusive:"판단 보류"};
+   const priorities={critical:"긴급",high:"높음",medium:"중간",low:"낮음"};
+-  const evidenceStates={exact_reference:"정확한 문서 참조 확인 · 내용 해시 재검증은 아님",normalized_missing_or_expired:"정규화 근거 누락 / 만료",raw_missing_or_expired:"원본 근거 누락 / 만료",provenance_mismatch:"근거 참조 불일치",unsupported_or_invalid_reference:"지원하지 않는 근거 참조",invalid_reference:"잘못된 참조"};
++  const evidenceStates={exact_reference:"정확한 문서 참조 확인",normalized_hash_mismatch:"정규화 근거 내용 변경 감지",invalid_evidence_hash:"저장된 근거 해시 형식 오류",normalized_missing_or_expired:"정규화 근거 누락 / 만료",raw_missing_or_expired:"원본 근거 누락 / 만료",provenance_mismatch:"근거 참조 불일치",unsupported_or_invalid_reference:"지원하지 않는 근거 참조",invalid_reference:"잘못된 참조"};
+   const fmt=v=>v?new Date(v).toLocaleString("ko-KR",{timeZone:"Asia/Seoul"}):"미기록";
+   let current=null, caseId=query.get("case"), alertId=query.get("alert"), historyNext=null, generation=0, pending=null, saving=false;
+   const back=new URLSearchParams(query.get("return")||"");
+@@ -52,14 +52,18 @@
+       const c=data.condition;detail.replaceChildren(node("p","규칙 "+(data.alert.rule||"미기록")+" · 버전 "+(data.rule_version||"미기록")),node("p","관측 수 "+(c.event_count??"미기록")+" / 임계값 "+(c.threshold??"미기록")+" / 시간 창 "+(c.time_window_seconds??"미기록")+"초"));
+       detail.append(node("p","관련 대상 (경보 필드): 조직 "+(data.alert.organization||"미기록")+" · 출발지 IP "+(data.alert.source_ip||"미관측")));
+       if(!data.evidence_count)detail.append(node("p","이 경보에는 정확한 근거 참조가 없습니다."));
+-      if(data.evidence_count>data.evidence_limit)detail.append(node("p","근거 "+data.evidence_count+"건 중 처음 "+data.evidence_limit+"건만 지원합니다."));
+-      for(let i=0;i<data.evidence_limit;i++){
++      if(data.evidence_count)detail.append(node('p','저장된 근거 '+data.evidence_count+'건 · 페이지별 전체 조회 가능'));
++      const navigation=node('div');detail.append(navigation);
++      function evidencePage(pageData){
++      const page=pageData.evidence_page||{positions:Array.from({length:pageData.evidence_limit},(_,i)=>i),next_offset:null};
++      for(const i of page.positions){
+         const button=node("button","근거 "+(i+1)+" 조회"),result=node("div");button.type="button";
+         button.addEventListener("click",async()=>{
+           button.disabled=true;result.textContent="근거 조회 중";
+           try{
+             const reply=await request("/api/alerts/detail?"+new URLSearchParams({id,evidence:String(i)}));if(version!==generation)return;
+             const e=reply.evidence;result.replaceChildren(node("p",evidenceStates[e.state]||"근거 상태 미확인"));
++            if(e.integrity)result.append(node('p',e.integrity==='normalized_hash_verified'?'정규화 내용 해시 일치 · 원본 내용 해시는 미검증':'과거 근거의 내용 해시는 미기록'));
+             if(e.raw)result.append(node("p","원본 참조: "+e.raw.index+" / "+e.raw.id));
+             if(e.normalized)result.append(node("p","정규화 참조: "+e.normalized.index+" / "+e.normalized.id));
+             if(e.normalized_event)result.append(node("p","근거 이벤트 시각 (KST): "+fmt(e.normalized_event.timestamp)+" · 행위 "+(e.normalized_event.action||"미관측")+" · 결과 "+(e.normalized_event.outcome||"미관측")));
+@@ -68,6 +72,16 @@
+           }catch(failure){result.textContent=failure.message;}finally{button.disabled=false;}
+         });detail.append(button,result);
+       }
++      navigation.replaceChildren();
++      if(page.next_offset!==null){
++        const more=node('button','다음 근거 페이지');more.type='button';navigation.append(more);
++        more.addEventListener('click',async()=>{more.disabled=true;try{
++          const next=await request('/api/alerts/detail?'+new URLSearchParams({id,offset:String(page.next_offset)}));
++          if(version===generation)evidencePage(next);
++        }catch(error){more.textContent=error.message;}finally{more.disabled=false;}});
++      }
++      }
++      evidencePage(data);
+     }catch(failure){if(version===generation)detail.textContent=(failure.status===404?"경보가 누락/만료되었습니다. 위 요약은 연결 당시 저장된 기록입니다.":failure.message);}
+   }
+   async function loadCase(){
+diff --git a/prototype/operations.js b/prototype/operations.js
+index 8e18b7a..d4a499d 100644
+--- a/prototype/operations.js
++++ b/prototype/operations.js
+@@ -2,7 +2,7 @@
+   "use strict";
+   const $ = (id) => document.getElementById(id);
+   const labels = {ok: "조회 성공", no_index: "인덱스 없음", unavailable: "조회 실패", not_started: "실행 기록 없음", stale: "상태 갱신 지연 / 중단 여부 확인 필요", success: "최근 정규화 성공", running: "정규화 실행 중", failed: "정규화 실패", waiting: "다음 수신 구간 대기"};
+-  const evidenceLabels = {exact_reference: "정확한 문서 참조 확인 (내용 해시 재검증은 아님)", normalized_missing_or_expired: "정규화 근거 없음 / 만료", raw_missing_or_expired: "원본 근거 없음 / 만료", provenance_mismatch: "근거 참조 불일치", unsupported_or_invalid_reference: "지원하지 않거나 잘못된 근거 참조", invalid_reference: "잘못된 근거 참조"};
++  const evidenceLabels = {exact_reference: "정확한 문서 참조 확인", normalized_hash_mismatch: "정규화 근거 내용 변경 감지", invalid_evidence_hash: "저장된 근거 해시 형식 오류", normalized_missing_or_expired: "정규화 근거 없음 / 만료", raw_missing_or_expired: "원본 근거 없음 / 만료", provenance_mismatch: "근거 참조 불일치", unsupported_or_invalid_reference: "지원하지 않거나 잘못된 근거 참조", invalid_reference: "잘못된 근거 참조"};
+   const fmt = (value) => value ? new Date(value).toLocaleString("ko-KR", {timeZone: "Asia/Seoul", hour12: false}) : "미확인";
+   let generation = 0, detailGeneration = 0;
+   function node(tag, value, className) {
+@@ -55,7 +55,17 @@
+     $("ops-pipeline").textContent = "정규화 처리기: " + (labels[pipeline.state] || "미확인") + " · 마지막 성공: " + fmt(pipeline.last_success) + " · 수신 시각 체크포인트: " + fmt(pipeline.checkpoint);
+     const detector = pipeline.detector || { state: "not_started" };
+     const detectorLabels = { ...labels, success: "최근 탐지 성공", running: "탐지 실행 중", failed: "탐지 실패" };
+-    $("ops-pipeline").textContent += " · SSH 탐지기: " + (detectorLabels[detector.state] || "미확인") + " · 탐지 마지막 성공: " + fmt(detector.last_success);
++    const detectorName = detector.detection && detector.detection.includes(",") ? "SSH·클라우드 탐지기" : "SSH 탐지기";
++    $("ops-pipeline").textContent += " · " + detectorName + ": " + (detectorLabels[detector.state] || "미확인") + " · 탐지 마지막 성공: " + fmt(detector.last_success);
++    const healthLabels = { failed: "탐지 장애: 처리 실패", stale: "탐지 장애: 상태 갱신 중단", delayed: "탐지 지연: 처리 위치 확인 필요", warning: "탐지 경고: 탐지 제외 이벤트 확인 필요" };
++    if (healthLabels[detector.health]) $("ops-pipeline").textContent += " · " + healthLabels[detector.health];
++    if (Number.isSafeInteger(detector.lag_seconds)) $("ops-pipeline").textContent += " · 처리 지연 " + detector.lag_seconds + "초";
++    if (detector.late_total > 0) $("ops-pipeline").textContent += " · 지연 제외 누적 " + detector.late_total + "건";
++    if (detector.legacy_excluded > 0) $("ops-pipeline").textContent += " · 과거 형식 제외 " + detector.legacy_excluded + "건";
++    if (detector.history_pending > 0) $("ops-pipeline").textContent += " · 실행 이력 전송 대기 " + detector.history_pending + "건";
++    if (detector.excluded_total > 0) $("ops-pipeline").textContent += " · 규칙 평가 제외 누적 " + detector.excluded_total + "건";
++    $("ops-pipeline").setAttribute("role", "status");
++    $("ops-pipeline").setAttribute("aria-live", "polite");
+     chart($("ops-intake-chart"), sections.intake); chart($("ops-alert-chart"), sections.alerts);
+     const alerts = sections.alerts; $("ops-alert-rows").replaceChildren();
+     $("ops-alert-state").textContent = alerts.state === "ok" ? "총 " + alerts.count + "건 · 최신 최대 50건 표시 (페이지 탐색 미지원)" : labels[alerts.state];
+@@ -74,13 +84,17 @@
+     try {
+       const data = await request("/api/alerts/detail?" + new URLSearchParams({id}));
+       if (version !== detailGeneration) return;
+-      $("ops-detail-state").textContent = data.evidence_count ? "저장된 근거 " + data.evidence_count + "건 · 최대 100건 개별 확인" : "과거 경보에 정확한 근거 참조가 없습니다. 주변 로그로 대체하지 않습니다.";
++      $("ops-detail-state").textContent = data.evidence_count ? "저장된 근거 " + data.evidence_count + "건 · 페이지별 전체 조회 가능" : "과거 경보에 정확한 근거 참조가 없습니다. 주변 로그로 대체하지 않습니다.";
+       const condition = data.condition;
+       const investigate = node("a", "사건 조사 / 등록");
+       investigate.href = "workbench.html?" + new URLSearchParams({alert: id, return: (window.location?.search || "").slice(1), return_page: "index.html"});
+       $("ops-detail-content").append(investigate);
+       $("ops-detail-content").append(node("p", (data.alert.title || data.alert.rule || "경보") + " · 규칙 버전 " + (data.rule_version || "미기록")), node("p", "관측 수 " + (condition.event_count ?? "미기록") + " / 임계값 " + (condition.threshold ?? "미기록") + " / 시간 창 " + (condition.time_window_seconds ?? "미기록") + "초"));
+-      for (let i = 0; i < data.evidence_limit; i++) {
++      const evidenceContainer = node('div'), navigation = node('div');
++      $("ops-detail-content").append(evidenceContainer, navigation);
++      function evidencePage(pageData) {
++      const page = pageData.evidence_page || {positions: Array.from({length: pageData.evidence_limit}, (_, i) => i), next_offset: null};
++      for (const i of page.positions) {
+         const box = node("section", undefined, "ops-evidence"), button = node("button", "근거 " + (i + 1) + " 확인"), result = node("div");
+         button.type = "button";
+         button.addEventListener("click", async () => {
+@@ -90,12 +104,26 @@
+             if (version !== detailGeneration) return;
+             const item = reply.evidence;
+             result.replaceChildren(node("p", evidenceLabels[item.state] || "미확인"));
++            if (item.integrity) result.append(node('p', item.integrity === 'normalized_hash_verified' ? '정규화 내용 해시 일치 · 원본 내용 해시는 미검증' : '과거 근거의 내용 해시는 미기록'));
+             if (item.raw) result.append(node("p", "원본: " + item.raw.index + " / " + item.raw.id));
+             if (item.metadata) result.append(node("pre", JSON.stringify(item.metadata, null, 2)));
+           } catch (error) { result.textContent = error.message; } finally { button.disabled = false; }
+         });
+-        box.append(button, result); $("ops-detail-content").append(box);
++        box.append(button, result); evidenceContainer.append(box);
+       }
++      navigation.replaceChildren();
++      if (page.next_offset !== null) {
++        const more = node('button', '다음 근거 페이지'); more.type = 'button'; navigation.append(more);
++        more.addEventListener('click', async () => {
++          more.disabled = true;
++          try {
++            const next = await request('/api/alerts/detail?' + new URLSearchParams({id, offset: String(page.next_offset)}));
++            if (version === detailGeneration) evidencePage(next);
++          } catch (error) { more.textContent = error.message; } finally { more.disabled = false; }
++        });
++      }
++      }
++      evidencePage(data);
+     } catch (error) { if (version === detailGeneration) $("ops-detail-state").textContent = error.message; }
+   }
+   async function refresh() {
+diff --git a/prototype/shell.js b/prototype/shell.js
+index e6ddb52..12e49d7 100644
+--- a/prototype/shell.js
++++ b/prototype/shell.js
+@@ -4,7 +4,7 @@
+   const groups = [
+     { title: "보안 관제", items: [
+       ["index.html", "관제 현황"], ["logs.html", "통합 로그"],
+-      ["cases.html", "사건 조사"], ["collection-health.html", "수집 품질"]
++      ["cases.html", "사건 조사"], ["collection-health.html", "수집 품질"], ["detection-history.html", "탐지 실행·제외 이력"]
+     ] },
+     { title: "에이전트", items: [
+       ["agents.html", "에이전트 설치 파일"], ["agents.html#keys", "발급 키 관리"],
+diff --git a/prototype/tests/operations.test.cjs b/prototype/tests/operations.test.cjs
+index 64d19df..6d9324f 100644
+--- a/prototype/tests/operations.test.cjs
++++ b/prototype/tests/operations.test.cjs
+@@ -29,6 +29,17 @@ test('detector state is displayed separately from normalization',async()=>{
+   const ui=browser([ok({...data,sections:{...data.sections,pipeline:{state:'success',detector:{state:'failed'}}}})]);await settle();
+   assert.match(ui.get('ops-pipeline').textContent,/SSH 탐지기: 탐지 실패/);
+ });
++test('cloud profile is identified in the operations view',async()=>{
++  const ui=browser([ok({...data,sections:{...data.sections,pipeline:{state:'success',detector:{state:'success',detection:'AUTH-001,AWS-IAM-001'}}}})]);await settle();
++  assert.match(ui.get('ops-pipeline').textContent,/SSH·클라우드 탐지기/);
++});
++test('detector health alarms and excluded counts are visible',async()=>{
++  for (const [health,label] of [['failed','탐지 장애: 처리 실패'],['stale','상태 갱신 중단'],['delayed','탐지 지연'],['warning','탐지 제외 이벤트']]) {
++    const ui=browser([ok({...data,sections:{...data.sections,pipeline:{state:'success',detector:{state:'success',health,lag_seconds:1300,late_total:3,legacy_excluded:12}}}})]);await settle();
++    assert.ok(ui.get('ops-pipeline').textContent.includes(label));
++    assert.match(ui.get('ops-pipeline').textContent,/처리 지연 1300초.*지연 제외 누적 3건.*과거 형식 제외 12건/);
++  }
++});
+ test('successful zero, missing index and failed queries stay distinct',async()=>{
+   const ui=browser([ok({...data,sections:{...data.sections,processing:{state:'no_index'},quality:{state:'unavailable'}}})]);await settle();
+   const cards=ui.get('ops-metrics').children;
+@@ -62,3 +73,18 @@ test('alert IDs are encoded and untrusted titles are text nodes',async()=>{
+   assert.equal(investigation.searchParams.get('return_page'),'index.html');
+   assert.match(ui.get('ops-detail-state').textContent,/주변 로그로 대체하지/);
+ });
++
++test('evidence pagination reaches global positions and reports normalized integrity',async()=>{
++ const row={id:'alert',title:'sequence',timestamp:data.start};
++ const ui=browser([ok({...data,sections:{...data.sections,alerts:{...section,rows:[row]}}}),
++ ok({alert:row,condition:{},evidence_count:251,evidence_page:{positions:[0],next_offset:250}}),
++ ok({evidence_count:251,evidence_page:{positions:[250],next_offset:null}}),
++ ok({evidence:{state:'exact_reference',integrity:'normalized_hash_verified'}})]);await settle();
++ ui.get('ops-alert-rows').children[0].children[5].children[0].listeners.click();await settle();
++ const content=ui.get('ops-detail-content');const container=content.children[3],nav=content.children[4];
++ nav.children[0].listeners.click();await settle();
++ assert.equal(new URL(ui.calls[2].url,'https://test').searchParams.get('offset'),'250');
++ container.children[1].children[0].listeners.click();await settle();
++ assert.equal(new URL(ui.calls[3].url,'https://test').searchParams.get('evidence'),'250');
++ assert.match(allText(container.children[1]),/해시 일치.*원본 내용 해시는 미검증/);
++});
+diff --git a/prototype/tests/shell.test.cjs b/prototype/tests/shell.test.cjs
+index ad2d1f8..425eb4e 100644
+--- a/prototype/tests/shell.test.cjs
++++ b/prototype/tests/shell.test.cjs
+@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
+ const fs = require('node:fs');
+ const path = require('node:path');
+ const {groups, current, markup} = require('../shell.js');
+-const pages = ['index.html','logs.html','cases.html','workbench.html','collection-health.html','agents.html','agent-status.html'];
++const pages = ['index.html','logs.html','cases.html','workbench.html','collection-health.html','agents.html','agent-status.html','detection-history.html'];
+ 
+ test('every live page loads one shared shell and no duplicate header or sidebar', () => {
+   for (const page of pages) {
+@@ -18,7 +18,7 @@ test('every live page loads one shared shell and no duplicate header or sidebar'
+ 
+ test('same navigation labels, groups and order on every page', () => {
+   const expected = groups.flatMap(group => group.items);
+-  assert.equal(expected.length, 7);
++  assert.equal(expected.length, 8);
+   for (const page of pages) {
+     const html = markup('/'+page, '');
+     const links = [...html.matchAll(/<a class="nav-item(?: active)?" href="([^"]+)"[^>]*>([^<]+)<\/a>/g)].map(match => [match[1],match[2]]);
+diff --git a/src/cloud_soc/aws/cloudtrail.py b/src/cloud_soc/aws/cloudtrail.py
+index 9975033..79bb134 100644
+--- a/src/cloud_soc/aws/cloudtrail.py
++++ b/src/cloud_soc/aws/cloudtrail.py
+@@ -7,6 +7,7 @@ import json
+ import re
+ 
+ from cloud_soc.privacy import display, REDACTED
++from cloud_soc.aws.network_risk import public_management_ingress
+ 
+ INDEX_PATTERN = "soc-cloud-aws-*"
+ SOURCE_LABEL = "aws_cloudtrail"
+@@ -121,7 +122,12 @@ def project_event(envelope, *, account, region, organization):
+         if provider == "iam.amazonaws.com":
+             audit.update(target_user=safe(request.get("userName")), target_role=safe(request.get("roleName")),
+                          target_policy_arn=safe(request.get("policyArn")))
++            audit['target_group'] = safe(request.get('groupName'))
++        if provider == 'cloudtrail.amazonaws.com' and name in ('StopLogging', 'DeleteTrail'):
++            audit['target_trail'] = safe(request.get('name') or request.get('Name'))
+         if provider == "ec2.amazonaws.com":
++            if name == 'AuthorizeSecurityGroupIngress':
++                audit['public_management_ingress'] = public_management_ingress(request)
+             group = request.get("groupId")
+             if isinstance(group, str) and re.fullmatch(r"sg-(?:[0-9a-f]{8}|[0-9a-f]{17})", group):
+                 audit["target_group_id"] = group
+diff --git a/src/cloud_soc/detection/__main__.py b/src/cloud_soc/detection/__main__.py
+index cba160f..05f6a9d 100644
+--- a/src/cloud_soc/detection/__main__.py
++++ b/src/cloud_soc/detection/__main__.py
+@@ -8,6 +8,7 @@ import time
+ from elasticsearch import Elasticsearch
+ from cloud_soc.aws.__main__ import endpoint, protected_key
+ from cloud_soc.detection.worker import approved_rules, run_once
++from cloud_soc.detection.incremental import run_incremental, utc
+ 
+ 
+ def main(argv=None):
+@@ -16,6 +17,13 @@ def main(argv=None):
+     parser.add_argument("--once", action="store_true")
+     parser.add_argument("--interval", type=int, default=60)
+     parser.add_argument("--max-documents", type=int, default=20000)
++    parser.add_argument("--state", default="state/detection/runtime.sqlite")
++    parser.add_argument("--start", help="Required explicit UTC normalization start on first run; keep unchanged on restart")
++    parser.add_argument("--lateness-seconds", type=int, default=900)
++    parser.add_argument("--snapshot", action="store_true", help="Explicit legacy offline/replay mode")
++    parser.add_argument("--accept-legacy-exclusion", action="store_true", help="Explicitly exclude old documents missing normalized_at; original documents remain unchanged")
++    parser.add_argument("--include-cloud", action="store_true", help="Opt in to the reviewed AWS/OCI cloud rule profile")
++    parser.add_argument("--include-sequence", action="store_true", help="Opt in to SSH repeated-failure then success detection")
+     parser.add_argument("--es-url")
+     parser.add_argument("--ca-file")
+     parser.add_argument("--api-key-file")
+@@ -24,9 +32,13 @@ def main(argv=None):
+         if (not 10 <= args.interval <= 3600 or not 1 <= args.max_documents <= 100000
+                 or args.once and not args.run):
+             raise ValueError("Invalid options")
+-        approved_rules()
++        selected_rules = approved_rules(include_cloud=args.include_cloud, include_sequence=args.include_sequence)
++        if args.run and not args.snapshot:
++            utc(args.start)
++            if not 60 <= args.lateness_seconds <= 86400:
++                raise ValueError("Invalid lateness")
+         if not args.run:
+-            print("AUTH-001 valid; source=soc-normalized-v1; offline; no writes")
++            print(','.join(rule['id'] for rule in selected_rules) + " valid; source=soc-normalized-v1; offline; no writes")
+             return 0
+         url = endpoint(args.es_url)
+         key = protected_key(args.api_key_file)
+@@ -38,10 +50,14 @@ def main(argv=None):
+             while True:
+                 failed = False
+                 try:
+-                    print(json.dumps(run_once(client, max_documents=args.max_documents)), flush=True)
++                    result = (run_once(client, max_documents=args.max_documents, include_cloud=args.include_cloud, include_sequence=args.include_sequence) if args.snapshot else
++                              run_incremental(client, state_path=args.state, start=args.start,
++                                              max_documents=args.max_documents, lateness_seconds=args.lateness_seconds, source_id=url,
++                                              accept_legacy_exclusion=args.accept_legacy_exclusion, include_cloud=args.include_cloud, include_sequence=args.include_sequence))
++                    print(json.dumps(result), flush=True)
+                 except Exception:
+                     failed = True
+-                    print("detection_cycle_failed; check status, permissions and snapshot limit", flush=True)
++                    print("detection_cycle_failed; checkpoint retained; check portal health, state and permissions", flush=True)
+                 if args.once:
+                     return int(failed)
+                 time.sleep(args.interval)
+diff --git a/src/cloud_soc/detection/engine.py b/src/cloud_soc/detection/engine.py
+index 5a61bc4..07eac06 100644
+--- a/src/cloud_soc/detection/engine.py
++++ b/src/cloud_soc/detection/engine.py
+@@ -14,6 +14,18 @@ from cloud_soc.elastic.pagination import fetch_all_hits
+ ENGINE_VERSION = "threshold-v2"
+ 
+ 
++def rule_engine_version(rule):
++    if rule.get('type') == 'sequence':
++        return 'failure-success-v1'
++    if rule.get('type') == 'single':
++        return 'single-v1'
++    return 'threshold-v3' if any(c['operator'] in ('exists', 'not_equals') for c in rule['conditions']) else ENGINE_VERSION
++
++
++def rule_revision(rule):
++    return event_fingerprint({'engine': rule_engine_version(rule), 'rule': rule})
++
++
+ def event_fingerprint(event: dict[str, Any]) -> str:
+     return hashlib.sha256(json.dumps(
+         event, sort_keys=True, ensure_ascii=True, separators=(",", ":"),
+@@ -86,6 +98,11 @@ def condition_matches(
+         field,
+     )
+ 
++    if operator == 'exists':
++        return (actual is not None) == expected if type(expected) is bool else False
++    if actual is None:
++        return False
++
+     # --------------------------------------------------------
+     # equals
+     # --------------------------------------------------------
+@@ -248,6 +265,7 @@ def build_group_key(
+ def detect_rule(
+     events: list[dict[str, Any]],
+     rule: dict[str, Any],
++    *, runtime: dict | None = None, _single_event: bool = False,
+ ) -> list[dict[str, Any]]:
+     """
+     특정 Rule 하나를 이벤트 목록에 적용한다.
+@@ -265,6 +283,12 @@ def detect_rule(
+         Threshold 검사
+     """
+ 
++    if rule.get('type') == 'sequence':
++        from cloud_soc.detection.sequence import detect_sequence
++        return detect_sequence(events, rule, runtime if runtime is not None else {})
++    if rule.get('type') == 'single' and not _single_event:
++        return [match for event in events for match in detect_rule([event], rule, _single_event=True)]
++
+     threshold_count = rule["threshold"]["count"]
+ 
+     window_seconds = (
+@@ -280,7 +304,8 @@ def detect_rule(
+     # Organization scope is mandatory even when a rule omits it.
+     group_by = list(dict.fromkeys(["organization.id", *rule["group_by"]]))
+     rule_snapshot = deepcopy(rule)
+-    rule_version = event_fingerprint({"engine": ENGINE_VERSION, "rule": rule_snapshot})
++    engine_version = rule_engine_version(rule)
++    rule_version = rule_revision(rule_snapshot)
+ 
+     # --------------------------------------------------------
+     # 1. Rule 조건과 일치하는 이벤트를 그룹별로 저장
+@@ -337,6 +362,9 @@ def detect_rule(
+ 
+     for group_key, group_events in grouped_events.items():
+ 
++        state_key = json.dumps(group_key, ensure_ascii=True)
++        prior = runtime.get(state_key, {}) if runtime is not None else {}
++
+         # 반드시 시간순으로 처리한다.
+         group_events.sort(key=lambda item: (item[0], event_fingerprint(item[1])))
+ 
+@@ -346,9 +374,9 @@ def detect_rule(
+                 datetime,
+                 dict[str, Any],
+             ]
+-        ] = deque()
++        ] = deque((parse_event_timestamp(item), item) for item in prior.get("window", []))
+ 
+-        last_alert_time: datetime | None = None
++        last_alert_time = datetime.fromisoformat(prior["last_alert"]) if prior.get("last_alert") else None
+ 
+         for timestamp, event in group_events:
+ 
+@@ -422,7 +450,7 @@ def detect_rule(
+                 "organization_id": group_values["organization.id"],
+                 "rule_version": rule_version,
+                 "rule_snapshot": deepcopy(rule_snapshot),
+-                "engine_version": ENGINE_VERSION,
++                "engine_version": engine_version,
+                 "evidence": [event_evidence(item[1]) for item in window],
+ 
+                 "event_count": len(window),
+@@ -463,6 +491,10 @@ def detect_rule(
+ 
+             last_alert_time = timestamp
+ 
++        if runtime is not None:
++            runtime[state_key] = {"window": [item[1] for item in window],
++                                  "last_alert": last_alert_time.isoformat() if last_alert_time else None}
++
+     return detections
+ 
+ 
+diff --git a/src/cloud_soc/detection/rule_loader.py b/src/cloud_soc/detection/rule_loader.py
+index e9b50b0..f8200c5 100644
+--- a/src/cloud_soc/detection/rule_loader.py
++++ b/src/cloud_soc/detection/rule_loader.py
+@@ -22,6 +22,7 @@ DEFAULT_RULE_FILE = (
+ # ============================================================
+ 
+ SUPPORTED_OPERATORS = {
++    "exists",
+     "equals",
+     "not_equals",
+     "contains",
+@@ -129,6 +130,19 @@ def validate_rule(
+             "각 탐지 규칙은 객체 형식이어야 합니다."
+         )
+ 
++    kind = rule.get('type', 'threshold')
++    if kind not in ('single', 'threshold', 'sequence'):
++        raise ValueError('Unsupported rule type')
++    if kind == 'single':
++        rule.setdefault('group_by', ['organization.id', 'cloud.account.id'])
++        rule.setdefault('threshold', {'count': 1})
++        rule.setdefault('time_window', {'seconds': 1})
++        rule.setdefault('cooldown', {'seconds': 0})
++        if rule['threshold'] != {'count': 1} or rule['cooldown'] != {'seconds': 0}:
++            raise ValueError('Single event rules cannot aggregate or suppress independent events')
++    if kind == 'sequence' and rule.get('cooldown', {'seconds': 0}) != {'seconds': 0}:
++        raise ValueError('Failure-success sequences reset on successful authentication; cooldown must be zero')
++
+     required_fields = [
+         "id",
+         "name",
+@@ -185,6 +199,8 @@ def validate_rule(
+                 f"{rule['id']}: "
+                 f"지원하지 않는 operator입니다: {operator}"
+             )
++        if operator == 'exists' and type(condition['value']) is not bool:
++            raise ValueError('exists requires a boolean value')
+ 
+     # --------------------------------------------------------
+     # group_by 확인
+@@ -264,4 +280,4 @@ if __name__ == "__main__":
+         print(
+             "Group By:",
+             loaded_rule["group_by"],
+-        )
+\ No newline at end of file
++        )
+diff --git a/src/cloud_soc/detection/setup.py b/src/cloud_soc/detection/setup.py
+index 622fafd..6c0d9e7 100644
+--- a/src/cloud_soc/detection/setup.py
++++ b/src/cloud_soc/detection/setup.py
+@@ -10,11 +10,13 @@ from cloud_soc.elastic.repository import ensure_security_alerts_index, ensure_pr
+ from cloud_soc.processing.contract import NORMALIZED, STATUS
+ from cloud_soc.processing.setup import ROLE as NORMALIZER_ROLE
+ from cloud_soc.processing.setup import prepare as prepare_processing
++from cloud_soc.detection.telemetry import RUNS, EXCLUSIONS
+ 
+ ROLE = {"cluster": [], "indices": [
+     {"names": [NORMALIZED], "privileges": ["read", "view_index_metadata"]},
+     {"names": ["security-alerts"], "privileges": ["create_doc", "view_index_metadata"]},
+     {"names": [STATUS], "privileges": ["index"]},
++    {"names": [RUNS, EXCLUSIONS], "privileges": ["create_doc"]},
+ ]}
+ 
+ 
+diff --git a/src/cloud_soc/detection/worker.py b/src/cloud_soc/detection/worker.py
+index b1b0b12..932b86f 100644
+--- a/src/cloud_soc/detection/worker.py
++++ b/src/cloud_soc/detection/worker.py
+@@ -4,7 +4,7 @@ from copy import deepcopy
+ from datetime import datetime, timezone
+ 
+ from cloud_soc.detection.engine import detect_events, event_evidence
+-from cloud_soc.detection.rule_loader import load_rules
++from cloud_soc.detection.rule_loader import load_rules, PROJECT_ROOT
+ from cloud_soc.elastic.pagination import fetch_all_hits
+ from cloud_soc.elastic.repository import ensure_provenance_mapping, save_security_alert
+ from cloud_soc.main import build_security_alert, make_alert_id
+@@ -14,10 +14,16 @@ from cloud_soc.portal.log_contract import document_reference
+ ALERTS = "security-alerts"
+ 
+ 
+-def approved_rules():
++def approved_rules(*, include_cloud=False, include_sequence=False):
+     rules = [rule for rule in load_rules() if rule["id"] == "AUTH-001"]
+     if len(rules) != 1:
+         raise ValueError("Existing AUTH-001 must be enabled")
++    if include_cloud:
++        rules += load_rules(PROJECT_ROOT / 'rules' / 'cloud.yml')
++    if include_sequence:
++        rules += load_rules(PROJECT_ROOT / 'rules' / 'authentication_sequence.yml')
++    if len({rule['id'] for rule in rules}) != len(rules):
++        raise ValueError('Duplicate rule IDs across profiles')
+     return rules
+ 
+ 
+@@ -44,7 +50,7 @@ def normalized_snapshot(client, max_documents):
+     return events
+ 
+ 
+-def run_once(client, *, max_documents=20000):
++def run_once(client, *, max_documents=20000, include_cloud=False, include_sequence=False):
+     """Read completely, detect completely, then create immutable alerts.
+ 
+     No time cursor: a threshold window may cross any two normalizer batches.
+@@ -56,14 +62,14 @@ def run_once(client, *, max_documents=20000):
+ 
+     def status(state, **extra):
+         stamp = datetime.now(timezone.utc).isoformat()
+-        document = {"@timestamp": stamp, "state": state, "detection": "AUTH-001", **extra}
++        document = {"@timestamp": stamp, "state": state, "detection": ','.join(['AUTH-001'] + (['cloud'] if include_cloud else []) + (['AUTH-SEQ-001'] if include_sequence else [])), **extra}
+         if state == "success":
+             document["last_success"] = stamp
+         client.index(index=STATUS, id="detector", document=document, refresh=False)
+ 
+     try:
+         status("running")
+-        rules = approved_rules()
++        rules = approved_rules(include_cloud=include_cloud, include_sequence=include_sequence)
+         if set(client.indices.get_mapping(index=ALERTS)) != {ALERTS}:
+             raise ValueError("Expected concrete alert index")
+         ensure_provenance_mapping(client, ALERTS)
+diff --git a/src/cloud_soc/elastic/pagination.py b/src/cloud_soc/elastic/pagination.py
+index e6fbb30..5d6850b 100644
+--- a/src/cloud_soc/elastic/pagination.py
++++ b/src/cloud_soc/elastic/pagination.py
+@@ -15,6 +15,7 @@ class IncompleteSearchError(RuntimeError):
+ def fetch_all_hits(
+     client: Elasticsearch, *, index: str, page_size: int = 1000,
+     max_documents: int | None = None,
++    query: dict | None = None,
+ ) -> list[dict[str, Any]]:
+     if type(page_size) is not int or not 1 <= page_size <= 10000:
+         raise ValueError("page_size must be between 1 and 10000")
+@@ -35,7 +36,7 @@ def fetch_all_hits(
+             request: dict[str, Any] = {
+                 "pit": {"id": pit_id, "keep_alive": "2m"},
+                 "size": page_size,
+-                "query": {"match_all": {}},
++                "query": query if query is not None else {"match_all": {}},
+                 # _shard_doc is unique and stable within this PIT.
+                 "sort": [{"_shard_doc": "asc"}],
+                 "track_total_hits": False,
+diff --git a/src/cloud_soc/portal/app.py b/src/cloud_soc/portal/app.py
+index ba72ede..2a206ec 100644
+--- a/src/cloud_soc/portal/app.py
++++ b/src/cloud_soc/portal/app.py
+@@ -256,6 +256,11 @@ def create_app(settings=None, *, issuer=None, monitor=None):
+     def alert_detail():
+         return log_response(operations.detail)
+ 
++    @app.get('/api/detection/history')
++    def detection_history():
++        from cloud_soc.portal.detection_history import history
++        return log_response(lambda pairs: history(operations, pairs))
++
+     @app.post("/api/packages")
+     def create_package():
+         return jsonify(store.create(request.get_json())), 201
+@@ -421,6 +426,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
+     def static_file(filename):
+         # Never serve the repo, secrets, SQLite, source code, or arbitrary uploads.
+         allowed = {"agents.html", "agents.js", "agents.css", "styles.css", "shell.js", "shell.css", "assets/mark.svg",
++                   "detection-history.html", "detection-history.js",
+                    "agent-status.html", "agent-status.js", "agent-status.css",
+                    "collection-health.html", "collection-health.js",
+                    "index.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css"}
+diff --git a/src/cloud_soc/portal/operations.py b/src/cloud_soc/portal/operations.py
+index 92886eb..a73c7a2 100644
+--- a/src/cloud_soc/portal/operations.py
++++ b/src/cloud_soc/portal/operations.py
+@@ -11,6 +11,7 @@ from cloud_soc.portal.log_query import LogQueryError, bounded_json
+ from cloud_soc.portal.security_detail import DETAIL_FIELDS, security_detail, text
+ from cloud_soc.processing.contract import NORMALIZED, RECORDS, STATUS
+ from cloud_soc.processing.worker import checked
++from cloud_soc.detection.engine import event_fingerprint
+ 
+ ALERT = "security-alerts"
+ INDEX_PATH_BUDGET = 3000
+@@ -84,7 +85,8 @@ class Operations:
+         if not exact_indices(self.client, [index]):
+             return None
+         try:
+-            return self.client.get(index=index, id=identifier(doc_id), source_includes=fields)["_source"]
++            options = {"source_includes": fields} if fields is not None else {}
++            return self.client.get(index=index, id=identifier(doc_id), **options)["_source"]
+         except NotFoundError:
+             return None
+ 
+@@ -147,14 +149,28 @@ class Operations:
+                 "rows": rows, "statuses": [{"key": key, "doc_count": statuses[key]} for key in sorted(statuses)]}
+ 
+     def worker_status(self, worker):
+-        value = self.get(STATUS, worker, ["@timestamp", "state", "last_success", "checkpoint", "error", "detection"])
++        value = self.get(STATUS, worker, ["@timestamp", "state", "last_success", "checkpoint", "error", "detection", "health", "lag_seconds", "late_total", "legacy_excluded", "excluded_total", "history_pending"])
+         if value is None:
+             return {"state": "not_started"}
+         stamp = parse_time(value.get("@timestamp"))
+         age = (datetime.now(timezone.utc) - stamp).total_seconds() if stamp else None
+         state = value.get("state")
+-        return {"state": state if age is not None and 0 <= age <= 300 and state in ("success", "running", "failed", "waiting") else "stale",
+-                "last_success": text(value.get("last_success")), "checkpoint": text(value.get("checkpoint"))}
++        state = state if age is not None and 0 <= age <= 300 and state in ("success", "running", "failed", "waiting") else "stale"
++        checkpoint = parse_time(value.get('checkpoint'))
++        lag = max(0, int((datetime.now(timezone.utc) - checkpoint).total_seconds())) if checkpoint else None
++        late = value.get('late_total')
++        late = late if type(late) is int and late >= 0 else 0
++        legacy = value.get('legacy_excluded')
++        legacy = legacy if type(legacy) is int and legacy >= 0 else 0
++        excluded = value.get('excluded_total')
++        excluded = excluded if type(excluded) is int and excluded >= 0 else 0
++        pending = value.get('history_pending')
++        pending = pending if type(pending) is int and pending >= 0 else 0
++        health = 'failed' if state == 'failed' else 'stale' if state == 'stale' else 'delayed' if lag is not None and lag > 1200 else 'warning' if late or legacy or excluded or pending else 'healthy'
++        return {"state": state, "health": health, "lag_seconds": lag, "late_total": late, "legacy_excluded": legacy, "excluded_total": excluded, "history_pending": pending,
++                "detection": text(value.get('detection')),
++                "last_success": text(value.get("last_success")), "checkpoint": text(value.get("checkpoint")),
++                "error": text(value.get('error'))}
+ 
+     def pipeline(self):
+         try:
+@@ -195,11 +211,16 @@ class Operations:
+         try:
+             pairs = list(pairs)
+             values = dict(pairs)
+-            if len(pairs) != len(values) or set(values) not in ({"id"}, {"id", "evidence"}):
++            if len(pairs) != len(values) or 'id' not in values or set(values) - {'id', 'evidence', 'offset', 'limit'} or ('evidence' in values and set(values) != {'id', 'evidence'}):
+                 raise ValueError()
+             doc_id = identifier(values["id"])
+             position = values.get("evidence")
+-            if position is not None and not re.fullmatch(r"[0-9]{1,3}", position):
++            if position is not None and not re.fullmatch(r"[0-9]{1,9}", position):
++                raise ValueError()
++            if any(not re.fullmatch(r'[0-9]{1,9}', values[k]) for k in ('offset', 'limit') if k in values):
++                raise ValueError()
++            offset, limit = int(values.get('offset', '0')), int(values.get('limit', '25'))
++            if not 1 <= limit <= 100:
+                 raise ValueError()
+         except ValueError:
+             raise LogQueryError("invalid_alert_query", 400, "경보 참조를 확인하세요.") from None
+@@ -215,9 +236,14 @@ class Operations:
+                       "engine_version": text(field(source, "cloud_soc.provenance.engine_version")),
+                       "condition": {k: field(source, "cloud_soc." + k) for k in ("event_count", "threshold", "time_window_seconds")
+                                     if type(field(source, "cloud_soc." + k)) is int}}
++            if offset > len(evidence):
++                raise LogQueryError('invalid_evidence_offset', 400, '근거 페이지 범위를 확인하세요.')
++            last = min(offset + limit, len(evidence))
++            result['evidence_page'] = {'offset': offset, 'limit': limit, 'total': len(evidence),
++                                       'positions': list(range(offset, last)), 'next_offset': last if last < len(evidence) else None}
+             if position is not None:
+                 number = int(position)
+-                if number >= min(len(evidence), 100):
++                if number >= len(evidence):
+                     raise LogQueryError("evidence_missing", 404, "요청한 근거 참조가 없습니다.")
+                 result["evidence"] = self.evidence(evidence[number])
+             return bounded_json(result)
+@@ -240,17 +266,32 @@ class Operations:
+                 raw = document_reference(raw.get("index"), raw.get("id"))
+         except (ValueError, AttributeError):
+             return {"state": "unsupported_or_invalid_reference"}
+-        norm = self.get(normalized["index"], normalized["id"], ["@timestamp", "event.category", "event.action", "event.outcome", "cloud_soc.provenance.raw"])
++        norm = self.get(normalized["index"], normalized["id"], None)
+         if norm is None:
+             return {"state": "normalized_missing_or_expired", "normalized": normalized, "raw": raw}
+         if field(norm, "cloud_soc.provenance.raw") != raw:
+             return {"state": "provenance_mismatch"}
++        expected_hash = reference.get('event_hash')
++        if expected_hash is None:
++            integrity = 'unverified_legacy'
++        elif not isinstance(expected_hash, str) or not re.fullmatch(r'[0-9a-f]{64}', expected_hash):
++            return {'state': 'invalid_evidence_hash'}
++        else:
++            # Reproduce the detector's exact _source plus its injected document locator.
++            # Hash before any privacy projection, but never return this complete source.
++            from copy import deepcopy
++            hashed = deepcopy(norm)
++            hashed['_cloud_soc_meta'] = {'index': normalized['index'], 'document_id': normalized['id']}
++            if event_fingerprint(hashed) != expected_hash:
++                return {'state': 'normalized_hash_mismatch', 'normalized': normalized, 'raw': raw}
++            integrity = 'normalized_hash_verified'
+         source = self.get(raw["index"], raw["id"], list(SOURCE_FIELDS + DETAIL_FIELDS))
+         if source is None:
+             return {"state": "raw_missing_or_expired", "normalized": normalized, "raw": raw}
+         metadata = ({path: text(field(source, path)) for path in ("@timestamp", "host.name", "user.name", "event.action")}
+                     if raw["index"].startswith("raw-logs-") else project_hit({"_index": raw["index"], "_id": raw["id"], "_source": source}))
+         return {"state": "exact_reference", "normalized": normalized, "raw": raw,
++                "integrity": integrity, "raw_integrity": 'not_hashed_at_detection',
+                 "normalized_event": {"timestamp": text(norm.get("@timestamp")), "action": text(field(norm, "event.action")),
+                                      "outcome": text(field(norm, "event.outcome"))},
+                 "metadata": metadata,
+diff --git a/src/cloud_soc/portal/security_detail.py b/src/cloud_soc/portal/security_detail.py
+index e4eb66e..b36d378 100644
+--- a/src/cloud_soc/portal/security_detail.py
++++ b/src/cloud_soc/portal/security_detail.py
+@@ -31,6 +31,8 @@ DETAIL_FIELDS = (
+     "aws.cloudtrail.error_code", "aws.cloudtrail.outcome_basis", "aws.cloudtrail.management_only",
+     "aws.cloudtrail.target_user", "aws.cloudtrail.target_role", "aws.cloudtrail.target_group_id",
+     "aws.cloudtrail.target_policy_arn", "aws.cloudtrail.identity_invoked_by",
++    "aws.cloudtrail.public_management_ingress",
++    "aws.cloudtrail.target_group", "aws.cloudtrail.target_trail",
+     *("oci.audit." + name for name in ("schema", "compartment_id", "compartment_name", "resource_id", "resource_name",
+       "identity_tenancy", "auth_type", "caller_id", "caller_name", "request_id", "http_method", "http_status", "outcome_basis", "event_type", "grouping_id")),
+ )
+@@ -142,9 +144,12 @@ def security_detail(source):
+             "source_address": "source.address", "target_user": "aws.cloudtrail.target_user",
+             "target_role": "aws.cloudtrail.target_role", "target_group_id": "aws.cloudtrail.target_group_id",
+             "error_code": "aws.cloudtrail.error_code", "outcome_basis": "aws.cloudtrail.outcome_basis",
++            "target_group": "aws.cloudtrail.target_group", "target_trail": "aws.cloudtrail.target_trail",
+         }.items():
+             values[key] = text(get(path))
+         values["actor"] = text(get("user.name")) or text(get("user.id")) or values["identity_arn"] or values["identity_invoked_by"]
++        ingress = get('aws.cloudtrail.public_management_ingress')
++        values['public_management_ingress'] = ingress if type(ingress) is bool else None
+         resources = get("aws.cloudtrail.resources")
+         values["resource_arns"] = [text(item.get("arn")) for item in resources[:20] if isinstance(item, dict)] if isinstance(resources, list) else []
+         values["resource_arns"] = [item for item in values["resource_arns"] if item]
+diff --git a/src/cloud_soc/portal/status_setup.py b/src/cloud_soc/portal/status_setup.py
+index 08546f6..fcff94d 100644
+--- a/src/cloud_soc/portal/status_setup.py
++++ b/src/cloud_soc/portal/status_setup.py
+@@ -76,7 +76,7 @@ def configure_template(template):
+ def configure_reader(client, password):
+     client.security.put_role(name="cloud_soc_agent_monitor", cluster=[], indices=[{
+         "names": INDICES.split(",") + ["soc-agent-health-*", "soc-cloud-aws-*", "soc-cloud-oci-*",
+-                  "soc-normalized-v1", "soc-processing-v1", "soc-pipeline-status", "security-alerts", "normalized-events", "raw-logs-*"],
++                  "soc-normalized-v1", "soc-processing-v1", "soc-pipeline-status", "soc-detection-runs-v1", "soc-detection-exclusions-v1", "security-alerts", "normalized-events", "raw-logs-*"],
+         "privileges": ["read", "view_index_metadata"],
+     }])
+     client.security.put_user(username="cloud_soc_agent_monitor", password=password, roles=["cloud_soc_agent_monitor"])
+diff --git a/src/cloud_soc/processing/contract.py b/src/cloud_soc/processing/contract.py
+index bb3ce39..dec213b 100644
+--- a/src/cloud_soc/processing/contract.py
++++ b/src/cloud_soc/processing/contract.py
+@@ -64,7 +64,7 @@ def normalize(hit, processed_at):
+     event = {"@timestamp": iso(occurred), "organization": {"id": organization},
+              "event": {"kind": "event", "category": [category], "action": values.get("api") or values["action"],
+                        "outcome": values["outcome"], "ingested": iso(received)},
+-             "cloud_soc": {"normalizer_version": VERSION, "parse_status": detail["status"],
++             "cloud_soc": {"normalized_at": processed_at, "normalizer_version": VERSION, "parse_status": detail["status"],
+                            "detail": detail, "provenance": {"schema_version": 1, "raw": reference, "time": time_metadata}}}
+     for name in ("source", "destination"):
+         ip = address(values.get(name + "_ip") or field(source, name + ".ip"))
+diff --git a/src/cloud_soc/processing/setup.py b/src/cloud_soc/processing/setup.py
+index 997f251..b4ef35c 100644
+--- a/src/cloud_soc/processing/setup.py
++++ b/src/cloud_soc/processing/setup.py
+@@ -2,6 +2,7 @@
+ 
+ from cloud_soc.portal.log_contract import INDICES
+ from cloud_soc.processing.contract import NORMALIZED, RECORDS, STATUS
++from cloud_soc.detection.telemetry import RUNS, EXCLUSIONS
+ 
+ ROLE = {"cluster": [], "indices": [
+     {"names": list(INDICES), "privileges": ["read", "view_index_metadata"]},
+@@ -14,6 +15,16 @@ KEYWORD = {"type": "keyword", "ignore_above": 1024}
+ 
+ def prepare(client):
+     mappings = {
++        RUNS: {'@timestamp': DATE, 'record_id': KEYWORD, 'run_id': KEYWORD, 'state': KEYWORD, 'error': KEYWORD,
++               'engine_version': KEYWORD, 'rule_snapshot': {'type': 'object', 'enabled': False},
++               'range_start': DATE, 'range_end': DATE,
++               'rule': {'properties': {'id': KEYWORD, 'version': KEYWORD}},
++               'counts': {'type': 'object', 'enabled': False}},
++        EXCLUSIONS: {'@timestamp': DATE, 'record_id': KEYWORD, 'run_id': KEYWORD, 'reason': KEYWORD, 'missing_fields': KEYWORD,
++                     'event_time': DATE, 'event_hash': KEYWORD,
++                     'rule': {'properties': {'id': KEYWORD, 'version': KEYWORD}},
++                     'normalized': {'type': 'object', 'enabled': False},
++                     'raw': {'type': 'object', 'enabled': False}},
+         NORMALIZED: {"@timestamp": DATE, "organization": {"properties": {"id": KEYWORD}},
+                      "event": {"properties": {"ingested": DATE, **{k: KEYWORD for k in ("kind", "category", "action", "outcome", "code", "dataset", "provider")}}},
+                      **{name: {"properties": {"ip": {"type": "ip"}, "port": {"type": "long"}}} for name in ("source", "destination")},
+@@ -21,13 +32,18 @@ def prepare(client):
+                      "cloud": {"properties": {"provider": KEYWORD, "region": KEYWORD, "account": {"properties": {"id": KEYWORD}}}},
+                      "network": {"properties": {"protocol": KEYWORD, "transport": KEYWORD}},
+                      "process": {"properties": {"pid": {"type": "long"}, "executable": KEYWORD}},
+-                     "cloud_soc": {"properties": {"normalizer_version": KEYWORD, "parse_status": KEYWORD,
++                     "cloud_soc": {"properties": {"normalized_at": DATE, "normalizer_version": KEYWORD, "parse_status": KEYWORD,
+                                                     "detail": {"type": "object", "enabled": False},
+                                                     "provenance": {"type": "object", "enabled": False}}}},
+         RECORDS: {"@timestamp": DATE, "event": {"properties": {"ingested": DATE}},
+                   **{k: KEYWORD for k in ("version", "status", "reason", "adapter")},
+                   "raw": {"type": "object", "enabled": False}, "normalized": {"type": "object", "enabled": False}},
+         STATUS: {"@timestamp": DATE, "last_success": DATE, "checkpoint": DATE,
++                 "health": KEYWORD, "lag_seconds": {"type": "long"}, "late_total": {"type": "long"},
++                 "legacy_excluded": {"type": "long"},
++                 "excluded_total": {"type": "long"},
++                 "history_pending": {"type": "long"},
++                 "counts": {"type": "object", "enabled": False},
+                  "state": KEYWORD, "error": KEYWORD, "detection": KEYWORD},
+     }
+     for name, properties in mappings.items():
+@@ -38,4 +54,10 @@ def prepare(client):
+             found = client.indices.get_mapping(index=name)
+             if set(found) != {name} or found[name]["mappings"].get("_meta", {}).get("contract") != name:
+                 raise ValueError("Processing mapping conflict; manual review required")
++            if name == NORMALIZED:
++                client.indices.put_mapping(index=name, properties={"cloud_soc": {"properties": {"normalized_at": DATE}}})
++            if name == STATUS:
++                client.indices.put_mapping(index=name, properties={k: properties[k] for k in ('health', 'lag_seconds', 'late_total', 'legacy_excluded', 'excluded_total', 'history_pending', 'counts')})
++            if name in (RUNS, EXCLUSIONS):
++                client.indices.put_mapping(index=name, properties=properties)
+     client.security.put_role(name="cloud_soc_normalizer", **ROLE)
+diff --git a/tests/test_agent_status.py b/tests/test_agent_status.py
+index d349df7..11d44ca 100644
+--- a/tests/test_agent_status.py
++++ b/tests/test_agent_status.py
+@@ -153,7 +153,7 @@ class SetupTests(unittest.TestCase):
+         role = client.security.put_role.call_args.kwargs
+         self.assertEqual(role["cluster"], [])
+         self.assertEqual(role["indices"], [{"names": INDICES.split(",") + ["soc-agent-health-*", "soc-cloud-aws-*", "soc-cloud-oci-*",
+-            "soc-normalized-v1", "soc-processing-v1", "soc-pipeline-status", "security-alerts", "normalized-events", "raw-logs-*"],
++            "soc-normalized-v1", "soc-processing-v1", "soc-pipeline-status", "soc-detection-runs-v1", "soc-detection-exclusions-v1", "security-alerts", "normalized-events", "raw-logs-*"],
+             "privileges": ["read", "view_index_metadata"]}])
+         self.assertEqual(client.security.put_user.call_args.kwargs["roles"], ["cloud_soc_agent_monitor"])
+ 
+diff --git a/deploy/server/preflight-detection.py b/deploy/server/preflight-detection.py
+new file mode 100644
+index 0000000..ce4e5c5
+--- /dev/null
++++ b/deploy/server/preflight-detection.py
+@@ -0,0 +1,76 @@
++"""Read-only live ES deployment preflight. Never print credentials or event bodies."""
++import argparse
++import json
++from pathlib import Path
++import sys
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
++from elasticsearch import Elasticsearch
++from cloud_soc.aws.__main__ import endpoint, protected_key
++from cloud_soc.processing.contract import NORMALIZED, RECORDS, STATUS
++
++
++def complete(result):
++    if result.get('timed_out') or result.get('_shards', {}).get('failed', 0):
++        raise RuntimeError('incomplete_preflight')
++    return result
++
++
++def inspect(client):
++    info = client.info()
++    health = client.cluster.health()
++    result = {'read_only': True, 'version': info['version']['number'], 'cluster_uuid': info['cluster_uuid'],
++              'health': health['status'], 'unassigned_shards': health['unassigned_shards'], 'indices': {}}
++    for name in (NORMALIZED, RECORDS, STATUS, 'security-alerts'):
++        if not client.indices.exists(index=name):
++            result['indices'][name] = {'exists': False}
++            continue
++        resolved = client.indices.resolve_index(name=name)
++        if resolved.get('aliases') or resolved.get('data_streams') or [r['name'] for r in resolved.get('indices', [])] != [name]:
++            raise RuntimeError('unexpected_index_identity')
++        row = {'exists': True, 'documents': complete(client.count(index=name))['count']}
++        if name == NORMALIZED:
++            query = {'bool': {'must_not': [{'exists': {'field': 'cloud_soc.normalized_at'}}]}}
++            row['missing_normalized_at'] = complete(client.count(index=name, query=query))['count']
++            times = complete(client.search(index=name, size=0, allow_partial_search_results=False,
++                aggs={'first_event': {'min': {'field': '@timestamp'}},
++                      'last_event': {'max': {'field': '@timestamp'}},
++                      'last_ingested': {'max': {'field': 'event.ingested'}}}))
++            row['time_range'] = {key: value.get('value_as_string') for key, value in times['aggregations'].items()}
++        result['indices'][name] = row
++    repositories = client.snapshot.get_repository()
++    result['snapshot_repositories'] = list(repositories)
++    result['snapshot_ready'] = bool(repositories)
++    result['requires_legacy_conversion'] = result['indices'].get(NORMALIZED, {}).get('missing_normalized_at', 0) > 0
++    result['blocking'] = ['cluster_red'] if health['status'] == 'red' else []
++    if not repositories:
++        result['blocking'].append('verified_es_snapshot_required_before_conversion')
++    return result
++
++
++def main(argv=None):
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--es-url', required=True)
++    parser.add_argument('--ca-file', required=True)
++    parser.add_argument('--password-file', required=True)
++    parser.add_argument('--username', default='elastic')
++    parser.add_argument('--report', required=True)
++    args = parser.parse_args(argv)
++    try:
++        with Elasticsearch(endpoint(args.es_url), basic_auth=(args.username, protected_key(args.password_file)),
++                           ca_certs=args.ca_file, request_timeout=30, max_retries=0) as client:
++            report = inspect(client)
++        output = Path(args.report)
++        # Preserve an earlier report, never overwrite it implicitly.
++        with output.open('x', encoding='utf-8') as stream:
++            json.dump(report, stream, ensure_ascii=False, indent=2)
++        print(json.dumps({'read_only': True, 'report_written': True, 'blocking': report['blocking'],
++                          'requires_legacy_conversion': report['requires_legacy_conversion']}))
++        return 0 if not report['blocking'] else 2
++    except Exception:
++        print('preflight_failed; verify connection, CA and privileges; credentials and payloads omitted')
++        return 1
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+diff --git a/docs/cloud_detection.md b/docs/cloud_detection.md
+new file mode 100644
+index 0000000..7e847e7
+--- /dev/null
++++ b/docs/cloud_detection.md
+@@ -0,0 +1,55 @@
++# 클라우드 핵심 탐지 규칙
++
++2026-10-04 / P5-03 코드·합성 검증. 운영 배포와 실제 ES·클라우드 로그 검증은 사용자 요청으로 보류했다.
++
++전달 패치는 a581bf70ef09537a8461d7220a21f4f11f3e7e80 기준의 누적 변경이며 앞선 증분 탐지 구현도 포함한다. 깨끗한 동일 기준 소스에서 `git apply --check cloud-core-detection.patch` 후 적용한다. 앞선 incremental-detection.patch와 중복 적용하지 않는다. files/는 변경 파일 모음이며 전체 저장소가 아니다. 이미 앞선 패치나 운영 변경이 있으면 실제 차이를 대조하고 통합한다.
++
++## 지원 규칙
++
++| ID | 조건 | 심각도 | 해석 한계 |
++| --- | --- | --- | --- |
++| AWS-IAM-001 | iam.amazonaws.com의 AttachUserPolicy/AttachRolePolicy/AttachGroupPolicy 성공 + AWS 관리형 AdministratorAccess/PowerUserAccess ARN | high | 실제 유효 권한, 승인 여부, 고객 관리형/inline 정책·조건·SCP는 판단하지 않음 |
++| AWS-AUDIT-001 | cloudtrail.amazonaws.com의 StopLogging/DeleteTrail 성공 | high | 전체 CloudTrail·모든 감사 기록이 중단됐다는 뜻 아님. 다른 Trail과 실제 수집 상태 확인 필요 |
++| AWS-NETWORK-001 | ec2.amazonaws.com의 AuthorizeSecurityGroupIngress 성공 + 하나의 permission 안에 전체 주소/관리 포트 허용 | high | 라우팅·NACL·자산이 실제 공개됐는지 별도 확인. ModifySecurityGroupRules 미지원 |
++| OCI-IAM-001 | oci.audit + IdentityControlPlane + CreatePolicy/UpdatePolicy 성공 + resource_id 존재 | medium | 현재 projection은 정책 본문을 보존하지 않으므로 고권한 부여나 악성 판정 아님 |
++
++모두 `type: single`이다. 한 이벤트당 독립 경보이며 같은 조직/계정·동일 시각의 서로 다른 이벤트를 cooldown으로 억제하지 않는다. 기존 AUTH-001의 조건/임계값/cooldown은 유지한다. 사건 처리나 자동 차단은 추가하지 않는다.
++
++## AWS 네트워크 필드
++
++CloudTrail `requestParameters.ipPermissions.items` 또는 리스트에서 permission별 protocol/port/CIDR를 평가한다. TCP 22/3389를 포함하는 포트 범위 또는 모든 프로토콜(-1)에 0.0.0.0/0 또는 ::/0이 있으면 위험 신호다. 서로 다른 permission의 포트와 CIDR을 합치지 않는다.
++
++request 누락, 지원하지 않는 형식, 평가 불가/상한 초과는 unknown(None)이며 false로 정상 확정하지 않는다. UDP/ICMP 또는 사설 CIDR/웹 443 허용은 이 관리 포트 규칙의 양성 조건이 아니다. request 전체·정책 본문·비밀번호는 보존하지 않고 `aws.cloudtrail.public_management_ingress` 불리언과 선택된 대상 메타데이터만 추가한다. 기존 원본 문서와 경보 근거는 다시 쓰지 않는다. 과거에 없던 네트워크 신호는 자동 소급 생성하지 않는다.
++
++## 실행
++
++기본 실행은 SSH만 선택한다. 다음 옵션은 SSH + 클라우드 4개 규칙을 선택한다.
++
++```sh
++PYTHONPATH=src python -m cloud_soc.detection --include-cloud
++```
++
++위 명령은 오프라인 규칙 검증이며 ES 연결/쓰기/서비스 기동이 없다.
++
++증분 실행에는 기존 실행 옵션에 `--include-cloud`를 추가한다. 규칙 집합은 상태 identity에 포함되므로 기존 SSH 상태 파일에 옵션만 추가하면 명시적으로 거부한다. 운영 재개 시 [기존 데이터 전환 절차](detection_deployment_runbook.md)에 따라 시작점/과거 평가 범위를 결정하고 별도 상태를 준비한다. Compose 기본은 SSH만이며 클라우드 활성화 시 command override를 명시한다.
++
++`--snapshot --include-cloud`도 지원하나 기존 전체 조회 상한이 적용된다. 이 옵션은 과거 자료의 일회성 검증 경로이며 대용량 이행 완료를 뜻하지 않는다.
++
++증분 pending은 선택 규칙 중 하나에 일치한 이벤트만 보존한다. 규칙별 threshold runtime을 분리하고 single 규칙은 상태를 누적하지 않는다. 재시도는 규칙 snapshot/문서 근거의 결정적 경보 ID와 create-only 쓰기를 사용한다. 포털은 실행 중인 다중 프로필을 SSH·클라우드 탐지기로 표시한다.
++
++## 정상 변경과 품질
++
++정상 승인된 관리자 변경도 조건에 맞으면 경보가 생성된다. 승인 시스템 연동은 미구현이며 자동 억제하지 않는다. 분석가가 변경 승인/대상/영향을 확인하고 정상·오탐·악성을 판정한다.
++
++실패 API, 다른 서비스, IAM 정책 ARN 누락, 위험 포트 평가 unknown은 양성 경보가 아니다. 그렇다고 위협 없음이나 데이터 품질 정상으로 판정하지 않는다. missing 필드의 `not_equals`는 이제 false이며 `exists` 조건으로 명시 검사할 수 있다.
++
++합성 시험은 AWS 3종·OCI 정책 변경, 실패/누락/다른 서비스, IPv4/IPv6·포트 범위·모든 프로토콜, cross-permission 반증, 독립 single 이벤트, 개인정보 미보존, 증분 재시도/프로필 변경 거부를 포함한다. 실제 공급자 payload의 형식·OCI source 값·API 결과와 최종 자원 효과는 운영 로그로 재확인해야 한다.
++
++## 공식 근거
++
++- [AWS AttachUserPolicy](https://docs.aws.amazon.com/IAM/latest/APIReference/API_AttachUserPolicy.html)
++- [AWS StopLogging](https://docs.aws.amazon.com/awscloudtrail/latest/APIReference/API_StopLogging.html)
++- [AWS AuthorizeSecurityGroupIngress](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_AuthorizeSecurityGroupIngress.html)
++- [OCI Audit 이벤트 필드](https://docs.oracle.com/en-us/iaas/Content/Audit/Reference/logeventreference.htm)
++
++공식 문서의 API/필드 의미를 바탕으로 만든 로컬 규칙이며 공급자의 완전한 위협 탐지 또는 ATT&CK coverage 인증을 주장하지 않는다.
+diff --git a/docs/detection_deployment_runbook.md b/docs/detection_deployment_runbook.md
+new file mode 100644
+index 0000000..42a8e94
+--- /dev/null
++++ b/docs/detection_deployment_runbook.md
+@@ -0,0 +1,32 @@
++# 증분 탐지 운영 배포 인수
++
++2026-10-04: 사용자 운영 배포·기존 데이터 전환·실제 ES 검증 승인. 운영 접속은 미확보이며 아래 단계는 실행 결과가 아닌 준비 절차다.
++
++## 현재 접속 상태
++
++이전 기록의 중앙 Ubuntu 서버는 192.168.32.60, 계정 kopo, /home/kopo/cloud-soc다. 이번 환경에서 TCP 22는 4초 연결 시간 초과였다. SSH 설정/기존 등록 키가 발견되지 않았다. 현재 주소·인증 경로·신뢰한 SSH 지문을 확인한 뒤 재개한다. 개인키/비밀번호는 채팅·로그·패키지에 넣지 않는다.
++
++## 실행 순서
++
++1. 고정 SSH 지문, sudo 가능 여부, 실제 Compose 경로·실행 이미지·Git/배포 소스 차이, CA, ES 버전/상태, 디스크 여유, 현재 normalizer/detector/portal 상태를 확인한다. 기존 미커밋 운영 소스는 그대로 보호한다.
++2. preflight-detection.py로 실제 ES 인덱스 수·필드 누락·기간·snapshot repository를 읽기 전용 검사한다. 이 도구는 저장소 존재만 확인하며 백업의 완료/복원 가능성을 인증하지 않는다.
++3. 포털 DB 온라인 백업/verify, 중지 시점 백업, 기존 이미지/env/SQLite 처리 상태를 보호한다. ES snapshot을 생성하고 SUCCESS·실패 shard 0을 확인한다. 저장소 없으면 실제 서버 지원 경로에 맞춰 구성한다. VM 내부 백업과 외부 장애 복구 백업은 구분한다.
++4. normalizer/detector를 중지하고 처리 체크포인트·정규화 문서·경보/근거 참조·사건 자료의 기준 건수/해시를 확보한다. 에이전트와 원본 수집 경로는 유지한다.
++5. 기존 정규화 문서를 직접 update_by_query로 수정하지 않는다. normalized_at 추가가 기존 경보의 event_hash를 바꿀 수 있으므로 원본 및 정규화 증거는 보존한다. 실제 자료 확인 후 별도 이행 인덱스 또는 처리 기록 기반 수신 목록으로 전환한다. 새 참조/이전 참조를 모두 조회할 수 있어야 하며 과거 경보 중복, 재평가 시간 범위를 검증한다. 전체 역사 자료를 --accept-legacy-exclusion으로 제외하는 것은 사용자 요청의 데이터 전환 완료로 인정하지 않는다.
++6. 이전 상태와 새 상태를 분리해 제한 키로 shadow 실행한다. 정상/임계값/배치 경계/재시작/지연/저장 실패·복구와 create-only·원본 쓰기 금지를 실제 ES에서 확인한다. 합성 이벤트는 운영 원본과 분리한 시험 조직/전용 인덱스에서 수행하며 기존 정상 운영 소스를 공격 시험 대상으로 사용하지 않는다.
++7. 새 이미지와 필요한 매핑/역할만 준비하고 포털·normalizer·detector를 순차 교체한다. 같은 소스의 탐지기를 서로 다른 상태 파일로 동시에 가동하지 않는다.
++8. 실제 신규 수집부터 정규화→탐지→경보 근거 조회까지 확인한다. detector 재시작 후 상태/동일 경보 ID/중복 없음을 확인하고 운영 화면 실패·stale·지연 표시도 대조한다.
++9. 운영 체크포인트가 진행하고 기존 사건/패키지/키 이력 및 ES/Kibana/gateway/에이전트가 유지됨을 확인한다. 실패하면 새 처리기를 중지하고 보존한 이미지/env로 복구한다. ES/SQLite 상태는 임의 되감지 않고 재처리 영향 검토 후 복원한다.
++
++## 사전 점검 명령 예시
++
++서버의 실제 경로로 대체한다. 관리자 비밀번호는 파일로만 읽고 결과에는 이벤트 본문/자격 증명이 없다.
++
++```sh
++python3 deploy/server/preflight-detection.py \
++  --es-url https://localhost:9200 --ca-file state/server/tls/ca.crt \
++  --password-file state/server/secrets/elastic_password \
++  --report state/verification/detection-preflight-20261004.json
++```
++
++Python Elasticsearch 의존성이 있는 보호 실행 환경에서 수행한다. code 2는 백업/클러스터 조건 미충족이며 자동 배포하지 않는다.
+diff --git a/docs/incremental_detection.md b/docs/incremental_detection.md
+new file mode 100644
+index 0000000..ec7eb7b
+--- /dev/null
++++ b/docs/incremental_detection.md
+@@ -0,0 +1,46 @@
++# 영속 증분 탐지와 장애 표시
++
++2026-10-04 / P5-02. 코드와 모의 ES 시험 범위이며 실제 Elasticsearch·Docker·운영 배포 인수는 별도다.
++
++## 동작
++
++기본 CLI는 SQLite 영속 증분 모드다. 기존 전체 스냅샷은 `--snapshot`으로 명시 선택한다.
++기존 AUTH-001의 조직/IP 구분, 10건/300초, cooldown 및 불변 경보 저장을 유지한다.
++
++- 정규화 시각 `cloud_soc.normalized_at` 기준 5분 배치를 PIT/search_after로 완전히 읽는다.
++- 발생 시각 기준 기본 15분 지연 버퍼 후 평가한다. 상태에는 미평가 이벤트, 그룹별 시간 창/cooldown, 중첩 조회 중복 ID가 저장된다.
++- 조회는 15분 중첩한다. 이는 정규화 작업 시작 시각부터 실제 저장·검색 가능 시각까지 최대 15분 지연을 전제로 한다. 이 한계를 넘는 정규화/refresh 장애의 무손실은 보장하지 않으며 정규화 서비스 장애도 함께 감시해야 한다.
++- 시간 창과 cooldown은 재시작 후 유지된다. SQLite BEGIN IMMEDIATE로 같은 상태 파일의 동시 처리자를 거부한다. 동일 소스에 서로 다른 상태 파일을 사용한 다중 탐지기는 지원하지 않는다.
++- 경보를 create-only로 저장하고 상태 게시에 성공한 후 로컬 체크포인트를 커밋한다. 실패하면 체크포인트를 유지하며 같은 ID로 재시도한다. ES와 SQLite 간 분산 트랜잭션/정확히 한 번 처리 보장은 아니다.
++- 확정한 발생 시각보다 오래된 새 이벤트는 재평가하지 않고 `late_total`에 기록한다. 원본은 보존된다. 개별 제외 이벤트 전용 저장소와 자동 backfill은 후속 과제다.
++- 배치 조회/활성 상태 상한 초과, 불완전한 근거, 미래 시각 이상은 회차 실패다. 누적 전체 인덱스 크기는 조회 상한을 소비하지 않는다.
++
++## 적용 순서
++
++1. 기존 처리/탐지기를 중지하고 상태 파일과 ES Snapshot을 보호 백업한다.
++2. 관리자 준비 단계에서 `cloud_soc.processing.setup.prepare()`를 다시 실행해 정규화 시각 및 상태 지표 매핑을 추가한다. 기존 `cloud_soc.detection.setup --prepare-processing`도 이 경로를 사용하지만 새 키를 발급하므로 이미 있는 키 파일을 덮어쓰지 않는다.
++3. 변경된 normalizer를 사용한다. 기존 문서는 create-only이므로 자동으로 변경하지 않는다.
++4. 시작 시각을 결정한다. 과거 정규화 시각 필드가 없는 문서가 있으면 최초 증분 실행은 실패한다. 과거 자료는 별도 스냅샷 평가/이행 검토 후, 이후 자료만 평가할 때 `--accept-legacy-exclusion`을 명시한다. 제외 건수는 저장되고 포털 경고에 표시된다. 기존 자료의 조용한 제외나 해시/근거를 바꾸는 자동 덮어쓰기는 하지 않는다.
++5. 로컬 영속 상태 경로, UTC 시작 시각, 소스 endpoint를 고정해 실행한다.
++
++```sh
++python -m cloud_soc.detection --run \
++  --es-url https://elasticsearch:9200 --ca-file /run/certs/ca.crt \
++  --api-key-file /run/keys/detector.key \
++  --state /data/runtime.sqlite --start 2026-10-04T00:00:00Z
++```
++
++위 시작 시각은 예시다. `--start` 이전 자료는 평가 범위 밖이며 업무상 승인된 시작점을 사용한다. 시작점/규칙/지연 정책/endpoint/과거 제외 정책이 바뀌면 기존 상태 사용을 거부한다. 새 상태를 만들기 전 재처리와 경보 중복 영향을 검토한다.
++
++Compose는 `SOC_DETECTION_START`를 요구하고 `${SOC_STATE_DIR}/detection`을 `/data`에 영속 마운트한다. 과거 제외가 필요한 기존 환경은 별도 command override에 `--accept-legacy-exclusion`을 명시한다. Windows 상태 폴더 ACL과 Linux 디렉터리 0700/파일 0600을 적용한다. SQLite WAL/SHM도 함께 보호하고 온라인 백업 API 또는 탐지기 중지 후 일관된 백업을 사용한다.
++
++## 장애 알림
++
++운영 화면은 탐지 실패, 5분 초과 상태 미갱신, 20분 초과 체크포인트 지연, 지연/과거 제외 경고를 표시한다. 마지막 성공 시각은 실패 후에도 남긴다. 장애 상태는 보안 공격 경보로 저장하지 않는다.
++
++이 단계의 알림은 포털 상태 표시/API이며 이메일·메신저·SMS 발송은 포함하지 않는다. 포털에 접속하지 않아도 통지해야 하는 운영 환경은 독립 감시가 상태 API를 검사하도록 연결해야 한다. ES 전체 장애 시 탐지기가 상태를 쓰지 못하므로 포털 조회 실패와 외부 가용성 감시가 필요하다.
++
++## 검증 범위
++
++`tests/test_incremental_detection.py`: 배치 9+1, 재시작 cooldown, 조직 분리, 순서 뒤바뀜, 저장/상태 실패 재시도, 늦은 도착 표시, 상한 초과, 원본 범위 변경 거부, 잠금, 오래된 그룹 정리, 매핑/과거 이행 검사.
++기존 탐지·정규화·운영 API/UI 회귀도 실행한다. 실제 ES 최소 권한·장기 처리량·Docker 재시작·브라우저 렌더링은 운영 인수에서 별도 검증한다.
+diff --git a/docs/investigation_quality.md b/docs/investigation_quality.md
+new file mode 100644
+index 0000000..d6b92a8
+--- /dev/null
++++ b/docs/investigation_quality.md
+@@ -0,0 +1,29 @@
++# 조사 신뢰성·탐지 품질 후속 구현
++
++대상: JEONGRIM-SEO의 a581bf70ef09537a8461d7220a21f4f11f3e7e80 기준 누적 변경. 서버 접속, 실제 Elasticsearch 조회, 배포, 기존 데이터 변경, 커밋·푸시는 수행하지 않았다. 패치에는 이전 증분 탐지·클라우드 규칙 구현도 포함된다.
++
++## 구현
++
++1. 근거 조회 시 정규화 문서의 현재 내용으로 탐지 당시 event_hash를 다시 계산한다. 일치, 내용 변경, 참조 불일치, 문서 만료/누락, 과거 해시 미기록을 구분한다. 전체 문서는 계산에만 사용하고 선택 메타데이터만 응답한다. 원본 내용은 탐지 당시 해시가 없어 무결성을 보증하지 않는다. 과거 해시를 새 값으로 덮어쓰지 않는다. 기본 25개, 최대 100개씩 모든 저장 근거를 조회하며 251번째 근거 접근도 합성 검증했다.
++2. soc-detection-runs-v1에 규칙 버전·스냅샷·처리 구간·입력/일치/불일치/평가 불가/제외/경보 수를 저장한다. evaluated는 평가 종료, committed는 SQLite 처리 위치 저장 완료다. committed 전달 의도와 처리 위치를 한 트랜잭션으로 저장하고 ES 전송 실패는 다음 실행에서 재시도한다. 포털에서 전송 대기를 표시한다. soc-detection-exclusions-v1은 지연·필드 누락·시각 오류별 정확한 문서 참조를 create-only로 저장한다. 같은 이벤트·규칙 버전·제외 사유의 재시도는 중복되지 않는다. 재시도 실행별 집계는 개별 시도 수이며 전역 고유 이벤트 합계가 아니다. 원문 payload는 저장하지 않는다.
++3. AUTH-SEQ-001: 동일 조직/호스트/계정/출발 IP에서 300초 내 SSH 인증 실패 5회 이상 뒤 성공을 탐지한다. 성공 이전의 실패만 포함하며 동일 시각은 순서를 확정하지 않는다. 성공 후 실패 창을 초기화한다. 배치 경계·재시작·조직/호스트/계정/IP 분리·시간 경계를 합성 검증했다. 침해 확정으로 해석하지 않는다.
++
++## 사용과 적용 주의
++
++오프라인 규칙 검사(서버 접속 없음):
++
++```text
++python -m cloud_soc.detection --include-cloud --include-sequence
++```
++
++순차 규칙은 --include-sequence로 명시적으로 선택한다. 기본 SSH 규칙은 유지된다. 실행·제외 이력 수집은 증분 실행 경로에 적용되며 과거 snapshot 재생 경로에는 적용하지 않는다. 포털 메뉴 '탐지 실행·제외 이력'에서 최근 24시간을 규칙별 조회한다. API는 최대 30일 범위·페이지당 최대 100개·고정 인덱스만 허용한다. 관리 인증을 사용하며 페이지 오류·부분 샤드 응답을 성공으로 처리하지 않는다.
++
++운영 적용 시 processing.setup의 이력 인덱스/상태 매핑, detection.setup의 create_doc 권한, portal.status_setup의 읽기 권한을 함께 준비해야 한다. 이번에는 실제 준비 명령을 실행하지 않았다.
++
++runtime 계약이 2로 변경되어 기존 SQLite 상태를 조용히 재사용하지 않는다. 규칙 프로필/버전 변경 역시 새 명시적 상태 파일이 필요하다. 기존 파일을 삭제하지 말고 백업한 뒤, 재평가 시작 시각과 중복 경보 정책을 결정해 새 상태로 전환해야 한다. 자동 기존 데이터 전환은 구현하지 않았다. 저장 근거가 만료되면 해시 일치 여부를 확인할 수 없다. 허용 지연을 넘는 이벤트는 자동 재평가하지 않고 제외 기록을 남긴다.
++
++## 검증
++
++관련 Python 회귀 158건 통과. 신규 근거 무결성 8건, 순차 탐지 7건, 실행/제외 품질 10건 포함. 화면 로직 시험 79건 통과: 근거 전체 페이지 접근·해시 안내, 이력 페이지 이동·고정 조회 범위·늦은 응답 차단·문자열 안전 표시 포함. 규칙 6개 오프라인 검사와 기준 커밋에 대한 누적 패치 적용 검사 통과.
++
++전체 Python 최초 실행 407건 중 통과 391건, 생략 10건, 실패 3건, 오류 3건. 이번 변경으로 확장된 읽기 권한 목록의 시험 1건은 수정하고 관련 재검증을 통과했다. 나머지 수집기 정책 시험 오류 3건과 Windows 스크립트 실행 정책에 막힌 설치기 시험 실패 2건은 미해결이며 전체 통과를 주장하지 않는다. 실제 ES 매핑/권한·운영 로그·브라우저 렌더링·운영 배포는 미검증이다.
+diff --git a/prototype/detection-history.html b/prototype/detection-history.html
+new file mode 100644
+index 0000000..fc9a2d7
+--- /dev/null
++++ b/prototype/detection-history.html
+@@ -0,0 +1,8 @@
++<!doctype html>
++<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>탐지 실행·제외 이력</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css"><link rel="stylesheet" href="shell.css"><link rel="stylesheet" href="operations.css"><script src="shell.js" defer></script></head>
++<body class="agents-page"><div id="app-shell"></div><main class="main-content agents-main operations-main">
++<h1>탐지 실행·제외 이력</h1><p>규칙별 평가 결과와 탐지에서 제외한 이벤트를 확인합니다. 이벤트 본문은 표시하지 않습니다.</p>
++<form id="history-filter" class="panel ops-toolbar"><label>기록 종류 <select id="history-kind"><option value="runs">규칙 실행</option><option value="exclusions">제외 이벤트</option></select></label>
++<label>규칙 ID <input id="history-rule" maxlength="64" placeholder="전체 규칙"></label><button type="submit">최근 하루 조회</button></form>
++<p id="history-state" role="status" aria-live="polite">조회 준비 중</p><div id="history-rows"></div><button id="history-next" type="button" hidden>다음 페이지</button>
++</main><script src="detection-history.js"></script></body></html>
+diff --git a/prototype/detection-history.js b/prototype/detection-history.js
+new file mode 100644
+index 0000000..b9ebc3d
+--- /dev/null
++++ b/prototype/detection-history.js
+@@ -0,0 +1,49 @@
++(() => {
++  'use strict';
++  const $ = id => document.getElementById(id);
++  let generation = 0, cursor = null, scope = {};
++  const states = {evaluated: '평가 종료 · 처리 위치 확정 전', committed: '처리 완료 · 처리 위치 저장됨', failed: '실행 실패', waiting: '새 처리 구간 대기'};
++  const reasons = {late_event: '허용 지연 초과', missing_condition_fields: '조건 필드 누락', missing_group_fields: '그룹 필드 누락', invalid_event_time: '발생 시각 오류', future_event_clock: '미래 시각 이상'};
++  const fmt = value => value ? new Date(value).toLocaleString('ko-KR', {timeZone: 'Asia/Seoul'}) : '미기록';
++  function node(tag, text) { const element = document.createElement(tag); if (text !== undefined) element.textContent = text; return element; }
++  async function load(reset) {
++    const version = ++generation;
++    if (reset) {
++      const end = new Date();
++      scope = {kind: $('history-kind').value, start: new Date(end.getTime() - 86400000).toISOString(), end: end.toISOString()};
++      if ($('history-rule').value.trim()) scope.rule = $('history-rule').value.trim();
++      cursor = null; $('history-rows').replaceChildren();
++    }
++    $('history-state').textContent = '조회 중'; $('history-next').disabled = true;
++    try {
++      const params = {...scope}; if (cursor) params.after = cursor;
++      const response = await fetch('/api/detection/history?' + new URLSearchParams(params), {cache: 'no-store', credentials: 'same-origin'});
++      if (!response.ok) throw new Error('이력 조회 실패: 연결·권한·조회 조건을 확인하세요.');
++      const data = await response.json();
++      if (version !== generation) return;
++      if (!['ok', 'no_index'].includes(data.state) || !Array.isArray(data.rows)) throw new Error('이력 응답을 확인하세요.');
++      for (const row of data.rows) {
++        const box = node('section'); box.className = 'ops-evidence';
++        box.append(node('h2', (row.rule?.id || '미기록') + ' · ' + (states[row.state] || reasons[row.reason] || '미확인')));
++        box.append(node('p', '기록 시각 (KST): ' + fmt(row['@timestamp'])));
++        if (row.counts) {
++          const c = row.counts;
++          box.append(node('p', '새 입력 ' + c.input_events + ' · 조건 일치 ' + c.matched + ' · 불일치 ' + c.not_matched + ' · 평가 불가 ' + c.unknown + ' · 제외 ' + c.excluded));
++          box.append(node('p', '시간 창 평가 이벤트 ' + (c.evaluated_events ?? '미기록') + ' · 탐지 일치 ' + (c.detection_matches ?? '미기록') + ' · 새 경보 ' + c.alerts_created + ' · 기존 경보 ' + c.alerts_existing));
++        }
++        if (row.normalized) box.append(node('p', '정규화 참조: ' + row.normalized.index + ' / ' + row.normalized.id));
++        if (row.raw) box.append(node('p', '원본 참조: ' + row.raw.index + ' / ' + row.raw.id));
++        if (row.missing_fields?.length) box.append(node('p', '누락 필드: ' + row.missing_fields.join(', ')));
++        if (row.error) box.append(node('p', '실행 실패 · 처리 위치는 운영 현황에서 확인하세요.'));
++        $('history-rows').append(box);
++      }
++      cursor = data.next; $('history-next').hidden = !cursor;
++      $('history-state').textContent = data.state === 'no_index' ? '이력 저장소가 준비되지 않았습니다.' : data.rows.length ? '조회 성공' : '조회 범위의 기록이 없습니다.';
++    } catch (error) {
++      if (version === generation) { $('history-state').textContent = error.message; $('history-next').hidden = true; }
++    } finally { if (version === generation) $('history-next').disabled = false; }
++  }
++  $('history-filter').addEventListener('submit', event => {event.preventDefault(); load(true);});
++  $('history-next').addEventListener('click', () => load(false));
++  load(true);
++})();
+diff --git a/prototype/tests/detection-history.test.cjs b/prototype/tests/detection-history.test.cjs
+new file mode 100644
+index 0000000..408cc77
+--- /dev/null
++++ b/prototype/tests/detection-history.test.cjs
+@@ -0,0 +1,30 @@
++const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), vm = require('node:vm');
++const script = fs.readFileSync(require('node:path').join(__dirname,'../detection-history.js'),'utf8');
++const settle = () => new Promise(r=>setImmediate(r));
++function browser(responses) {
++ const elements=new Map(), calls=[];
++ const make=()=>({textContent:'',value:'',children:[],listeners:{},append(...v){this.children.push(...v)},replaceChildren(...v){this.children=v},addEventListener(n,f){this.listeners[n]=f}});
++ const get=id=>{if(!elements.has(id))elements.set(id,make());return elements.get(id)};
++ get('history-kind').value='runs';
++ vm.runInNewContext(script,{document:{getElementById:get,createElement:make},Date,URLSearchParams,fetch:async url=>{calls.push(url);return responses.shift()()}});
++ return {get,calls};
++}
++const ok=data=>()=>({ok:true,json:async()=>data});
++test('history keeps time bounds across seek pages and renders text only',async()=>{
++ const ui=browser([ok({state:'ok',rows:[{rule:{id:'<img src=x>'},state:'committed'}],next:'cursor'}),ok({state:'ok',rows:[],next:null})]);await settle();
++ assert.equal(ui.get('history-rows').children[0].children[0].textContent,'<img src=x> · 처리 완료 · 처리 위치 저장됨');
++ ui.get('history-next').listeners.click();await settle();
++ const a=new URL(ui.calls[0],'https://test'),b=new URL(ui.calls[1],'https://test');
++ assert.equal(a.searchParams.get('start'),b.searchParams.get('start'));assert.equal(a.searchParams.get('end'),b.searchParams.get('end'));assert.equal(b.searchParams.get('after'),'cursor');
++});
++test('old response cannot overwrite refreshed history',async()=>{
++ let release;const ui=browser([()=>new Promise(r=>release=r),ok({state:'ok',rows:[],next:null})]);
++ ui.get('history-filter').listeners.submit({preventDefault(){}});await settle();
++ release({ok:true,json:async()=>({state:'ok',rows:[{rule:{id:'OLD'}}],next:'old'})});await settle();
++ assert.equal(ui.get('history-rows').children.length,0);assert.equal(ui.get('history-next').hidden,true);
++});
++test('history failures expose no upstream payload and clear stale rows on refresh',async()=>{
++ const ui=browser([ok({state:'ok',rows:[{}],next:'x'}),()=>({ok:false,json:async()=>({error:'SECRET'})})]);await settle();
++ ui.get('history-filter').listeners.submit({preventDefault(){}});await settle();
++ assert.equal(ui.get('history-rows').children.length,0);assert.equal(ui.get('history-next').hidden,true);assert.ok(!ui.get('history-state').textContent.includes('SECRET'));
++});
+diff --git a/rules/authentication_sequence.yml b/rules/authentication_sequence.yml
+new file mode 100644
+index 0000000..b636817
+--- /dev/null
++++ b/rules/authentication_sequence.yml
+@@ -0,0 +1,19 @@
++rules:
++  - id: AUTH-SEQ-001
++    type: sequence
++    name: SSH repeated failures followed by successful authentication
++    enabled: true
++    severity: high
++    group_by: [organization.id, host.id, user.name, source.ip]
++    threshold: {count: 5}
++    time_window: {seconds: 300}
++    cooldown: {seconds: 0}
++    conditions:
++      - {field: event.category, operator: contains, value: authentication}
++      - {field: network.protocol, operator: equals, value: ssh}
++      - {field: event.outcome, operator: in, value: [failure, success]}
++    alert:
++      title: 반복 SSH 인증 실패 후 성공
++      message: 동일 조직·호스트·계정·출발지 IP에서 5분 안에 실패 5건 이상 뒤 성공이 관측되었습니다. 정상 재시도 여부와 성공 후 활동을 조사하세요. 계정 탈취 성공을 확정하지 않습니다.
++      category: authentication
++      tags: [ssh, failure-success, sequence]
+diff --git a/rules/cloud.yml b/rules/cloud.yml
+new file mode 100644
+index 0000000..c9b30a7
+--- /dev/null
++++ b/rules/cloud.yml
+@@ -0,0 +1,64 @@
++rules:
++  - id: AWS-IAM-001
++    type: single
++    name: AWS high privilege managed policy attached
++    enabled: true
++    severity: high
++    conditions:
++      - {field: event.dataset, operator: equals, value: aws.cloudtrail}
++      - {field: event.provider, operator: equals, value: iam.amazonaws.com}
++      - {field: event.outcome, operator: equals, value: success}
++      - {field: event.action, operator: in, value: [AttachUserPolicy, AttachRolePolicy, AttachGroupPolicy]}
++      - {field: cloud_soc.detail.fields.target_policy_arn, operator: in, value: ['arn:aws:iam::aws:policy/AdministratorAccess', 'arn:aws:iam::aws:policy/PowerUserAccess']}
++    alert:
++      title: AWS 고권한 관리형 정책 연결
++      message: 고권한 정책 연결 API가 성공으로 관측되었습니다. 변경 승인과 대상 계정을 확인하세요. 악성 활동 또는 실제 유효 권한의 확정은 아닙니다.
++      category: iam
++      tags: [aws, iam, privilege-change]
++  - id: AWS-AUDIT-001
++    type: single
++    name: AWS trail logging stopped or trail deleted
++    enabled: true
++    severity: high
++    conditions:
++      - {field: event.dataset, operator: equals, value: aws.cloudtrail}
++      - {field: event.provider, operator: equals, value: cloudtrail.amazonaws.com}
++      - {field: event.outcome, operator: equals, value: success}
++      - {field: event.action, operator: in, value: [StopLogging, DeleteTrail]}
++    alert:
++      title: AWS 감사 Trail 중지 또는 삭제
++      message: 감사 Trail 중지 또는 삭제 API가 성공으로 관측되었습니다. 승인 여부와 다른 Trail의 보완 범위 및 실제 수집 영향을 확인하세요.
++      category: configuration
++      tags: [aws, audit, visibility]
++  - id: AWS-NETWORK-001
++    type: single
++    name: AWS public SSH or RDP ingress authorized
++    enabled: true
++    severity: high
++    conditions:
++      - {field: event.dataset, operator: equals, value: aws.cloudtrail}
++      - {field: event.provider, operator: equals, value: ec2.amazonaws.com}
++      - {field: event.outcome, operator: equals, value: success}
++      - {field: event.action, operator: equals, value: AuthorizeSecurityGroupIngress}
++      - {field: cloud_soc.detail.fields.public_management_ingress, operator: equals, value: true}
++    alert:
++      title: AWS 관리 포트의 전체 인터넷 허용
++      message: IPv4 또는 IPv6 전체 주소에 SSH/RDP 또는 모든 프로토콜을 허용한 요청이 성공으로 관측되었습니다. 실제 라우팅 및 자산 노출을 확인하세요.
++      category: network
++      tags: [aws, security-group, public-management]
++  - id: OCI-IAM-001
++    type: single
++    name: OCI IAM policy created or updated
++    enabled: true
++    severity: medium
++    conditions:
++      - {field: event.dataset, operator: equals, value: oci.audit}
++      - {field: event.provider, operator: equals, value: IdentityControlPlane}
++      - {field: event.outcome, operator: equals, value: success}
++      - {field: event.action, operator: in, value: [CreatePolicy, UpdatePolicy]}
++      - {field: cloud_soc.detail.fields.resource_id, operator: exists, value: true}
++    alert:
++      title: OCI IAM 정책 생성 또는 변경
++      message: OCI 정책 변경 API가 성공으로 관측되었습니다. 정책 내용과 변경 승인을 확인하세요. 현재 수집 메타데이터만으로 고권한 부여를 확정하지 않습니다.
++      category: iam
++      tags: [oci, iam, policy-change]
+diff --git a/src/cloud_soc/aws/network_risk.py b/src/cloud_soc/aws/network_risk.py
+new file mode 100644
+index 0000000..03ec337
+--- /dev/null
++++ b/src/cloud_soc/aws/network_risk.py
+@@ -0,0 +1,46 @@
++"""Assess selected ingress metadata only. Missing/unsupported requests stay unknown."""
++from ipaddress import ip_network
++
++
++def public_management_ingress(request):
++    if not isinstance(request, dict):
++        return None
++    permissions = request.get('ipPermissions')
++    permissions = permissions.get('items') if isinstance(permissions, dict) else permissions
++    if not isinstance(permissions, list) or not permissions or len(permissions) > 100:
++        return None
++    unknown = False
++    for permission in permissions:
++        if not isinstance(permission, dict):
++            unknown = True
++            continue
++        protocol = permission.get('ipProtocol')
++        low, high = permission.get('fromPort'), permission.get('toPort')
++        if protocol in ('-1', -1):
++            management = True
++        elif protocol in ('tcp', '6', 6) and type(low) is int and type(high) is int and 0 <= low <= high <= 65535:
++            management = any(low <= port <= high for port in (22, 3389))
++        elif protocol in ('udp', '17', 17, 'icmp', '1', 1, 'icmpv6', '58', 58):
++            management = False
++        else:
++            unknown = True
++            continue
++        if not management:
++            continue
++        for key, cidr_key in (('ipRanges', 'cidrIp'), ('ipv6Ranges', 'cidrIpv6')):
++            rows = permission.get(key, [])
++            rows = rows.get('items') if isinstance(rows, dict) else rows
++            if not isinstance(rows, list) or len(rows) > 100:
++                unknown = True
++                continue
++            for row in rows:
++                try:
++                    cidr = row.get(cidr_key) if isinstance(row, dict) else None
++                    if not isinstance(cidr, str):
++                        raise ValueError()
++                    network = ip_network(cidr, strict=False)
++                    if network.prefixlen == 0:
++                        return True
++                except ValueError:
++                    unknown = True
++    return None if unknown else False
+diff --git a/src/cloud_soc/detection/incremental.py b/src/cloud_soc/detection/incremental.py
+new file mode 100644
+index 0000000..8afca90
+--- /dev/null
++++ b/src/cloud_soc/detection/incremental.py
+@@ -0,0 +1,231 @@
++"""Transactional incremental threshold detection; ES writes precede local commit."""
++from copy import deepcopy
++from contextlib import closing
++from datetime import datetime, timedelta, timezone
++import json
++import os
++from pathlib import Path
++import sqlite3
++from uuid import uuid4
++
++from cloud_soc.detection.engine import detect_rule, event_fingerprint, parse_event_timestamp, event_evidence, build_group_key, get_field_value, rule_revision
++from cloud_soc.detection.worker import approved_rules, ALERTS
++from cloud_soc.elastic.pagination import fetch_all_hits
++from cloud_soc.elastic.repository import ensure_provenance_mapping, save_security_alert
++from cloud_soc.main import make_alert_id, build_security_alert
++from cloud_soc.processing.contract import NORMALIZED, STATUS
++from cloud_soc.detection.telemetry import evaluate, exclusion, stats_for, runs, queue_committed_runs, flush_outbox
++
++
++def utc(value):
++    stamp = datetime.fromisoformat(value.replace('Z', '+00:00')) if isinstance(value, str) else value
++    if not isinstance(stamp, datetime) or stamp.tzinfo is None:
++        raise ValueError('timezone_required')
++    return stamp.astimezone(timezone.utc)
++
++
++def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
++                    lateness_seconds=900, scanner=None, source_id='local', accept_legacy_exclusion=False, include_cloud=False, include_sequence=False):
++    """Late events beyond the finalized frontier are counted, never silently replayed.
++
++    A 15-minute normalization receipt overlap handles bounded refresh/write delays.
++    Rule/source identity is pinned; changing it requires a new explicit state file.
++    """
++    now, start = utc(now or datetime.now(timezone.utc)), utc(start)
++    if not 1 <= max_documents <= 100000 or not 60 <= lateness_seconds <= 86400 or start > now:
++        raise ValueError('invalid_incremental_options')
++    path = Path(state_path)
++    if path.is_symlink():
++        raise ValueError('unsafe_state_path')
++    path.parent.mkdir(parents=True, exist_ok=True)
++    try:
++        descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
++        os.close(descriptor)
++    except FileExistsError:
++        pass
++    rules = approved_rules(include_cloud=include_cloud, include_sequence=include_sequence)
++    identity = event_fingerprint({'rules': rules, 'start': start.isoformat(), 'lateness': lateness_seconds,
++                                  'index': NORMALIZED, 'source': source_id, 'legacy_exclusion': accept_legacy_exclusion,
++                                  'runtime_contract': 2, 'rule_versions': [rule_revision(rule) for rule in rules]})
++    with closing(sqlite3.connect(path, timeout=0)) as db:
++        db.execute('PRAGMA journal_mode=WAL')
++        db.execute('PRAGMA synchronous=FULL')
++        db.execute('CREATE TABLE IF NOT EXISTS runtime (id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL)')
++        db.execute('CREATE TABLE IF NOT EXISTS telemetry_outbox (id TEXT PRIMARY KEY, body TEXT NOT NULL)')
++        db.execute('BEGIN IMMEDIATE')
++        row = db.execute('SELECT body FROM runtime WHERE id=1').fetchone()
++        saved = json.loads(row[0]) if row else {'identity': identity, 'checkpoint': start.isoformat(),
++            'frontier': (start - timedelta(seconds=lateness_seconds)).isoformat(),
++            'pending': {}, 'seen': {}, 'groups': {}, 'last_success': None, 'late_total': 0}
++        if saved['identity'] != identity:
++            raise ValueError('rule_or_scope_changed_requires_new_state')
++        state = deepcopy(saved)
++        checkpoint = utc(state['checkpoint'])
++        if checkpoint > now:
++            raise ValueError('clock_regression')
++        end = min(now - timedelta(seconds=30), checkpoint + timedelta(minutes=5))
++        lower = max(start, checkpoint - timedelta(minutes=15))
++        counts = {'events': 0, 'created': 0, 'existing': 0, 'late': 0}
++        rule_stats = stats_for(rules)
++        run_id = str(uuid4())
++
++        def publish(kind, error=None):
++            history_pending = db.execute('SELECT count(*) FROM telemetry_outbox').fetchone()[0]
++            health = 'failed' if kind == 'failed' else 'delayed' if (now - utc(state['checkpoint'])).total_seconds() > 1200 else 'warning' if history_pending or state.get('excluded_total') or state['late_total'] or state.get('legacy_excluded') else 'healthy'
++            client.index(index=STATUS, id='detector', document={'@timestamp': now.isoformat(),
++                'state': kind, 'detection': ','.join(rule['id'] for rule in rules), 'checkpoint': state['checkpoint'],
++                'last_success': state['last_success'], 'error': error,
++                'health': health, 'legacy_excluded': state.get('legacy_excluded', 0),
++                'lag_seconds': max(0, int((now - utc(state['checkpoint'])).total_seconds())),
++                'late_total': state['late_total'], 'excluded_total': state.get('excluded_total', 0),
++                'history_pending': history_pending, 'counts': counts}, refresh=False)
++
++        try:
++            publish('running')
++            flush_outbox(client, db)
++            if end <= checkpoint:
++                runs(client, rules, rule_stats, run_id=run_id, stamp=now.isoformat(), start=lower.isoformat(),
++                     end=checkpoint.isoformat(), state='waiting')
++                publish('waiting')
++                db.commit()
++                return counts
++            resolved = client.indices.resolve_index(name=NORMALIZED)
++            if resolved.get('aliases') or resolved.get('data_streams') or [r['name'] for r in resolved.get('indices', [])] != [NORMALIZED]:
++                raise ValueError('unexpected_normalized_index')
++            caps = client.field_caps(index=NORMALIZED, fields=['cloud_soc.normalized_at'])['fields'].get('cloud_soc.normalized_at', {})
++            if set(caps) != {'date'}:
++                raise ValueError('normalization_time_mapping_required')
++            if not row:
++                legacy = client.count(index=NORMALIZED, query={'bool': {'must_not': [{'exists': {'field': 'cloud_soc.normalized_at'}}]}})
++                if legacy.get('_shards', {}).get('failed', 0) or type(legacy.get('count')) is not int:
++                    raise ValueError('legacy_scope_check_failed')
++                if legacy['count'] and not accept_legacy_exclusion:
++                    raise ValueError('legacy_missing_normalization_time_requires_explicit_exclusion')
++                state['legacy_excluded'] = legacy['count']
++            ensure_provenance_mapping(client, ALERTS)
++            query = {'range': {'cloud_soc.normalized_at': {'gte': lower.isoformat(), 'lt': end.isoformat()}}}
++            hits = (scanner or fetch_all_hits)(client, index=NORMALIZED, page_size=500,
++                                               max_documents=max_documents, query=query)
++            if len(hits) > max_documents:
++                raise ValueError('batch_limit')
++            frontier = utc(state['frontier'])
++            for hit in hits:
++                if hit.get('_index') != NORMALIZED or not hit.get('_id'):
++                    raise ValueError('invalid_reference')
++                event = deepcopy(hit['_source'])
++                received = utc(event['cloud_soc']['normalized_at'])
++                if not lower <= received < end:
++                    raise ValueError('outside_receipt_range')
++                key = hit['_id']
++                if key in state['seen']:
++                    continue
++                event['_cloud_soc_meta'] = {'index': NORMALIZED, 'document_id': key}
++                if not event_evidence(event)['complete']:
++                    raise ValueError('incomplete_evidence')
++                state['seen'][key] = received.isoformat()
++                counts['events'] += 1
++                try:
++                    stamp = parse_event_timestamp(event)
++                    time_reason = ('late_event' if stamp < frontier else
++                                   'future_event_clock' if stamp > now + timedelta(minutes=5) else None)
++                except (ValueError, TypeError):
++                    time_reason = 'invalid_event_time'
++                eligible = False
++                late = False
++                for rule in rules:
++                    metrics = rule_stats[rule['id']]
++                    metrics['input_events'] += 1
++                    outcome, missing = evaluate(event, rule)
++                    metrics[outcome] += 1
++                    if outcome == 'not_matched':
++                        continue
++                    group_fields = list(dict.fromkeys(['organization.id', *rule['group_by']]))
++                    group_missing = [f for f in group_fields if get_field_value(event, f) in (None, '')]
++                    organization = event.get('organization', {}).get('id')
++                    reason = ('missing_condition_fields' if outcome == 'unknown' else
++                              'missing_group_fields' if group_missing or not isinstance(organization, str) or not organization.strip() or build_group_key(event, group_fields) is None else time_reason)
++                    if reason:
++                        metrics['excluded'] += 1
++                        if reason == 'late_event':
++                            metrics['late'] += 1
++                            late = True
++                        exclusion(client, event, rule, reason, missing or group_missing, now.isoformat(), run_id)
++                    else:
++                        eligible = True
++                if late:
++                    counts['late'] += 1
++                    state['late_total'] += 1
++                if eligible:
++                    state['pending'][key] = event
++            final = max(frontier, end - timedelta(seconds=lateness_seconds))
++            ready = [e for e in state['pending'].values() if parse_event_timestamp(e) < final]
++            # Stateful engine preserves the same event ordering and cooldown as batch detection.
++            extra_groups = state.setdefault('rule_groups', {})
++            runtimes = {rule['id']: state['groups'] if i == 0 else extra_groups.setdefault(rule['id'], {})
++                        for i, rule in enumerate(rules) if rule.get('type', 'threshold') in ('threshold', 'sequence')}
++            detections = []
++            for rule in rules:
++                eligible_ready = [e for e in ready if evaluate(e, rule)[0] == 'matched' and
++                                  build_group_key(e, list(dict.fromkeys(['organization.id', *rule['group_by']]))) is not None and
++                                  all(get_field_value(e, f) not in (None, '') for f in ['organization.id', *rule['group_by']]) and
++                                  isinstance(get_field_value(e, 'organization.id'), str) and get_field_value(e, 'organization.id').strip()]
++                rule_stats[rule['id']]['evaluated_events'] = len(eligible_ready)
++                found = detect_rule(eligible_ready, rule, runtime=runtimes.get(rule['id']))
++                rule_stats[rule['id']]['detection_matches'] = len(found)
++                detections.extend(found)
++            for detection in detections:
++                result = save_security_alert(client, build_security_alert(detection), index_name=ALERTS,
++                    document_id=make_alert_id(detection), refresh=False, index_prepared=True)
++                if result['result'] not in ('created', 'existing'):
++                    raise RuntimeError('unexpected_alert_write')
++                counts[result['result']] += 1
++                rule_stats[detection['rule_id']]['alerts_' + result['result']] += 1
++            state['pending'] = {k: e for k, e in state['pending'].items() if parse_event_timestamp(e) >= final}
++            for rule in rules:
++                groups = runtimes.get(rule['id'], {})
++                window = timedelta(seconds=rule['time_window']['seconds'])
++                cooldown = timedelta(seconds=rule.get('cooldown', {}).get('seconds', 0))
++                for key, group in list(groups.items()):
++                    slot = 'failures' if rule.get('type') == 'sequence' else 'window'
++                    group[slot] = [e for e in group[slot] if parse_event_timestamp(e) >= final - window]
++                    if not group[slot] and (not group.get('last_alert') or utc(group['last_alert']) < final - cooldown):
++                        del groups[key]
++            state['seen'] = {k: t for k, t in state['seen'].items() if utc(t) >= end - timedelta(minutes=15)}
++            if len(state['pending']) + sum(len(g.get('window', g.get('failures', []))) for groups in runtimes.values() for g in groups.values()) > max_documents:
++                raise ValueError('active_state_limit')
++            state.update(checkpoint=end.isoformat(), frontier=final.isoformat(), last_success=now.isoformat())
++            state['excluded_total'] = state.get('excluded_total', 0) + sum(c['excluded'] for c in rule_stats.values())
++            runs(client, rules, rule_stats, run_id=run_id, stamp=now.isoformat(), start=lower.isoformat(),
++                 end=end.isoformat(), state='evaluated')
++            # Publish before commit: a status/write failure must not advance the checkpoint.
++            publish('success')
++            db.execute('INSERT OR REPLACE INTO runtime VALUES(1,?)', (json.dumps(state),))
++            queue_committed_runs(db, rules, rule_stats, run_id=run_id, stamp=now.isoformat(),
++                                 start=lower.isoformat(), end=end.isoformat())
++            db.commit()
++            # Checkpoint and delivery intent are now committed together. A later ES
++            # failure must not rewind them or label this completed run as failed.
++            try:
++                db.execute('BEGIN IMMEDIATE')
++                flush_outbox(client, db)
++                db.commit()
++            except Exception:
++                db.rollback()
++                try:
++                    publish('success', 'history_delivery_pending')
++                except Exception:
++                    pass
++            return counts
++        except Exception:
++            db.rollback()
++            state = saved
++            try:
++                runs(client, rules, rule_stats, run_id=run_id, stamp=now.isoformat(), start=lower.isoformat(),
++                     end=end.isoformat(), state='failed', error='incremental_cycle_failed')
++            except Exception:
++                pass
++            try:
++                publish('failed', 'incremental_cycle_failed')
++            except Exception:
++                pass
++            raise RuntimeError('incremental_cycle_failed; checkpoint retained') from None
+diff --git a/src/cloud_soc/detection/sequence.py b/src/cloud_soc/detection/sequence.py
+new file mode 100644
+index 0000000..cccb01c
+--- /dev/null
++++ b/src/cloud_soc/detection/sequence.py
+@@ -0,0 +1,41 @@
++"""Failure-to-success sequence, scoped by organization/host/account/source IP."""
++from copy import deepcopy
++from datetime import timedelta
++import json
++from cloud_soc.detection.engine import (build_group_key, event_matches_rule, event_fingerprint,
++    parse_event_timestamp, get_field_value, event_evidence, rule_revision)
++
++
++def detect_sequence(events, rule, runtime):
++    result = []
++    fields = list(dict.fromkeys(['organization.id', *rule['group_by']]))
++    seconds = rule['time_window']['seconds']
++    version = rule_revision(rule)
++    for event in sorted(events, key=lambda e: (parse_event_timestamp(e), event_fingerprint(e))):
++        if not event_matches_rule(event, rule):
++            continue
++        key = build_group_key(event, fields)
++        if key is None or any(get_field_value(event, f) in (None, '') for f in fields):
++            continue
++        stamp = parse_event_timestamp(event)
++        state = runtime.setdefault(json.dumps(key), {'failures': []})
++        failures = [e for e in state['failures'] if parse_event_timestamp(e) >= stamp - timedelta(seconds=seconds)]
++        outcome = get_field_value(event, 'event.outcome')
++        if outcome == 'failure':
++            failures.append(deepcopy(event))
++            state['failures'] = failures
++            continue
++        # Same-timestamp ordering cannot establish a preceding failure.
++        earlier = [e for e in failures if parse_event_timestamp(e) < stamp]
++        if outcome == 'success' and len(earlier) >= rule['threshold']['count']:
++            evidence = [event_evidence(e) for e in earlier + [event]]
++            result.append({'rule_id': rule['id'], 'rule_name': rule['name'], 'severity': rule.get('severity', 'high'),
++                'group': dict(zip(fields, key)), 'organization_id': get_field_value(event, 'organization.id'),
++                'rule_version': version, 'rule_snapshot': deepcopy(rule), 'engine_version': 'failure-success-v1',
++                'event_count': len(earlier) + 1, 'threshold': rule['threshold']['count'],
++                'time_window_seconds': seconds, 'window_start': earlier[0]['@timestamp'], 'window_end': stamp.isoformat(),
++                'alert': rule.get('alert', {}), 'mitre': rule.get('mitre', {}), 'evidence': evidence,
++                'evidence_status': 'complete' if all(e['complete'] for e in evidence) else 'incomplete_legacy'})
++        if outcome == 'success':
++            state['failures'] = []
++    return result
+diff --git a/src/cloud_soc/detection/telemetry.py b/src/cloud_soc/detection/telemetry.py
+new file mode 100644
+index 0000000..be698d1
+--- /dev/null
++++ b/src/cloud_soc/detection/telemetry.py
+@@ -0,0 +1,80 @@
++"""Append-only runs and idempotent exclusions, containing references rather than payloads."""
++from copy import deepcopy
++import json
++from elasticsearch import ConflictError
++from cloud_soc.detection.engine import condition_matches, event_fingerprint, get_field_value, parse_event_timestamp, rule_revision, rule_engine_version
++
++RUNS = 'soc-detection-runs-v1'
++EXCLUSIONS = 'soc-detection-exclusions-v1'
++
++
++def evaluate(event, rule):
++    missing = []
++    mismatch = False
++    for condition in rule['conditions']:
++        actual = get_field_value(event, condition['field'])
++        if actual is None and condition['operator'] != 'exists':
++            missing.append(condition['field'])
++        elif not condition_matches(event, condition):
++            mismatch = True
++    if mismatch:
++        return 'not_matched', []
++    return ('unknown', missing) if missing else ('matched', [])
++
++
++def create_record(client, index, identifier, document):
++    try:
++        response = client.create(index=index, id=identifier, document=document, refresh=False)
++        if response['result'] != 'created':
++            raise RuntimeError('unexpected_telemetry_write')
++    except ConflictError:
++        # Exclusion identities are deterministic across checkpoint retries.
++        return
++
++
++def exclusion(client, event, rule, reason, missing, stamp, run_id):
++    meta = event.get('_cloud_soc_meta', {})
++    raw = get_field_value(event, 'cloud_soc.provenance.raw')
++    normalized = {'index': meta.get('index'), 'id': meta.get('document_id')}
++    version = rule_revision(rule)
++    identifier = event_fingerprint({'rule': version, 'normalized': normalized, 'reason': reason, 'missing': missing})
++    try:
++        occurred = parse_event_timestamp(event).isoformat()
++    except (ValueError, TypeError):
++        occurred = None
++    document = {'@timestamp': stamp, 'record_id': identifier, 'run_id': run_id, 'rule': {'id': rule['id'], 'version': version},
++                'reason': reason, 'missing_fields': missing, 'normalized': normalized, 'raw': deepcopy(raw),
++                'event_time': occurred, 'event_hash': event_fingerprint(event)}
++    create_record(client, EXCLUSIONS, identifier, document)
++
++
++def stats_for(rules):
++    return {rule['id']: {'input_events': 0, 'matched': 0, 'not_matched': 0, 'unknown': 0,
++                         'excluded': 0, 'late': 0, 'alerts_created': 0, 'alerts_existing': 0}
++            for rule in rules}
++
++
++def run_records(rules, stats, *, run_id, stamp, start, end, state, error=None):
++    for rule in rules:
++        identifier = run_id + ':' + rule['id'] + ':' + state
++        document = {'@timestamp': stamp, 'record_id': identifier, 'run_id': run_id, 'rule': {'id': rule['id'], 'version': rule_revision(rule)},
++                    'engine_version': rule_engine_version(rule), 'rule_snapshot': deepcopy(rule),
++                    'state': state, 'range_start': start, 'range_end': end,
++                    'counts': deepcopy(stats[rule['id']]), 'error': error}
++        yield identifier, document
++
++
++def runs(client, rules, stats, **options):
++    for identifier, document in run_records(rules, stats, **options):
++        create_record(client, RUNS, identifier, document)
++
++
++def queue_committed_runs(db, rules, stats, **options):
++    for identifier, document in run_records(rules, stats, state='committed', **options):
++        db.execute('INSERT OR IGNORE INTO telemetry_outbox VALUES(?,?)', (identifier, json.dumps(document)))
++
++
++def flush_outbox(client, db):
++    for identifier, body in db.execute('SELECT id,body FROM telemetry_outbox').fetchall():
++        create_record(client, RUNS, identifier, json.loads(body))
++        db.execute('DELETE FROM telemetry_outbox WHERE id=?', (identifier,))
+diff --git a/src/cloud_soc/portal/detection_history.py b/src/cloud_soc/portal/detection_history.py
+new file mode 100644
+index 0000000..ac5bcd3
+--- /dev/null
++++ b/src/cloud_soc/portal/detection_history.py
+@@ -0,0 +1,83 @@
++"""Read-only bounded history pages; fixed index scope and validated seek cursors."""
++import base64
++from datetime import datetime, timedelta, timezone
++import json
++import re
++from cloud_soc.detection.telemetry import RUNS, EXCLUSIONS
++from cloud_soc.portal.agent_status import parse_time, iso
++from cloud_soc.portal.log_query import LogQueryError, bounded_json
++from cloud_soc.portal.privacy import display
++
++
++def project(source):
++    result = {key: display(source.get(key)) for key in ('@timestamp', 'record_id', 'run_id', 'state',
++              'range_start', 'range_end', 'error', 'reason', 'event_time', 'event_hash') if key in source}
++    for key, fields in (('rule', ('id', 'version')), ('raw', ('index', 'id')), ('normalized', ('index', 'id'))):
++        value = source.get(key)
++        if isinstance(value, dict):
++            result[key] = {field: display(value.get(field)) for field in fields}
++    counts = source.get('counts')
++    if isinstance(counts, dict):
++        result['counts'] = {k: v for k, v in counts.items() if k in ('input_events', 'matched', 'not_matched', 'unknown',
++            'excluded', 'late', 'alerts_created', 'alerts_existing', 'evaluated_events', 'detection_matches') and type(v) is int and v >= 0}
++    if isinstance(source.get('missing_fields'), list):
++        result['missing_fields'] = [display(value) for value in source['missing_fields'][:50] if isinstance(value, str)]
++    return result
++
++
++def history(operations, pairs):
++    pairs = list(pairs)
++    args = dict(pairs)
++    try:
++        if len(args) != len(pairs) or set(args) - {'kind', 'rule', 'start', 'end', 'after', 'limit'}:
++            raise ValueError()
++        kind = args.get('kind', 'runs')
++        index = {'runs': RUNS, 'exclusions': EXCLUSIONS}[kind]
++        limit_text = args.get('limit', '25')
++        if not re.fullmatch(r'[0-9]{1,3}', limit_text):
++            raise ValueError()
++        limit = int(limit_text)
++        if not 1 <= limit <= 100:
++            raise ValueError()
++        end = parse_time(args.get('end')) if 'end' in args else datetime.now(timezone.utc)
++        start = parse_time(args.get('start')) if 'start' in args else end - timedelta(days=1)
++        if not start or not end or not start < end or end - start > timedelta(days=30):
++            raise ValueError()
++        rule = args.get('rule')
++        if rule is not None and not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', rule):
++            raise ValueError()
++        after = None
++        if 'after' in args:
++            token = args['after']
++            if len(token) > 512 or not re.fullmatch(r'[A-Za-z0-9_-]+', token):
++                raise ValueError()
++            after = json.loads(base64.urlsafe_b64decode(token + '=' * (-len(token) % 4)))
++            if not isinstance(after, list) or len(after) != 2 or not isinstance(after[0], int) or not isinstance(after[1], str) or not re.fullmatch(r'[A-Za-z0-9:_-]{1,160}', after[1]):
++                raise ValueError()
++    except (ValueError, KeyError, TypeError):
++        raise LogQueryError('invalid_history_query', 400, '실행 이력 조회 조건을 확인하세요.') from None
++    try:
++        from cloud_soc.portal.operations import exact_indices
++        if not exact_indices(operations.client, [index]):
++            return bounded_json({'state': 'no_index', 'rows': [], 'next': None, 'start': iso(start), 'end': iso(end)})
++        filters = [{'range': {'@timestamp': {'gte': iso(start), 'lt': iso(end)}}}]
++        if rule: filters.append({'term': {'rule.id': rule}})
++        result = operations.client.search(index=index, size=limit + 1, search_after=after,
++            query={'bool': {'filter': filters}}, sort=[{'@timestamp': 'desc'}, {'record_id': 'asc'}],
++            allow_partial_search_results=False, timeout='5s', track_total_hits=False,
++            source=['@timestamp', 'record_id', 'run_id', 'rule', 'state', 'range_start', 'range_end',
++                    'counts', 'error', 'reason', 'missing_fields', 'normalized', 'raw', 'event_time', 'event_hash'])
++        if result.get('timed_out') or result.get('_shards', {}).get('failed', 0):
++            raise RuntimeError('partial_history')
++        hits = result['hits']['hits']
++        selected = hits[:limit]
++        rows = [project(hit['_source']) for hit in selected]
++        cursor = None
++        if len(hits) > limit:
++            seek = selected[-1].get('sort')
++            if not seek or seek == after:
++                raise RuntimeError('invalid_history_cursor')
++            cursor = base64.urlsafe_b64encode(json.dumps(seek).encode()).decode().rstrip('=')
++        return bounded_json({'state': 'ok', 'rows': rows, 'next': cursor, 'start': iso(start), 'end': iso(end)})
++    except Exception:
++        raise LogQueryError('history_unavailable', 503, '실행·제외 이력을 조회하지 못했습니다.') from None
+diff --git a/tests/test_cloud_detection.py b/tests/test_cloud_detection.py
+new file mode 100644
+index 0000000..189154a
+--- /dev/null
++++ b/tests/test_cloud_detection.py
+@@ -0,0 +1,143 @@
++from copy import deepcopy
++from datetime import timedelta
++import json
++from pathlib import Path
++import tempfile
++import unittest
++from unittest.mock import patch
++
++from test_cloudtrail import EVENTS, projected
++from test_intake_detection import client_for
++from cloud_soc.aws.network_risk import public_management_ingress
++from cloud_soc.oci.audit import project_event as oci_project
++from cloud_soc.processing.contract import normalize, NORMALIZED
++from cloud_soc.detection.worker import approved_rules, run_once
++from cloud_soc.detection.engine import detect_events, condition_matches
++from cloud_soc.detection.rule_loader import validate_rule
++from cloud_soc.detection.incremental import run_incremental, utc
++from cloud_soc.main import make_alert_id
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++def event(action, provider='iam.amazonaws.com', request=None, failure=False, number=1):
++    value = deepcopy(EVENTS[1])
++    value.update(eventName=action, eventSource=provider, requestParameters=request or {},
++                 eventID=f'11111111-2222-3333-4444-{number:012d}')
++    value.pop('errorCode', None)
++    if failure: value['errorCode'] = 'AccessDenied'
++    index, identifier, source = projected(value)
++    source['event']['ingested'] = value['eventTime']
++    key, record, result = normalize({'_index': index, '_id': identifier, '_source': source}, value['eventTime'])
++    assert record['status'] == 'normalized'
++    result['_cloud_soc_meta'] = {'index': NORMALIZED, 'document_id': key}
++    return result
++
++
++def ingress(port=22, cidr='0.0.0.0/0', protocol='tcp', upper=None):
++    key, name = ('ipv6Ranges', 'cidrIpv6') if ':' in cidr else ('ipRanges', 'cidrIp')
++    return {'ipPermissions': {'items': [{'ipProtocol': protocol, 'fromPort': port,
++            'toPort': port if upper is None else upper, key: {'items': [{name: cidr}]}}]}}
++
++
++class CloudDetectionTests(unittest.TestCase):
++    def detections(self, values):
++        return detect_events(values, approved_rules(include_cloud=True))
++
++    def test_high_privilege_attachment(self):
++        for action in ('AttachUserPolicy', 'AttachRolePolicy', 'AttachGroupPolicy'):
++            result = self.detections([event(action, request={'policyArn': 'arn:aws:iam::aws:policy/AdministratorAccess'})])
++            self.assertEqual([r['rule_id'] for r in result], ['AWS-IAM-001'])
++            self.assertEqual(result[0]['event_count'], 1)
++            self.assertEqual(len(result[0]['evidence']), 1)
++            self.assertTrue(result[0]['evidence'][0]['complete'])
++
++    def test_read_only_and_missing_policy_are_not_privilege_alerts(self):
++        for request in ({}, {'policyArn': 'arn:aws:iam::aws:policy/ReadOnlyAccess'}):
++            self.assertEqual(self.detections([event('AttachUserPolicy', request=request)]), [])
++
++    def test_failed_and_wrong_provider_do_not_alert(self):
++        self.assertEqual(self.detections([event('StopLogging', 'cloudtrail.amazonaws.com', failure=True)]), [])
++        self.assertEqual(self.detections([event('StopLogging', 'iam.amazonaws.com')]), [])
++
++    def test_audit_stop_and_delete(self):
++        for action in ('StopLogging', 'DeleteTrail'):
++            row = event(action, 'cloudtrail.amazonaws.com', {'name': 'fixture-trail'})
++            self.assertEqual(row['cloud_soc']['detail']['fields']['target_trail'], 'fixture-trail')
++            self.assertEqual(self.detections([row])[0]['rule_id'], 'AWS-AUDIT-001')
++
++    def test_public_ipv4_ipv6_ranges_and_all_protocols(self):
++        requests = [ingress(), ingress(3389, '::/0'), ingress(20, upper=30), ingress(protocol='-1')]
++        for request in requests:
++            self.assertTrue(public_management_ingress(request))
++            self.assertEqual(self.detections([event('AuthorizeSecurityGroupIngress', 'ec2.amazonaws.com', request)])[0]['rule_id'], 'AWS-NETWORK-001')
++
++    def test_private_web_and_missing_permissions_do_not_alert(self):
++        for request in (ingress(cidr='10.0.0.0/8'), ingress(port=443), ingress(protocol='udp'), {}):
++            self.assertEqual(self.detections([event('AuthorizeSecurityGroupIngress', 'ec2.amazonaws.com', request)]), [])
++        self.assertIsNone(public_management_ingress({}))
++
++    def test_no_cross_permission_port_cidr_join(self):
++        first = ingress(cidr='10.0.0.0/8')['ipPermissions']['items'][0]
++        second = ingress(port=443)['ipPermissions']['items'][0]
++        self.assertFalse(public_management_ingress({'ipPermissions': {'items': [first, second]}}))
++
++    def test_two_same_timestamp_single_events_are_independent(self):
++        rows = [event('StopLogging', 'cloudtrail.amazonaws.com', number=n) for n in (1, 2)]
++        matches = self.detections(rows)
++        self.assertEqual(len(matches), 2)
++        self.assertNotEqual(make_alert_id(matches[0]), make_alert_id(matches[1]))
++        self.assertEqual({make_alert_id(d) for d in self.detections(list(reversed(rows)))}, {make_alert_id(d) for d in matches})
++
++    def test_oci_policy_change_and_failed_result(self):
++        fixture = json.loads((ROOT / 'tests/fixtures/oci_audit.json').read_text())
++        for status, expected in [('200', 1), ('403', 0)]:
++            value = deepcopy(fixture['events'][2])
++            value['data']['response']['status'] = status
++            index, key, source = oci_project(value, tenancy=fixture['tenancy'], compartment=fixture['compartment'], region=fixture['region'], organization='fixture')
++            source['event']['ingested'] = value['event_time']
++            identifier, record, row = normalize({'_index': index, '_id': key, '_source': source}, value['event_time'])
++            row['_cloud_soc_meta'] = {'index': NORMALIZED, 'document_id': identifier}
++            matches = self.detections([row])
++            self.assertEqual(len(matches), expected)
++            if expected: self.assertEqual(matches[0]['rule_id'], 'OCI-IAM-001')
++
++    def test_sensitive_request_content_is_not_retained(self):
++        request = ingress()
++        request.update(password='PRIVATE_CANARY', userData='PRIVATE_CANARY')
++        row = event('AuthorizeSecurityGroupIngress', 'ec2.amazonaws.com', request)
++        self.assertNotIn('PRIVATE_CANARY', json.dumps(row))
++
++    def test_default_profile_preserves_ssh_only(self):
++        self.assertEqual([r['id'] for r in approved_rules()], ['AUTH-001'])
++        self.assertEqual(len(approved_rules(include_cloud=True)), 5)
++
++    def test_missing_negative_condition_and_exists(self):
++        self.assertFalse(condition_matches({}, {'field': 'missing', 'operator': 'not_equals', 'value': 'normal'}))
++        self.assertFalse(condition_matches({}, {'field': 'missing', 'operator': 'exists', 'value': True}))
++        self.assertTrue(condition_matches({'flag': False}, {'field': 'flag', 'operator': 'exists', 'value': True}))
++
++    def test_single_rule_cannot_suppress_other_events(self):
++        rule = deepcopy(approved_rules(include_cloud=True)[1])
++        rule['cooldown'] = {'seconds': 300}
++        with self.assertRaises(ValueError): validate_rule(rule)
++
++    def test_incremental_cloud_profile_and_replay(self):
++        row = event('StopLogging', 'cloudtrail.amazonaws.com')
++        base = utc(row['@timestamp'])
++        row['cloud_soc']['normalized_at'] = (base + timedelta(seconds=10)).isoformat()
++        hit = {'_index': NORMALIZED, '_id': row.pop('_cloud_soc_meta')['document_id'], '_source': row}
++        client = client_for([])
++        client.field_caps.return_value = {'fields': {'cloud_soc.normalized_at': {'date': {}}}}
++        client.count.return_value = {'count': 0}
++        with tempfile.TemporaryDirectory() as folder:
++            args = dict(state_path=Path(folder)/'state.sqlite', start=base, lateness_seconds=60,
++                        include_cloud=True, scanner=lambda *a, **kw: [hit])
++            self.assertEqual(run_incremental(client, now=base+timedelta(seconds=140), **args)['created'], 1)
++            self.assertEqual(run_incremental(client, now=base+timedelta(seconds=210), **args)['created'], 0)
++            self.assertIn('AWS-AUDIT-001', client.index.call_args.kwargs['document']['detection'])
++            with self.assertRaises(ValueError):
++                run_incremental(client, now=base+timedelta(seconds=280), **{**args, 'include_cloud': False})
++
++
++if __name__ == '__main__': unittest.main()
+diff --git a/tests/test_detection_quality.py b/tests/test_detection_quality.py
+new file mode 100644
+index 0000000..cab4e54
+--- /dev/null
++++ b/tests/test_detection_quality.py
+@@ -0,0 +1,162 @@
++from copy import deepcopy
++from datetime import timedelta
++import json
++from pathlib import Path
++import tempfile
++import unittest
++from unittest.mock import Mock, patch
++from elasticsearch import ConflictError
++from test_intake_detection import raw, normalized, client_for
++from cloud_soc.detection.incremental import run_incremental, utc
++from cloud_soc.detection.telemetry import RUNS, EXCLUSIONS, evaluate
++from cloud_soc.detection.worker import approved_rules
++from cloud_soc.portal.operations import Operations
++from cloud_soc.portal.detection_history import history
++from cloud_soc.portal.log_query import LogQueryError
++
++
++class DetectionQualityTests(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
++        self.path = Path(self.temp.name)/'state.sqlite'
++        self.base = utc(raw(0)['_source']['@timestamp'])
++        self.hits = []
++        self.client = client_for([])
++        self.client.field_caps.return_value = {'fields': {'cloud_soc.normalized_at': {'date': {}}}}
++        self.client.count.return_value = {'count': 0}
++        self.client.create.return_value = {'result': 'created'}
++
++    def add(self, number=0, receipt=10):
++        hit = normalized(raw(number))
++        hit['_source']['cloud_soc']['normalized_at'] = (self.base+timedelta(seconds=receipt)).isoformat()
++        self.hits.append(hit)
++        return hit
++
++    def run_at(self, seconds=140, **extra):
++        def scan(*args, **kwargs):
++            bounds = kwargs['query']['range']['cloud_soc.normalized_at']
++            return deepcopy([h for h in self.hits if utc(bounds['gte']) <= utc(h['_source']['cloud_soc']['normalized_at']) < utc(bounds['lt'])])
++        return run_incremental(self.client, state_path=self.path, start=self.base,
++                              now=self.base+timedelta(seconds=seconds), lateness_seconds=60, scanner=scan, **extra)
++
++    def records(self, index):
++        return [call.kwargs for call in self.client.create.call_args_list if call.kwargs.get('index') == index]
++
++    def test_committed_history_retry_does_not_rewind_checkpoint(self):
++        import sqlite3
++        from contextlib import closing
++        self.add()
++        def delivery(**kwargs):
++            if kwargs.get('index') == RUNS and kwargs['document']['state'] == 'committed':
++                raise RuntimeError('delivery unavailable')
++            return {'result': 'created'}
++        self.client.create.side_effect = delivery
++        self.run_at()
++        with closing(sqlite3.connect(self.path)) as db:
++            checkpoint = json.loads(db.execute('SELECT body FROM runtime').fetchone()[0])['checkpoint']
++            self.assertEqual(db.execute('SELECT count(*) FROM telemetry_outbox').fetchone()[0], 1)
++        self.client.create.side_effect = None
++        self.run_at()
++        with closing(sqlite3.connect(self.path)) as db:
++            self.assertEqual(json.loads(db.execute('SELECT body FROM runtime').fetchone()[0])['checkpoint'], checkpoint)
++            self.assertEqual(db.execute('SELECT count(*) FROM telemetry_outbox').fetchone()[0], 0)
++        self.assertTrue(any(r['document']['state'] == 'committed' for r in self.records(RUNS)))
++
++    def test_unknown_is_distinct_from_nonmatch(self):
++        rule = approved_rules()[0]
++        row = self.add()['_source']
++        row['event'].pop('outcome')
++        self.run_at()
++        counters = self.records(RUNS)[0]['document']['counts']
++        self.assertEqual(counters['unknown'], 1)
++        self.assertEqual(counters['excluded'], 1)
++        self.assertEqual(counters['not_matched'], 0)
++        excluded = self.records(EXCLUSIONS)[0]['document']
++        self.assertEqual(excluded['reason'], 'missing_condition_fields')
++        self.assertEqual(excluded['missing_fields'], ['event.outcome'])
++        self.assertNotIn('message', excluded)
++        row['network']['protocol'] = 'http'
++        self.assertEqual(evaluate(row, rule)[0], 'not_matched')
++
++    def test_late_reference_is_durable_and_retry_id_is_stable(self):
++        self.run_at(140)
++        self.add(receipt=120)
++        self.client.index.side_effect = [None, RuntimeError('status failure'), None]
++        with self.assertRaises(RuntimeError): self.run_at(210)
++        identifier = self.records(EXCLUSIONS)[0]['id']
++        self.client.index.side_effect = None
++        self.run_at(210)
++        excluded = self.records(EXCLUSIONS)
++        self.assertEqual(excluded[1]['id'], identifier)
++        self.assertEqual(excluded[0]['document']['reason'], 'late_event')
++        self.assertEqual(excluded[0]['document']['normalized']['id'], self.hits[0]['_id'])
++        self.assertTrue(any(row['document']['state'] == 'failed' for row in self.records(RUNS)))
++
++    def test_bad_time_is_excluded_without_echoing_input(self):
++        self.add()['_source']['@timestamp'] = 'password=PRIVATE_CANARY'
++        self.run_at()
++        record = self.records(EXCLUSIONS)[0]['document']
++        self.assertEqual(record['reason'], 'invalid_event_time')
++        self.assertIsNone(record['event_time'])
++        self.assertNotIn('PRIVATE_CANARY', json.dumps(record))
++
++    def test_sequence_missing_host_is_recorded(self):
++        self.add()
++        self.run_at(include_sequence=True)
++        exclusions = self.records(EXCLUSIONS)
++        self.assertEqual(len(exclusions), 1)
++        self.assertEqual(exclusions[0]['document']['rule']['id'], 'AUTH-SEQ-001')
++        self.assertIn('host.id', exclusions[0]['document']['missing_fields'])
++
++    def test_history_write_failure_does_not_advance_checkpoint(self):
++        self.add()
++        self.client.create.side_effect = RuntimeError('history storage down')
++        with self.assertRaises(RuntimeError): self.run_at()
++        self.client.create.side_effect = None
++        self.assertEqual(self.run_at()['events'], 1)
++
++    def test_per_rule_counts_and_matches_from_pending_are_separate(self):
++        for i in range(10): self.add(i)
++        self.run_at(70)
++        self.client.create.reset_mock()
++        self.run_at(140)
++        metrics = self.records(RUNS)[0]['document']['counts']
++        self.assertEqual(metrics['input_events'], 0)
++        self.assertEqual(metrics['evaluated_events'], 10)
++        self.assertEqual(metrics['detection_matches'], 1)
++        self.assertEqual(metrics['alerts_created'], 1)
++
++
++class HistoryReaderTests(unittest.TestCase):
++    def setUp(self):
++        self.client = Mock()
++        self.client.options.return_value = self.client
++        self.client.indices.resolve_index.return_value = {'indices': [{'name': RUNS}]}
++        self.reader = Operations(self.client)
++        self.args = [('start', '2026-10-01T00:00:00Z'), ('end', '2026-10-02T00:00:00Z'), ('limit', '1')]
++
++    def test_seek_page_and_payload_allowlist(self):
++        self.client.search.return_value = {'hits': {'hits': [
++            {'_source': {'rule': {'id': 'AUTH-001'}, 'state': 'evaluated', 'payload': 'PRIVATE_CANARY'}, 'sort': [1790899200000, 'record-a']},
++            {'_source': {'state': 'failed'}, 'sort': [1790899199000, 'record-b']}]}}
++        first = json.loads(history(self.reader, self.args))
++        self.assertNotIn('PRIVATE_CANARY', json.dumps(first))
++        self.assertEqual(first['rows'][0]['state'], 'evaluated')
++        self.client.search.return_value = {'hits': {'hits': []}}
++        second = json.loads(history(self.reader, self.args + [('after', first['next'])]))
++        self.assertIsNone(second['next'])
++        self.assertEqual(self.client.search.call_args.kwargs['search_after'], [1790899200000, 'record-a'])
++
++    def test_partial_search_is_not_empty_success(self):
++        self.client.search.return_value = {'timed_out': True}
++        with self.assertRaises(LogQueryError) as caught: history(self.reader, self.args)
++        self.assertEqual(caught.exception.status, 503)
++
++    def test_invalid_queries_are_rejected_before_es(self):
++        for args in ([('kind', 'arbitrary-index')], [('limit', '101')], [('after', 'invalid')], [('rule', '*')], [('kind', 'runs'), ('kind', 'runs')]):
++            with self.assertRaises(LogQueryError) as caught: history(self.reader, args)
++            self.assertEqual(caught.exception.status, 400)
++        self.client.search.assert_not_called()
++
++
++if __name__ == '__main__': unittest.main()
+diff --git a/tests/test_evidence_integrity.py b/tests/test_evidence_integrity.py
+new file mode 100644
+index 0000000..92e6ed9
+--- /dev/null
++++ b/tests/test_evidence_integrity.py
+@@ -0,0 +1,80 @@
++from copy import deepcopy
++import json
++import unittest
++from unittest.mock import patch
++from test_intake_detection import raw, normalized, client_for
++from cloud_soc.detection.worker import run_once
++from cloud_soc.portal.operations import Operations
++from cloud_soc.portal.log_query import LogQueryError
++
++
++class EvidenceIntegrityTests(unittest.TestCase):
++    def setUp(self):
++        self.raw = [raw(i) for i in range(10)]
++        self.hits = [normalized(hit) for hit in self.raw]
++        self.client = client_for(self.hits)
++        run_once(self.client)
++        self.alert = self.client.create.call_args.kwargs['document']
++        self.alert_id = self.client.create.call_args.kwargs['id']
++        self.reader = Operations(self.client)
++        self.store = {(hit['_index'], hit['_id']): hit['_source'] for hit in self.raw + self.hits}
++        self.store[('security-alerts', self.alert_id)] = self.alert
++        self.getter = patch.object(self.reader, 'get', side_effect=lambda index, identifier, fields: deepcopy(self.store.get((index, identifier)))).start()
++        self.addCleanup(patch.stopall)
++
++    def detail(self, **params):
++        return json.loads(self.reader.detail([('id', self.alert_id), *[(k, str(v)) for k, v in params.items()]]))
++
++    def test_matching_hash_and_no_full_source_leak(self):
++        result = self.detail(evidence=0)['evidence']
++        self.assertEqual(result['integrity'], 'normalized_hash_verified')
++        self.assertEqual(result['raw_integrity'], 'not_hashed_at_detection')
++        self.assertNotIn('normalizer_version', json.dumps(result))
++        self.assertIsNone(self.getter.call_args_list[1].args[2])
++
++    def test_content_change_detected_before_raw_read(self):
++        hit = self.hits[0]
++        self.store[(hit['_index'], hit['_id'])]['event']['outcome'] = 'success'
++        self.assertEqual(self.detail(evidence=0)['evidence']['state'], 'normalized_hash_mismatch')
++        self.assertEqual(self.getter.call_count, 2)
++
++    def test_hash_key_order_does_not_change_integrity(self):
++        hit = self.hits[0]
++        self.store[(hit['_index'], hit['_id'])] = dict(reversed(list(hit['_source'].items())))
++        self.assertEqual(self.detail(evidence=0)['evidence']['integrity'], 'normalized_hash_verified')
++
++    def test_legacy_hash_is_unverified(self):
++        self.alert['cloud_soc']['provenance']['evidence'][0].pop('event_hash')
++        self.assertEqual(self.detail(evidence=0)['evidence']['integrity'], 'unverified_legacy')
++
++    def test_malformed_hash_is_distinct(self):
++        self.alert['cloud_soc']['provenance']['evidence'][0]['event_hash'] = 'wrong'
++        self.assertEqual(self.detail(evidence=0)['evidence']['state'], 'invalid_evidence_hash')
++
++    def test_all_positions_over_100_are_accessible(self):
++        evidence = self.alert['cloud_soc']['provenance']['evidence']
++        self.alert['cloud_soc']['provenance']['evidence'] = [deepcopy(evidence[0]) for _ in range(251)]
++        seen = []
++        offset = 0
++        while offset is not None:
++            page = self.detail(offset=offset, limit=100)['evidence_page']
++            seen.extend(page['positions'])
++            offset = page['next_offset']
++        self.assertEqual(seen, list(range(251)))
++        self.assertEqual(self.detail(evidence=250)['evidence']['integrity'], 'normalized_hash_verified')
++
++    def test_invalid_page_and_out_of_bounds(self):
++        for values in ({'offset': -1}, {'limit': 101}, {'limit': 0}, {'offset': 11}, {'evidence': 10}):
++            with self.assertRaises(LogQueryError): self.detail(**values)
++
++    def test_missing_document_and_reference_mismatch_stay_distinct(self):
++        hit = self.hits[0]
++        key = (hit['_index'], hit['_id'])
++        original = self.store.pop(key)
++        self.assertEqual(self.detail(evidence=0)['evidence']['state'], 'normalized_missing_or_expired')
++        self.store[key] = original
++        original['cloud_soc']['provenance']['raw']['id'] = 'different'
++        self.assertEqual(self.detail(evidence=0)['evidence']['state'], 'provenance_mismatch')
++
++
++if __name__ == '__main__': unittest.main()
+diff --git a/tests/test_incremental_detection.py b/tests/test_incremental_detection.py
+new file mode 100644
+index 0000000..298a772
+--- /dev/null
++++ b/tests/test_incremental_detection.py
+@@ -0,0 +1,160 @@
++from copy import deepcopy
++from contextlib import closing
++from datetime import timedelta
++import json
++from pathlib import Path
++import sqlite3
++import tempfile
++import unittest
++from unittest.mock import patch, Mock
++
++from test_intake_detection import raw, normalized, client_for
++from cloud_soc.detection.incremental import run_incremental, utc
++from cloud_soc.portal.operations import Operations
++
++
++class IncrementalTests(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory()
++        self.addCleanup(self.temp.cleanup)
++        self.path = Path(self.temp.name) / 'state.sqlite'
++        self.base = utc(raw(0)['_source']['@timestamp'])
++        self.hits = []
++        self.client = client_for([])
++        self.client.field_caps.return_value = {'fields': {'cloud_soc.normalized_at': {'date': {}}}}
++        self.client.count.return_value = {'count': 0}
++        self.ids = []
++        def write(*args, **kwargs):
++            key = kwargs['document_id']
++            result = 'existing' if key in self.ids else 'created'
++            if result == 'created': self.ids.append(key)
++            return {'result': result}
++        self.writer = patch('cloud_soc.detection.incremental.save_security_alert', side_effect=write).start()
++        self.addCleanup(patch.stopall)
++
++    def add(self, count, receipt, offset=0, organization='team-a'):
++        for i in range(count):
++            hit = normalized(raw(i + offset, organization=organization))
++            hit['_source']['cloud_soc']['normalized_at'] = (self.base + timedelta(seconds=receipt)).isoformat()
++            self.hits.append(hit)
++
++    def scan(self, client, **kwargs):
++        bounds = kwargs['query']['range']['cloud_soc.normalized_at']
++        return deepcopy([h for h in self.hits if utc(bounds['gte']) <= utc(h['_source']['cloud_soc']['normalized_at']) < utc(bounds['lt'])])
++
++    def run_at(self, seconds, **kwargs):
++        return run_incremental(self.client, state_path=self.path, start=self.base,
++            now=self.base + timedelta(seconds=seconds), lateness_seconds=60, scanner=self.scan, **kwargs)
++
++    def stored(self):
++        with closing(sqlite3.connect(self.path)) as db:
++            row = db.execute('SELECT body FROM runtime').fetchone()
++            return json.loads(row[0]) if row else None
++
++    def test_cross_batch_restart_overlap_and_cooldown(self):
++        self.add(9, 10)
++        self.assertEqual(self.run_at(70)['created'], 0)
++        self.add(1, 60, offset=9)
++        self.assertEqual(self.run_at(140)['created'], 1)
++        self.add(10, 130, offset=10)
++        self.assertEqual(self.run_at(210)['created'], 0)
++        self.assertEqual(len(self.ids), 1)
++        self.assertEqual(self.run_at(280)['events'], 0)
++
++    def test_separate_organizations(self):
++        self.add(5, 10)
++        self.add(5, 10, offset=5, organization='other')
++        self.assertEqual(self.run_at(140)['created'], 0)
++
++    def test_write_failure_retains_checkpoint_and_retry_id(self):
++        self.add(10, 10)
++        self.run_at(70)
++        old = self.stored()
++        self.writer.side_effect = RuntimeError('unavailable')
++        with self.assertRaises(RuntimeError): self.run_at(140)
++        attempted = self.writer.call_args.kwargs['document_id']
++        self.assertEqual(self.stored(), old)
++        self.writer.side_effect = None
++        self.writer.return_value = {'result': 'created'}
++        self.assertEqual(self.run_at(140)['created'], 1)
++        self.assertEqual(attempted, self.writer.call_args.kwargs['document_id'])
++
++    def test_status_failure_after_alert_retries_without_duplicate(self):
++        self.add(10, 10)
++        self.run_at(70)
++        old = self.stored()
++        self.client.index.side_effect = [None, RuntimeError('status unavailable'), None]
++        with self.assertRaises(RuntimeError): self.run_at(140)
++        self.assertEqual(self.stored(), old)
++        self.client.index.side_effect = None
++        self.assertEqual(self.run_at(140)['existing'], 1)
++
++    def test_late_input_is_visible(self):
++        self.run_at(140)
++        self.add(10, 120)
++        result = self.run_at(210)
++        self.assertEqual(result['late'], 10)
++        status = self.client.index.call_args.kwargs['document']
++        self.assertEqual(status['health'], 'warning')
++        self.assertEqual(status['late_total'], 10)
++
++    def test_partial_read_and_limit_retain_state(self):
++        self.run_at(70)
++        old = self.stored()
++        self.add(10, 60)
++        with self.assertRaises(RuntimeError): self.run_at(140, max_documents=5)
++        self.assertEqual(self.stored(), old)
++        with patch.object(self, 'scan', side_effect=RuntimeError('partial')):
++            with self.assertRaises(RuntimeError): self.run_at(140)
++        self.assertEqual(self.stored(), old)
++
++    def test_source_identity_change_rejected(self):
++        self.run_at(70)
++        with self.assertRaises(ValueError): self.run_at(140, source_id='other-cluster')
++
++    def test_second_window_after_cooldown(self):
++        self.add(10, 10)
++        self.run_at(140)
++        self.add(10, 360, offset=310)
++        self.run_at(390)
++        self.assertEqual(self.run_at(470)['created'], 1)
++        self.assertEqual(len(self.ids), 2)
++
++    def test_reordered_arrival_inside_lateness_window(self):
++        self.add(5, 10, offset=5)
++        self.run_at(70)
++        self.add(5, 60)
++        self.assertEqual(self.run_at(140)['created'], 1)
++
++    def test_concurrent_owner_is_rejected(self):
++        self.run_at(70)
++        with closing(sqlite3.connect(self.path)) as db:
++            db.execute('BEGIN IMMEDIATE')
++            with self.assertRaises(sqlite3.OperationalError): self.run_at(140)
++
++    def test_old_active_groups_expire(self):
++        self.add(10, 10)
++        self.run_at(140)
++        for stamp in (400, 700, 1000): self.run_at(stamp)
++        self.assertEqual(self.stored()['groups'], {})
++
++    def test_missing_mapping_rejected(self):
++        self.client.field_caps.return_value = {'fields': {}}
++        with self.assertRaises(RuntimeError): self.run_at(70)
++        self.assertIsNone(self.stored())
++
++    def test_legacy_exclusion_requires_explicit_choice(self):
++        self.client.count.return_value = {'count': 12}
++        with self.assertRaises(RuntimeError): self.run_at(70)
++        self.assertIsNone(self.stored())
++        self.run_at(70, accept_legacy_exclusion=True)
++        self.assertEqual(self.stored()['legacy_excluded'], 12)
++
++    def test_stopped_worker_surfaces_health_alarm(self):
++        reader = Operations(self.client)
++        with patch.object(reader, 'get', return_value={'@timestamp': self.base.isoformat(), 'state': 'success'}):
++            self.assertEqual(reader.worker_status('detector')['health'], 'stale')
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/tests/test_sequence_detection.py b/tests/test_sequence_detection.py
+new file mode 100644
+index 0000000..0cb4e6a
+--- /dev/null
++++ b/tests/test_sequence_detection.py
+@@ -0,0 +1,84 @@
++from copy import deepcopy
++from datetime import timedelta
++import json
++from pathlib import Path
++import tempfile
++import unittest
++from test_intake_detection import raw, normalized, client_for
++from cloud_soc.detection.engine import detect_events
++from cloud_soc.detection.worker import approved_rules
++from cloud_soc.detection.incremental import run_incremental, utc
++from cloud_soc.main import make_alert_id
++
++
++def ssh(number, seconds=None, *, outcome='failure', host='host-a', user='fixture', org='team-a', ip='192.0.2.10'):
++    source = raw(number, seconds=seconds, organization=org)
++    source['_source']['host'] = {'id': host, 'name': host}
++    if outcome == 'success':
++        source['_source']['message'] = source['_source']['message'].replace('Failed password', 'Accepted password')
++    hit = normalized(source)
++    hit['_source']['user']['name'] = user
++    hit['_source']['source']['ip'] = ip
++    row = deepcopy(hit['_source'])
++    row['_cloud_soc_meta'] = {'index': hit['_index'], 'document_id': hit['_id']}
++    return row
++
++
++class SequenceDetectionTests(unittest.TestCase):
++    def setUp(self):
++        self.rules = [rule for rule in approved_rules(include_sequence=True) if rule.get('type') == 'sequence']
++
++    def detect(self, rows): return detect_events(rows, self.rules)
++
++    def test_five_failures_then_success_has_exact_six_refs(self):
++        result = self.detect([ssh(i) for i in range(5)] + [ssh(5, outcome='success')])
++        self.assertEqual(len(result), 1)
++        self.assertEqual(result[0]['rule_id'], 'AUTH-SEQ-001')
++        self.assertEqual(len(result[0]['evidence']), 6)
++        self.assertEqual(result[0]['engine_version'], 'failure-success-v1')
++
++    def test_insufficient_failures_and_success_before_failures(self):
++        self.assertEqual(self.detect([ssh(i) for i in range(4)] + [ssh(4, outcome='success')]), [])
++        self.assertEqual(self.detect([ssh(0, outcome='success')] + [ssh(i) for i in range(1, 6)]), [])
++
++    def test_scope_host_user_and_source_cannot_mix(self):
++        failures = [ssh(i) for i in range(5)]
++        for changed in ({'host': 'other'}, {'user': 'other'}, {'org': 'other'}, {'ip': '192.0.2.11'}):
++            self.assertEqual(self.detect(failures + [ssh(6, outcome='success', **changed)]), [])
++
++    def test_window_boundary_and_same_timestamp_ambiguity(self):
++        self.assertEqual(len(self.detect([ssh(i, seconds=0) for i in range(5)] + [ssh(6, seconds=300, outcome='success')])), 1)
++        self.assertEqual(self.detect([ssh(i, seconds=0) for i in range(5)] + [ssh(6, seconds=301, outcome='success')]), [])
++        self.assertEqual(self.detect([ssh(i, seconds=5) for i in range(5)] + [ssh(6, seconds=5, outcome='success')]), [])
++
++    def test_success_resets_sequence(self):
++        result = self.detect([ssh(i) for i in range(5)] + [ssh(5, outcome='success'), ssh(6, outcome='success')])
++        self.assertEqual(len(result), 1)
++
++    def test_out_of_order_batch_has_same_alert_id(self):
++        rows = [ssh(i) for i in range(5)] + [ssh(5, outcome='success')]
++        self.assertEqual(make_alert_id(self.detect(rows)[0]), make_alert_id(self.detect(list(reversed(rows)))[0]))
++
++    def test_durable_batch_boundary_and_restart(self):
++        rows = [ssh(i) for i in range(5)] + [ssh(5, seconds=60, outcome='success')]
++        base = utc(rows[0]['@timestamp'])
++        hits = []
++        for i, row in enumerate(rows):
++            meta = row.pop('_cloud_soc_meta')
++            row['cloud_soc']['normalized_at'] = (base+timedelta(seconds=10 if i < 5 else 130)).isoformat()
++            hits.append({'_index': meta['index'], '_id': meta['document_id'], '_source': row})
++        client = client_for([])
++        client.field_caps.return_value = {'fields': {'cloud_soc.normalized_at': {'date': {}}}}
++        client.count.return_value = {'count': 0}
++        def scan(*args, **kwargs):
++            bounds = kwargs['query']['range']['cloud_soc.normalized_at']
++            return deepcopy([h for h in hits if utc(bounds['gte']) <= utc(h['_source']['cloud_soc']['normalized_at']) < utc(bounds['lt'])])
++        with tempfile.TemporaryDirectory() as folder:
++            options = dict(state_path=Path(folder)/'state.sqlite', start=base, lateness_seconds=60,
++                           include_sequence=True, scanner=scan)
++            self.assertEqual(run_incremental(client, now=base+timedelta(seconds=140), **options)['created'], 0)
++            self.assertEqual(run_incremental(client, now=base+timedelta(seconds=230), **options)['created'], 1)
++            self.assertEqual(run_incremental(client, now=base+timedelta(seconds=300), **options)['created'], 0)
++
++
++if __name__ == '__main__': unittest.main()
