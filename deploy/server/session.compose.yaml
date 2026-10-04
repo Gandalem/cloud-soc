@@ -1,0 +1,10 @@
+# Optional server-side sessions and single-workspace RBAC. Create users.json
+# with hashed credentials; mount read-only and keep mode 0600, owner UID 1000.
+services:
+  portal:
+    environment:
+      SOC_USERS_FILE: /run/secrets/portal_users
+    secrets: [portal_users]
+secrets:
+  portal_users:
+    file: ${SOC_STATE_DIR:?Run prepare.py first}/secrets/portal_users.json

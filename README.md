@@ -157,3 +157,9 @@ Windows 테스트 PC의 로그/품질 보고 수신과 VMware 화면 배포는 �
 | 정규화·관제 구조와 사건 업무 | [처리 구조](docs/processing_operations.md) / [사건 조사](docs/incident_workflow.md) |
 | 수집 보호·백업·실행 구조 | [수집 보호](docs/collection_protection.md) / [포털 백업](docs/portal_backup.md) / [Windows Discovery](docs/windows_native_discovery.md) |
 | 구현·배포·실제 검증 이력 | [우선순위별 작업 목록](docs/work_tracker.md) |
+
+## 2026-10-04 보안·운영 개선 (1–12)
+
+[적용 내용·로컬 VS Code 갱신·운영 전환 안내](docs/improvements_1_12.md). 기존 중앙 TLS/최소 권한과 불변 근거를 유지하며, 명시적 dev/prod 구성·고정 의존성/CI·detector registry·위험 점수/계산 근거·선택적 세션/RBAC를 추가했다. 새 경보만 점수를 저장하며 과거 경보를 덮어쓰지 않는다. 순차 탐지 v2의 기존 영속 상태는 별도 이행 검증이 필요하다.
+
+개발 서비스: `docker compose -f compose.yaml -f compose.dev.yaml up -d`. 운영 내부 전용 구성: `compose.prod.yaml` (ES 호스트 포트 미공개). 기존 직접 에이전트 수신은 `deploy/server/README.md`의 인증된 중앙 실행 경로를 따른다. 운영 배포/PC 파일 갱신/실제 수신 검증과 코드 회귀 결과는 구분한다.

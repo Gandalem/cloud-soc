@@ -1,0 +1,9 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {"label":"SOC: tests","type":"shell","command":"${command:python.interpreterPath} -m pytest -q","group":"test","problemMatcher":[]},
+    {"label":"SOC: lint","type":"shell","command":"${command:python.interpreterPath} -m ruff check src tests","problemMatcher":[]},
+    {"label":"SOC: local services","type":"shell","command":"docker compose -f compose.yaml -f compose.dev.yaml up -d","problemMatcher":[]},
+    {"label":"SOC: rule validation","type":"shell","command":"${command:python.interpreterPath} -m cloud_soc.detection --include-cloud --include-sequence","problemMatcher":[]}
+  ]
+}

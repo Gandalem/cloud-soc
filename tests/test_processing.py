@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from cloud_soc.processing.contract import normalize, NORMALIZED, RECORDS, STATUS
+from cloud_soc.processing.contract import normalize, NORMALIZED
 from cloud_soc.processing.worker import run_once, scan
 from cloud_soc.processing.__main__ import main
 from cloud_soc.portal.operations import Operations

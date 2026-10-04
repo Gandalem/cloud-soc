@@ -14,8 +14,8 @@ from elasticsearch import ConflictError
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from cloud_soc.detection.__main__ import main
 from cloud_soc.detection.setup import ROLE, prepare, main as setup_main
-from cloud_soc.detection.worker import normalized_snapshot, run_once
-from cloud_soc.elastic.pagination import fetch_all_hits, IncompleteSearchError
+from cloud_soc.detection.worker import run_once
+from cloud_soc.elastic.pagination import fetch_all_hits
 from cloud_soc.elastic.repository import SECURITY_ALERTS_MAPPING
 from cloud_soc.portal.operations import Operations
 from cloud_soc.processing.contract import normalize, NORMALIZED, STATUS

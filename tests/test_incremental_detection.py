@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 
 from test_intake_detection import raw, normalized, client_for
 from cloud_soc.detection.incremental import run_incremental, utc

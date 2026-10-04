@@ -4,8 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
-from elasticsearch import ConflictError
+from unittest.mock import Mock
 from test_intake_detection import raw, normalized, client_for
 from cloud_soc.detection.incremental import run_incremental, utc
 from cloud_soc.detection.telemetry import RUNS, EXCLUSIONS, evaluate

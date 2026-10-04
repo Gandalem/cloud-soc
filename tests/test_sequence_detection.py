@@ -1,6 +1,5 @@
 from copy import deepcopy
 from datetime import timedelta
-import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -35,7 +34,7 @@ class SequenceDetectionTests(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]['rule_id'], 'AUTH-SEQ-001')
         self.assertEqual(len(result[0]['evidence']), 6)
-        self.assertEqual(result[0]['engine_version'], 'failure-success-v1')
+        self.assertEqual(result[0]['engine_version'], 'failure-success-v2')
 
     def test_insufficient_failures_and_success_before_failures(self):
         self.assertEqual(self.detect([ssh(i) for i in range(4)] + [ssh(4, outcome='success')]), [])

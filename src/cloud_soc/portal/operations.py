@@ -12,6 +12,7 @@ from cloud_soc.portal.security_detail import DETAIL_FIELDS, security_detail, tex
 from cloud_soc.processing.contract import NORMALIZED, RECORDS, STATUS
 from cloud_soc.processing.worker import checked
 from cloud_soc.detection.engine import event_fingerprint
+from cloud_soc.privacy import redact_metadata
 
 ALERT = "security-alerts"
 INDEX_PATH_BUDGET = 3000
@@ -19,7 +20,8 @@ MAX_INDEX_BATCHES = 32
 SERIES_TIMEOUT = 12
 ALERT_FIELDS = ["@timestamp", "rule.id", "rule.name", "organization.id", "source.ip", "cloud_soc.severity",
                 "cloud_soc.alert_title", "cloud_soc.event_count", "cloud_soc.threshold", "cloud_soc.time_window_seconds",
-                "cloud_soc.window_start", "cloud_soc.window_end", "cloud_soc.provenance"]
+                "cloud_soc.window_start", "cloud_soc.window_end", "cloud_soc.provenance",
+                "cloud_soc.risk_score", "cloud_soc.risk_level", "cloud_soc.risk_version", "cloud_soc.risk_factors", "mitre"]
 
 
 def exact_indices(client, patterns):
@@ -72,7 +74,9 @@ def alert_row(hit):
     get = lambda path: text(field(source, path))
     return {"id": identifier(hit["_id"]), "timestamp": get("@timestamp"), "rule": get("rule.id"),
             "title": get("cloud_soc.alert_title") or get("rule.name"), "severity": get("cloud_soc.severity"),
-            "organization": get("organization.id"), "source_ip": get("source.ip")}
+            "organization": get("organization.id"), "source_ip": get("source.ip"),
+            "risk_score": field(source, "cloud_soc.risk_score") if type(field(source, "cloud_soc.risk_score")) is int and 0 <= field(source, "cloud_soc.risk_score") <= 100 else None,
+            "risk_level": get("cloud_soc.risk_level")}
 
 
 class Operations:
@@ -236,6 +240,11 @@ class Operations:
                       "engine_version": text(field(source, "cloud_soc.provenance.engine_version")),
                       "condition": {k: field(source, "cloud_soc." + k) for k in ("event_count", "threshold", "time_window_seconds")
                                     if type(field(source, "cloud_soc." + k)) is int}}
+            result["risk"] = {"score": result["alert"]["risk_score"], "level": result["alert"]["risk_level"],
+                              "version": text(field(source, "cloud_soc.risk_version")),
+                              "factors": redact_metadata(field(source, "cloud_soc.risk_factors"))}
+            result["rule_snapshot"] = redact_metadata(field(source, "cloud_soc.provenance.rule_snapshot"))
+            result["mitre"] = redact_metadata(field(source, "mitre"))
             if offset > len(evidence):
                 raise LogQueryError('invalid_evidence_offset', 400, '근거 페이지 범위를 확인하세요.')
             last = min(offset + limit, len(evidence))

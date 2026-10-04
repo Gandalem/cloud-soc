@@ -1,0 +1,6 @@
+# Compose 2.24.4+: secured central deployment, Elasticsearch not host-published.
+# Run prepare.py first; see docs/improvements_1_12.md.
+include:
+  - path:
+      - deploy/server/compose.yaml
+      - deploy/server/internal.compose.yaml

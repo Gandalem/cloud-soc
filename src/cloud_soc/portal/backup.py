@@ -110,7 +110,8 @@ def inspect_database(path, name, budget):
                 accepted.append(KEY_HISTORY_COLUMNS)
             if [row[1] for row in db.execute(f'PRAGMA table_info("{table}")')] not in accepted:
                 raise BackupError("Unsupported database columns.")
-            counts[table] = db.execute(f'SELECT count(*) FROM "{table}"').fetchone()[0]
+            # Table comes exclusively from the application-owned schema allowlist.
+            counts[table] = db.execute(f'SELECT count(*) FROM "{table}"').fetchone()[0]  # nosec B608
         if db.execute("PRAGMA integrity_check").fetchall() != [("ok",)] or db.execute("PRAGMA foreign_key_check").fetchone():
             raise BackupError("Database integrity check failed.")
     budget.check()

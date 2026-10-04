@@ -4,14 +4,13 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
 
 from test_cloudtrail import EVENTS, projected
 from test_intake_detection import client_for
 from cloud_soc.aws.network_risk import public_management_ingress
 from cloud_soc.oci.audit import project_event as oci_project
 from cloud_soc.processing.contract import normalize, NORMALIZED
-from cloud_soc.detection.worker import approved_rules, run_once
+from cloud_soc.detection.worker import approved_rules
 from cloud_soc.detection.engine import detect_events, condition_matches
 from cloud_soc.detection.rule_loader import validate_rule
 from cloud_soc.detection.incremental import run_incremental, utc

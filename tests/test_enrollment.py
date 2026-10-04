@@ -16,7 +16,7 @@ from werkzeug.security import generate_password_hash
 
 from cloud_soc.portal.app import create_app
 from cloud_soc.portal.backup import backup, restore, verify
-from cloud_soc.portal.enrollment import EnrollmentError, TOKEN_TTL, SESSION_TTL
+from cloud_soc.portal.enrollment import TOKEN_TTL, SESSION_TTL
 from cloud_soc.portal.status_setup import PIPELINE, PIPELINE_ID
 
 ROOT = Path(__file__).resolve().parents[1]

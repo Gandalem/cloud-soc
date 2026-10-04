@@ -1,4 +1,4 @@
-"""Single-admin case work, separate from immutable Elasticsearch evidence."""
+"""Single-workspace case work, separate from immutable Elasticsearch evidence."""
 
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -47,8 +47,10 @@ def now():
 
 
 class CaseStore:
-    def __init__(self, path, admin):
+    def __init__(self, path, admin, *, principals=None, owners=None):
         self.path, self.admin = Path(path), admin
+        self.principals = set(principals) if principals is not None else {admin}
+        self.owners = set(owners) if owners is not None else {admin}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
             db.executescript("""
@@ -82,7 +84,7 @@ class CaseStore:
             db.close()
 
     def authorize(self, actor):
-        if actor != self.admin:
+        if actor not in self.principals:
             raise CaseError("case_forbidden", "사건 관리자 권한이 필요합니다.", 403)
 
     def mutation(self, actor, token, payload, action):
@@ -145,7 +147,7 @@ class CaseStore:
         if type(body["version"]) is not int or body["version"] < 1 or len(body) < 2:
             raise invalid()
         note = clean(body.get("note", ""), 2000, empty=True)
-        for key, allowed in (("status", STATUSES), ("priority", PRIORITIES), ("verdict", VERDICTS), ("owner", (None, self.admin))):
+        for key, allowed in (("status", STATUSES), ("priority", PRIORITIES), ("verdict", VERDICTS), ("owner", (None, *self.owners))):
             if key in body and body[key] not in allowed:
                 raise invalid()
         if "alert_id" in body:
@@ -228,7 +230,8 @@ class CaseStore:
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
         with self.connect() as db:
             db.execute("BEGIN")
-            counts = dict(db.execute("SELECT count(*) AS total,coalesce(sum(status<>'closed'),0) AS open,coalesce(sum(owner IS NULL),0) AS unassigned,coalesce(sum(status='investigating'),0) AS investigating FROM cases" + where, params).fetchone())
-            rows = [dict(row) for row in db.execute("SELECT * FROM cases" + where + " ORDER BY " + orders[args.get("sort", "priority")] + " LIMIT 25 OFFSET ?", params + [(int(page)-1)*25])]
+            # SQL fragments and sort order are code-owned; all user values are bound.
+            counts = dict(db.execute("SELECT count(*) AS total,coalesce(sum(status<>'closed'),0) AS open,coalesce(sum(owner IS NULL),0) AS unassigned,coalesce(sum(status='investigating'),0) AS investigating FROM cases" + where, params).fetchone())  # nosec B608
+            rows = [dict(row) for row in db.execute("SELECT * FROM cases" + where + " ORDER BY " + orders[args.get("sort", "priority")] + " LIMIT 25 OFFSET ?", params + [(int(page)-1)*25])]  # nosec B608
             return {"rows": rows, "counts": counts, "page": int(page), "has_next": int(page)*25 < counts["total"],
                     "actor": actor, "filters": args, "untriaged_alert_count": None}

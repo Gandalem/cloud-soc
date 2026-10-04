@@ -51,6 +51,13 @@
       const data=await request("/api/alerts/detail?"+new URLSearchParams({id}));if(version!==generation)return;
       const c=data.condition;detail.replaceChildren(node("p","규칙 "+(data.alert.rule||"미기록")+" · 버전 "+(data.rule_version||"미기록")),node("p","관측 수 "+(c.event_count??"미기록")+" / 임계값 "+(c.threshold??"미기록")+" / 시간 창 "+(c.time_window_seconds??"미기록")+"초"));
       detail.append(node("p","관련 대상 (경보 필드): 조직 "+(data.alert.organization||"미기록")+" · 출발지 IP "+(data.alert.source_ip||"미관측")));
+      if(data.risk){
+        detail.append(node("p",data.risk.score===null?"위험 점수 미기록 (과거 경보)":"위험 점수 "+data.risk.score+" / 100 · "+data.risk.level+" · 계산 버전 "+data.risk.version));
+        if(Array.isArray(data.risk.factors))for(const factor of data.risk.factors)detail.append(node("p",factor.name+": +"+factor.points));
+      }
+      for(const [label,value] of [["탐지 규칙",data.rule_snapshot],["MITRE ATT&CK",data.mitre]])if(value){
+        const section=node("details");section.append(node("summary",label),node("pre",JSON.stringify(value,null,2)));detail.append(section);
+      }
       if(!data.evidence_count)detail.append(node("p","이 경보에는 정확한 근거 참조가 없습니다."));
       if(data.evidence_count)detail.append(node('p','저장된 근거 '+data.evidence_count+'건 · 페이지별 전체 조회 가능'));
       const navigation=node('div');detail.append(navigation);

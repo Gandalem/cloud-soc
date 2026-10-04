@@ -16,7 +16,7 @@ ENGINE_VERSION = "threshold-v2"
 
 def rule_engine_version(rule):
     if rule.get('type') == 'sequence':
-        return 'failure-success-v1'
+        return 'failure-success-v2'
     if rule.get('type') == 'single':
         return 'single-v1'
     return 'threshold-v3' if any(c['operator'] in ('exists', 'not_equals') for c in rule['conditions']) else ENGINE_VERSION
@@ -262,7 +262,13 @@ def build_group_key(
     return tuple(values)
 
 
-def detect_rule(
+def detect_rule(events, rule, *, runtime=None, _single_event=False):
+    """Dispatch through the explicit registry; unknown types fail closed."""
+    from cloud_soc.detection.registry import detect
+    return detect(events, rule, runtime=runtime)
+
+
+def _detect_threshold(
     events: list[dict[str, Any]],
     rule: dict[str, Any],
     *, runtime: dict | None = None, _single_event: bool = False,
@@ -283,11 +289,6 @@ def detect_rule(
         Threshold 검사
     """
 
-    if rule.get('type') == 'sequence':
-        from cloud_soc.detection.sequence import detect_sequence
-        return detect_sequence(events, rule, runtime if runtime is not None else {})
-    if rule.get('type') == 'single' and not _single_event:
-        return [match for event in events for match in detect_rule([event], rule, _single_event=True)]
 
     threshold_count = rule["threshold"]["count"]
 

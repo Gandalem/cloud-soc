@@ -18,47 +18,41 @@ def create_elasticsearch_client() -> Elasticsearch:
     Elasticsearch와 통신하기 위한 클라이언트를 생성한다.
     """
 
-    # CONFIG:
-    # 실제 Elasticsearch 주소는 .env에서 관리한다.
-    # 값이 없으면 개발환경 기본값인 localhost:9200을 사용한다.
-    elasticsearch_url = os.getenv(
-        "ELASTICSEARCH_URL",
-        "http://localhost:9200",
-    )
+    def secret(name):
+        inline, filename = os.getenv(name, ""), os.getenv(name + "_FILE", "")
+        if inline and filename:
+            raise ValueError("Choose one credential source")
+        if filename:
+            path = Path(filename)
+            if os.name != "nt" and path.stat().st_mode & 0o077:
+                raise ValueError("Credential file must be private (chmod 600)")
+            inline = path.read_text(encoding="utf-8").strip()
+            if not inline:
+                raise ValueError("Empty credential file")
+        return inline
 
-    # SECURITY:
-    # 계정 정보는 Python 코드에 직접 작성하지 않는다.
-    # 추후 Elasticsearch 보안 기능을 활성화하면 .env에서 읽어 사용한다.
+    elasticsearch_url = os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
+    from urllib.parse import urlsplit
+    parsed = urlsplit(elasticsearch_url)
+    if (parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username
+            or parsed.password or parsed.query or parsed.fragment or parsed.path not in ("", "/")):
+        raise ValueError("Elasticsearch URL must be a plain origin")
     username = os.getenv("ELASTICSEARCH_USERNAME", "")
-    password = os.getenv("ELASTICSEARCH_PASSWORD", "")
-
-    # username과 password 중 하나만 입력된 경우
-    # 잘못된 설정이므로 오류를 발생시킨다.
-    if bool(username) != bool(password):
-        raise ValueError(
-            "ELASTICSEARCH_USERNAME과 "
-            "ELASTICSEARCH_PASSWORD는 함께 설정해야 합니다."
-        )
-
-    # Elasticsearch 연결 옵션
-    options = {
-        "request_timeout": 10,
-    }
-
-    # SECURITY:
-    # 현재 개발 단계에서는 Elasticsearch 인증을 꺼두었기 때문에
-    # username/password가 비어 있어도 정상이다.
-    #
-    # TODO:
-    # 최종 프로젝트에서는 Elasticsearch 보안 기능을 활성화하고
-    # Basic Auth 또는 API Key 방식으로 변경할 예정이다.
-    if username and password:
+    password = secret("ELASTICSEARCH_PASSWORD")
+    api_key = secret("ELASTICSEARCH_API_KEY")
+    if bool(username) != bool(password) or api_key and (username or password):
+        raise ValueError("Use one complete authentication method")
+    if parsed.scheme == "http" and (parsed.hostname not in ("localhost", "127.0.0.1", "::1") or api_key or username):
+        raise ValueError("HTTP is permitted only for unauthenticated loopback development")
+    options = {"request_timeout": 10, "max_retries": 0}
+    ca = os.getenv("ELASTICSEARCH_CA_FILE")
+    if ca:
+        options["ca_certs"] = ca
+    if api_key:
+        options["api_key"] = api_key
+    elif username:
         options["basic_auth"] = (username, password)
-
-    client = Elasticsearch(
-        elasticsearch_url,
-        **options,
-    )
+    client = Elasticsearch(elasticsearch_url, **options)
 
     return client
 
@@ -82,7 +76,7 @@ def check_elasticsearch_connection(client: Elasticsearch) -> bool:
 
     except Exception as error:
         print("Elasticsearch 연결 실패")
-        print(f"오류 내용: {error}")
+        print(f"오류 유형: {type(error).__name__}")
 
         return False
 
