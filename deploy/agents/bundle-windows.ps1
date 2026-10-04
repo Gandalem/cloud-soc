@@ -1,13 +1,16 @@
 # Fresh installation and explicit recovery of a recognized stopped pair.
+. (Join-Path $PSScriptRoot 'repair-windows.ps1')
 . (Join-Path $PSScriptRoot 'bundle-repair-windows.ps1')
 
-function Get-SocBundleMembers {
-    return @(
+function Get-SocBundleMembers([switch]$HostOnly) {
+    $members = @(
         @{Kind='host';Beat='filebeat';Service='cloud-soc-filebeat';Root=(Join-Path $env:ProgramFiles 'Cloud-SOC-Agent');Receipt=$null;Prepared=$null;Promoted=$false;Created=$false;
           Hash='cdb07ad1e39e7c65cefcd7c71e1dfcfa4f92b00daafc132c78490e3e04f664f67403cdb925c5873a8441058d6de08d29790bf6776748edc63582f50174c508c8'},
         @{Kind='network';Beat='packetbeat';Service='cloud-soc-packetbeat';Root=(Join-Path $env:ProgramFiles 'Cloud-SOC-Network');Receipt=$null;Prepared=$null;Promoted=$false;Created=$false;
           Hash='d85de062273901fef2a1fe00b5b1dc4da01d764a65be72ccd2ae0e6d473e6a8cc8525244cf1c64a5f568416041118cef5ee44a2cd927a16315b255bad130cbac'}
     )
+    if ($HostOnly) { return @($members | Where-Object Kind -eq 'host') }
+    return $members
 }
 function Assert-SocReceiptDestination([string]$Path) {
     Assert-SocLocalPath $Path
@@ -126,7 +129,8 @@ function Invoke-SocBundleSequence([scriptblock]$Prepare, [scriptblock]$Commit, [
 
 function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$CaPath, [string]$Organization,
     [string]$InterfaceGuid, [switch]$AllowUnavailableRevocation, [switch]$Repair, [switch]$DryRun, [switch]$ResumeRepair,
-    [scriptblock]$EnrollmentStart, [scriptblock]$EnrollmentReceipt, [scriptblock]$EnrollmentAbort) {
+    [scriptblock]$EnrollmentStart, [scriptblock]$EnrollmentReceipt, [scriptblock]$EnrollmentAbort, [switch]$HostOnly) {
+    if ($HostOnly -and ($Repair -or $ResumeRepair -or -not $EnrollmentStart)) { throw 'HostOnly is for a fresh log-only enrollment.' }
     if ($EnrollmentStart -and ($Repair -or $ResumeRepair -or -not $EnrollmentReceipt -or -not $EnrollmentAbort)) { throw 'Enrollment requires a fresh complete bundle and receipt/abort callbacks.' }
     if ($ResumeRepair -and -not $Repair) { throw 'Use -Repair -ResumeRepair together for verified interrupted recovery.' }
     if ($Repair) {
@@ -140,8 +144,10 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
     if ($DryRun) {
         & $hostInstaller @common -DryRun
         if ($LASTEXITCODE -ne 0) { throw 'Host preview failed.' }
-        & $networkInstaller @common -InterfaceGuid $InterfaceGuid -DryRun
-        if ($LASTEXITCODE -ne 0) { throw 'Network preview failed.' }
+        if (-not $HostOnly) {
+            & $networkInstaller @common -InterfaceGuid $InterfaceGuid -DryRun
+            if ($LASTEXITCODE -ne 0) { throw 'Network preview failed.' }
+        }
         return
     }
     Assert-SocAdministrator
@@ -150,7 +156,7 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
     $transaction = $null
     $pending = Join-Path $env:ProgramData 'Cloud-SOC\bundle-pending.json'
     $state = @{ Started=$false; TaskCreated=$false; TaskRegistrationAttempted=$false; TaskXml=$null; CleanupSafe=$true; Enrollment=$null }
-    $members = Get-SocBundleMembers
+    $members = @(Get-SocBundleMembers -HostOnly:$HostOnly)
     try {
         try { $held = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $held=$true; throw 'Interrupted bundle detected. State retained; automatic adoption is not supported.' }
         if (-not $held) { throw 'Another bundle installation is active.' }
@@ -159,9 +165,11 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
         # Check both sides before downloading, requesting keys, or running permanent services.
         & $hostInstaller @common -PreflightOnly
         if ($LASTEXITCODE -ne 0) { throw 'Host preflight failed; no bundle committed.' }
-        if (-not $InterfaceGuid) { $InterfaceGuid = Select-SocInterface }
-        & $networkInstaller @common -InterfaceGuid $InterfaceGuid -PreflightOnly
-        if ($LASTEXITCODE -ne 0) { throw 'Network preflight failed; no bundle committed.' }
+        if (-not $HostOnly) {
+            if (-not $InterfaceGuid) { $InterfaceGuid = Select-SocInterface }
+            & $networkInstaller @common -InterfaceGuid $InterfaceGuid -PreflightOnly
+            if ($LASTEXITCODE -ne 0) { throw 'Network preflight failed; no bundle committed.' }
+        }
         $transaction = New-SocStage
         $reservation = [IO.File]::Open($pending, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
         try {
@@ -176,14 +184,16 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
             $hostOptions = @{}; $networkOptions = @{}
             if ($state.Enrollment) {
                 $hostOptions=@{HostApiKey=$state.Enrollment.host;InstallationProbe=$state.Enrollment.Probe}
-                $networkOptions=@{NetworkApiKey=$state.Enrollment.network;InstallationProbe=$state.Enrollment.Probe}
+                if (-not $HostOnly) { $networkOptions=@{NetworkApiKey=$state.Enrollment.network;InstallationProbe=$state.Enrollment.Probe} }
             }
             & $hostInstaller @common @hostOptions -PrepareOnly -PreparedReceipt $members[0].Receipt
             if ($LASTEXITCODE -ne 0) { throw 'Host preparation failed.' }
             $members[0].Prepared = Read-SocPreparedReceipt $members[0].Receipt 'host'
-            & $networkInstaller @common @networkOptions -InterfaceGuid $InterfaceGuid -PrepareOnly -PreparedReceipt $members[1].Receipt
-            if ($LASTEXITCODE -ne 0) { throw 'Network preparation failed.' }
-            $members[1].Prepared = Read-SocPreparedReceipt $members[1].Receipt 'network'
+            if (-not $HostOnly) {
+                & $networkInstaller @common @networkOptions -InterfaceGuid $InterfaceGuid -PrepareOnly -PreparedReceipt $members[1].Receipt
+                if ($LASTEXITCODE -ne 0) { throw 'Network preparation failed.' }
+                $members[1].Prepared = Read-SocPreparedReceipt $members[1].Receipt 'network'
+            }
             Save-SocBundleJournal $transaction 'prepared' $false
         }
         $commit = {
@@ -236,7 +246,7 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
             Save-SocBundleJournal $transaction $phase $true
             if ([IO.File]::ReadAllText($pending) -cne $transaction.Token) { throw 'Bundle reservation changed.' }
             Remove-Item -LiteralPath $pending
-            if ($EnrollmentReceipt) { Write-Host 'Cloud SOC installation completed. Both collectors active and central receipt verified.' }
+            if ($EnrollmentReceipt) { Write-Host 'Cloud SOC installation completed. Required collectors active and central receipt verified.' }
             else { Write-Host 'Both collectors active. Local SYSTEM/config/auth checks passed; central document receipt is NOT yet verified.' }
         }
         $rollback = {
@@ -290,7 +300,7 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
     } finally {
         if ($state.Enrollment) {
             $state.Enrollment.host.Dispose()
-            $state.Enrollment.network.Dispose()
+            if (-not $HostOnly) { $state.Enrollment.network.Dispose() }
             $state.Enrollment=$null
         }
         if ($held) { $mutex.ReleaseMutex() }

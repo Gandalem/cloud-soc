@@ -66,8 +66,8 @@ class Enrollments:
         if not isinstance(label, str) or len(label) > 100 or any(ord(c) < 32 or ord(c) == 127 for c in label):
             raise ValueError("대상 별칭은 줄바꿈 없이 100자 이내로 입력하세요.")
         package = self.store.get(identifier)
-        if package.get("enrollment_protocol") != 1 or package["os"] != "windows" or not package["network"]:
-            raise EnrollmentError("enrollment_package_required", 409, "단일 설치 토큰은 새로 생성한 Windows 로그+네트워크 패키지에서 먼저 지원합니다.")
+        if package.get("enrollment_protocol") != 1 or package["os"] not in ("windows", "ubuntu"):
+            raise EnrollmentError("enrollment_package_required", 409, "단일 설치 토큰을 지원하는 새 패키지를 생성하세요.")
         self.check_pipeline()
         sid = uuid.uuid4().hex
         token = sid + "." + secrets.token_urlsafe(32)
@@ -135,12 +135,25 @@ class Enrollments:
         return row
 
     def exchange(self, token, data):
-        if not isinstance(data, dict) or set(data) != {"attempt", "package_id", "package_sha256"}:
+        if (not isinstance(data, dict) or not {"attempt", "package_id", "package_sha256"} <= set(data)
+                or set(data) - {"attempt", "package_id", "package_sha256", "recovery_probe"}):
             raise ValueError("설치 시도·패키지 ID·SHA-256만 전달하세요.")
         attempt = data["attempt"]
         now = int(self.clock())
         with self.store.connect() as db:
             existing = self.authenticate(db, token, attempt)
+        recovery = data.get("recovery_probe")
+        if recovery is not None:
+            if not isinstance(recovery, str) or not re.fullmatch(r"[a-f0-9]{64}", recovery):
+                raise ValueError("실패 설치 식별자가 올바르지 않습니다.")
+            if existing["state"] == "unused":
+                if existing["expires"] <= now:
+                    raise EnrollmentError("enrollment_expired", 410, "설치 토큰이 만료되었습니다. 새로 발급하세요.")
+                if data["package_id"] != existing["package_id"] or data["package_sha256"] != existing["package_sha256"]:
+                    raise EnrollmentError("package_mismatch", 409, "발급한 패키지를 확인하세요.")
+                if self.store.get(existing["package_id"])["sha256"] != existing["package_sha256"]:
+                    raise EnrollmentError("package_mismatch", 409, "패키지 정보를 다시 확인하세요.")
+                self.prepare_recovery(json.loads(existing["spec"]), recovery)
         if existing["state"] == "issued" and existing["deadline"] <= now:
             self.cancel(existing["id"])
             raise EnrollmentError("enrollment_expired", 410, "설치 수신 확인 시간이 만료되었습니다.")
@@ -153,7 +166,10 @@ class Enrollments:
             if self.store.get(row["package_id"])["sha256"] != row["package_sha256"]:
                 raise EnrollmentError("package_mismatch", 409, "패키지 정보를 다시 확인하세요.")
             if row["state"] == "issued" and row["deadline"] > now:
-                return json.loads(envelope(attempt).decrypt(row["sealed"]))
+                reply = json.loads(envelope(attempt).decrypt(row["sealed"]))
+                if reply.get("recovery_probe") != recovery:
+                    raise EnrollmentError("recovery_mismatch", 409, "최초 재등록 요청과 다릅니다.")
+                return reply
             if row["state"] != "unused":
                 raise EnrollmentError("enrollment_unavailable", 409, "설치 토큰을 재사용할 수 없습니다. 중단된 발급은 관리자가 취소 후 새 토큰을 발급하세요.")
             if row["expires"] <= now:
@@ -189,6 +205,8 @@ class Enrollments:
                     issued.append({"id": key["id"], "key": key["id"] + ":" + key["api_key"], "scope": scope, "expiration": key.get("expiration")})
                 reply = {"id": sid, "keys": issued, "probe": row["nonce"], "deadline": now + SESSION_TTL,
                          "endpoint": spec["endpoint"], "organization": spec["organization"], "receipt_verified": False}
+                if recovery is not None:
+                    reply["recovery_probe"] = recovery
                 for key in issued:
                     db.execute("INSERT INTO issued_keys (id,package_id,created_at,scope,expiration,target_label,package_name,package_os,organization) VALUES (?,?,?,?,?,?,?,?,?)",
                         (key["id"], row["package_id"], datetime.now(timezone.utc).isoformat(), key["scope"], key["expiration"],
@@ -202,6 +220,34 @@ class Enrollments:
             except Exception:
                 pass
             raise EnrollmentError("enrollment_issue_failed", 503, "설치 키 발급을 완료하지 못했습니다. 취소/폐기 상태를 확인하고 새 토큰을 발급하세요.") from None
+
+    def prepare_recovery(self, spec, probe):
+        """New authenticated token may replace only a matching failed enrollment.
+
+        Completed installs and manual keys are never revoked by this path. Remote
+        revocation is rechecked even after restoring an old cancelled database.
+        """
+        with self.store.connect() as db:
+            rows = db.execute("SELECT * FROM enrollments WHERE nonce=?", (probe,)).fetchall()
+        if len(rows) != 1:
+            raise EnrollmentError("recovery_unknown", 409, "중앙에 등록된 실패 설치만 재등록할 수 있습니다.")
+        previous = rows[0]
+        old = json.loads(previous["spec"])
+        if (previous["state"] == "complete" or previous["attempt_hash"] is None
+                or any(old[field] != spec[field] for field in ("os", "network", "organization", "endpoint"))):
+            raise EnrollmentError("recovery_mismatch", 409, "서버·조직·플랫폼·수집 범위가 동일한 실패 설치만 재등록할 수 있습니다.")
+        self.cancel(previous["id"])
+        try:
+            for scope in self.scopes(old):
+                name = self.key_name(previous["id"], scope)
+                result = self.issuer.security.invalidate_api_key(name=name, owner=True)
+                if type(result.get("error_count")) is not int or result["error_count"] != 0:
+                    raise RuntimeError("Revocation incomplete")
+                keys = self.issuer.security.get_api_key(name=name, owner=True).get("api_keys")
+                if not isinstance(keys, list) or any(k.get("name") != name or k.get("invalidated") is not True for k in keys):
+                    raise RuntimeError("Revocation unconfirmed")
+        except Exception:
+            raise EnrollmentError("cleanup_pending", 503, "이전 설치 키의 실제 폐기를 확인한 뒤 재등록하세요.") from None
 
     def cancel(self, sid):
         with self.store.connect() as db:

@@ -236,9 +236,9 @@ class EnrollmentTests(unittest.TestCase):
         self.issuer.security.create_api_key.assert_not_called()
         self.assertEqual(self.service.listing()[0]["state"], "cleanup_pending")
 
-    def test_disabled_feature_and_old_or_linux_bundles_are_not_enrollment_ready(self):
+    def test_disabled_feature_and_supported_linux_bundle(self):
         package = self.app.extensions["packages"].create({"name": "linux", "os": "ubuntu", "organization": "school", "network": True})
-        self.assertEqual(self.admin("POST", f"/api/packages/{package['id']}/enrollment", {"days": 1}).status_code, 409)
+        self.assertEqual(self.admin("POST", f"/api/packages/{package['id']}/enrollment", {"days": 1}).status_code, 201)
         self.assertEqual(self.admin("POST", f"/api/packages/{self.package['id']}/enrollment", {"days": True}).status_code, 400)
         _, archive = self.app.extensions["packages"].get(self.package["id"], archive=True)
         with zipfile.ZipFile(io.BytesIO(archive)) as z:
@@ -252,6 +252,71 @@ class EnrollmentTests(unittest.TestCase):
         self.assertEqual(self.exchange().status_code, 503)
         self.assertEqual(self.admin("POST", f"/api/packages/{self.package['id']}/enrollment", {"days": 1}).status_code, 503)
         self.issuer.security.create_api_key.assert_not_called()
+
+    def test_all_platform_scope_combinations_get_only_their_own_roles(self):
+        for platform in ('windows', 'ubuntu'):
+            for network in (False, True):
+                with self.subTest(platform=platform, network=network):
+                    self.package = self.app.extensions['packages'].create({'name': platform + str(network), 'os': platform,
+                                                                         'organization': 'school', 'network': network})
+                    self.issuer.security.create_api_key.reset_mock()
+                    self.issuer.security.create_api_key.side_effect = [
+                        {'id': secrets.token_hex(16), 'api_key': 'SYNTHETIC_KEY'} for _ in range(2 if network else 1)]
+                    self.attempt = secrets.token_urlsafe(32)
+                    self.mint()
+                    result = self.exchange()
+                    self.assertEqual(result.status_code, 200, result.json)
+                    scopes = ['host', 'network'] if network else ['host']
+                    self.assertEqual([key['scope'] for key in result.json['keys']], scopes)
+                    os_index = 'linux' if platform == 'ubuntu' else 'windows'
+                    for scope, call in zip(scopes, self.issuer.security.create_api_key.call_args_list):
+                        role = call.kwargs['role_descriptors']['cloud_soc_' + scope]
+                        expected = ['soc-host-raw-' + os_index + '-*', 'soc-agent-health-*'] if scope == 'host' else ['soc-network-' + os_index + '-*']
+                        self.assertEqual(role['indices'][0]['names'], expected)
+                        self.assertEqual(role['indices'][0]['privileges'], ['auto_configure', 'create_doc'])
+
+    def failed_then_recovery(self):
+        self.mint()
+        first = self.exchange()
+        self.assertEqual(first.status_code, 200)
+        old = self.sid
+        probe = first.json['probe']
+        self.assertEqual(self.machine('abort', {'attempt': self.attempt}).status_code, 200)
+        self.issuer.security.create_api_key.side_effect = [
+            {'id': 'replacement-host', 'api_key': 'SYNTHETIC_KEY'}, {'id': 'replacement-network', 'api_key': 'SYNTHETIC_KEY'}]
+        self.attempt = secrets.token_urlsafe(32)
+        self.mint()
+        body = {'attempt': self.attempt, 'package_id': self.package['id'], 'package_sha256': self.package['sha256'], 'recovery_probe': probe}
+        return old, body
+
+    def test_recovery_rechecks_remote_revocation_and_retry_binding(self):
+        old, body = self.failed_then_recovery()
+        before = self.issuer.security.invalidate_api_key.call_count
+        result = self.machine('enroll', body)
+        self.assertEqual(result.status_code, 200, result.json)
+        self.assertEqual(result.json['recovery_probe'], body['recovery_probe'])
+        self.assertEqual(self.issuer.security.invalidate_api_key.call_count, before + 2)
+        self.assertEqual(self.machine('enroll', body).json, result.json)
+        del body['recovery_probe']
+        self.assertEqual(self.machine('enroll', body).status_code, 409)
+        with self.service.store.connect() as db:
+            self.assertEqual(db.execute('SELECT state FROM enrollments WHERE id=?', (old,)).fetchone()[0], 'cancelled')
+
+    def test_recovery_expiry_completed_and_unconfirmed_cleanup_are_rejected(self):
+        old, body = self.failed_then_recovery()
+        self.now += TOKEN_TTL + 1
+        before = self.issuer.security.invalidate_api_key.call_count
+        self.assertEqual(self.machine('enroll', body).status_code, 410)
+        self.assertEqual(self.issuer.security.invalidate_api_key.call_count, before)
+        self.now -= TOKEN_TTL + 1
+        with self.service.store.connect() as db:
+            db.execute("UPDATE enrollments SET state='complete' WHERE id=?", (old,))
+        self.assertEqual(self.machine('enroll', body).status_code, 409)
+        with self.service.store.connect() as db:
+            db.execute("UPDATE enrollments SET state='cancelled' WHERE id=?", (old,))
+        self.issuer.security.invalidate_api_key.return_value = {'error_count': 1}
+        self.assertEqual(self.machine('enroll', body).status_code, 503)
+        self.assertEqual(self.issuer.security.create_api_key.call_count, 2)
 
     def test_request_validation_bounds_and_plain_http_are_rejected(self):
         self.mint()

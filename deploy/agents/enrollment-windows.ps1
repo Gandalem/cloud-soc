@@ -1,6 +1,7 @@
 # Single-token fresh Windows pair only. Repair and Discovery updates keep their keys.
 . (Join-Path $PSScriptRoot 'transaction-windows.ps1')
 . (Join-Path $PSScriptRoot 'bundle-windows.ps1')
+. (Join-Path $PSScriptRoot 'reenroll-windows.ps1')
 
 function New-SocEnrollmentAttempt {
     $bytes = New-Object byte[] 32
@@ -62,7 +63,9 @@ function Confirm-SocEnrollmentReceipt($Context, $Members) {
     $utf8 = New-Object Text.UTF8Encoding($false)
     # Filebeat's default fingerprint waits for 1024 bytes. This single harmless
     # event exceeds that threshold without reducing production fingerprint sizes.
-    $event = @{ '@timestamp'=[datetime]::UtcNow.ToString('o'); event=@{action='installation_probe';kind='event'};
+    # Keep the changing identity before the 1024-byte fingerprint boundary on
+    # every retry, even when PowerShell would enumerate hashtable keys differently.
+    $event = [ordered]@{ '@timestamp'=[datetime]::UtcNow.ToString('o'); event=@{action='installation_probe';kind='event'};
         labels=@{installation_probe=$Context.Probe}; message=('Cloud SOC installation verification. ' + ('x' * 1100)) }
     [IO.File]::WriteAllText($eventPath, (($event | ConvertTo-Json -Depth 6 -Compress) + "`n"), $utf8)
     $probeInput = @(@{type='filestream';id=('installation-' + $Context.PackageId);paths=@($eventPath);parsers=@(@{ndjson=@{target='';add_error_key=$true}})})
@@ -84,7 +87,7 @@ function Confirm-SocEnrollmentReceipt($Context, $Members) {
         $result = Invoke-SocEnrollmentRequest $Context 'receipt' @{attempt=$Context.Attempt;agents=$agents}
         if ($result.verified -is [bool] -and $result.verified -eq $true -and $result.state -ceq 'complete' -and $result.id -ceq $Context.SessionId) {
             $Context.Verified = $true
-            Write-Host '[OK] Actual central documents verified for Filebeat and Packetbeat.'
+            Write-Host '[OK] Actual central documents verified for every required collector.'
             return
         }
         Write-Host 'Waiting for actual central log/network documents...'
@@ -94,44 +97,74 @@ function Confirm-SocEnrollmentReceipt($Context, $Members) {
 }
 
 function Invoke-SocEnrollmentInstall([string]$Source, [string]$Endpoint, [string]$CaPath, [string]$Organization,
-    [string]$InterfaceGuid, [string]$PackageSha256, [switch]$AllowUnavailableRevocation, [switch]$DryRun) {
+    [string]$InterfaceGuid, [string]$PackageSha256, [switch]$AllowUnavailableRevocation, [switch]$DryRun, [switch]$ReEnroll) {
     try { $spec = Get-Content -LiteralPath (Join-Path $Source 'package.json') -Raw | ConvertFrom-Json -ErrorAction Stop }
     catch { throw 'Package metadata cannot be read; verify and unpack the complete ZIP.' }
-    if ($spec.PSObject.Properties.Name -notcontains 'enrollment_protocol' -or $spec.os -cne 'windows' -or -not $spec.network -or $spec.enrollment_protocol -ne 1 -or
+    if ($spec.PSObject.Properties.Name -notcontains 'enrollment_protocol' -or $spec.os -cne 'windows' -or $spec.network -isnot [bool] -or $spec.enrollment_protocol -ne 1 -or
         $spec.package_id -cnotmatch '^[a-f0-9]{32}$' -or $spec.portal_url -cnotmatch '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$' -or
-        $spec.endpoint -cne $Endpoint -or $spec.organization -cne $Organization) { throw 'A fresh compatible Windows log+network package is required.' }
+        $spec.endpoint -cne $Endpoint -or $spec.organization -cne $Organization) { throw 'A compatible Windows enrollment package is required.' }
     if ($PackageSha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'Supply the public package SHA-256 from the verified portal download command. Never pass a token as an argument.' }
     $context = @{ Source=$Source;Portal=$spec.portal_url;Ca=$CaPath;AllowUnavailable=[bool]$AllowUnavailableRevocation;
         PackageId=$spec.package_id;PackageHash=$PackageSha256;Endpoint=$Endpoint;Organization=$Organization;
-        Token=$null;Attempt=$null;Probe=$null;SessionId=$null;Verified=$false }
+        Token=$null;Attempt=$null;Probe=$null;SessionId=$null;Verified=$false;Aborted=$false;Network=$spec.network;RecoveryProbe=$null;Preissued=$null }
+    # Bundle callbacks run synchronously before this function returns. Keep the
+    # caller scope: GetNewClosure creates a module that cannot see launcher-local
+    # enrollment/TLS/bundle helpers when install.ps1 dot-sources this script.
     $begin = {
+        if ($context.Preissued) { $cached=$context.Preissued; $context.Preissued=$null; return $cached }
         $secure = Read-Host 'Paste ONE installation token (hidden input)' -AsSecureString
         $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
         try { $context.Token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) }
         finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer); $secure.Dispose() }
         $context.Attempt = New-SocEnrollmentAttempt
-        $reply = Invoke-SocEnrollmentRequest $context 'enroll' @{attempt=$context.Attempt;package_id=$context.PackageId;package_sha256=$context.PackageHash}
+        $request = @{attempt=$context.Attempt;package_id=$context.PackageId;package_sha256=$context.PackageHash}
+        if ($context.RecoveryProbe) { $request.recovery_probe=$context.RecoveryProbe }
+        $reply = Invoke-SocEnrollmentRequest $context 'enroll' $request
+        $scopes = @(if ($context.Network) { 'host'; 'network' } else { 'host' })
         if ($reply.id -cne $context.Token.Split('.')[0] -or $reply.endpoint -cne $Endpoint -or $reply.organization -cne $Organization -or
-            $reply.probe -cnotmatch '^[a-f0-9]{64}$' -or @($reply.keys).Count -ne 2 -or $reply.receipt_verified -isnot [bool] -or $reply.receipt_verified -ne $false) { throw 'Invalid enrollment binding; no collector started.' }
+            $reply.probe -cnotmatch '^[a-f0-9]{64}$' -or @($reply.keys).Count -ne $scopes.Count -or $reply.receipt_verified -isnot [bool] -or $reply.receipt_verified -ne $false -or
+            ($context.RecoveryProbe -and $reply.recovery_probe -cne $context.RecoveryProbe)) { throw 'Invalid enrollment binding; no collector started.' }
         $result = @{Probe=$reply.probe}
         foreach ($key in $reply.keys) {
-            if ($key.scope -isnot [string] -or $key.key -isnot [string] -or $key.scope -notin @('host','network') -or $result.ContainsKey($key.scope) -or $key.key -cnotmatch '^[A-Za-z0-9_-]+:[A-Za-z0-9_-]+$') { throw 'Invalid enrollment keys; no collector started.' }
+            if ($key.scope -isnot [string] -or $key.key -isnot [string] -or $key.scope -notin $scopes -or $result.ContainsKey($key.scope) -or $key.key -cnotmatch '^[A-Za-z0-9_-]+:[A-Za-z0-9_-]+$') { throw 'Invalid enrollment keys; no collector started.' }
             $result[$key.scope] = ConvertTo-SecureString $key.key -AsPlainText -Force
         }
-        if (-not $result.ContainsKey('host') -or -not $result.ContainsKey('network')) { throw 'Missing enrollment role.' }
+        foreach ($scope in $scopes) { if (-not $result.ContainsKey($scope)) { throw 'Missing enrollment role.' } }
         $context.Probe=$reply.probe; $context.SessionId=$reply.id
         $reply=$null
         return $result
-    }.GetNewClosure()
-    $verify = { param($Members) Confirm-SocEnrollmentReceipt $context $Members }.GetNewClosure()
+    }
+    $verify = { param($Members) Confirm-SocEnrollmentReceipt $context $Members }
     $abort = {
-        if ($context.Token -and $context.Attempt -and -not $context.Verified) {
-            try { $null = Invoke-SocEnrollmentRequest $context 'abort' @{attempt=$context.Attempt}; Write-Warning 'Failed installation keys revoked.' }
+        if ($context.Token -and $context.Attempt -and -not $context.Verified -and -not $context.Aborted) {
+            try { $null = Invoke-SocEnrollmentRequest $context 'abort' @{attempt=$context.Attempt}; $context.Aborted=$true; Write-Warning 'Failed installation keys revoked.' }
             catch { Write-Warning 'Failed installation key revocation is NOT confirmed. Cancel this enrollment in the portal; do not report success.' }
         }
-    }.GetNewClosure()
+    }
+    $locks=@(); $replacement=$null
     try {
+        if ($ReEnroll) {
+            foreach ($name in @('Global\Cloud-SOC-Bundle-Install','Global\Cloud-SOC-Filebeat-Recovery')) {
+                $mutex=New-Object Threading.Mutex($false,$name)
+                $held=$false
+                try { $held=$mutex.WaitOne(0); if (-not $held) { throw 'Another installation/recovery is active.' }; $locks+=$mutex }
+                catch { if ($held) { $mutex.ReleaseMutex() }; $mutex.Dispose(); throw }
+            }
+            $plan=Get-SocReEnrollmentPlan $context
+            if ($DryRun) { Write-Host 'DRY RUN: failed enrollment identity verified; no token, keys, queue, files or services changed.'; return }
+            Test-SocServerTls $Endpoint $CaPath -AllowUnavailableRevocation:$AllowUnavailableRevocation
+            $context.RecoveryProbe=$plan.Probe
+            $replacement=& $begin
+            if ($plan.Started) { Invoke-SocStartedReEnrollment $plan $context $replacement; return }
+            Move-SocFailedPreparation $plan
+            $context.Preissued=$replacement
+        }
         Invoke-SocWindowsBundle -Source $Source -Endpoint $Endpoint -CaPath $CaPath -Organization $Organization -InterfaceGuid $InterfaceGuid `
-            -AllowUnavailableRevocation:$AllowUnavailableRevocation -DryRun:$DryRun -EnrollmentStart $begin -EnrollmentReceipt $verify -EnrollmentAbort $abort
-    } finally { $context.Token=$null; $context.Attempt=$null }
+            -AllowUnavailableRevocation:$AllowUnavailableRevocation -DryRun:$DryRun -EnrollmentStart $begin -EnrollmentReceipt $verify -EnrollmentAbort $abort -HostOnly:(-not $context.Network)
+    } catch { & $abort; throw }
+    finally {
+        if ($replacement) { foreach ($scope in @('host','network')) { if ($replacement.ContainsKey($scope)) { $replacement[$scope].Dispose() } } }
+        $context.Token=$null; $context.Attempt=$null; $context.Preissued=$null
+        foreach ($mutex in $locks) { $mutex.ReleaseMutex(); $mutex.Dispose() }
+    }
 }

@@ -11,6 +11,10 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source "$SCRIPT_DIR/discover-linux.sh"
 ENDPOINT= CA= ORGANIZATION=
 DRY_RUN=false
+KEY_STDIN=false
+PREPARE_ONLY=false
+INSTALLATION_PROBE=
+ENROLLMENT_OWNER=
 EXTRA_FILES=()
 LOG_ROOTS=(/var/log)
 
@@ -23,7 +27,7 @@ usage() {
 parse_args() {
     while (($#)); do
         case "$1" in
-            --endpoint|--ca|--organization|--log-file|--log-root)
+            --endpoint|--ca|--organization|--log-file|--log-root|--installation-probe|--enrollment-owner)
                 (($# >= 2)) && [[ -n $2 && $2 != --* ]] || fail "Missing value for $1"
                 case "$1" in
                     --endpoint) ENDPOINT=$2 ;;
@@ -31,9 +35,13 @@ parse_args() {
                     --organization) ORGANIZATION=$2 ;;
                     --log-file) EXTRA_FILES+=("$2") ;;
                     --log-root) LOG_ROOTS+=("$2") ;;
+                    --installation-probe) INSTALLATION_PROBE=$2 ;;
+                    --enrollment-owner) ENROLLMENT_OWNER=$2 ;;
                 esac
                 shift 2 ;;
             --dry-run) DRY_RUN=true; shift ;;
+            --enrollment-key-stdin) KEY_STDIN=true; shift ;;
+            --prepare-only) PREPARE_ONLY=true; shift ;;
             --help) usage; exit 0 ;;
             *) fail "Unknown option: $1" ;;
         esac
@@ -47,6 +55,8 @@ validate_args() {
     ((10#$port >= 1 && 10#$port <= 65535)) || fail 'Invalid endpoint port.'
     ENDPOINT=${ENDPOINT%/}
     [[ $ORGANIZATION =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$ ]] || fail 'Organization must be a 1-64 character identifier (letters, digits, underscore, hyphen).'
+    [[ -z $INSTALLATION_PROBE || $INSTALLATION_PROBE =~ ^[a-f0-9]{64}$ ]] || fail 'Invalid installation probe.'
+    if $PREPARE_ONLY; then $KEY_STDIN && [[ -n $INSTALLATION_PROBE && $ENROLLMENT_OWNER =~ ^[a-f0-9]{32}$ ]] || fail 'Enrollment preparation requires stdin, an owner and a public probe.'; fi
     [[ $CA =~ ^/[-a-zA-Z0-9_./]+$ ]] || fail 'CA must be an absolute path without spaces or special characters.'
     local path
     declare -A seen=()
@@ -66,7 +76,9 @@ render_config() {
     # JSON is a YAML-compatible representation; all interpolated values are validated.
     printf '%s' '{"filebeat.inputs":[{"type":"journald","id":"cloud-soc-journal-v2","seek":"head","fields_under_root":true,"fields":{"labels":{"log_source":"linux_journald","collection_mode":"auto_discovery"}},"processors":[{"drop_event":{"when":{"equals":{"systemd.unit":"cloud-soc-filebeat.service"}}}}]}],'
     printf '"filebeat.config.inputs":{"enabled":true,"path":"%s/inputs/*.yml","reload.enabled":true,"reload.period":"10s"},' "$ROOT"
-    printf '"processors":[{"add_host_metadata":{}},{"add_fields":{"target":"organization","fields":{"id":"%s"}}},{"script":{"lang":"javascript","file":"privacy.js","timeout":"50ms","tag_on_exception":"_privacy_error"}},{"drop_event":{"when":{"contains":{"tags":"_privacy_error"}}}}],' "$ORGANIZATION"
+    printf '"processors":[{"add_host_metadata":{}},{"add_fields":{"target":"organization","fields":{"id":"%s"}}},{"script":{"lang":"javascript","file":"privacy.js","timeout":"50ms","tag_on_exception":"_privacy_error"}},{"drop_event":{"when":{"contains":{"tags":"_privacy_error"}}}}' "$ORGANIZATION"
+    if [[ -n $INSTALLATION_PROBE ]]; then printf ',{"add_fields":{"target":"labels","fields":{"installation_probe":"%s"}}}' "$INSTALLATION_PROBE"; fi
+    printf '],'
     printf '"output.elasticsearch":{"hosts":["%s"],"api_key":"${CLOUD_SOC_API_KEY}","ssl.certificate_authorities":["%s/ca.crt"],"ssl.verification_mode":"full","index":"soc-host-raw-linux-%s-%%{+yyyy.MM.dd}","indices":[{"index":"soc-agent-health-%%{+yyyy.MM.dd}","when.equals":{"labels.log_source":"agent_health"}}],"timeout":30},' "$ENDPOINT" "$ROOT" "$BEAT_VERSION"
     printf '%s\n' '"setup.ilm.enabled":false,"setup.template.enabled":false,"logging.level":"info","logging.to_files":true,"logging.to_stderr":false,"logging.to_syslog":false,"queue.disk":{"max_size":"1GB"}}'
 }
@@ -104,7 +116,7 @@ install_agent() {
     for tool in curl tar sha512sum sha256sum systemctl pgrep timeout realpath find file flock sort cmp journalctl; do
         command -v "$tool" >/dev/null || fail "Missing prerequisite: $tool"
     done
-    [[ -t 0 ]] || fail 'An interactive terminal is required for the API key prompt.'
+    $KEY_STDIN || [[ -t 0 ]] || fail 'An interactive terminal is required for the API key prompt.'
     check_existing
     [[ -f $CA && -r $CA ]] || fail 'CA certificate is not a readable file.'
     discover_linux_logs "${LOG_ROOTS[@]}"
@@ -119,6 +131,7 @@ install_agent() {
     umask 077
     # Exclusive mkdir also guards concurrent installers. Failures retain protected state.
     mkdir -m 700 "$ROOT"
+    if $PREPARE_ONLY; then printf '%s' "$ENROLLMENT_OWNER" > "$ROOT/enrollment-owner.txt"; fi
     trap 'printf "Installation failed; protected partial state remains in %s. No automatic reinstall/cleanup.\n" "$ROOT" >&2' ERR
     mkdir "$ROOT/data" "$ROOT/logs" "$ROOT/staging" "$ROOT/inputs"
     cp -- "$SCRIPT_DIR/discover-linux.sh" "$ROOT/discover-linux.sh"
@@ -139,7 +152,7 @@ install_agent() {
     printf '{}\n' > "$ROOT/filebeat.yml"
     beat keystore create
     printf 'Enter the restricted Elasticsearch API key as id:api_key (not the encoded value).\n'
-    beat keystore add CLOUD_SOC_API_KEY
+    if $KEY_STDIN; then beat keystore add CLOUD_SOC_API_KEY --stdin; else beat keystore add CLOUD_SOC_API_KEY; fi
     render_config > "$ROOT/filebeat.yml"
     beat test config
     timeout 90 "$ROOT/filebeat/filebeat" --path.home "$ROOT/filebeat" --path.config "$ROOT" \
@@ -162,6 +175,7 @@ install_agent() {
     )
     chmod 644 "$DISCOVERY_UNIT" "$DISCOVERY_TIMER"
     systemctl daemon-reload
+    if $PREPARE_ONLY; then printf '%s\n' 'Enrollment host prepared; service and Discovery timer not started.'; return; fi
     if ! systemctl enable --now cloud-soc-filebeat.service; then
         systemctl disable --now cloud-soc-filebeat.service || true
         fail 'Service start failed. Inspect journalctl -u cloud-soc-filebeat; partial installation retained.'
