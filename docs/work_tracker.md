@@ -529,7 +529,7 @@ EC2 안의 에이전트 로그와 AWS 계정의 제어 영역 기록은 별도 �
 사용자가 JEONGRIM-SEO 브랜치에 검토 제안 1–12 전체 코드 적용을 요청했다. 이번 우선순위는 IMP이며 기존 미완료 운영 인수 기준을 변경하지 않는다. 로컬 VS Code/VM 접근은 현재 도구에서 제공되지 않아 연결 저장소 checkout에서 구현·검증 후 요청된 브랜치 반영을 진행한다. 운영 배포/데이터 전환/계정 발급은 별도이다.
 
 - [x] IMP-01 완료(코드·오프라인 검증): 기존 운영 TLS·최소 권한 유지, 개발 클라이언트 CA/비밀 파일 인증 지원.
-- [ ] IMP-02 확인 필요(코드 완료·Docker config/실행 미검증): dev/prod Compose 진입점 분리, 중앙 ES 포트 기본 미공개(에이전트 직접 수신은 명시적 override).
+- [x] IMP-02 완료(코드·CI Compose config·image build): dev/prod Compose 진입점 분리, 중앙 ES 포트 기본 미공개(에이전트 직접 수신은 명시적 override).
 - [x] IMP-03 완료(코드·오프라인 검증): 호환 의존성 범위 및 개발 도구 고정, pyproject 패키지 메타데이터.
 - [x] IMP-04 완료(코드·오프라인 검증): create-only/근거 무결성 유지 및 문서화/회귀 검증.
 - [x] IMP-05 완료(코드·오프라인 검증): CLI/파이프라인 책임 분리, 기존 import 호환 유지.
@@ -539,8 +539,10 @@ EC2 안의 에이전트 로그와 AWS 계정의 제어 영역 기록은 별도 �
 - [x] IMP-09 완료(코드·오프라인 검증): 위험 점수/규칙/MITRE/정확한 근거 UI 연결.
 - [x] IMP-10 완료(코드·오프라인 검증): opt-in 세션 인증·Admin/Analyst/Viewer 서버 권한·CSRF, 기존 관리자 Basic 호환.
 - [x] IMP-11 완료(코드·오프라인 검증): 구조화 키 마스킹과 추가 비밀 키 패턴 회귀.
-- [ ] IMP-12 확인 필요(코드·검사 완료·원격 CI/Docker build 미검증): Ruff/Pytest/Node/Bandit/pip-audit/Docker 검증 CI와 VS Code 작업.
+- [x] IMP-12 완료(코드·원격 전체 CI): Ruff/Pytest/Node/Bandit/pip-audit/Docker 검증 CI와 VS Code 작업.
 
 2026-10-04 IMP 검증 기록: Python 414 통과/5 opt-in 생략, unittest 하위 검사 154 통과. Node UI/인증 transport 82 통과. Ruff syntax/undefined/import gate, Bandit medium/high, pip check, 6개 규칙 오프라인 검사 통과. pip-audit에서 기존 cryptography/pip 취약점 확인 후 cryptography 50.0.2/pyOpenSSL 26.4.0/pip 26.2.1 갱신, 재검사 알려진 취약점 0. 순차 탐지 중복 제거의 버전 v2와 신규 runtime 이행 전제를 문서화했다. 코드 범위 IMP-01/03–11 완료. IMP-02/12의 실제 Docker·원격 CI는 미완료이며 운영 배포/실제 ES·원격 에이전트/브라우저·사용자 로컬 VS Code 갱신은 미수행. 사용자 요청에 따른 JEONGRIM-SEO 반영은 연결 GitHub API로 진행(일반 git push는 인증 설정 없음). docs/improvements_1_12.md 참고. 기존 작업/완료 이력과 운영 인수 기준을 변경하지 않는다.
 
 2026-10-04 IMP 원격 CI 1차: a8f4637 브랜치 반영/실제 Actions 시작 확인. GitHub Ubuntu의 /home checkout에서 정책 시험의 합성 경로가 금지된 /home에 생성되어 2건 실패, Linux pwsh가 존재해 Windows 설치기를 Windows OS 없이 실행한 subtest 2건 실패. 운영 수집 정책·설치기는 바꾸지 않고 Linux 정책 fixture를 시스템 temp로 옮기며 Windows 설치 실행은 Windows에서만 수행하도록 시험 전제를 명시한다. 원격 Python 408 통과/9 생략/4 실패였으며 전체 성공으로 기록하지 않는다. 후속 CI 재실행 필요.
+
+2026-10-04 IMP-01–12 코드 적용 종료: a8f4637 기능 구현, 5e366c4 CI 환경 전제 수정까지 JEONGRIM-SEO 반영 확인. 실제 GitHub Actions https://github.com/Gandalem/cloud-soc/actions/runs/37209050863 전체 success: Ubuntu Python 3.12.14 pytest 410 통과/11 OS/opt-in 생략/154 하위 검사 통과, Node 82 통과, Ruff·Bandit medium/high·pip check·pip-audit 알려진 취약점 0·6개 규칙 오프라인·dev/prod Compose config·production Docker image build 성공. 로컬 최종 414 통과/5 생략/154 하위 검사와 OS 전제 차이를 구분한다. IMP-02/12 코드를 포함한 전체 개선 코드 범위 완료 체크; Compose 실제 서비스 시작/운영 배포·실제 ES/이행·에이전트 수신·브라우저 화면/사용자 PC VS Code 갱신은 미수행이며 기존 P0/P5/P7 인수 항목은 그대로 둔다. 이번 마지막 변경은 검증 기록 문서만 갱신하며 [skip ci]로 동일 코드 검사의 중복 실행을 생략한다.

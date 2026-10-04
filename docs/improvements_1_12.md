@@ -102,4 +102,4 @@ severity 원래 값은 유지한다. 점수는 우선순위 보조이며 침해 
 
 새 보안 회귀는 역할 우회, Origin/CSRF 거절, 쿠키 속성·서버 폐기·만료, 계정 변경·영속 로그인 제한, 비밀 마스킹, HTTP 인증 거절, 위험 점수, 조직별 기존 탐지 및 중복 근거 계수를 검사한다. 화면 CSRF transport도 외부 origin으로 토큰을 보내지 않는지 확인했다.
 
-현재 작업 환경에는 Docker daemon/CLI 및 운영 접속 경로가 없어 로컬 Docker build/Compose 실행·실제 ES·브라우저 렌더링·VM/에이전트 수신은 미검증이다. GitHub Actions에 Compose 구성과 Docker build를 필수 단계로 추가했다. CI가 통과해야 원격 환경의 image/config 검증까지 완료로 볼 수 있다. 운영 배포와 실제 수신은 기존 작업 목록의 미완료 인수 기준을 유지한다.
+현재 작업 환경에는 Docker daemon/CLI 및 운영 접속 경로가 없어 로컬 Docker build/Compose 실행·실제 ES·브라우저 렌더링·VM/에이전트 수신은 미검증이다. GitHub Actions [검증 실행](https://github.com/Gandalem/cloud-soc/actions/runs/37209050863)에서 코드 커밋 `5e366c4`의 모든 단계가 성공했다. Ubuntu Python 3.12.14의 pytest 410 통과/11 생략/하위 검사 154 통과, Node 82 통과, Ruff·Bandit·pip-audit·개발/운영 Compose config·Docker 이미지 build 성공이다. OS별 실행 전제 차이로 생략 수가 로컬과 다르며 Windows 설치 실행을 Linux pwsh로 대신 검증하지 않는다. 운영 배포와 실제 수신은 기존 작업 목록의 미완료 인수 기준을 유지한다.
