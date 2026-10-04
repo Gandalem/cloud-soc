@@ -256,6 +256,11 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def alert_detail():
         return log_response(operations.detail)
 
+    @app.get('/api/detection/history')
+    def detection_history():
+        from cloud_soc.portal.detection_history import history
+        return log_response(lambda pairs: history(operations, pairs))
+
     @app.post("/api/packages")
     def create_package():
         return jsonify(store.create(request.get_json())), 201
@@ -421,6 +426,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def static_file(filename):
         # Never serve the repo, secrets, SQLite, source code, or arbitrary uploads.
         allowed = {"agents.html", "agents.js", "agents.css", "styles.css", "shell.js", "shell.css", "assets/mark.svg",
+                   "detection-history.html", "detection-history.js",
                    "agent-status.html", "agent-status.js", "agent-status.css",
                    "collection-health.html", "collection-health.js",
                    "index.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css"}

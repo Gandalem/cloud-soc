@@ -76,7 +76,7 @@ def configure_template(template):
 def configure_reader(client, password):
     client.security.put_role(name="cloud_soc_agent_monitor", cluster=[], indices=[{
         "names": INDICES.split(",") + ["soc-agent-health-*", "soc-cloud-aws-*", "soc-cloud-oci-*",
-                  "soc-normalized-v1", "soc-processing-v1", "soc-pipeline-status", "security-alerts", "normalized-events", "raw-logs-*"],
+                  "soc-normalized-v1", "soc-processing-v1", "soc-pipeline-status", "soc-detection-runs-v1", "soc-detection-exclusions-v1", "security-alerts", "normalized-events", "raw-logs-*"],
         "privileges": ["read", "view_index_metadata"],
     }])
     client.security.put_user(username="cloud_soc_agent_monitor", password=password, roles=["cloud_soc_agent_monitor"])

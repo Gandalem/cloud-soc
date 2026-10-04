@@ -4,7 +4,7 @@
   const groups = [
     { title: "보안 관제", items: [
       ["index.html", "관제 현황"], ["logs.html", "통합 로그"],
-      ["cases.html", "사건 조사"], ["collection-health.html", "수집 품질"]
+      ["cases.html", "사건 조사"], ["collection-health.html", "수집 품질"], ["detection-history.html", "탐지 실행·제외 이력"]
     ] },
     { title: "에이전트", items: [
       ["agents.html", "에이전트 설치 파일"], ["agents.html#keys", "발급 키 관리"],

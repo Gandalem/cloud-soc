@@ -64,7 +64,7 @@ def normalize(hit, processed_at):
     event = {"@timestamp": iso(occurred), "organization": {"id": organization},
              "event": {"kind": "event", "category": [category], "action": values.get("api") or values["action"],
                        "outcome": values["outcome"], "ingested": iso(received)},
-             "cloud_soc": {"normalizer_version": VERSION, "parse_status": detail["status"],
+             "cloud_soc": {"normalized_at": processed_at, "normalizer_version": VERSION, "parse_status": detail["status"],
                            "detail": detail, "provenance": {"schema_version": 1, "raw": reference, "time": time_metadata}}}
     for name in ("source", "destination"):
         ip = address(values.get(name + "_ip") or field(source, name + ".ip"))

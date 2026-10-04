@@ -7,6 +7,7 @@ import json
 import re
 
 from cloud_soc.privacy import display, REDACTED
+from cloud_soc.aws.network_risk import public_management_ingress
 
 INDEX_PATTERN = "soc-cloud-aws-*"
 SOURCE_LABEL = "aws_cloudtrail"
@@ -121,7 +122,12 @@ def project_event(envelope, *, account, region, organization):
         if provider == "iam.amazonaws.com":
             audit.update(target_user=safe(request.get("userName")), target_role=safe(request.get("roleName")),
                          target_policy_arn=safe(request.get("policyArn")))
+            audit['target_group'] = safe(request.get('groupName'))
+        if provider == 'cloudtrail.amazonaws.com' and name in ('StopLogging', 'DeleteTrail'):
+            audit['target_trail'] = safe(request.get('name') or request.get('Name'))
         if provider == "ec2.amazonaws.com":
+            if name == 'AuthorizeSecurityGroupIngress':
+                audit['public_management_ingress'] = public_management_ingress(request)
             group = request.get("groupId")
             if isinstance(group, str) and re.fullmatch(r"sg-(?:[0-9a-f]{8}|[0-9a-f]{17})", group):
                 audit["target_group_id"] = group

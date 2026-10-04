@@ -31,6 +31,8 @@ DETAIL_FIELDS = (
     "aws.cloudtrail.error_code", "aws.cloudtrail.outcome_basis", "aws.cloudtrail.management_only",
     "aws.cloudtrail.target_user", "aws.cloudtrail.target_role", "aws.cloudtrail.target_group_id",
     "aws.cloudtrail.target_policy_arn", "aws.cloudtrail.identity_invoked_by",
+    "aws.cloudtrail.public_management_ingress",
+    "aws.cloudtrail.target_group", "aws.cloudtrail.target_trail",
     *("oci.audit." + name for name in ("schema", "compartment_id", "compartment_name", "resource_id", "resource_name",
       "identity_tenancy", "auth_type", "caller_id", "caller_name", "request_id", "http_method", "http_status", "outcome_basis", "event_type", "grouping_id")),
 )
@@ -142,9 +144,12 @@ def security_detail(source):
             "source_address": "source.address", "target_user": "aws.cloudtrail.target_user",
             "target_role": "aws.cloudtrail.target_role", "target_group_id": "aws.cloudtrail.target_group_id",
             "error_code": "aws.cloudtrail.error_code", "outcome_basis": "aws.cloudtrail.outcome_basis",
+            "target_group": "aws.cloudtrail.target_group", "target_trail": "aws.cloudtrail.target_trail",
         }.items():
             values[key] = text(get(path))
         values["actor"] = text(get("user.name")) or text(get("user.id")) or values["identity_arn"] or values["identity_invoked_by"]
+        ingress = get('aws.cloudtrail.public_management_ingress')
+        values['public_management_ingress'] = ingress if type(ingress) is bool else None
         resources = get("aws.cloudtrail.resources")
         values["resource_arns"] = [text(item.get("arn")) for item in resources[:20] if isinstance(item, dict)] if isinstance(resources, list) else []
         values["resource_arns"] = [item for item in values["resource_arns"] if item]
