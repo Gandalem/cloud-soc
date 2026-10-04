@@ -542,3 +542,5 @@ EC2 안의 에이전트 로그와 AWS 계정의 제어 영역 기록은 별도 �
 - [ ] IMP-12 확인 필요(코드·검사 완료·원격 CI/Docker build 미검증): Ruff/Pytest/Node/Bandit/pip-audit/Docker 검증 CI와 VS Code 작업.
 
 2026-10-04 IMP 검증 기록: Python 414 통과/5 opt-in 생략, unittest 하위 검사 154 통과. Node UI/인증 transport 82 통과. Ruff syntax/undefined/import gate, Bandit medium/high, pip check, 6개 규칙 오프라인 검사 통과. pip-audit에서 기존 cryptography/pip 취약점 확인 후 cryptography 50.0.2/pyOpenSSL 26.4.0/pip 26.2.1 갱신, 재검사 알려진 취약점 0. 순차 탐지 중복 제거의 버전 v2와 신규 runtime 이행 전제를 문서화했다. 코드 범위 IMP-01/03–11 완료. IMP-02/12의 실제 Docker·원격 CI는 미완료이며 운영 배포/실제 ES·원격 에이전트/브라우저·사용자 로컬 VS Code 갱신은 미수행. 사용자 요청에 따른 JEONGRIM-SEO 반영은 연결 GitHub API로 진행(일반 git push는 인증 설정 없음). docs/improvements_1_12.md 참고. 기존 작업/완료 이력과 운영 인수 기준을 변경하지 않는다.
+
+2026-10-04 IMP 원격 CI 1차: a8f4637 브랜치 반영/실제 Actions 시작 확인. GitHub Ubuntu의 /home checkout에서 정책 시험의 합성 경로가 금지된 /home에 생성되어 2건 실패, Linux pwsh가 존재해 Windows 설치기를 Windows OS 없이 실행한 subtest 2건 실패. 운영 수집 정책·설치기는 바꾸지 않고 Linux 정책 fixture를 시스템 temp로 옮기며 Windows 설치 실행은 Windows에서만 수행하도록 시험 전제를 명시한다. 원격 Python 408 통과/9 생략/4 실패였으며 전체 성공으로 기록하지 않는다. 후속 CI 재실행 필요.

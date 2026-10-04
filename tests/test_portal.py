@@ -284,6 +284,8 @@ class PortalTests(unittest.TestCase):
                 self.skipTest(f"Shell for {platform} is not installed")
             for network in (False, True):
                 with self.subTest(platform=platform, network=network):
+                    if platform == "windows" and os.name != "nt":
+                        self.skipTest("Windows installer needs Windows filesystem and OS APIs, not only pwsh")
                     item = self.package({**SPEC, "name": f"dry-{platform}-{network}", "os": platform, "network": network})
                     _, data = self.app.extensions["packages"].get(item["id"], archive=True)
                     folder = Path(self.temp.name) / item["id"]

@@ -15,7 +15,10 @@ spec.loader.exec_module(policy)
 class PolicyTests(unittest.TestCase):
     def setUp(self):
         (ROOT / 'state').mkdir(exist_ok=True)
-        self.temp = tempfile.TemporaryDirectory(dir=ROOT / 'state', prefix='policy-test-')
+        # Linux collection intentionally excludes /home and /root. Hosted CI
+        # checks out there, so keep its synthetic log fixture in system temp.
+        fixture_dir = ROOT / 'state' if os.name == 'nt' else tempfile.gettempdir()
+        self.temp = tempfile.TemporaryDirectory(dir=fixture_dir, prefix='policy-test-')
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name) / 'agent'
         self.root.mkdir(); (self.root / 'inputs').mkdir(); (self.root / 'data').mkdir()
