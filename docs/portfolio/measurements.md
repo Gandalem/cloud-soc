@@ -49,3 +49,14 @@ python tools/portfolio_eval.py --events 10000 --repeats 3
 | ubuntu-24.04 / Python 3.12 | 전체 pytest 413통과/11 OS·opt-in 생략/154 subtests, coverage88.5%, UI82통과, Ruff/Bandit/pip-audit/Compose/Docker 통과 |
 
 처음 실행에서 PS5.1 Security 모듈 자동 로딩 실패 2건과 Windows에서 Linux health publication 시험 실패 1건을 발견했다. mock 시험이 현재 shell의 PSHOME Security 모듈을 명시 로딩하도록 수정하고 Linux 파일 발행 시험은 Linux에서만 수행하도록 전제를 바로잡아 재실행했다. PowerShell 5.1/7 시험은 유지했다. CI의 격리 설치/복구 시험 통과는 실제 운영 Windows 서비스 설치·중앙 수신·운영 배포 인수와 구분한다.
+
+## Linux 파서·재처리 이력 포털 후속 CI
+
+2026-10-05 코드 `07c42be796da23a4bb4dcb59ead4aadee8d0790c`, [Actions 37282971787](https://github.com/Gandalem/cloud-soc/actions/runs/37282971787) Windows/Linux 모두 success 확인.
+
+| 환경 | 실제 결과 |
+| --- | --- |
+| ubuntu-24.04 / Python 3.12.14 | pytest439통과/11생략/157subtests, statement coverage88.9%(5190 statements/576 missed), UI87통과, Ruff·Bandit medium/high·pip-audit·Compose/Docker 성공 |
+| windows-2025 / Python 3.12 | 선별 pytest54통과/5생략/38subtests, PowerShell 구문 성공, agent Node99통과/1 Linux 전용 생략, UI87통과, Ruff/pip check/rule profiles 성공 |
+
+새 커버리지 상세는 해당 실행의 coverage artifact에 보관한다. 기존 README 배지88.5%는 이전 로컬 측정 스냅샷이며 이번88.9% artifact와 구분한다. 사용자 Ubuntu VM에서는 독립 합성SSH10건의 수집→정규화→AUTH-001 경보근거10건 일치, 과거757건의 별도 이력 저장(완전형식744/부분정규화13), 포털 실제조회·상세·페이지·필터·검색·ready 및새로고침 집계유지를 확인했다. Windows CI 성공을 실제 Windows 에이전트 운영 설치로 해석하지 않는다.

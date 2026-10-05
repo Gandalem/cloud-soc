@@ -625,3 +625,7 @@ PORT-07은 설정 구현 완료/Windows 실제 실행 미검증으로 미체크 
 2026-10-05 SOURCE-SYNC 사용자 명시 요청으로 GitHub JEONGRIM-SEO 수정소스 반영 착수. 원격HEAD158d32b와checkout기준일치 확인. 전체회귀 최초438통과/9생략/157subtests·reader권한exactfixture1실패(추가이력read범위기대값미갱신), 해당기대값에고정2historyindices 반영. UI전체87통과/Ruff통과. 운영secret/상태/ES문서/VM로컬compose는이번소스커밋에포함하지않음. 원격반영은진행중.
 
 2026-10-05 SOURCE-SYNC 최종로컬검증: 전체pytest439통과/9OS·opt-in생략/157subtests, 전체UI87통과, Ruff src/tests/tools와diff whitespace통과. GitHub반영대상은healthz권한수정·200문서bulk·Linux운영파서·별도history재처리/읽기권한도구·인증포털조회·팝업/페이지/검색·관련회귀 및작업기록. VM기존merge cdb20d2/rootCompose수정과실제state/secret은여기서업로드하지않으며원격소스반영후VM동기화는별도이력보존필요.
+
+2026-10-05 SOURCE-SYNC 원격 및VM 완료 사용자증거: GitHub JEONGRIM-SEO 07c42be796da23a4bb4dcb59ead4aadee8d0790c 28파일반영 및tree일치확인, 로컬직접push인증부재로연결GitHub앱을사용한fast-forward 갱신. CI37282971787 시작확인(최종결과별도). VM백업 /home/lyn/cloud-soc-git-backups/20261005-082906, 로컬소스보존3242ef5 후이력UItest추가/추가충돌1개를원격검증버전으로해결, merge76a0ee5 완료. src/prototype/tests/tools origin차이출력없음확인. VMahead4는기존이력보존결과, untracked portfolio.compose.yaml/snapshot.compose.yaml 운영overlay 유지. VM컨테이너재시작/원격ahead4재push는이번동기화에서수행하지않음.
+
+2026-10-05 후속CI 실제완료: code07c42be/Actions37282971787 Windows job111675122343 및Linux job111675122827 success/전체step확인. Linux439통과/11생략/157subtests·coverage88.9%(5190/576)·UI87·보안/Compose/Docker성공, Windows54통과/5생략/38subtests·PowerShell·agent99통과/1생략·UI87·Ruff/pip/rules성공. docs/portfolio/measurements.md 기록. VM실제Windows설치/클라우드추가배포미수행구분, 전체DEPLOY-PORT 사건저장재로딩미확인 및시각근거표시미확인원인은남은항목. 이번후속커밋은검증문서만이며[skip ci]로동일코드CI재실행생략.
