@@ -8,7 +8,7 @@ Windows·Ubuntu·AWS·OCI의 서로 다른 보안 로그를 공통 스키마로 
 ![Measured statement coverage](docs/portfolio/coverage.svg)
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 
-> Coverage는 2026-10-05 로컬 오프라인 측정 스냅샷입니다. 새 Windows matrix의 원격 실행 결과는 Actions에서 확인하세요.
+> Coverage는 2026-10-05 로컬 오프라인 측정 스냅샷입니다. Windows/Linux matrix는 [실제 Actions 실행](https://github.com/Gandalem/cloud-soc/actions/runs/37256359248)에서 모두 성공했습니다.
 
 ## 왜 만들었나요?
 

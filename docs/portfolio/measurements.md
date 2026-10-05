@@ -38,3 +38,14 @@ python tools/portfolio_eval.py --events 10000 --repeats 3
 ```
 
 [원시 반복 값·dataset SHA256·데모 결과](evaluation.json). 기존 `evaluation.json`을 갱신하면 README와 이 문서도 새 측정에 맞춰 갱신한다.
+
+## 실제 Windows/Linux CI 검증
+
+2026-10-05 코드 커밋 `8461f4374669e486a9d3f6e767398493c054a355`, [Actions 37256359248](https://github.com/Gandalem/cloud-soc/actions/runs/37256359248) 전체 success.
+
+| 환경 | 실제 결과 |
+| --- | --- |
+| windows-2025 / Python 3.12 | 선별 pytest 51통과/5생략/35 subtests, PowerShell 구문 통과, agent Node 99통과/1 Linux 전용 생략, UI 82통과, Ruff/pip check/6규칙 profile 통과 |
+| ubuntu-24.04 / Python 3.12 | 전체 pytest 413통과/11 OS·opt-in 생략/154 subtests, coverage88.5%, UI82통과, Ruff/Bandit/pip-audit/Compose/Docker 통과 |
+
+처음 실행에서 PS5.1 Security 모듈 자동 로딩 실패 2건과 Windows에서 Linux health publication 시험 실패 1건을 발견했다. mock 시험이 현재 shell의 PSHOME Security 모듈을 명시 로딩하도록 수정하고 Linux 파일 발행 시험은 Linux에서만 수행하도록 전제를 바로잡아 재실행했다. PowerShell 5.1/7 시험은 유지했다. CI의 격리 설치/복구 시험 통과는 실제 운영 Windows 서비스 설치·중앙 수신·운영 배포 인수와 구분한다.

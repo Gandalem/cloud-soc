@@ -557,7 +557,7 @@ EC2 안의 에이전트 로그와 AWS 계정의 제어 영역 기록은 별도 �
 - [x] PORT-04 Demo: 3개 공격 행위 합성 재현→실제 정규화/탐지→근거/사건 조사 절차.
 - [x] PORT-05 MITRE: 근거 URL/조건부 매핑, 기존 엔진 형식 유지, metadata 회귀.
 - [x] PORT-06 Coverage: 실제 측정/배지/CI report artifact, 숫자 과장 없음.
-- [ ] PORT-07 Windows CI: Linux/Windows matrix, Windows agent offline 시험/PowerShell 구문.
+- [x] PORT-07 Windows CI: Linux/Windows matrix, Windows agent offline 시험/PowerShell 구문.
 - [x] PORT-08 Quality/benchmark: 라벨 사례별 TP/FP/FN/precision/recall 및 실제 반복 측정/환경/한계.
 
 2026-10-05 PORT 검증 기록: JEONGRIM-SEO checkout 8a0abd8 기준 로컬 코드/문서 적용. README 소개와 상세 설치 분리(상대경로 갱신), 실제 수집 흐름 Mermaid, 실제 UI 합성 screenshot 3개, AWS 3개 scenario/17개 label evaluation, 모든 승인 profile 6개 MITRE metadata, pytest-cov snapshot/CI XML·JSON·HTML·배지 artifact, ubuntu-24.04/windows-2025 matrix 구현. tools/portfolio_eval.py는 production projection/normalization/detection/alert build 호출; 10,000 고유 StopLogging 이벤트 warmup 1+3회 약 5.451초/1,835 EPS(ES/network/SQLite incremental 제외). AWS TP 7/TN 10/FP0/FN0은 설계한 합성 조건 적합성일 뿐 운영 precision/recall 아님. 전체 pytest 417통과/5생략/154 subtests, statement coverage 88.5%(4990 statements/575 missed). Node UI 82통과, Ruff src/tests/tools·Bandit medium/high·pip check·diff whitespace 검사 통과. Chromium 실제 UI에서 세 경보/근거 참조·정규화 해시 일치와 Flask 임시 SQLite 사건 생성/업무 저장·재로딩, 페이지 JS 오류 0 확인. Noto Sans KR 글꼴과 PNG 3개 육안 확인 후 스크롤 위치를 보정해 캡처.
@@ -567,3 +567,5 @@ PORT-07은 설정 구현 완료/Windows 실제 실행 미검증으로 미체크 
 2026-10-05 PORT-07 실제 CI 검증 진행: 사용자 요청으로 작성한 포트폴리오/Windows matrix 변경을 JEONGRIM-SEO에 커밋·반영해 Actions를 실행하고 실패 원인 수정 후 재검증한다. 현재 원격 HEAD 8a0abd8로 checkout 기준과 일치 확인. 운영 배포·VM 갱신은 제외. 완료는 실제 Windows job 결과 확인 뒤 표시한다.
 
 2026-10-05 PORT-07 원격 1차: 0deaf2c / Actions 37255982234. Linux 전체 success(Python 413통과/11생략/154 subtests·coverage88.5%·Node82·보안/Docker). Windows Python51통과/5생략/35 subtests·Ruff/PowerShell parser 통과, agent Node100개 중97통과/3실패. PS5.1 mock 두 시험 ConvertTo-SecureString 모듈 자동 로딩 실패(Core parent의 module 경로 노출) 및 Git Bash의 Linux health publication 산출물 미생성. 두 mock에 해당 shell PSHOME의 Security 모듈 명시 로딩, Linux 파일발행 시험은 Linux OS에서 수행하도록 전제 수정. Windows5.1/7 시험 제거나 운영 정책/수집기 변경 없음. 후속 실제 CI 필요, PORT-07 미완료 유지.
+
+2026-10-05 PORT-07 실제 CI 완료: 후속 코드 8461f4374669e486a9d3f6e767398493c054a355를 JEONGRIM-SEO 반영, https://github.com/Gandalem/cloud-soc/actions/runs/37256359248 전체 success 확인. Windows job111594189576: pytest51통과/5생략/35 subtests, PowerShell parser 통과, agent Node99통과/1 Linux 전용 생략/0실패(PS5.1/7 기존 실패 2건 포함), UI82통과, Ruff/pip check/6개 rule profile 통과. Linux job111594189472도 전체 success(Python413/11생략/154 subtests·coverage88.5%·UI82·보안/Compose/Docker). PORT-07 기준 충족으로 완료 체크. 코드/포트폴리오 변경은 0deaf2c와 8461f43으로 원격 반영 완료, 사용자 VM/VS Code·운영 서버/에이전트 설치·실제 ES 수신은 변경/검증하지 않았다. README와 docs/portfolio/measurements.md에 실제 실행 근거를 기록한다. 마지막 기록은 문서만 변경하고 [skip ci]로 검증된 코드에 대한 동일 CI 재실행을 생략한다.
