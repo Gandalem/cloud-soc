@@ -1,5 +1,13 @@
 rules:
   - id: AWS-IAM-001
+    mitre:
+      tactic: ['Persistence', 'Privilege Escalation']
+      technique:
+        - id: T1098.003
+          name: Additional Cloud Roles
+      mapping_status: contextual
+      rationale: "Observed configuration change; analyst confirmation of intent and effective impact required."
+      references: [https://attack.mitre.org/techniques/T1098/003/]
     type: single
     name: AWS high privilege managed policy attached
     enabled: true
@@ -16,6 +24,14 @@ rules:
       category: iam
       tags: [aws, iam, privilege-change]
   - id: AWS-AUDIT-001
+    mitre:
+      tactic: ['Defense Evasion']
+      technique:
+        - id: T1562.008
+          name: Disable or Modify Cloud Logs
+      mapping_status: contextual
+      rationale: "Observed configuration change; analyst confirmation of intent and effective impact required."
+      references: [https://attack.mitre.org/techniques/T1562/008/]
     type: single
     name: AWS trail logging stopped or trail deleted
     enabled: true
@@ -31,6 +47,14 @@ rules:
       category: configuration
       tags: [aws, audit, visibility]
   - id: AWS-NETWORK-001
+    mitre:
+      tactic: ['Defense Evasion']
+      technique:
+        - id: T1562.007
+          name: Disable or Modify Cloud Firewall
+      mapping_status: contextual
+      rationale: "Observed configuration change; analyst confirmation of intent and effective impact required."
+      references: [https://attack.mitre.org/techniques/T1562/007/]
     type: single
     name: AWS public SSH or RDP ingress authorized
     enabled: true
@@ -47,6 +71,14 @@ rules:
       category: network
       tags: [aws, security-group, public-management]
   - id: OCI-IAM-001
+    mitre:
+      tactic: ['Persistence', 'Privilege Escalation']
+      technique:
+        - id: T1098
+          name: Account Manipulation
+      mapping_status: contextual
+      rationale: "Observed configuration change; analyst confirmation of intent and effective impact required."
+      references: [https://attack.mitre.org/techniques/T1098/]
     type: single
     name: OCI IAM policy created or updated
     enabled: true

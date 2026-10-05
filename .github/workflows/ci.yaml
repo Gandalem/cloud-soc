@@ -11,7 +11,11 @@ concurrency:
   cancel-in-progress: true
 jobs:
   python-and-ui:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -32,9 +36,49 @@ jobs:
       - name: Check dependency compatibility
         run: python -m pip check
       - name: Ruff correctness checks
-        run: python -m ruff check src tests
-      - name: Offline Python regression
-        run: python -m pytest -q
+        run: python -m ruff check src tests tools
+      - name: Linux regression with coverage
+        if: runner.os == 'Linux'
+        run: |
+          python -m pytest -q --cov=cloud_soc --cov-report=term-missing --cov-report=xml --cov-report=json --cov-report=html
+          python tools/coverage_badge.py
+      - name: Windows detection and agent configuration regression
+        if: runner.os == 'Windows'
+        run: python -m pytest -q tests/test_portfolio.py tests/test_cloud_detection.py tests/test_sequence_detection.py tests/test_processing.py tests/test_agent_endpoint.py tests/test_agent_policy.py
+      - name: Windows PowerShell parser and offline agent tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $failures = @()
+          Get-ChildItem deploy/agents -Filter *.ps1 -Recurse | ForEach-Object {
+            $tokens = $null; $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors.Count) { $failures += $errors }
+          }
+          if ($failures.Count) { $failures | Format-List; exit 1 }
+          node --test deploy/agents/tests/*.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Linux coverage artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-${{ github.sha }}
+          path: |
+            coverage.xml
+            coverage.json
+            htmlcov/
+            docs/portfolio/coverage.svg
+          if-no-files-found: error
+      - name: Synthetic quality and benchmark artifact
+        if: runner.os == 'Linux'
+        run: python tools/portfolio_eval.py --events 1000 --output /tmp/portfolio-evaluation.json
+      - name: Evaluation artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: evaluation-${{ github.sha }}
+          path: /tmp/portfolio-evaluation.json
+          if-no-files-found: error
       - name: Offline rule profiles
         env:
           PYTHONPATH: src
@@ -45,10 +89,13 @@ jobs:
           node --check prototype/auth-client.js
           node --check prototype/login.js
       - name: Bandit medium and high severity
+        if: runner.os == 'Linux'
         run: python -m bandit -r src -ll -q
       - name: Known dependency vulnerabilities
+        if: runner.os == 'Linux'
         run: python -m pip_audit
       - name: Compose config and production image build
+        if: runner.os == 'Linux'
         env:
           SOC_STATE_DIR: /tmp/soc-ci-state
           SOC_PUBLIC_HOST: soc.invalid

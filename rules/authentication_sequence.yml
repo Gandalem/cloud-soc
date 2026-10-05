@@ -1,5 +1,13 @@
 rules:
   - id: AUTH-SEQ-001
+    mitre:
+      tactic: [Credential Access]
+      technique:
+        - id: T1110
+          name: Brute Force
+      mapping_status: contextual
+      rationale: Repeated failures then success; does not prove credential compromise.
+      references: [https://attack.mitre.org/techniques/T1110/]
     type: sequence
     name: SSH repeated failures followed by successful authentication
     enabled: true

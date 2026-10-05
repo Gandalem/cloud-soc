@@ -546,3 +546,22 @@ EC2 안의 에이전트 로그와 AWS 계정의 제어 영역 기록은 별도 �
 2026-10-04 IMP 원격 CI 1차: a8f4637 브랜치 반영/실제 Actions 시작 확인. GitHub Ubuntu의 /home checkout에서 정책 시험의 합성 경로가 금지된 /home에 생성되어 2건 실패, Linux pwsh가 존재해 Windows 설치기를 Windows OS 없이 실행한 subtest 2건 실패. 운영 수집 정책·설치기는 바꾸지 않고 Linux 정책 fixture를 시스템 temp로 옮기며 Windows 설치 실행은 Windows에서만 수행하도록 시험 전제를 명시한다. 원격 Python 408 통과/9 생략/4 실패였으며 전체 성공으로 기록하지 않는다. 후속 CI 재실행 필요.
 
 2026-10-04 IMP-01–12 코드 적용 종료: a8f4637 기능 구현, 5e366c4 CI 환경 전제 수정까지 JEONGRIM-SEO 반영 확인. 실제 GitHub Actions https://github.com/Gandalem/cloud-soc/actions/runs/37209050863 전체 success: Ubuntu Python 3.12.14 pytest 410 통과/11 OS/opt-in 생략/154 하위 검사 통과, Node 82 통과, Ruff·Bandit medium/high·pip check·pip-audit 알려진 취약점 0·6개 규칙 오프라인·dev/prod Compose config·production Docker image build 성공. 로컬 최종 414 통과/5 생략/154 하위 검사와 OS 전제 차이를 구분한다. IMP-02/12 코드를 포함한 전체 개선 코드 범위 완료 체크; Compose 실제 서비스 시작/운영 배포·실제 ES/이행·에이전트 수신·브라우저 화면/사용자 PC VS Code 갱신은 미수행이며 기존 P0/P5/P7 인수 항목은 그대로 둔다. 이번 마지막 변경은 검증 기록 문서만 갱신하며 [skip ci]로 동일 코드 검사의 중복 실행을 생략한다.
+
+## 2026-10-05 포트폴리오 개선 PORT (진행 중)
+
+사용자 최신 요청을 우선 적용. README + 7개 번호 목록의 중복 마지막 항목을 품질/성능으로 분리해 8개 산출물로 진행한다. 현재 checkout JEONGRIM-SEO / 8a0abd8. 운영 배포 및 실제 클라우드 공격 수행은 포함하지 않는다.
+
+- [x] PORT-01 README Portfolio Edition: 실제 소스에 근거한 소개, 설치 안내 보존.
+- [x] PORT-02 Architecture: 수집/정규화/탐지/저장/조사 흐름 도식.
+- [x] PORT-03 Screenshots: 실제 프로젝트 UI에 합성 자료를 넣어 캡처, 합성 표시/재현 방법.
+- [x] PORT-04 Demo: 3개 공격 행위 합성 재현→실제 정규화/탐지→근거/사건 조사 절차.
+- [x] PORT-05 MITRE: 근거 URL/조건부 매핑, 기존 엔진 형식 유지, metadata 회귀.
+- [x] PORT-06 Coverage: 실제 측정/배지/CI report artifact, 숫자 과장 없음.
+- [ ] PORT-07 Windows CI: Linux/Windows matrix, Windows agent offline 시험/PowerShell 구문.
+- [x] PORT-08 Quality/benchmark: 라벨 사례별 TP/FP/FN/precision/recall 및 실제 반복 측정/환경/한계.
+
+2026-10-05 PORT 검증 기록: JEONGRIM-SEO checkout 8a0abd8 기준 로컬 코드/문서 적용. README 소개와 상세 설치 분리(상대경로 갱신), 실제 수집 흐름 Mermaid, 실제 UI 합성 screenshot 3개, AWS 3개 scenario/17개 label evaluation, 모든 승인 profile 6개 MITRE metadata, pytest-cov snapshot/CI XML·JSON·HTML·배지 artifact, ubuntu-24.04/windows-2025 matrix 구현. tools/portfolio_eval.py는 production projection/normalization/detection/alert build 호출; 10,000 고유 StopLogging 이벤트 warmup 1+3회 약 5.451초/1,835 EPS(ES/network/SQLite incremental 제외). AWS TP 7/TN 10/FP0/FN0은 설계한 합성 조건 적합성일 뿐 운영 precision/recall 아님. 전체 pytest 417통과/5생략/154 subtests, statement coverage 88.5%(4990 statements/575 missed). Node UI 82통과, Ruff src/tests/tools·Bandit medium/high·pip check·diff whitespace 검사 통과. Chromium 실제 UI에서 세 경보/근거 참조·정규화 해시 일치와 Flask 임시 SQLite 사건 생성/업무 저장·재로딩, 페이지 JS 오류 0 확인. Noto Sans KR 글꼴과 PNG 3개 육안 확인 후 스크롤 위치를 보정해 캡처.
+
+PORT-07은 설정 구현 완료/Windows 실제 실행 미검증으로 미체크 유지. GitHub Actions 신규 matrix, 실제 Windows/PowerShell agent 실행, Docker·운영 서버 배포·실제 ES/클라우드/agent ingestion은 이번 수행 아님. 사용자 VM/VS Code 접근 불가, checkout 수정이며 이번 요청에 commit/push 명시가 없어 AGENTS.md대로 미수행. 기존 완료/운영 인수 기준 보존. MITRE metadata 변경으로 rule_version/경보ID/runtime 계약이 달라질 수 있어 이행 주의 문서화, 기존 경보 수정 없음. 관련 README.md, docs/installation.md, docs/portfolio/*, tools/*, tests/test_portfolio.py, rules/cloud.yml/authentication_sequence.yml, requirements-dev.txt/constraints.txt, .github/workflows/ci.yaml.
+
+2026-10-05 PORT-07 실제 CI 검증 진행: 사용자 요청으로 작성한 포트폴리오/Windows matrix 변경을 JEONGRIM-SEO에 커밋·반영해 Actions를 실행하고 실패 원인 수정 후 재검증한다. 현재 원격 HEAD 8a0abd8로 checkout 기준과 일치 확인. 운영 배포·VM 갱신은 제외. 완료는 실제 Windows job 결과 확인 뒤 표시한다.
