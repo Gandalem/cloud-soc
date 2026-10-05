@@ -72,7 +72,7 @@ function Get-SocBundlePendingRecovery($Members) {
         throw 'Only a verified final-ready bundle pair can be recovered; other interrupted state is retained.'
     }
     $identity = Read-SocBundleRepairJson (Join-Path $root 'bundle-recovery.json')
-    if ($identity.schema -ne 1 -or $identity.transaction -cne $token -or @($identity.members).Count -ne 2) { throw 'Bundle recovery identity differs.' }
+    if ($identity.schema -ne 1 -or $identity.transaction -cne $token -or @($identity.members).Count -ne $Members.Count) { throw 'Bundle recovery identity differs.' }
     foreach ($member in $Members) {
         Assert-SocLocalPath $member.Root
         Assert-SocRepairAcl $member.Root
@@ -109,12 +109,20 @@ function Assert-SocBundleRepairMember($Member, [string]$Source, [string]$Endpoin
     }
     if ($Member.ContainsKey('InitiallyMissing') -and $Member.InitiallyMissing -ne $missing) { throw 'Collector service presence changed during recovery.' }
     if ($service.State -ne 'Stopped' -or $service.ProcessId -ne 0 -or
-        $service.StartMode -notin @('Auto','Manual','Disabled')) { throw 'Combined recovery requires both recognized services stopped; running/missing services were not changed.' }
+        $service.StartMode -notin @('Auto','Manual','Disabled')) { throw 'Recovery requires the recognized service stopped; running/missing services were not changed.' }
     if (-not $missing) { Assert-SocBundleService $Member }
     $config = Read-SocBundleRepairJson (Join-Path $Member.Root ($Member.Beat + '.yml'))
     if ($Member.Kind -eq 'host') {
         Assert-SocRepairIdentity $service $config (Get-SocBundleCommand $Member.Root $Member.Beat) $Endpoint $Organization $Member.Root
         $processors=@($config.processors)
+        if ($processors.Count -eq 5) {
+            $probe=$processors[4].add_fields.fields.installation_probe
+            if ($probe -cnotmatch '^[a-f0-9]{64}$' -or @($processors[4].PSObject.Properties).Count -ne 1 -or
+                @($processors[4].add_fields.PSObject.Properties).Count -ne 2 -or
+                $processors[4].add_fields.target -cne 'labels' -or
+                @($processors[4].add_fields.fields.PSObject.Properties).Count -ne 1) { throw 'Unrecognized enrollment marker.' }
+            $processors=@($processors[0..3])
+        }
         if ($processors.Count -ne 4 -or @($processors[0].PSObject.Properties).Count -ne 1 -or
             @($processors[0].add_host_metadata.PSObject.Properties).Count -ne 0 -or
             @($processors[1].PSObject.Properties).Count -ne 1 -or
@@ -132,6 +140,11 @@ function Assert-SocBundleRepairMember($Member, [string]$Source, [string]$Endpoin
         $expected.'packetbeat.interfaces'.device = $config.'packetbeat.interfaces'.device
         $expected.processors[1].add_fields.fields.id = $Organization
         $expected.processors[2].add_fields.fields.sensor_platform = 'windows'
+        if ($config.processors[2].add_fields.fields.PSObject.Properties.Name -contains 'installation_probe') {
+            $probe=$config.processors[2].add_fields.fields.installation_probe
+            if ($probe -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid enrollment marker.' }
+            $expected.processors[2].add_fields.fields | Add-Member -NotePropertyName installation_probe -NotePropertyValue $probe
+        }
         $expected.'output.elasticsearch'.hosts = @($Endpoint.TrimEnd('/'))
         $expected.'output.elasticsearch'.'ssl.certificate_authorities' = @((Join-Path $Member.Root 'ca.crt'))
         $expected.'output.elasticsearch'.index = 'soc-network-windows-9.5.2-%{+yyyy.MM.dd}'
@@ -198,7 +211,8 @@ function Assert-SocBundleRepairReady($Members) {
 }
 
 function Invoke-SocBundleRepairCore([string]$Source, [string]$Endpoint, [string]$CaPath, [string]$Organization,
-    [string]$InterfaceGuid, [switch]$AllowUnavailableRevocation, [switch]$DryRun, [switch]$ResumeRepair) {
+    [string]$InterfaceGuid, [switch]$AllowUnavailableRevocation, [switch]$DryRun, [switch]$ResumeRepair, [switch]$HostOnly) {
+    if ($HostOnly -and $ResumeRepair) { throw 'Log-only re-enrollment does not adopt an interrupted pair Repair.' }
     Assert-SocAdministrator
     if ($Endpoint -cnotmatch '^https://([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?)(:([0-9]{1,5}))?/?\z') { throw 'Use an HTTPS DNS/IPv4 endpoint without credentials, path, query or fragment.' }
     $port = $Matches[4]
@@ -209,10 +223,10 @@ function Invoke-SocBundleRepairCore([string]$Source, [string]$Endpoint, [string]
         Resume-SocBundleRepair -Source $Source -Endpoint $Endpoint -CaPath $CaPath -Organization $Organization -InterfaceGuid $InterfaceGuid -DryRun:$DryRun
         if ($DryRun) { return }
     }
-    $members = Get-SocBundleMembers
+    $members = @(Get-SocBundleMembers -HostOnly:$HostOnly)
     $interrupted = Get-SocBundlePendingRecovery $members
     foreach ($member in $members) { Assert-SocBundleRepairMember $member $Source $Endpoint $CaPath $Organization -AllowMissingService:([bool]$interrupted) }
-    if ($InterfaceGuid -and ([guid]$InterfaceGuid).ToString() -cne $members[1].InterfaceGuid) { throw 'Requested NIC differs; recovery is not network migration.' }
+    if (-not $HostOnly -and $InterfaceGuid -and ([guid]$InterfaceGuid).ToString() -cne $members[1].InterfaceGuid) { throw 'Requested NIC differs; recovery is not network migration.' }
     if (@(Get-Process -ErrorAction Stop | Where-Object ProcessName -In @('filebeat','packetbeat','elastic-agent')).Count) { throw 'A collector process is active; no recovery changes made.' }
     Assert-SocNativeDiscovery $members[0].Root
     $task = Get-SocRepairDiscovery $members[0].Root -AllowEnabled
@@ -232,7 +246,7 @@ function Invoke-SocBundleRepairCore([string]$Source, [string]$Endpoint, [string]
         Write-Host 'DRY RUN: recognized stopped pair and local identities verified. No files, network, keys, tasks or services changed. Npcap/SYSTEM/authentication/central receipt are still pending.'
         return
     }
-    Assert-SocBundleRepairNetwork $members[1].InterfaceGuid
+    if (-not $HostOnly) { Assert-SocBundleRepairNetwork $members[1].InterfaceGuid }
     Test-SocServerTls -Endpoint $Endpoint -CaPath $CaPath -AllowUnavailableRevocation:$AllowUnavailableRevocation
     $transaction = New-SocStage
     $record = @{schema=2;transaction=$transaction.Token;auto_restore_queue=$false}
@@ -262,7 +276,7 @@ function Invoke-SocBundleRepairCore([string]$Source, [string]$Endpoint, [string]
                 ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $transaction.Path 'repair-backups.json') -Encoding UTF8
             Save-SocRepairResumeRecord $transaction $members $Endpoint $Organization $backups $originalXml $taskXml 'backing_up'
         }
-        Write-Host '[1/3] Both protected backups verified; existing keys, configuration and queues retained.'
+        Write-Host '[1/3] Required protected backups verified; existing keys, configuration and queues retained.'
         Invoke-SocDiscoveryProbe $members[0].Root
         foreach ($member in $members) { Test-SocBundleMember $member.Root $member.Beat }
         Assert-SocBundleRepairReady $members
@@ -294,7 +308,7 @@ function Invoke-SocBundleRepairCore([string]$Source, [string]$Endpoint, [string]
         Start-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop
         Wait-SocTask -Name 'Cloud-SOC-Discovery' -Started $started -PreviousRun $previousRun
         Assert-SocBundleFreshReport $members[0].Root $started
-        Write-Host '[2/3] SYSTEM Discovery and both configuration/authentication checks passed.'
+        Write-Host '[2/3] SYSTEM Discovery and all required configuration/authentication checks passed.'
         Assert-SocBundleRepairReady $members
         Save-SocRepairResumeRecord $transaction $members $Endpoint $Organization $backups $originalXml $taskXml 'starting'
         foreach ($member in $members) {
@@ -319,7 +333,7 @@ function Invoke-SocBundleRepairCore([string]$Source, [string]$Endpoint, [string]
             Remove-Item -LiteralPath $interrupted.Pending -ErrorAction Stop
         }
         Remove-Item -LiteralPath $pending -ErrorAction Stop
-        Write-Host '[3/3] Both collectors recovered locally. Central document receipt is NOT yet verified.'
+        Write-Host '[3/3] Required collectors recovered locally. Central document receipt is NOT yet verified.'
     } catch {
         $failure=$_; $safe=$true
         foreach ($member in $startedMembers) {
@@ -370,7 +384,7 @@ function Invoke-SocBundleRepairCore([string]$Source, [string]$Endpoint, [string]
 }
 
 function Invoke-SocBundleRepair([string]$Source, [string]$Endpoint, [string]$CaPath, [string]$Organization,
-    [string]$InterfaceGuid, [switch]$AllowUnavailableRevocation, [switch]$DryRun, [switch]$ResumeRepair) {
+    [string]$InterfaceGuid, [switch]$AllowUnavailableRevocation, [switch]$DryRun, [switch]$ResumeRepair, [switch]$HostOnly) {
     $locks = @()
     try {
         foreach ($name in @('Global\Cloud-SOC-Bundle-Install','Global\Cloud-SOC-Filebeat-Recovery')) {

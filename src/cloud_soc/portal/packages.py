@@ -15,8 +15,8 @@ import zipfile
 
 VERSION = "9.5.2"
 FILES = {
-    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "tls-probe.cs", "enrollment-http.cs", "enrollment-windows.ps1", "repair-windows.ps1", "update-discovery-windows.ps1", "bundle-windows.ps1", "bundle-repair-windows.ps1", "bundle-resume-windows.ps1", "native-windows.ps1", "discovery-native.cs", "enable-rejection-evidence.ps1", "privacy.js", "policy.py"],
-    "ubuntu": ["install-ubuntu.sh", "discover-linux.sh", "privacy.js", "policy.py"],
+    "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "tls-probe.cs", "enrollment-http.cs", "enrollment-windows.ps1", "reenroll-windows.ps1", "repair-windows.ps1", "update-discovery-windows.ps1", "bundle-windows.ps1", "bundle-repair-windows.ps1", "bundle-resume-windows.ps1", "native-windows.ps1", "discovery-native.cs", "enable-rejection-evidence.ps1", "privacy.js", "policy.py"],
+    "ubuntu": ["install-ubuntu.sh", "enrollment-linux.py", "discover-linux.sh", "privacy.js", "policy.py"],
 }
 NETWORK_FILES = {
     "windows": ["install-network-windows.ps1", "packetbeat.base.json"],
@@ -56,13 +56,26 @@ HERE=$(cd -- "$(dirname -- "${{BASH_SOURCE[0]}}")" && pwd)
 ARGS=(--endpoint '{endpoint}' --ca "$HERE/ca.crt" --organization '{org}')
 DRY=()
 DEVICE=
+ENROLL=false
+RE_ENROLL=false
+PACKAGE_SHA=
 while (($#)); do
     case "$1" in
         --dry-run) DRY=(--dry-run); shift ;;
         --interface) (($# >= 2)) || exit 2; DEVICE=$2; shift 2 ;;
+        --enroll) ENROLL=true; shift ;;
+        --reenroll) RE_ENROLL=true; shift ;;
+        --package-sha256) (($# >= 2)) || exit 2; PACKAGE_SHA=$2; shift 2 ;;
         *) printf 'Unknown option: %s\\n' "$1" >&2; exit 2 ;;
     esac
 done
+$RE_ENROLL && ! $ENROLL && {{ printf 'Use --enroll --reenroll with a new token.\\n' >&2; exit 2; }}
+if $ENROLL; then
+    EARGS=(--package-sha256 "$PACKAGE_SHA")
+    [[ -z $DEVICE ]] || EARGS+=(--interface "$DEVICE")
+    $RE_ENROLL && EARGS+=(--reenroll)
+    exec python3 "$HERE/enrollment-linux.py" "${{EARGS[@]}}" "${{DRY[@]}}"
+fi
 '''
         if spec["network"]:
             text += '''[[ -n $DEVICE ]] || { printf 'Specify --interface eth0 (or any explicitly).\\n' >&2; exit 2; }
@@ -73,14 +86,15 @@ bash "$HERE/install-network-ubuntu.sh" "${ARGS[@]}" --interface "$DEVICE" --dry-
             text += 'bash "$HERE/install-network-ubuntu.sh" "${ARGS[@]}" --interface "$DEVICE" "${DRY[@]}"\n'
         return "install.sh", text
     text = f'''#requires -Version 5.1
-param([string]$InterfaceGuid, [switch]$DryRun, [switch]$AllowUnavailableRevocation, [switch]$Repair, [switch]$UpdateDiscovery, [switch]$ResumeRepair, [switch]$Enroll, [string]$PackageSha256)
+param([string]$InterfaceGuid, [switch]$DryRun, [switch]$AllowUnavailableRevocation, [switch]$Repair, [switch]$UpdateDiscovery, [switch]$ResumeRepair, [switch]$Enroll, [string]$PackageSha256, [switch]$ReEnroll)
 $ErrorActionPreference = 'Stop'
+if ($ReEnroll -and -not $Enroll) {{ throw 'Use -Enroll -ReEnroll explicitly with a new installation token.' }}
 if ($ResumeRepair -and (-not $Repair -or $UpdateDiscovery)) {{ throw 'Use -Repair -ResumeRepair together, without -UpdateDiscovery.' }}
 $common = @{{ Endpoint = '{endpoint}'; CaPath = (Join-Path $PSScriptRoot 'ca.crt'); Organization = '{org}'; AllowUnavailableRevocation = $AllowUnavailableRevocation }}
 if ($Enroll) {{
     if ($Repair -or $UpdateDiscovery -or $ResumeRepair) {{ throw 'Enrollment is for a fresh installation only; existing keys are not replaced.' }}
     . (Join-Path $PSScriptRoot 'enrollment-windows.ps1')
-    try {{ Invoke-SocEnrollmentInstall @common -Source $PSScriptRoot -InterfaceGuid $InterfaceGuid -PackageSha256 $PackageSha256 -DryRun:$DryRun; exit 0 }}
+    try {{ Invoke-SocEnrollmentInstall @common -Source $PSScriptRoot -InterfaceGuid $InterfaceGuid -PackageSha256 $PackageSha256 -DryRun:$DryRun -ReEnroll:$ReEnroll; exit 0 }}
     catch {{ [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}
 }}
 if ($UpdateDiscovery) {{
@@ -133,9 +147,11 @@ def build_bundle(spec, source, ca):
         "Recovery preserves server, organization, CA, keys, capture NIC and queues; it is not migration or a Beat binary upgrade.\n"
         "Network collection requires an explicit NIC; Windows also needs approved Npcap.\n"
         "Enter the host key at Filebeat's keystore prompt; enter the separate network key at Packetbeat's prompt.\n"
-        "New compatible Windows pairs can optionally use -Enroll -PackageSha256 <public ZIP hash> on an enabled server.\n"
+        "Compatible Windows/Ubuntu bundles (logs or logs+network) offer optional single-token enrollment on an enabled HTTPS server.\n"
         "Enrollment prompts for ONE hidden token, stores separate keys through keystore stdin, and requires actual central documents.\n"
-        "It is fresh-install only; Linux, log-only, Repair and updates retain their existing manual-key workflow.\n"
+        "Windows: -Enroll -PackageSha256 <ZIP hash>. Ubuntu: --enroll --package-sha256 <tar.gz hash> (+ --interface for network).\n"
+        "For an identified failed enrollment, add explicit -ReEnroll/--reenroll with a NEW token; stopped queues/registry are preserved.\n"
+        "Re-enrollment refuses completed/manual/changed/unknown installations. Ordinary Repair and updates retain their existing keys.\n"
         "Fresh Windows network bundles prepare both collectors before any permanent collector service starts.\n"
         "Before startup, owned preparation is rolled back; after a start attempt, queues/keys are retained and owned services disabled.\n"
         "For a recognized stopped Windows pair, use install.ps1 -Repair -DryRun, then -Repair to accept protected backup/recovery.\n"
@@ -206,7 +222,7 @@ class PackageStore:
     def create(self, data):
         spec = validate_spec(data, self.endpoint)
         identifier = uuid.uuid4().hex
-        if self.portal_url and spec["os"] == "windows" and spec["network"]:
+        if self.portal_url:
             spec.update(package_id=identifier, portal_url=self.portal_url, enrollment_protocol=1)
         archive, filename = build_bundle(spec, self.source, self.ca)
         with self.connect() as db:

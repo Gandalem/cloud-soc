@@ -119,7 +119,7 @@ def valid_sort(value):
 
 
 class LogReader:
-    def __init__(self, client, *, secret, principal, clock=time.time):
+    def __init__(self, client, *, secret, principal, clock=time.time, organizations=None):
         self.client = client.options(
             request_timeout=5,
             max_retries=0,
@@ -130,6 +130,7 @@ class LogReader:
             "sha256",
         )
         self.principal, self.clock = principal, clock
+        self.organizations = tuple(organizations) if organizations is not None else None
         self._cursor_states = {}
         self._cursor_lock = threading.Lock()
 
@@ -255,6 +256,8 @@ class LogReader:
 
     def body(self, filters, pit, after):
         clauses = [{"range": {filters.time_field: {"gte": filters.start, "lt": filters.end}}}]
+        if self.organizations is not None:
+            clauses.append({"terms": {"organization.id": list(self.organizations)}})
         runtime = {}
         for value, path in ((filters.host, "host.name"), (filters.collector, "agent.type")):
             if value is not None:
@@ -280,12 +283,15 @@ class LogReader:
 
     def check_mappings(self, indices, filters):
         fields = [filters.time_field, "host.name", "agent.type"]
-        caps = self.client.field_caps(index=INDICES, fields=fields, include_unmapped=True)["fields"]
         required = {filters.time_field: {"date", "date_nanos"}}
+        if self.organizations is not None:
+            required["organization.id"] = {"keyword"}
+            fields.append("organization.id")
         if filters.host is not None:
             required["host.name"] = {"keyword"}
         if filters.collector is not None:
             required["agent.type"] = {"keyword"}
+        caps = self.client.field_caps(index=INDICES, fields=fields, include_unmapped=True)["fields"]
         for name, allowed in required.items():
             for kind, info in caps.get(name, {}).items():
                 if kind == "unmapped":
@@ -341,6 +347,8 @@ class LogReader:
                 last = order
                 identities.add(identity)
             rows = [project_list_hit(hit) for hit in hits[:filters.page_size]]
+            if self.organizations is not None and any(row["organization"] not in self.organizations for row in rows):
+                raise unavailable()
             token = None
             if len(hits) > filters.page_size:
                 token = self.encode({**state, "pit": pit, "after": hits[filters.page_size - 1]["sort"]})
@@ -379,6 +387,8 @@ class LogReader:
                                   source_includes=list(SOURCE_FIELDS) + list(DETAIL_FIELDS))
             if hit["_index"] != reference["index"] or hit["_id"] != reference["id"]:
                 raise unavailable()
+            if self.organizations is not None and project_list_hit(hit)["organization"] not in self.organizations:
+                raise LogQueryError("log_not_found", 404, "문서를 찾을 수 없습니다. 삭제되었거나 보존 기간이 지났을 수 있습니다.")
             return bounded_json({"contract_version": CONTRACT_VERSION, "row": project_list_hit(hit),
                                  "security": security_detail(hit.get("_source")),
                                  "raw_access": "restricted"}, MAX_DETAIL_BYTES)

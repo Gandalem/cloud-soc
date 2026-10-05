@@ -51,7 +51,8 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
       const enroll = state.enrollmentEnabled && item.enrollment_protocol === 1;
       return `# 관리자 PowerShell, 다운로드 폴더에서 실행${enroll ? '\n# 먼저 포털의 설치 토큰을 발급. 토큰은 실행 후 숨김 입력 창에 붙여 넣기' : ''}\n& {\n$ErrorActionPreference = 'Stop'\nif ((Get-FileHash -LiteralPath '.\\${item.filename}' -Algorithm SHA256).Hash -ne '${item.sha256}') { throw 'SHA-256 mismatch; stop installation.' }\nExpand-Archive -LiteralPath '.\\${item.filename}' -DestinationPath '.\\${directory}'\nSet-Location '.\\${directory}'\n${item.network ? '# 승인된 Npcap을 먼저 준비. 표시되는 활성 물리 NIC를 확인해 선택\n' : ''}.\\install.ps1${enroll ? ` -Enroll -PackageSha256 '${item.sha256}'` : ''}\n}\n# 새 패키지 기준. 가상/VPN NIC는 -InterfaceGuid를 명시\n# 먼저 설정만 확인하려면 install.ps1 명령에 -DryRun 추가`;
     }
-    return `# 다운로드 폴더에서 실행. 공백 없는 경로를 사용\n(\nset -e\nprintf '%s  %s\\n' '${item.sha256}' '${item.filename}' | sha256sum --check\nmkdir '${directory}'\ntar -xzf '${item.filename}' -C '${directory}'\ncd '${directory}'\n${item.network ? "ip -brief link\n# ens3를 실제 수집 NIC로 교체 (전체 로컬 NIC는 any를 명시)\nsudo bash install.sh --interface ens3" : 'sudo bash install.sh'}\n)\n# 먼저 설정만 확인하려면 install.sh 명령에 --dry-run 추가`;
+    const enroll = state.enrollmentEnabled && item.enrollment_protocol === 1;
+    return `# 다운로드 폴더에서 실행. 공백 없는 경로를 사용${enroll ? '\n# 먼저 포털에서 토큰 발급. 실행 후 숨김 입력 창에 붙여 넣기' : ''}\n(\nset -e\nprintf '%s  %s\\n' '${item.sha256}' '${item.filename}' | sha256sum --check\nmkdir '${directory}'\ntar -xzf '${item.filename}' -C '${directory}'\ncd '${directory}'\n${item.network ? 'ip -brief link\n# ens3를 실제 수집 NIC로 교체 (전체 로컬 NIC는 any를 명시)\n' : ''}sudo bash install.sh${enroll ? ` --enroll --package-sha256 '${item.sha256}'` : ''}${item.network ? ' --interface ens3' : ''}\n)\n# 먼저 설정만 확인하려면 install.sh 명령에 --dry-run 추가`;
   }
   function render() {
     const query = $('#package-search').value.trim().toLowerCase();
@@ -184,9 +185,11 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
     $('#enrollment-package').textContent = item.filename;
     $('#enrollment-token').value = '';
     $('#enrollment-target').value = '';
-    $('#enrollment-message').textContent = '신규 Windows 로그+네트워크 설치 전용입니다. 기존 설치·복구에는 사용하지 마세요.';
+    $('#enrollment-message').textContent = '신규 설치에 토큰 한 개를 입력합니다. 확인된 실패 설치는 새 토큰과 Windows -ReEnroll / Ubuntu --reenroll로 재등록하세요. 정상 설치·일반 복구·갱신에는 사용하지 마세요.';
     $('#mint-enrollment').disabled = false;
-    $('#enrollment-command').textContent = `.\\install.ps1 -Enroll -PackageSha256 '${item.sha256}'`;
+    $('#enrollment-command').textContent = item.os === 'ubuntu'
+      ? `sudo bash install.sh --enroll --package-sha256 '${item.sha256}'${item.network ? ' --interface <수집할-NIC>' : ''}`
+      : `.\\install.ps1 -Enroll -PackageSha256 '${item.sha256}'`;
     $('#enrollment-dialog').showModal();
     enrollmentHistory(generation);
   }

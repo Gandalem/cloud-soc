@@ -82,6 +82,19 @@ test('enrollment history escapes metadata, completed installs are not cancellabl
   assert.match(ui.get('#enrollment-history').innerHTML,/data-cancel-enrollment="session"/);
 });
 
+test('Ubuntu and log-only token commands select the right launcher and explicit failed-install recovery', async () => {
+  for (const network of [false, true]) {
+    const packageData = {...enrollmentPortal, packages:[{...enrollmentPortal.packages[0], os:'ubuntu', network, filename:'lab.tar.gz'}]};
+    const ui = browser([ok(packageData), ok({enrollments:[]})]);
+    await settle();
+    ui.get('#package-rows').listeners.click({target:{closest:()=>({dataset:{enrollment:'pkg'}})}});
+    await settle();
+    assert.match(ui.get('#enrollment-command').textContent,/sudo bash install.sh --enroll --package-sha256/);
+    assert.equal(ui.get('#enrollment-command').textContent.includes('--interface'), network);
+    assert.match(ui.get('#enrollment-message').textContent,/--reenroll/);
+  }
+});
+
 test('late enrollment token response cannot refill a closed dialog', async () => {
   let release;
   const response=new Promise(resolve=>{release=resolve;});
