@@ -265,7 +265,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         try:
             if monitor is None:
                 raise RuntimeError("monitor_missing")
-            monitor.info()
+            monitor.security.authenticate()
             with cases.connect() as db:
                 db.execute("SELECT 1").fetchone()
         except Exception:
@@ -324,6 +324,19 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     @app.get("/api/logs/detail")
     def log_detail():
         return log_response(log_reader.detail)
+
+    @app.get("/api/reprocessing/history")
+    def reprocessing_history():
+        from cloud_soc.portal.reprocessing_history import history
+        try:
+            data = json.loads(history(monitor, request.args.items(multi=True)))
+            # Each row remains privacy-filtered; the bounded collection may exceed 256 rows.
+            rows = data.pop("rows")
+            response = redact_metadata(data)
+            response["rows"] = [redact_metadata(row) for row in rows]
+            return jsonify(response)
+        except LogQueryError as error:
+            return jsonify(code=error.code, error=str(error)), error.status
 
     @app.get("/api/operations")
     def operations_summary():
@@ -502,7 +515,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     @app.get("/<path:filename>")
     def static_file(filename):
         # Never serve the repo, secrets, SQLite, source code, or arbitrary uploads.
-        allowed = {"agents.html", "agents.js", "agents.css", "styles.css", "shell.js", "shell.css", "assets/mark.svg",
+        allowed = {"reprocessing-history.html", "reprocessing-history.js", "agents.html", "agents.js", "agents.css", "styles.css", "shell.js", "shell.css", "assets/mark.svg",
                    "detection-history.html", "detection-history.js",
                    "agent-status.html", "agent-status.js", "agent-status.css",
                    "collection-health.html", "collection-health.js",

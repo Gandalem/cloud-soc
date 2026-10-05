@@ -17,7 +17,7 @@ PUBLIC = {"login_page", "auth_asset", "login"}
 READ_ENDPOINTS = {
     "index", "static_file", "auth_me", "logout", "case_list", "case_link", "case_detail",
     "agent_status", "collection_health", "logs", "log_detail", "operations_summary", "alert_detail",
-    "detection_history", "healthz",
+    "detection_history", "reprocessing_history", "healthz",
 }
 CASE_WRITES = {"case_create", "case_update"}
 
