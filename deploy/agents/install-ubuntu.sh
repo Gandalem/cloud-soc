@@ -113,9 +113,10 @@ install_agent() {
     . /etc/os-release
     [[ $ID == ubuntu && ( $VERSION_ID == 22.04 || $VERSION_ID == 24.04 ) && -d /run/systemd/system ]] || fail 'Only Ubuntu 22.04 or 24.04 with systemd is supported.'
     local tool path arch hash package member
-    for tool in curl tar sha512sum sha256sum systemctl pgrep timeout realpath find file flock sort cmp journalctl; do
+    for tool in curl tar sha512sum sha256sum systemctl pgrep timeout realpath find file flock sort cmp journalctl python3; do
         command -v "$tool" >/dev/null || fail "Missing prerequisite: $tool"
     done
+    [[ -f $SCRIPT_DIR/collector-metrics.py && ! -L $SCRIPT_DIR/collector-metrics.py ]] || fail 'Missing reviewed collector-metrics.py; unpack the complete new bundle.'
     $KEY_STDIN || [[ -t 0 ]] || fail 'An interactive terminal is required for the API key prompt.'
     check_existing
     [[ -f $CA && -r $CA ]] || fail 'CA certificate is not a readable file.'
@@ -135,6 +136,7 @@ install_agent() {
     trap 'printf "Installation failed; protected partial state remains in %s. No automatic reinstall/cleanup.\n" "$ROOT" >&2' ERR
     mkdir "$ROOT/data" "$ROOT/logs" "$ROOT/staging" "$ROOT/inputs"
     cp -- "$SCRIPT_DIR/discover-linux.sh" "$ROOT/discover-linux.sh"
+    cp -- "$SCRIPT_DIR/collector-metrics.py" "$ROOT/collector-metrics.py"
     cp -- "$SCRIPT_DIR/privacy.js" "$ROOT/privacy.js"
     printf '%s\n' "${LOG_ROOTS[@]}" > "$ROOT/discovery-roots.txt"
     refresh_linux_inputs "$ROOT" "${LOG_ROOTS[@]}"

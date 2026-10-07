@@ -169,6 +169,8 @@ internal static class Discovery {
             int good = entries.Count(e => (string)e["status"] == "selected"), errors = entries.Count(e => (string)e["status"] == "unreadable" || (string)e["status"] == "enumeration_error");
             var summary = Map("schema", 1, "generated_at", generated, "policy_version", version, "selected", good, "excluded", entries.Count - good - errors, "errors", errors, "total", entries.Count, "sources", entries.Take(200).Select(e => Map("id", Id((string)e["name"]), "status", e["status"])).ToArray(), "queue_state", "unknown", "transport_state", "unknown");
             summary["collector_metrics"] = CollectorMetrics.Read(root, DateTimeOffset.UtcNow);
+            summary["network_collector_metrics"] = CollectorMetrics.ReadNetwork(root,
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Cloud-SOC-Network"), DateTimeOffset.UtcNow);
             summary["rejection_evidence"] = RejectionEvidence.Run(root, DateTimeOffset.UtcNow);
             string spool = Path.Combine(root, "health.ndjson"), previous = Path.Combine(root, "health-previous.ndjson");
             if (Linked(spool) || Linked(previous)) throw new InvalidDataException("linked_spool");
@@ -241,6 +243,9 @@ internal static class CollectorMetrics {
         return Parse(line, out ignored);
     }
     internal static Dictionary<string, object> Parse(string line, out string reason) {
+        return Parse(line, "filebeat", out reason);
+    }
+    internal static Dictionary<string, object> Parse(string line, string service, out string reason) {
         reason = "line_limit";
         if (line.Length > 524288) return null;
         reason = "not_metrics";
@@ -251,7 +256,7 @@ internal static class CollectorMetrics {
             object value;
             reason = "identity";
             if (entry == null || !entry.TryGetValue("log.logger", out value) || !Object.Equals(value, "monitoring") ||
-                !entry.TryGetValue("service.name", out value) || !Object.Equals(value, "filebeat")) return null;
+                !entry.TryGetValue("service.name", out value) || !Object.Equals(value, service)) return null;
             reason = "interval";
             if (!entry.TryGetValue("message", out value) || !(value is string)) return null;
             var interval = Regex.Match((string)value, @"^Non-zero metrics in the last ([1-9][0-9]{0,4})s$");
@@ -259,7 +264,10 @@ internal static class CollectorMetrics {
             if (Int32.Parse(interval.Groups[1].Value, CultureInfo.InvariantCulture) > 86400) return null;
             DateTimeOffset sampled;
             reason = "timestamp";
-            if (!DateTimeOffset.TryParse((string)value, CultureInfo.InvariantCulture, DateTimeStyles.None, out sampled)) return null;
+            if (!Regex.IsMatch((string)value, @"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:?\d{2})$")) return null;
+            string stamp = Regex.Replace((string)value, @"([+-]\d{2})(\d{2})$", "$1:$2");
+            stamp = Regex.Replace(stamp, @"(\.\d{7})\d{1,2}(?=Z|[+-])", "$1");
+            if (!DateTimeOffset.TryParse(stamp, CultureInfo.InvariantCulture, DateTimeStyles.None, out sampled)) return null;
             var metrics = At(entry, "monitoring.metrics") as Dictionary<string, object>;
             reason = "metrics_object";
             if (metrics == null) return null;
@@ -275,6 +283,10 @@ internal static class CollectorMetrics {
             .Any(key => sample[key] != null && Convert.ToDouble(sample[key]) > 0);
     }
     internal static Dictionary<string, object> Read(string root, DateTimeOffset now) {
+        return Read(root, now, "filebeat");
+    }
+    internal static Dictionary<string, object> Read(string root, DateTimeOffset now, string service) {
+        if (service != "filebeat" && service != "packetbeat") throw new ArgumentException("service");
         var missing = Discovery.Map("schema", 1, "state", "unavailable", "reason", "no_sample");
         string logs = Path.Combine(root, "logs");
         Dictionary<string, object> latest = null;
@@ -284,14 +296,15 @@ internal static class CollectorMetrics {
         try {
             if (Discovery.Linked(logs)) { missing["reason"] = "unsafe_path"; return missing; }
             if (!Directory.Exists(logs)) { missing["reason"] = "no_logs"; return missing; }
-            var files = Directory.EnumerateFiles(logs, "filebeat-*.ndjson").Take(129).ToArray();
-            if (files.Length > 128) { missing["reason"] = "too_many_files"; return missing; }
-            var candidates = files.Where(p => Regex.IsMatch(Path.GetFileName(p), @"^filebeat-[0-9]{8}(?:-[0-9]+)?\.ndjson$"))
+            var files = Directory.EnumerateFiles(logs, service + "-*.ndjson").Take(129).ToArray();
+            if (files.Length > 128) { missing["reason"] = "too_many_files"; missing["scan_partial"] = true; return missing; }
+            var candidates = files.Where(p => Regex.IsMatch(Path.GetFileName(p), "^" + service + @"-[0-9]{8}(?:-[0-9]+)?\.ndjson$"))
                 .OrderByDescending(p => File.GetLastWriteTimeUtc(p)).ToArray();
             partial = candidates.Length > 4;
             foreach (string file in candidates.Take(4)) {
                 if (Discovery.Linked(file)) { partial = true; continue; }
                 try {
+                    RejectionEvidence.SingleLink(file);
                     using (var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)) {
                         long start = Math.Max(0, stream.Length - 1048576);
                         partial |= start > 0;
@@ -299,10 +312,11 @@ internal static class CollectorMetrics {
                         var bytes = new byte[1048576]; int size = 0, count;
                         while (size < bytes.Length && (count = stream.Read(bytes, size, bytes.Length - size)) > 0) size += count;
                         string[] lines = Encoding.UTF8.GetString(bytes, 0, size).Split('\n');
+                        partial |= lines[lines.Length - 1].Length > 0;
                         // A capped prefix or unfinished trailing line is not a complete record.
                         for (int i = start > 0 ? 1 : 0; i < lines.Length - 1; i++) {
                             string reason;
-                            var sample = Parse(lines[i], out reason);
+                            var sample = Parse(lines[i], service, out reason);
                             if (sample == null) {
                                 if (reason != "not_metrics") partial = true;
                                 if (!skipped.ContainsKey(reason)) skipped[reason] = 0;
@@ -323,6 +337,42 @@ internal static class CollectorMetrics {
         result["skipped_records"] = skipped;
         result["last_problem_at"] = problemTime == DateTimeOffset.MinValue ? null : (object)problemTime.UtcDateTime.ToString("o");
         return result;
+    }
+    internal static string Identity(string root, string service) {
+        var config = Discovery.Json.Deserialize<Dictionary<string, object>>(Discovery.ReadBounded(Path.Combine(root, service + ".yml"), 262144));
+        var output = config["output.elasticsearch"] as Dictionary<string, object>;
+        if (output == null || !Object.Equals(output["ssl.verification_mode"], "full")) throw new InvalidDataException("identity");
+        var hosts = Discovery.Strings(output["hosts"]);
+        var authorities = Discovery.Strings(output["ssl.certificate_authorities"]);
+        string ca = Path.Combine(root, "ca.crt");
+        if (hosts.Length != 1 || authorities.Length != 1 || !String.Equals(Path.GetFullPath(authorities[0]), ca, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("identity");
+        string organization = null;
+        foreach (object processor in (IEnumerable)config["processors"]) {
+            var item = processor as Dictionary<string, object>;
+            object fieldsValue;
+            if (item == null || !item.TryGetValue("add_fields", out fieldsValue)) continue;
+            var fields = fieldsValue as Dictionary<string, object>;
+            if (fields == null || !Object.Equals(fields["target"], "organization")) continue;
+            if (organization != null) throw new InvalidDataException("identity");
+            organization = ((Dictionary<string, object>)fields["fields"])["id"] as string;
+        }
+        if (organization == null || !Regex.IsMatch(organization, @"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")) throw new InvalidDataException("identity");
+        using (var hash = SHA256.Create()) return hosts[0].TrimEnd('/') + "\n" + organization + "\n" + BitConverter.ToString(hash.ComputeHash(Discovery.Utf8.GetBytes(Discovery.ReadBounded(ca, 262144))));
+    }
+    internal static Dictionary<string, object> ReadNetwork(string host, string network, DateTimeOffset now) {
+        var unavailable = Discovery.Map("schema", 1, "state", "unavailable", "reason", "identity_unavailable");
+        try {
+            // Only a protected, co-located installation may attach statistics to
+            // the host report. No Packetbeat health-index privilege is added.
+            RejectionEvidence.Protected(network);
+            RejectionEvidence.Protected(Path.Combine(network, "logs"));
+            foreach (string name in new[] { "packetbeat.yml", "ca.crt" }) RejectionEvidence.Protected(Path.Combine(network, name));
+            if (Identity(host, "filebeat") != Identity(network, "packetbeat")) { unavailable["reason"] = "identity_mismatch"; return unavailable; }
+            return Read(network, now, "packetbeat");
+        } catch (IOException) {} catch (UnauthorizedAccessException) {} catch (ArgumentException) {}
+          catch (InvalidOperationException) {} catch (KeyNotFoundException) {} catch (InvalidCastException) {}
+          catch (NullReferenceException) {} catch (System.Security.SecurityException) {}
+        return unavailable;
     }
 }
 
