@@ -1,0 +1,10 @@
+{
+  "cluster": ["monitor", "monitor_snapshot"],
+  "indices": [
+    {
+      "names": ["soc-host-raw-*", "soc-network-*", "soc-agent-health-*", "soc-cloud-aws-*", "soc-cloud-oci-*"],
+      "privileges": ["read", "monitor"],
+      "allow_restricted_indices": false
+    }
+  ]
+}
