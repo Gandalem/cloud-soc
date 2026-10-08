@@ -91,6 +91,7 @@ def project(source, key, now):
     delay = (received - generated).total_seconds()
     age = (now - received).total_seconds()
     metrics = collector_metrics(report.get('collector_metrics'), generated, now)
+    network_metrics = collector_metrics(report.get('network_collector_metrics'), generated, now)
     return {**values, 'sources': sources, 'omitted_sources': values['total'] - len(sources),
             'agent_id': display(key.get('agent_id')), 'organization': display(key.get('organization')),
             'host': display(source.get('host', {}).get('name')), 'generated_at': iso(generated),
@@ -98,7 +99,8 @@ def project(source, key, now):
             'clock_warning': delay < 0 or age < -60,
             'report_state': 'unknown' if age < -60 else 'recent' if age <= 300 else 'stale',
             'queue_state': metrics['queue_state'], 'transport_state': metrics['transport_state'],
-            'collector_metrics': metrics, 'source_success': 'not_measured'}
+            'collector_metrics': metrics, 'network_collector_metrics': network_metrics,
+            'network_identity': 'agent_reported_co_located_not_attested', 'source_success': 'not_measured'}
 
 
 def snapshot(client, after=None, now=None):

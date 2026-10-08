@@ -1,9 +1,10 @@
 # Fully mocked host boundary: no downloads, credentials, tasks, services, NICs or capture.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+# Load before mocked host cmdlets and ProgramData can affect module auto-loading.
 # A pwsh CI parent can expose Core modules to Windows PowerShell 5.1.
 # Load this shell's own Security module without changing host policy.
-Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -Force
+Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -Force -ErrorAction Stop
 . (Join-Path $PSScriptRoot '../bundle-windows.ps1')
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('cloud-soc-bundle-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $testRoot | Out-Null
@@ -56,6 +57,7 @@ function New-Service { param($Name,$DisplayName,$BinaryPathName,$StartupType,$De
 function Start-Service { param($Name) Step ($Name + '-start') }
 function Stop-Service { param($Name,$ErrorAction) Step ($Name + '-stop') }
 function Set-Service { param($Name,$StartupType) Step ($Name + '-' + $StartupType) }
+function Set-SocServiceStartup { param($Name,$StartMode='Auto',$DelayedAutoStart=$true) Step ($Name + '-Automatic') }
 function Start-Sleep { param($Seconds) }
 function Get-ScheduledTask { param($TaskName,$ErrorAction) if ($global:Task) { return @{State='Ready'} } }
 function New-SocNativeDiscoveryAction { param($Root) return @{} }

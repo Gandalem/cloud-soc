@@ -15,12 +15,13 @@
   const time = value => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString('ko-KR', {timeZone: 'Asia/Seoul'}) + ' (KST)' : '시각 미보고';
   function cell(row, value) { const td = document.createElement('td'); td.textContent = String(value); row.append(td); return td; }
   const number = value => Number.isSafeInteger(value) && value >= 0 ? value.toLocaleString('ko-KR') : '미보고';
-  function metricsCells(row, metrics) {
+  function metricsCells(row, metrics, collector = '호스트 로그 (Filebeat)') {
     const m = metrics || {};
     const stateName = {unavailable: '미측정', invalid: '보고 형식 확인', stale: '오래된 표본', clock_warning: '시계 확인', recent: '최근 표본'}[m.state] || '미측정';
     const queue = cell(row, stateName);
     const transport = cell(row, stateName);
     const paragraph = (parent, text) => { const p = document.createElement('p'); p.textContent = text; parent.append(p); };
+    paragraph(queue, collector); paragraph(transport, collector);
     if (!['recent', 'stale', 'clock_warning'].includes(m.state)) {
       paragraph(queue, m.state === 'invalid' ? '통계 형식을 확인해야 합니다.' : '이 보고에는 유효한 큐 통계가 없습니다.');
       paragraph(transport, '통계 없음은 전송 실패나 오류 0을 뜻하지 않습니다.');
@@ -62,6 +63,7 @@
         cell(tr, time(item.generated_at) + ' / ' + time(item.received_at));
         cell(tr, `${item.delay_seconds ?? '?'}초 / v${item.policy_version}${item.clock_warning ? ' (시계 확인)' : ''}`);
         metricsCells(tr, item.collector_metrics);
+        metricsCells(tr, item.network_collector_metrics, '네트워크 (Packetbeat)');
         const td = cell(tr, '');
         const details = document.createElement('details'); const summary = document.createElement('summary');
         summary.textContent = `${item.sources.length}개 보기 (생략 ${item.omitted_sources}개)`;

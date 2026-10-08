@@ -130,6 +130,17 @@ test('PowerShell isolated helper tests', { skip: !windows }, () => {
   assert.match(result.stdout, /tests passed/);
 });
 
+test('Windows delayed service startup and exact rollback are isolated', { skip: !windows }, () => {
+  const result = run(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-File', 'tests/service-startup-windows.ps1']);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.match(result.stdout, /Service startup tests passed/);
+  for (const name of ['install-windows.ps1', 'install-network-windows.ps1', 'bundle-windows.ps1', 'bundle-repair-windows.ps1']) {
+    const source = readFileSync(path.join(root, name), 'utf8');
+    assert.match(source, /Set-SocServiceStartup/);
+    assert.doesNotMatch(source, /StartupType Automatic/);
+  }
+});
+
 test('PowerShell 5.1 syntax compatibility without executing the installer', { skip: !windows }, () => {
   const result = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "$t=$null; $e=$null; [Management.Automation.Language.Parser]::ParseFile((Join-Path (Get-Location) 'install-windows.ps1'), [ref]$t, [ref]$e) | Out-Null; if ($e.Count) { $e; exit 1 }"]);
   assert.equal(result.status, 0, result.stderr + result.stdout);

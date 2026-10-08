@@ -26,7 +26,7 @@ API 키는 설치 중 Beat keystore 프롬프트에 `id:api_key` 형식으로 �
 
 ## Ubuntu 설치
 
-필수 도구: Bash, `curl`, `tar`, `sha512sum`, `sha256sum`, `timeout`, `realpath`, `pgrep`, `systemctl`, `find`, `file`, `flock`, `sort`, `cmp`, `journalctl`. 누락된 패키지는 자동 설치하지 않습니다.
+필수 도구: Bash, Python 3, `curl`, `tar`, `sha512sum`, `sha256sum`, `timeout`, `realpath`, `pgrep`, `systemctl`, `find`, `file`, `flock`, `sort`, `cmp`, `journalctl`. 누락된 패키지는 자동 설치하지 않습니다. 전체 묶음의 `collector-metrics.py`도 필요하며 [수집 품질 계측 안내](../../docs/p2_collection_metrics.md)에 통계의 의미와 검증 제한을 설명합니다.
 
 ```bash
 sudo bash deploy/agents/install-ubuntu.sh --endpoint https://soc.example.invalid:9200 --ca /etc/cloud-soc-ca.crt --organization school

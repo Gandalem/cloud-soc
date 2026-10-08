@@ -48,7 +48,7 @@ function Get-Service { param($Name,$ErrorAction)
 function Get-Process { param($ErrorAction) return @() }
 function New-Service { param($Name,$DisplayName,$BinaryPathName,$StartupType,$DependsOn)
     Step ($Name+'-create')
-    $script:services[$Name]=[pscustomobject]@{State='Stopped';ProcessId=0;StartMode=$StartupType;StartName='LocalSystem';PathName=$BinaryPathName}
+    $script:services[$Name]=[pscustomobject]@{State='Stopped';ProcessId=0;StartMode=$StartupType;DelayedAutoStart=$false;StartName='LocalSystem';PathName=$BinaryPathName}
     Step ($Name+'-create-after')
 }
 function Remove-SocBundleService { param($Member)
@@ -96,6 +96,7 @@ function Test-SocBundleMember { param($Root,$Beat)
     if ($script:failure -ceq 'change-config' -and $Beat -eq 'packetbeat') { [IO.File]::AppendAllText((Join-Path $Root 'packetbeat.yml'),' ') }
     if ($script:failure -ceq 'external-auth-start' -and $Beat -eq 'packetbeat') { Start-ExternalCollector }
     if ($script:failure -ceq 'external-start-mode' -and $Beat -eq 'packetbeat') { $script:services['cloud-soc-packetbeat'].StartMode='Auto' }
+    if ($script:failure -ceq 'external-delayed-mode' -and $Beat -eq 'packetbeat') { $script:services['cloud-soc-packetbeat'].DelayedAutoStart=$true }
 }
 function Start-ExternalCollector {
     $script:services['cloud-soc-packetbeat'].State='Running'; $script:services['cloud-soc-packetbeat'].ProcessId=456
@@ -105,6 +106,17 @@ function Start-ExternalCollector {
 function Set-Service { param($Name,$StartupType,$ErrorAction)
     Step ($Name+'-'+$StartupType)
     $script:services[$Name].StartMode=@{Manual='Manual';Disabled='Disabled';Automatic='Auto'}[$StartupType]
+    $script:services[$Name].DelayedAutoStart=$false
+}
+function Invoke-SocServiceConfig { param($Name,$Start)
+    $mode=@{'delayed-auto'='Automatic';auto='Automatic';demand='Manual';disabled='Disabled'}[$Start]
+    if ($script:failure -ceq ($Name+'-Automatic-once') -and $mode -eq 'Automatic') {
+        $script:failure=''
+        throw ('Injected '+$Name+'-Automatic-once')
+    }
+    Step ($Name+'-'+$mode)
+    $script:services[$Name].StartMode=@{Automatic='Auto';Manual='Manual';Disabled='Disabled'}[$mode]
+    $script:services[$Name].DelayedAutoStart=($Start -ceq 'delayed-auto')
 }
 function Start-Service { param($Name,$ErrorAction)
     $script:services[$Name].State='Running'; $script:services[$Name].ProcessId=123
@@ -158,7 +170,7 @@ function Reset-Fixture {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $zip=[IO.Compression.ZipFile]::Open((Join-Path $m.Root ($m.Beat+'-9.5.2-windows-x86_64.zip')),'Create')
         try { [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,$exe,($m.Beat+'-9.5.2-windows-x86_64/'+$m.Beat+'.exe')) | Out-Null } finally { $zip.Dispose() }
-        $script:services[$m.Service]=[pscustomobject]@{State='Stopped';ProcessId=0;StartMode='Disabled';StartName='LocalSystem';PathName=(Get-SocBundleCommand $m.Root $m.Beat)}
+        $script:services[$m.Service]=[pscustomobject]@{State='Stopped';ProcessId=0;StartMode='Disabled';DelayedAutoStart=$false;StartName='LocalSystem';PathName=(Get-SocBundleCommand $m.Root $m.Beat)}
     }
     $script:task=New-FixtureTask $false
 }
@@ -197,10 +209,21 @@ try {
     foreach ($enabled in @($false,$true)) {
         Reset-Fixture; $script:task=New-FixtureTask $enabled; $tx=Add-PendingFixture
         Invoke-SocBundleRepairCore @params
-        foreach ($s in $services.Values) { if ($s.State -ne 'Running' -or $s.StartMode -ne 'Auto') { throw 'Pair not recovered' } }
+        foreach ($s in $services.Values) { if ($s.State -ne 'Running' -or $s.StartMode -ne 'Auto' -or -not $s.DelayedAutoStart) { throw 'Pair not recovered with delayed start' } }
         if (-not $task.Settings.Enabled -or (Test-Path -LiteralPath (Join-Path $env:ProgramData 'Cloud-SOC\bundle-pending.json'))) { throw 'Recovery not finalized' }
         if ((Read-SocBundleRepairJson (Join-Path $tx.Path 'bundle-state.json')).phase -cne 'committed_receipt_unverified') { throw 'False receipt status' }
     }
+    # A post-start failure must restore delayed auto as well as ordinary modes, without rewinding queues.
+    Reset-Fixture
+    foreach ($s in $services.Values) { $s.StartMode='Auto'; $s.DelayedAutoStart=$true }
+    $script:failure='cloud-soc-packetbeat-Automatic-once'
+    Assert-Throws { Invoke-SocBundleRepairCore @params } 'Injected cloud-soc-packetbeat-Automatic-once'
+    foreach ($s in $services.Values) {
+        if ($s.State -ne 'Stopped' -or $s.StartMode -ne 'Auto' -or -not $s.DelayedAutoStart) { throw 'Delayed auto rollback lost original mode.' }
+    }
+    Reset-Fixture; $script:failure='external-delayed-mode'
+    Assert-Throws { Invoke-SocBundleRepairCore @params } 'delayed start changed'
+    if (-not $services['cloud-soc-packetbeat'].DelayedAutoStart -or ($calls -contains 'cloud-soc-filebeat-start')) { throw 'External delayed flag adopted or overwritten.' }
     Reset-Fixture; $script:task=$null
     Invoke-SocBundleRepairCore @params
     if (-not $task -or -not $task.Settings.Enabled) { throw 'Missing Discovery not recovered' }

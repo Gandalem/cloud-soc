@@ -90,7 +90,7 @@ discover_linux_logs() {
 }
 
 publish_health_report() {
-    local root=$1 version=0 entry separator= total
+    local root=$1 version=0 entry separator= total metrics
     version=${POLICY_VERSION:-0}
     [[ $version =~ ^[0-9]{1,9}$ ]] || return 1
     [[ ! -L $root/health.ndjson && ! -L $root/health-previous.ndjson ]] || return 1
@@ -99,10 +99,17 @@ publish_health_report() {
         mv -f -- "$root/health.ndjson" "$root/health-previous.ndjson"
     fi
     total=$((HEALTH_SELECTED + HEALTH_EXCLUDED + HEALTH_ERRORS))
+    metrics='"collector_metrics":{"schema":1,"state":"unavailable","reason":"reader_unavailable"},"network_collector_metrics":{"schema":1,"state":"unavailable","reason":"reader_unavailable"}'
+    if [[ -f $root/collector-metrics.py && ! -L $root/collector-metrics.py ]] && command -v python3 >/dev/null; then
+        local sampled
+        if sampled=$(timeout 15 python3 -I "$root/collector-metrics.py" --root "$root" 2>/dev/null) && [[ $sampled == \{*\} && ${#sampled} -lt 8192 ]]; then
+            metrics=${sampled:1:${#sampled}-2}
+        fi
+    fi
     {
         printf '{"schema":1,"generated_at":"%s","policy_version":%s,"selected":%s,"excluded":%s,"errors":%s,"total":%s,"sources":[' "$(date -u +%FT%TZ)" "$version" "$HEALTH_SELECTED" "$HEALTH_EXCLUDED" "$HEALTH_ERRORS" "$total"
         for entry in "${HEALTH_SOURCES[@]}"; do printf '%s%s' "$separator" "$entry"; separator=,; done
-        printf '],"queue_state":"unknown","transport_state":"unknown"}\n'
+        printf '],"queue_state":"unknown","transport_state":"unknown",%s}\n' "$metrics"
     } >> "$root/health.ndjson"
     local candidate
     candidate=$(mktemp "$root/inputs/.health.XXXXXX")

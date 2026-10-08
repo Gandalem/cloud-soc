@@ -16,7 +16,7 @@ import zipfile
 VERSION = "9.5.2"
 FILES = {
     "windows": ["install-windows.ps1", "discover-windows.ps1", "download-windows.ps1", "transaction-windows.ps1", "tls-probe.cs", "enrollment-http.cs", "enrollment-windows.ps1", "reenroll-windows.ps1", "repair-windows.ps1", "update-discovery-windows.ps1", "bundle-windows.ps1", "bundle-repair-windows.ps1", "bundle-resume-windows.ps1", "native-windows.ps1", "discovery-native.cs", "enable-rejection-evidence.ps1", "privacy.js", "policy.py"],
-    "ubuntu": ["install-ubuntu.sh", "enrollment-linux.py", "discover-linux.sh", "privacy.js", "policy.py"],
+    "ubuntu": ["install-ubuntu.sh", "enrollment-linux.py", "discover-linux.sh", "collector-metrics.py", "privacy.js", "policy.py"],
 }
 NETWORK_FILES = {
     "windows": ["install-network-windows.ps1", "packetbeat.base.json"],

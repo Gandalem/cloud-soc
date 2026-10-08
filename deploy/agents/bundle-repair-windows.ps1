@@ -105,7 +105,7 @@ function Assert-SocBundleRepairMember($Member, [string]$Source, [string]$Endpoin
     $missing = -not [bool]$service
     if ($missing) {
         if (-not $AllowMissingService) { throw 'Missing service requires a verified final-ready bundle identity; no service was created.' }
-        $service = [pscustomobject]@{State='Stopped';ProcessId=0;StartMode='Disabled';StartName='LocalSystem';PathName=(Get-SocBundleCommand $Member.Root $Member.Beat)}
+        $service = [pscustomobject]@{State='Stopped';ProcessId=0;StartMode='Disabled';DelayedAutoStart=$false;StartName='LocalSystem';PathName=(Get-SocBundleCommand $Member.Root $Member.Beat)}
     }
     if ($Member.ContainsKey('InitiallyMissing') -and $Member.InitiallyMissing -ne $missing) { throw 'Collector service presence changed during recovery.' }
     if ($service.State -ne 'Stopped' -or $service.ProcessId -ne 0 -or
@@ -168,8 +168,13 @@ function Assert-SocBundleRepairMember($Member, [string]$Source, [string]$Endpoin
     if ($Member.ContainsKey('Stable')) { Assert-SocBundleStableFiles $Member }
     else { $Member.Stable=Get-SocBundleStableHashes $Member.Root $Member.Beat }
     if ($Member.ContainsKey('OriginalService')) {
-        if ($Member.OriginalService.StartMode -cne $service.StartMode) { throw 'Collector service start mode changed during recovery.' }
-    } else { $Member.OriginalService=$service; $Member.InitiallyMissing=$missing; $Member.RepairCreated=$false; $Member.RepairCreateAttempted=$false }
+        if ($Member.OriginalService.StartMode -cne $service.StartMode -or
+            $Member.OriginalStartup.DelayedAutoStart -ne $service.DelayedAutoStart) { throw 'Collector service start mode changed during recovery.' }
+    } else {
+        $Member.OriginalService=$service
+        $Member.OriginalStartup=if ($missing) { @{StartMode='Disabled';DelayedAutoStart=$false} } else { Get-SocServiceStartup $Member.Service }
+        $Member.InitiallyMissing=$missing; $Member.RepairCreated=$false; $Member.RepairCreateAttempted=$false
+    }
 }
 
 function Assert-SocBundleRepairNetwork([string]$InterfaceGuid) {
@@ -194,6 +199,8 @@ function Assert-SocBundleRepairQuiescent($Member, [switch]$IgnoreStartMode, [swi
     }
     $expected=if ($Member.InitiallyMissing) {'Manual'} else {$Member.OriginalService.StartMode}
     if (-not $IgnoreStartMode -and $service.StartMode -cne $expected) { throw 'Collector start mode changed before recovery start.' }
+    if (-not $IgnoreStartMode -and -not $Member.InitiallyMissing -and
+        $service.DelayedAutoStart -ne $Member.OriginalStartup.DelayedAutoStart) { throw 'Collector delayed start changed before recovery start.' }
     if ($Member.Kind -eq 'network') {
         $dependencies=@((Get-Service -Name $Member.Service -ErrorAction Stop).ServicesDependedOn | ForEach-Object Name)
         if ($dependencies.Count -ne 1 -or $dependencies[0] -ine 'npcap') { throw 'Packetbeat dependency changed before recovery start.' }
@@ -323,7 +330,7 @@ function Invoke-SocBundleRepairCore([string]$Source, [string]$Endpoint, [string]
         foreach ($member in $members) {
             Assert-SocBundleService $member
             if ((Get-Service -Name $member.Service -ErrorAction Stop).Status -ne 'Running') { throw 'Recovered collector did not remain running.' }
-            Set-Service -Name $member.Service -StartupType Automatic -ErrorAction Stop
+            Set-SocServiceStartup $member.Service
         }
         Assert-SocBundleTask $taskXml
         Save-SocRepairResumeRecord $transaction $members $Endpoint $Organization $backups $originalXml $taskXml 'committed_receipt_unverified'
@@ -341,7 +348,8 @@ function Invoke-SocBundleRepairCore([string]$Source, [string]$Endpoint, [string]
                 Assert-SocBundleService $member
                 Stop-Service -Name $member.Service -ErrorAction Stop
                 (Get-Service -Name $member.Service -ErrorAction Stop).WaitForStatus('Stopped',[TimeSpan]::FromSeconds(30))
-                Set-Service -Name $member.Service -StartupType (@{Auto='Automatic';Manual='Manual';Disabled='Disabled'}[$member.OriginalService.StartMode]) -ErrorAction Stop
+                $startup = $member.OriginalStartup
+                Set-SocServiceStartup -Name $member.Service @startup
             } catch { $safe=$false }
         }
         try {

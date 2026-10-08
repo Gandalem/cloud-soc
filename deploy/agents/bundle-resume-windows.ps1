@@ -32,6 +32,7 @@ function Save-SocRepairResumeRecord($Transaction, $Members, [string]$Endpoint, [
     $entries=@()
     foreach ($member in $Members) {
         $entries += @{kind=$member.Kind;root=$member.Root;files=$member.Stable;original_start_mode=$member.OriginalService.StartMode;
+            original_delayed_auto_start=$member.OriginalStartup.DelayedAutoStart;
             initially_missing=$member.InitiallyMissing;create_attempted=$member.RepairCreateAttempted;created=$member.RepairCreated}
     }
     Write-SocBundleJsonAtomic (Join-Path $Transaction.Path 'repair-state.json') @{
@@ -105,6 +106,11 @@ function Resume-SocBundleRepair([string]$Source, [string]$Endpoint, [string]$CaP
             throw 'Interrupted collector identity differs.'
         }
         $entry=$entries[0]
+        if ($entry.PSObject.Properties['original_delayed_auto_start'] -and
+            ($entry.original_delayed_auto_start -isnot [bool] -or
+            ($entry.original_delayed_auto_start -and $entry.original_start_mode -ne 'Auto'))) {
+            throw 'Interrupted collector delayed-start record differs.'
+        }
         if ($entry.create_attempted -isnot [bool] -or $entry.created -isnot [bool] -or
             ($entry.created -and -not $entry.create_attempted) -or
             (-not $entry.initially_missing -and ($member.InitiallyMissing -or $entry.create_attempted)) -or

@@ -235,7 +235,7 @@ function Invoke-SocWindowsBundle([string]$Source, [string]$Endpoint, [string]$Ca
             foreach ($member in $members) {
                 if ((Get-Service -Name $member.Service).Status -ne 'Running') { throw 'A bundle collector stopped after startup.' }
                 Assert-SocBundleService $member
-                Set-Service -Name $member.Service -StartupType Automatic
+                Set-SocServiceStartup $member.Service
             }
             $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
             Assert-SocBundleTask $state.TaskXml

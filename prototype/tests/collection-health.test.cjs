@@ -99,3 +99,31 @@ test('stale, clock-invalid, absent and malformed samples remain visibly uncertai
     assert.doesNotMatch(textOf(ui.get('#health-rows')),/포기 0|정상입니다/);
   }
 });
+
+test('network and host metrics stay independent and preserve old reports', async () => {
+  const host={state:'recent',queue_events:10,queue_bytes:40,queue_pct:.1,
+    interval_seconds:30,output_total:20,output_acked:18,output_failed:2,sampled_at:item.generated_at};
+  const network={...host,queue_events:70,queue_bytes:800,queue_pct:.8,queue_state:'high',
+    output_total:90,output_acked:90,output_failed:null};
+  const ui=browser([ok({rows:[{...item,collector_metrics:host,network_collector_metrics:network}]})]);
+  await settle();const cells=ui.get('#health-rows').children[0].children;
+  assert.equal(cells.length,10);
+  assert.match(textOf(cells[5]),/Filebeat/);assert.match(textOf(cells[5]),/대기 10건/);
+  assert.match(textOf(cells[7]),/Packetbeat/);assert.match(textOf(cells[7]),/대기 70건/);
+  assert.doesNotMatch(textOf(cells[5]),/대기 70건/);
+  assert.match(textOf(cells[6]),/전송 실패 2/);
+  assert.match(textOf(cells[8]),/전송 실패 미보고/);
+  const old=browser([ok({rows:[{...item,collector_metrics:host}]})]);await settle();
+  assert.match(textOf(old.get('#health-rows').children[0].children[7]),/미측정/);
+});
+
+test('stale or malformed network report does not hide fresh host metrics', async () => {
+  for(const state of ['stale','clock_warning','invalid','unavailable']) {
+    const ui=browser([ok({rows:[{...item,collector_metrics:{state:'recent',queue_events:2},
+      network_collector_metrics:{state,sampled_at:item.generated_at}}]})]);await settle();
+    const cells=ui.get('#health-rows').children[0].children;
+    assert.match(textOf(cells[5]),/최근 표본/);
+    assert.doesNotMatch(textOf(cells[7]),/최근 표본/);
+    assert.doesNotMatch(textOf(cells[8]),/전송 실패 0/);
+  }
+});

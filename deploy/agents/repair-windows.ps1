@@ -1,5 +1,33 @@
 # Narrow, opt-in recovery of a stopped, recognized Filebeat installation.
 # No top-level host changes. Never restore an old queue over a newer queue.
+function Get-SocServiceStartup([string]$Name) {
+    if ($Name -notin @('cloud-soc-filebeat','cloud-soc-packetbeat')) { throw 'Unsupported collector service.' }
+    $service = Get-CimInstance Win32_Service -Filter ("Name='{0}'" -f $Name) -ErrorAction Stop
+    if (-not $service -or $service.StartMode -notin @('Auto','Manual','Disabled') -or
+        -not $service.PSObject.Properties['DelayedAutoStart'] -or $service.DelayedAutoStart -isnot [bool]) {
+        throw 'Collector startup configuration could not be verified.'
+    }
+    return @{StartMode=$service.StartMode;DelayedAutoStart=$service.DelayedAutoStart}
+}
+
+function Invoke-SocServiceConfig([string]$Name, [string]$Start) {
+    & (Join-Path $env:WINDIR 'System32\sc.exe') config $Name start= $Start | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Collector startup configuration failed.' }
+}
+
+function Set-SocServiceStartup([string]$Name, [string]$StartMode = 'Auto', [bool]$DelayedAutoStart = $true) {
+    if ($Name -notin @('cloud-soc-filebeat','cloud-soc-packetbeat') -or $StartMode -notin @('Auto','Manual','Disabled') -or
+        ($DelayedAutoStart -and $StartMode -ne 'Auto')) { throw 'Unsupported collector startup configuration.' }
+    $null = Get-SocServiceStartup $Name
+    $start = if ($DelayedAutoStart) { 'delayed-auto' } else { @{Auto='auto';Manual='demand';Disabled='disabled'}[$StartMode] }
+    # Only the named collector's startup mode changes; no global SCM timeout or recovery actions.
+    Invoke-SocServiceConfig $Name $start
+    $actual = Get-SocServiceStartup $Name
+    if ($actual.StartMode -cne $StartMode -or $actual.DelayedAutoStart -ne $DelayedAutoStart) {
+        throw 'Collector startup configuration was not applied.'
+    }
+}
+
 function Get-SocRepairTree([string]$Root) {
     Assert-SocLocalPath $Root
     $pending = New-Object 'Collections.Generic.Stack[string]'
@@ -98,7 +126,7 @@ function Backup-SocRepair([string]$Root, $Service) {
             (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash -cne $before) { throw 'Backup verification failed; original installation unchanged.' }
         $manifest += @{ path = $relative; sha256 = $before }
     }
-    @{ files = $manifest; service_start_mode = $Service.StartMode; status = 'verified'; queues_restore_automatically = $false } |
+    @{ files = $manifest; service_start_mode = $Service.StartMode; service_delayed_auto_start = $Service.DelayedAutoStart; status = 'verified'; queues_restore_automatically = $false } |
         ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $backup 'manifest.json') -Encoding UTF8
     return $backup
 }
@@ -187,6 +215,7 @@ function Invoke-SocFilebeatRepairCore {
     $service = Get-CimInstance Win32_Service -Filter "Name='cloud-soc-filebeat'" -ErrorAction Stop
     if (-not $service) { throw 'Recovery needs a recognized existing Filebeat service; no files were removed.' }
     $originalStartMode = $service.StartMode
+    $originalStartup = Get-SocServiceStartup 'cloud-soc-filebeat'
     Assert-SocLocalPath $Root
     Assert-SocRepairAcl $Root
     $pendingPath = Join-Path $Root 'recovery-pending.json'
@@ -222,7 +251,7 @@ function Invoke-SocFilebeatRepairCore {
     Write-Host "[2/4] Protected verified backup: $backup"
     $journal = [IO.File]::Open($pendingPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
     try {
-        $record = @{ backup = $backup; start_mode = $originalStartMode; stage = 'prepared'; auto_restore_queue = $false } | ConvertTo-Json
+        $record = @{ backup = $backup; start_mode = $originalStartMode; delayed_auto_start = $originalStartup.DelayedAutoStart; stage = 'prepared'; auto_restore_queue = $false } | ConvertTo-Json
         $bytes = [Text.Encoding]::UTF8.GetBytes($record)
         $journal.Write($bytes, 0, $bytes.Length)
         $journal.Flush($true)
@@ -231,6 +260,9 @@ function Invoke-SocFilebeatRepairCore {
     try {
         $current = Get-CimInstance Win32_Service -Filter "Name='cloud-soc-filebeat'" -ErrorAction Stop
         Assert-SocRepairIdentity $current $config $command $Endpoint $Organization $Root
+        if ($current.StartMode -cne $originalStartup.StartMode -or $current.DelayedAutoStart -ne $originalStartup.DelayedAutoStart) {
+            throw 'Collector startup configuration changed during backup; no recovery changes made.'
+        }
         if (@(Get-Process -ErrorAction Stop | Where-Object { $_.ProcessName -eq 'filebeat' }).Count) { throw 'Filebeat process appeared during backup; no recovery changes made.' }
         $nowTask = Get-SocRepairDiscovery $Root
         if ($existingTask) {
@@ -270,7 +302,7 @@ function Invoke-SocFilebeatRepairCore {
         (Get-Service 'cloud-soc-filebeat').WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
         Start-Sleep -Seconds 3
         if ((Get-Service 'cloud-soc-filebeat').Status -ne 'Running') { throw 'Recovered service did not remain running.' }
-        Set-Service -Name 'cloud-soc-filebeat' -StartupType Automatic -ErrorAction Stop
+        Set-SocServiceStartup 'cloud-soc-filebeat'
         Remove-Item -LiteralPath $pendingPath -ErrorAction Stop
         Write-Host '[4/4] Filebeat service and SYSTEM Discovery recovered. Server ingestion is NOT yet verified. Network collector is a separate step.'
     } catch {
@@ -279,8 +311,7 @@ function Invoke-SocFilebeatRepairCore {
             if ($serviceTouched) {
                 Stop-Service -Name 'cloud-soc-filebeat' -ErrorAction Stop
                 (Get-Service 'cloud-soc-filebeat').WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
-                $mode = @{ Disabled = 'Disabled'; Manual = 'Manual'; Auto = 'Automatic' }[$originalStartMode]
-                Set-Service -Name 'cloud-soc-filebeat' -StartupType $mode -ErrorAction Stop
+                Set-SocServiceStartup -Name 'cloud-soc-filebeat' @originalStartup
             }
             if ($taskCreated) {
                 Stop-ScheduledTask -TaskName 'Cloud-SOC-Discovery' -TaskPath '\' -ErrorAction Stop
