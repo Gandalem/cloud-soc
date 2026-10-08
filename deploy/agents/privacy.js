@@ -1,5 +1,5 @@
 // Beats ECMAScript 5.1. Run before publishing/queueing; never log field values.
-var secretText = /-----BEGIN [^-]*(PRIVATE KEY|CERTIFICATE)-----|(password|passwd|pwd|secret|token|api[_-]?key|authorization|cookie)\s*["']?\s*[:=]|\b(Bearer|Basic)\s+\S+|https?:\/\/[^\s/]+@|https?:\/\/[^\s]*[?#]|\b(AKIA|ASIA)[A-Z0-9]{16}\b|\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/i;
+var secretText = /-----BEGIN [^-]*(PRIVATE KEY|CERTIFICATE)-----|(password|passwd|pwd|secret|token|api[_-]?key|authorization|cookie)\s*["']?\s*[:=]|(--?|\/)(password|passwd|pwd|secret|token|api[_-]?key)\b(\s+|=|:)|\b(Bearer|Basic)\s+\S+|\b[a-z][a-z0-9+.-]*:\/\/[^\s/]+@|\b[a-z][a-z0-9+.-]*:\/\/[^\s]*[?#]|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2060-\u206f]|\b(AKIA|ASIA)[A-Z0-9]{16}\b|\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/i;
 var secretKey = /password|passwd|pwd|secret|token|authorization|cookie|private[_-]?key|command[_-]?line|task[_-]?content|script[_-]?(block[_-]?text|contents?)|(^|[._-])(api[_-]?key|args|original|xml|body|content)($|[._-])/i;
 
 function process(event) {
@@ -48,7 +48,7 @@ function process(event) {
         // Mutate only sensitive leaves. Replacing parent maps coerces native Beat
         // timestamps/IP types and can make disk-queue serialization fail.
         walk(source, '', 0);
-        event.Put('labels.privacy_policy', 'v2');
+        event.Put('labels.privacy_policy', 'v3');
     } catch (_) {
         event.Cancel();
     }

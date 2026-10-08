@@ -9,11 +9,11 @@ from pathlib import Path
 import secrets
 import sqlite3
 import ssl
+import threading
 from urllib.parse import urlsplit
 
 from elasticsearch import Elasticsearch
 from flask import Flask, abort, g, jsonify, redirect, request, send_file, send_from_directory
-from werkzeug.security import check_password_hash
 
 from cloud_soc.portal.packages import PackageStore, validate_endpoint
 from cloud_soc.portal.agent_status import decode_cursor, snapshot
@@ -25,6 +25,8 @@ from cloud_soc.portal.auth import COOKIE, PUBLIC, Sessions, load_users, permitte
 from cloud_soc.privacy import redact_metadata
 from cloud_soc.logging_config import configure_logging
 from cloud_soc.portal.enrollment import Enrollments, EnrollmentError
+from cloud_soc.portal.log_access import LogAccessPolicy, LogPrincipal, read_policy
+from cloud_soc.portal.source_access import ProtectedSourceReader, SourceAudit
 
 PROJECT = Path(__file__).resolve().parents[3]
 
@@ -60,6 +62,7 @@ def settings_from_environment():
         "ES_PASSWORD": secret("SOC_ISSUER_PASSWORD_FILE"),
         "CA_FILE": str(ca_path),
         "MONITOR_PASSWORD": secret("SOC_MONITOR_PASSWORD_FILE") if os.environ.get("SOC_MONITOR_PASSWORD_FILE") else None,
+        "LOG_ACCESS_POLICY": read_policy(os.environ["SOC_LOG_ACCESS_POLICY_FILE"]) if os.environ.get("SOC_LOG_ACCESS_POLICY_FILE") else None,
     }
 
 
@@ -84,8 +87,26 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     app.extensions["monitor"] = monitor
     enrollments = Enrollments(store, issuer, monitor)
     app.extensions["enrollments"] = enrollments
-    log_reader = LogReader(monitor, secret=settings["ADMIN_HASH"],
-                           principal=settings["PUBLIC_URL"] + "/" + settings["ADMIN_USER"])
+    access_policy = LogAccessPolicy(settings["ADMIN_USER"], settings["ADMIN_HASH"], settings.get("LOG_ACCESS_POLICY"))
+    if users:
+        for username, policy_user in access_policy.users.items():
+            if username in users:
+                expected_role = "analyst" if policy_user[1] == "investigator" else "viewer"
+                if users[username]["role"] != expected_role:
+                    raise ValueError("Session and log access roles must agree")
+    audit = SourceAudit(Path(settings["STATE_DIR"]) / "log-access.sqlite")
+    app.extensions["log_access"] = access_policy
+    app.extensions["source_audit"] = audit
+    log_readers = {}
+    log_reader_lock = threading.Lock()
+    def reader_for(principal):
+        # Fixed startup principals, at most 20 read-only identities + admin.
+        with log_reader_lock:
+            if principal.username not in log_readers:
+                log_readers[principal.username] = LogReader(monitor, secret=settings["ADMIN_HASH"],
+                    principal=settings["PUBLIC_URL"] + "/" + principal.cursor_principal,
+                    organizations=principal.organizations)
+            return log_readers[principal.username]
     operations = Operations(monitor)
     cases = CaseStore(Path(settings["STATE_DIR"]) / "cases.sqlite", settings["ADMIN_USER"],
                       principals=set(users) if users else None,
@@ -160,9 +181,8 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             return
         if sessions is None and request.endpoint not in PUBLIC:
             credentials = request.authorization
-            if (credentials is None or credentials.type.lower() != "basic"
-                    or not secrets.compare_digest((credentials.username or "").encode("utf-8"), settings["ADMIN_USER"].encode("utf-8"))
-                    or not check_password_hash(settings["ADMIN_HASH"], credentials.password or "")):
+            principal = access_policy.authenticate(credentials.username, credentials.password or "") if credentials is not None and credentials.type.lower() == "basic" else None
+            if principal is None:
                 response = jsonify(error="관리자 로그인이 필요합니다.")
                 response.status_code = 401
                 response.headers["WWW-Authenticate"] = 'Basic realm="Cloud SOC Admin", charset="UTF-8"'
@@ -184,13 +204,33 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                     return redirect("/login")
                 return jsonify(code="login_required", error="로그인이 필요합니다."), 401
             g.principal, g.role, g.csrf = identity["user"], identity["role"], identity["csrf"]
+            policy_user = access_policy.users.get(g.principal)
+            if policy_user:
+                policy_role, organizations = policy_user[1], policy_user[2]
+                source_organizations = organizations if access_policy.enabled and policy_role == "investigator" else ()
+                principal = LogPrincipal(g.principal, policy_role, organizations, source_organizations)
+            elif g.role == "admin":
+                principal = LogPrincipal(g.principal, "admin", None,
+                    access_policy.admin_source_organizations if access_policy.enabled else ())
+            else:
+                principal = LogPrincipal(g.principal, "viewer", (), ())
             if not permitted(request.endpoint, request.method, g.role, (request.view_args or {}).get("filename")):
                 abort(403)
             if request.method not in ("GET", "HEAD", "OPTIONS"):
                 if not secrets.compare_digest(request.headers.get("X-CSRF-Token", ""), g.csrf):
                     abort(403)
         else:
-            g.principal, g.role, g.csrf = settings["ADMIN_USER"], "admin", None
+            g.principal, g.role, g.csrf = principal.username, principal.role, None
+        g.log_principal = principal
+        if principal.role != "admin":
+            log_routes = {"logs", "log_detail", "log_access", "log_source", "auth_me", "logout", "auth_asset"}
+            log_assets = {"logs.html", "logs.js", "logs.css", "source-view.js", "auth-client.js", "styles.css", "agents.css", "shell.js", "shell.css", "assets/mark.svg"}
+            if sessions is None or settings.get("LOG_ACCESS_POLICY") is not None:
+                if request.endpoint not in log_routes and not (request.endpoint == "static_file" and (request.view_args or {}).get("filename") in log_assets):
+                    abort(403)
+            elif request.endpoint in {"logs", "log_detail", "log_source", "operations_summary", "alert_detail",
+                    "agent_status", "collection_health", "detection_history", "reprocessing_history", "healthz"}:
+                abort(403)
 
     @app.after_request
     def headers(response):
@@ -319,11 +359,38 @@ def create_app(settings=None, *, issuer=None, monitor=None):
 
     @app.get("/api/logs")
     def logs():
-        return log_response(log_reader.page)
+        return log_response(reader_for(g.log_principal).page)
 
     @app.get("/api/logs/detail")
     def log_detail():
-        return log_response(log_reader.detail)
+        return log_response(reader_for(g.log_principal).detail)
+
+    @app.get("/api/logs/access")
+    def log_access():
+        if request.args:
+            abort(400)
+        return jsonify(access_policy.capabilities(g.log_principal))
+
+    @app.post("/api/logs/source")
+    def log_source():
+        if request.args:
+            abort(400)
+        try:
+            def unique_pairs(pairs):
+                data = {}
+                for key, value in pairs:
+                    if key in data:
+                        raise ValueError()
+                    data[key] = value
+                return data
+            try:
+                data = json.loads(request.get_data(), object_pairs_hook=unique_pairs)
+            except (ValueError, UnicodeError):
+                data = None
+            content = ProtectedSourceReader(reader_for(g.log_principal), audit).read(g.log_principal, data)
+            return app.response_class(content, mimetype="application/json")
+        except LogQueryError as error:
+            return jsonify(code=error.code, error=str(error)), error.status
 
     @app.get("/api/reprocessing/history")
     def reprocessing_history():
@@ -519,7 +586,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                    "detection-history.html", "detection-history.js",
                    "agent-status.html", "agent-status.js", "agent-status.css",
                    "collection-health.html", "collection-health.js",
-                   "index.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css"}
+                   "index.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css", "source-view.js"}
         if filename not in allowed:
             abort(404)
         return send_from_directory(PROJECT / "prototype", filename)

@@ -1,0 +1,12 @@
+# Optional explicit log identities/source access. No default raw access grant.
+services:
+  portal:
+    environment:
+      SOC_LOG_ACCESS_POLICY_FILE: /run/log-access/policy.json
+    volumes:
+      - type: bind
+        source: ${SOC_LOG_ACCESS_POLICY_FILE_HOST:?Provide a protected policy file}
+        target: /run/log-access/policy.json
+        read_only: true
+        bind:
+          create_host_path: false

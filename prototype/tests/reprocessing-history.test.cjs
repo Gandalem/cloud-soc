@@ -88,3 +88,17 @@ test('typing sudo, unmatched text, whitespace and clearing searches render corre
   nodes.search.value = ''; nodes.search.listeners.search();
   assert.equal(nodes.rows.children.length, 2);
 });
+
+test('search blur preserves the clicked detail button and current page', async () => {
+  const rows = Array.from({length: 53}, (_, number) => ({id: String(number), host: 'fixture', action: 'sudo',
+    parse_status: 'partial', raw: {index: 'raw', id: String(number)}}));
+  const nodes = await boot({ok: true, json: async () => ({total: 53, recognized: 0, partial: 53, rows})});
+  nodes.search.value = 'fixture'; nodes.search.listeners.input();
+  nodes.next.listeners.click();
+  const button = nodes.rows.children[0].children[6].children[0];
+  nodes.search.listeners.change();
+  assert.equal(nodes.rows.children.length, 3);
+  assert.equal(nodes.rows.children[0].children[6].children[0], button);
+  button.listeners.click();
+  assert.equal(nodes['detail-panel'].open, true);
+});

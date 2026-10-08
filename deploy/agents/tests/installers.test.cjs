@@ -158,6 +158,10 @@ test('Linux discovers nested logs and rotations, rejects binaries, and reports e
   writeFileSync(path.join(dir, 'key.pem'), 'excluded secret\n');
   writeFileSync(path.join(dir, 'server.CRT'), 'excluded certificate\n');
   writeFileSync(path.join(dir, '.env'), 'excluded credentials\n');
+  // Provisioning sources remain excluded even if they look like readable logs.
+  for (const name of ['autoinstall-user-data', 'user-data', 'user-data.txt', 'cloud-init.log', 'cloud-init-output.log.1']) {
+    writeFileSync(path.join(dir, name), 'synthetic provisioning body\n');
+  }
   writeFileSync(path.join(dir, 'opaque'), Buffer.from([0, 1, 0, 255]));
   writeFileSync(path.join(dir, 'empty'), '');
   writeFileSync(path.join(dir, '$bad.log'), 'unsupported variable-like path\n');
@@ -174,6 +178,9 @@ test('Linux discovers nested logs and rotations, rejects binaries, and reports e
   assert.ok(report.entries.some(e => e.status === 'unsupported_encoding_or_binary'));
   assert.ok(report.entries.some(e => e.status === 'empty_pending'));
   assert.equal(report.selected_files, 3);
+  for (const name of ['autoinstall-user-data', 'user-data', 'user-data.txt', 'cloud-init.log', 'cloud-init-output.log.1']) {
+    assert.ok(report.entries.some(e => e.path.endsWith('/' + name) && e.status === 'binary_archive_or_secret'), name);
+  }
   assert.equal(report.entries.filter(e => e.status === 'unsafe_path').length, 2);
   writeFileSync(path.join(dir, 'new.log'), 'appeared after initial discovery\n');
   const refreshed = run(bash, ['-c', script], { TEST_ROOT: dir });

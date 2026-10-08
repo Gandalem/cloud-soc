@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const state = {rows: [], page: 0};
+  const state = {rows: [], page: 0, query: "", status: ""};
   const $ = id => document.getElementById(id);
   const names = {recognized: "지원 형식 일치", partial: "부분 정규화"};
   function date(value) {
@@ -24,6 +24,7 @@
   }
   function render() {
     const query = $("search").value.trim().toLocaleLowerCase();
+    state.query = query; state.status = $("status").value;
     const rows = state.rows.filter(row => (!$("status").value || row.parse_status === $("status").value)
       && `${row.host || ""} ${row.action || ""}`.toLocaleLowerCase().includes(query));
     const pages = Math.max(1, Math.ceil(rows.length / 50));
@@ -59,7 +60,10 @@
   }
   $("detail-close").addEventListener("click", () => $("detail-panel").close());
   $("refresh").addEventListener("click", load);
-  function filter() {state.page = 0; render();}
+  function filter() {
+    if (state.query === $("search").value.trim().toLocaleLowerCase() && state.status === $("status").value) return;
+    state.page = 0; render();
+  }
   $("status").addEventListener("change", filter);
   $("status").addEventListener("input", filter);
   for (const event of ["input", "search", "change", "compositionend"]) $("search").addEventListener(event, filter);

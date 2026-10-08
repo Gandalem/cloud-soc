@@ -145,6 +145,18 @@ exit 0
         if (-not $failed -and (($Calls -contains 'enrollment-abort') -or -not ($Calls -contains 'journal-committed_receipt_verified'))) { throw 'Verified installation mishandled.' }
         if ($failure -eq 'enrollment-receipt' -and ((-not ($Calls -contains 'cloud-soc-filebeat-Disabled')) -or $Calls -contains 'remove-owned')) { throw 'Unverified started collectors were not safely retained/stopped.' }
     }
+    foreach ($failure in @('', 'enrollment-receipt')) {
+        if (Test-Path -LiteralPath $pending) { Remove-Item -LiteralPath $pending }
+        $global:Calls.Clear(); $global:Services=@{}; $global:Task=$false; $global:Failure=$failure
+        $start = { Step 'enrollment-start'; return @{host=(ConvertTo-SecureString 'synthetic:host' -AsPlainText -Force);Probe=('a' * 64)} }
+        $failed=$false
+        try {
+            Invoke-SocWindowsBundle -Source $testRoot -Endpoint 'https://soc.example.invalid' -CaPath 'C:\synthetic\ca.crt' -Organization 'synthetic' `
+                -EnrollmentStart $start -EnrollmentReceipt $receipt -EnrollmentAbort $abort -HostOnly
+        } catch { $failed=$true; if (-not $failure) { throw } }
+        if ($failed -ne [bool]$failure -or ($Calls -join ',') -match 'network-|packetbeat|nic') { throw 'Log-only entered a network path or lost failure handling.' }
+        if ($failed -and ($Calls -contains 'remove-owned' -or -not ($Calls -contains 'cloud-soc-filebeat-Disabled'))) { throw 'Log-only failed receipt did not retain stopped state.' }
+    }
     Write-Host 'Bundle mocked phase ordering, failures, preservation and retry guards: passed.'
 } finally {
     $env:ProgramData = $oldProgramData

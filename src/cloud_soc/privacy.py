@@ -6,8 +6,10 @@ REDACTED = "[REDACTED]"
 SENSITIVE = re.compile(
     r"-----BEGIN [^-]*(?:PRIVATE KEY|CERTIFICATE)-----|"
     r"(?:password|passwd|pwd|secret|token|api[_-]?key|authorization|cookie|private[_-]?key|access[_-]?key|secret[_-]?access[_-]?key|session[_-]?token|client[_-]?secret|refresh[_-]?token|x-api-key|set-cookie)\s*[\"']?\s*[:=]|"
-    r"\b(?:Bearer|Basic)\s+\S+|https?://[^\s/]+@|"
-    r"https?://[^\s]*[?#]|\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|"
+    r"(?:--?|/)(?:password|passwd|pwd|secret|token|api[_-]?key)\b(?:\s+|=|:)|"
+    r"\b(?:Bearer|Basic)\s+\S+|\b[a-z][a-z0-9+.-]*://[^\s/]+@|"
+    r"\b[a-z][a-z0-9+.-]*://[^\s]*[?#]|\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|"
+    r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2060-\u206f]|"
     r"\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+",
     re.IGNORECASE,
 )

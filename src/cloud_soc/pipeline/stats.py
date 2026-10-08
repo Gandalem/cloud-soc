@@ -18,5 +18,3 @@ class PipelineStats:
     @property
     def has_errors(self) -> bool:
         return bool(self.raw.invalid or self.normalized_invalid)
-
-

@@ -68,5 +68,3 @@ def main() -> int:
                 pipeline.LOGGER.error("Elasticsearch client cleanup failed")
                 exit_code = 1
     return exit_code
-
-

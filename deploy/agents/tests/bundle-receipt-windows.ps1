@@ -5,7 +5,6 @@ if ($PSVersionTable.PSEdition -eq 'Desktop') {
     Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -Force
 }
 . (Join-Path $PSScriptRoot '../transaction-windows.ps1')
-. (Join-Path $PSScriptRoot '../repair-windows.ps1')
 . (Join-Path $PSScriptRoot '../bundle-windows.ps1')
 function Assert-SocRepairAcl { param($Path) }
 function New-SocProtectedDirectory { param($Path,[switch]$Reuse) }

@@ -249,7 +249,7 @@ try {
         Save-SocBundleJournal $tx 'retained_recovery_required' $true
     }
     Reset-Fixture; $services['cloud-soc-packetbeat'].State='Running'
-    Assert-Throws { Invoke-SocBundleRepairCore @params } 'both recognized services stopped'
+    Assert-Throws { Invoke-SocBundleRepairCore @params } 'recognized service stopped'
     if ($calls -contains 'tls') { throw 'Credentials could be sent before pair identity passed' }
     Reset-Fixture; $members=Get-SocBundleMembers
     $network=Join-Path $members[1].Root 'packetbeat.yml'

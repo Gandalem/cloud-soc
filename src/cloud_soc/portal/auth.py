@@ -16,7 +16,7 @@ COOKIE = "soc_session"
 PUBLIC = {"login_page", "auth_asset", "login"}
 READ_ENDPOINTS = {
     "index", "static_file", "auth_me", "logout", "case_list", "case_link", "case_detail",
-    "agent_status", "collection_health", "logs", "log_detail", "operations_summary", "alert_detail",
+    "agent_status", "collection_health", "logs", "log_detail", "log_access", "operations_summary", "alert_detail",
     "detection_history", "reprocessing_history", "healthz",
 }
 CASE_WRITES = {"case_create", "case_update"}
@@ -48,6 +48,8 @@ def permitted(endpoint, method, role, filename=None):
     if endpoint in READ_ENDPOINTS and method in {"GET", "HEAD", "OPTIONS"}:
         return True
     if endpoint == "logout":
+        return True
+    if endpoint == "log_source" and method == "POST":
         return True
     return role == "analyst" and endpoint in CASE_WRITES
 

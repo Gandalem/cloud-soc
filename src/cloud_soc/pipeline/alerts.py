@@ -61,5 +61,3 @@ def build_security_alert(detection: dict[str, Any]) -> dict[str, Any]:
     if source_ip := detection["group"].get("source.ip"):
         document["source"] = {"ip": source_ip}
     return document
-
-

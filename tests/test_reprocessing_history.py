@@ -60,3 +60,33 @@ def test_all_portal_roles_read_but_cannot_write_history():
     for role in ("viewer", "analyst"):
         assert permitted("reprocessing_history", "GET", role)
         assert not permitted("reprocessing_history", "POST", role)
+
+
+def test_server_filter_and_paging_preserve_every_matching_row():
+    client = fake()
+    template = client.search.return_value["hits"]["hits"][0]
+    rows = []
+    for number in range(57):
+        row = deepcopy(template)
+        row["_id"] = f"{number:064d}"
+        row["_source"]["cloud_soc"]["parse_status"] = "partial" if number < 53 else "recognized"
+        rows.append(row)
+    client.search.return_value["hits"] = {"total": {"value": len(rows), "relation": "eq"}, "hits": rows}
+    seen = []
+    for page in (1, 2):
+        result = json.loads(history(client, [("q", " test-host "), ("status", "partial"), ("page", str(page))]))
+        assert result["filtered_total"] == 53
+        assert result["pages"] == 2
+        seen.extend(row["id"] for row in result["rows"])
+    assert len(seen) == len(set(seen)) == 53
+    assert json.loads(history(client, [("q", "no-match")]))["rows"] == []
+
+
+@pytest.mark.parametrize("pairs", [[("page", "0")], [("limit", "101")], [("status", "invalid")],
+                                   [("q", "password=PRIVATE_CANARY")], [("page", "1"), ("page", "2")]])
+def test_invalid_filters_fail_before_search(pairs):
+    client = fake()
+    with pytest.raises(LogQueryError) as error:
+        history(client, pairs)
+    assert error.value.status == 400
+    client.search.assert_not_called()

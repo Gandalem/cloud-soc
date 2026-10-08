@@ -7,6 +7,10 @@ UNIT=/etc/systemd/system/cloud-soc-packetbeat.service
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 ENDPOINT= CA= ORGANIZATION= DEVICE=
 DRY_RUN=false
+KEY_STDIN=false
+PREPARE_ONLY=false
+INSTALLATION_PROBE=
+ENROLLMENT_OWNER=
 SERVICE_CREATED=false
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -14,16 +18,20 @@ fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 parse_args() {
     while (($#)); do
         case "$1" in
-            --endpoint|--ca|--organization|--interface)
+            --endpoint|--ca|--organization|--interface|--installation-probe|--enrollment-owner)
                 (($# >= 2)) && [[ -n $2 && $2 != --* ]] || fail "Missing value for $1"
                 case "$1" in
                     --endpoint) ENDPOINT=$2 ;;
                     --ca) CA=$2 ;;
                     --organization) ORGANIZATION=$2 ;;
                     --interface) DEVICE=$2 ;;
+                    --installation-probe) INSTALLATION_PROBE=$2 ;;
+                    --enrollment-owner) ENROLLMENT_OWNER=$2 ;;
                 esac
                 shift 2 ;;
             --dry-run) DRY_RUN=true; shift ;;
+            --enrollment-key-stdin) KEY_STDIN=true; shift ;;
+            --prepare-only) PREPARE_ONLY=true; shift ;;
             --help)
                 printf '%s\n' 'Usage: sudo bash install-network-ubuntu.sh --endpoint https://HOST:9200 --ca /path/ca.crt --organization ID --interface eth0 [--dry-run]' 'Use --interface any explicitly for all local interfaces. No PCAP storage.'
                 exit 0 ;;
@@ -38,6 +46,8 @@ validate_args() {
     ((10#$port >= 1 && 10#$port <= 65535)) || fail 'Invalid endpoint port.'
     ENDPOINT=${ENDPOINT%/}
     [[ $ORGANIZATION =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$ ]] || fail 'Invalid organization identifier.'
+    [[ -z $INSTALLATION_PROBE || $INSTALLATION_PROBE =~ ^[a-f0-9]{64}$ ]] || fail 'Invalid installation probe.'
+    if $PREPARE_ONLY; then $KEY_STDIN && [[ -n $INSTALLATION_PROBE && $ENROLLMENT_OWNER =~ ^[a-f0-9]{32}$ ]] || fail 'Enrollment preparation requires stdin, an owner and a public probe.'; fi
     [[ $CA =~ ^/[-a-zA-Z0-9_./]+$ ]] || fail 'CA must be an absolute path without spaces or special characters.'
     [[ $DEVICE =~ ^[a-zA-Z][a-zA-Z0-9_.-]{0,14}$ ]] || fail 'Supply an explicit Linux interface name (1-15 characters) or any.'
     [[ -f $SCRIPT_DIR/packetbeat.base.json ]] || fail 'Keep packetbeat.base.json beside the installer.'
@@ -48,7 +58,9 @@ render_config() {
     sed -e "s|__DEVICE__|$DEVICE|g" -e "s|__ORGANIZATION__|$ORGANIZATION|g" \
         -e "s|__PLATFORM__|linux|g" -e "s|__ENDPOINT__|$ENDPOINT|g" \
         -e "s|__CA_PATH__|$ROOT/ca.crt|g" -e 's|"type": "pcap"|"type": "af_packet"|' \
-        "$SCRIPT_DIR/packetbeat.base.json"
+        "$SCRIPT_DIR/packetbeat.base.json" | {
+            if [[ -n $INSTALLATION_PROBE ]]; then sed "s/\"sensor_platform\": \"linux\"/\"sensor_platform\": \"linux\", \"installation_probe\": \"$INSTALLATION_PROBE\"/"; else cat; fi
+        }
 }
 
 check_existing() {
@@ -92,7 +104,7 @@ install_agent() {
     for tool in curl tar sha512sum systemctl pgrep timeout sed; do
         command -v "$tool" >/dev/null || fail "Missing prerequisite: $tool"
     done
-    [[ -t 0 ]] || fail 'An interactive terminal is required for the API key prompt.'
+    $KEY_STDIN || [[ -t 0 ]] || fail 'An interactive terminal is required for the API key prompt.'
     check_existing
     [[ -f $CA && -r $CA ]] || fail 'CA is not a readable file.'
     [[ $DEVICE == any || -d /sys/class/net/$DEVICE ]] || fail "Interface not found: $DEVICE"
@@ -104,6 +116,7 @@ install_agent() {
     package="packetbeat-$BEAT_VERSION-linux-$arch"
     umask 077
     mkdir -m 700 "$ROOT"
+    if $PREPARE_ONLY; then printf '%s' "$ENROLLMENT_OWNER" > "$ROOT/enrollment-owner.txt"; fi
     trap finish EXIT
     mkdir "$ROOT/data" "$ROOT/logs" "$ROOT/staging"
     cp -- "$SCRIPT_DIR/privacy.js" "$ROOT/privacy.js"
@@ -121,7 +134,7 @@ install_agent() {
     printf '{}\n' > "$ROOT/packetbeat.yml"
     beat keystore create
     printf '%s\n' 'Enter the network-only publisher API key as id:api_key (not encoded).'
-    beat keystore add CLOUD_SOC_NETWORK_API_KEY
+    if $KEY_STDIN; then beat keystore add CLOUD_SOC_NETWORK_API_KEY --stdin; else beat keystore add CLOUD_SOC_NETWORK_API_KEY; fi
     render_config > "$ROOT/packetbeat.yml"
     beat test config
     timeout 90 "$ROOT/packetbeat/packetbeat" --path.home "$ROOT/packetbeat" --path.config "$ROOT" \
@@ -138,6 +151,7 @@ install_agent() {
     SERVICE_CREATED=true
     chmod 644 "$UNIT"
     systemctl daemon-reload
+    if $PREPARE_ONLY; then printf '%s\n' 'Enrollment network prepared; service not started.'; return; fi
     systemctl enable --now cloud-soc-packetbeat.service
     sleep 3
     systemctl is-active --quiet cloud-soc-packetbeat.service || fail 'Packetbeat did not remain active; inspect its logs.'
