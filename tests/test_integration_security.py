@@ -11,8 +11,7 @@ from test_log_query import FIXTURE, client
 from test_source_access import HASH, POLICY
 
 
-@pytest.fixture
-def session_portal(tmp_path):
+def make_session_portal(tmp_path):
     users = {"admin": {"role": "admin", "password_hash": HASH}}
     users.update({row["username"]: {"role": "analyst" if row["role"] == "investigator" else "viewer",
                                   "password_hash": HASH} for row in POLICY["users"]})
@@ -26,6 +25,11 @@ def session_portal(tmp_path):
     monitor = client()
     app = create_app(settings, issuer=Mock(), monitor=monitor)
     return app, monitor, settings, users
+
+
+@pytest.fixture
+def session_portal(tmp_path):
+    return make_session_portal(tmp_path)
 
 
 def login(app, username):
@@ -42,7 +46,9 @@ def test_session_preserves_organization_scope_and_blocks_global_history(session_
     http, headers = login(app, "investigate")
     assert http.get("/api/logs").status_code == 200
     assert {"terms": {"organization.id": ["synthetic"]}} in monitor.search.call_args.kwargs["body"]["query"]["bool"]["filter"]
-    for path in ("/api/detection/history", "/api/reprocessing/history", "/api/operations", "/api/cases", "/api/keys"):
+    assert http.get("/api/cases").json["counts"]["total"] == 0
+    assert http.get("/api/operations").status_code == 200
+    for path in ("/api/detection/history", "/api/reprocessing/history", "/api/keys"):
         assert http.get(path, headers={"X-Role": "admin", "X-Organization": "foreign"}).status_code == 403
     foreign = deepcopy(FIXTURE)
     foreign["_source"]["organization"]["id"] = "foreign"

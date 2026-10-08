@@ -101,6 +101,7 @@
       current=data.case;$("case-title").textContent=current.title;
       $("case-summary").textContent="조직 "+current.organization+" · "+states[current.status]+" · "+verdicts[current.verdict]+" · 수정 버전 "+current.version;
       const owner=$("work-owner");owner.replaceChildren();const none=node("option","미배정");none.value="";const me=node("option",data.actor);me.value=data.actor;owner.append(none,me);
+      if(current.owner&&current.owner!==data.actor){const assigned=node("option",current.owner+" (현재 담당자)");assigned.value=current.owner;owner.append(assigned);}
       for(const key of ["status","owner","priority","verdict"])$("work-"+key).value=current[key]||"";
       $("case-work-panel").hidden=false;$("case-create-panel").hidden=true;$("case-history-panel").hidden=false;
       history(data.history);historyNext=data.history_next;$("case-history-more").disabled=!historyNext;
@@ -118,7 +119,13 @@
     try{await mutate("/api/cases/"+caseId,"PATCH",{version:current.version,...body});if(Object.hasOwn(body,"note"))$("work-note").value="";$("case-link-id").value="";await loadCase();}
     catch(failure){error(failure.message);}finally{locked(false);}
   }
-  $("case-work-form").addEventListener("submit",event=>{event.preventDefault();save({status:$("work-status").value,owner:$("work-owner").value||null,priority:$("work-priority").value,verdict:$("work-verdict").value,note:$("work-note").value});});
+  $("case-work-form").addEventListener("submit",event=>{
+    event.preventDefault();if(!current)return;
+    const body={status:$("work-status").value,priority:$("work-priority").value,verdict:$("work-verdict").value,note:$("work-note").value};
+    const owner=$("work-owner").value||null;
+    if(owner!==(current.owner||null))body.owner=owner;
+    save(body);
+  });
   $("case-link-form").addEventListener("submit",event=>{event.preventDefault();save({alert_id:$("case-link-id").value});});
   $("case-reload").addEventListener("click",()=>{if(!saving)loadCase();});
   $("case-history-more").addEventListener("click",async()=>{

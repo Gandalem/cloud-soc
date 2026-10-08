@@ -19,6 +19,28 @@ def hit(message, app="sudo", kind="linux_journald"):
 
 
 class LinuxOperationalTests(unittest.TestCase):
+    def test_malformed_programs_and_levels_are_unsupported_not_exceptions(self):
+        for value in ([], ["systemd"], {}, {"name": "systemd"}, 1, False):
+            for key in ("log.syslog.appname", "process.name", "journald.syslog.identifier"):
+                with self.subTest(key=key, value=value):
+                    sample = hit("Started PRIVATE_CANARY.", app=None)
+                    target = sample["_source"]
+                    parts = key.split(".")
+                    for part in parts[:-1]:
+                        target = target.setdefault(part, {})
+                    target[parts[-1]] = value
+                    _, record, event = normalize(sample, NOW)
+                    self.assertEqual(record["status"], "unsupported")
+                    self.assertIsNone(event)
+                    self.assertNotIn("PRIVATE_CANARY", json.dumps(record))
+            sample = hit(json.dumps({"level": value, "msg": "PRIVATE_CANARY"}), "dockerd")
+            self.assertEqual(normalize(sample, NOW)[1]["status"], "unsupported")
+        for source in ([], None, {"labels": {"log_source": []}}, {"labels": {"log_source": {}}}):
+            self.assertIsNone(parse_linux_operational(source))
+        sample = hit("unknown", None, "linux_file")
+        sample["_source"]["log"] = {"file": {"path": []}}
+        self.assertIsNone(parse_linux_operational(sample["_source"]))
+
     def test_sudo_metadata_has_no_command_arguments_or_success_claim(self):
         sample = hit("fixture : TTY=pts/0 ; PWD=/PRIVATE_CANARY ; USER=root ; COMMAND=/bin/sh -c 'password=PRIVATE_CANARY'")
         original = copy.deepcopy(sample)

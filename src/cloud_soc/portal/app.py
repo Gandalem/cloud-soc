@@ -108,9 +108,17 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                     organizations=principal.organizations)
             return log_readers[principal.username]
     operations = Operations(monitor)
+    def operations_for(principal):
+        return operations if principal.organizations is None else Operations(monitor, organizations=principal.organizations)
+
+    case_organizations = None
+    if users:
+        case_organizations = {name: None if row["role"] == "admin" else access_policy.users.get(name, (None, None, ()))[2]
+                              for name, row in users.items()}
     cases = CaseStore(Path(settings["STATE_DIR"]) / "cases.sqlite", settings["ADMIN_USER"],
                       principals=set(users) if users else None,
-                      owners={name for name, row in users.items() if row["role"] != "viewer"} if users else None)
+                      owners={name for name, row in users.items() if row["role"] != "viewer"} if users else None,
+                      organizations=case_organizations)
     app.extensions["cases"] = cases
 
     @app.errorhandler(CaseError)
@@ -130,7 +138,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             return jsonify(code="case_storage_unavailable", error="사건 저장소에 접근하지 못했습니다. 같은 요청으로 재시도하거나 관리자에게 확인하세요."), 503
 
     def fetch_case_alert(identifier):
-        return json.loads(operations.detail([("id", identifier)]))["alert"]
+        return json.loads(operations_for(g.log_principal).detail([("id", identifier)]))["alert"]
 
     @app.get("/api/cases")
     def case_list():
@@ -225,11 +233,13 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         if principal.role != "admin":
             log_routes = {"logs", "log_detail", "log_access", "log_source", "auth_me", "logout", "auth_asset"}
             log_assets = {"logs.html", "logs.js", "logs.css", "source-view.js", "auth-client.js", "styles.css", "agents.css", "shell.js", "shell.css", "assets/mark.svg"}
-            if sessions is None or settings.get("LOG_ACCESS_POLICY") is not None:
-                if request.endpoint not in log_routes and not (request.endpoint == "static_file" and (request.view_args or {}).get("filename") in log_assets):
-                    abort(403)
-            elif request.endpoint in {"logs", "log_detail", "log_source", "operations_summary", "alert_detail",
-                    "agent_status", "collection_health", "detection_history", "reprocessing_history", "healthz"}:
+            if sessions:
+                # Session RBAC permits case writes only for analysts; all case data is tenant-scoped.
+                log_routes |= {"index", "case_list", "case_link", "case_detail", "case_create", "case_update"}
+                log_assets |= {"index.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "workbench.html", "investigation.js"}
+                if principal.organizations:
+                    log_routes |= {"operations_summary", "alert_detail"}
+            if request.endpoint not in log_routes and not (request.endpoint == "static_file" and (request.view_args or {}).get("filename") in log_assets):
                 abort(403)
 
     @app.after_request
@@ -407,11 +417,11 @@ def create_app(settings=None, *, issuer=None, monitor=None):
 
     @app.get("/api/operations")
     def operations_summary():
-        return log_response(operations.summary)
+        return log_response(operations_for(g.log_principal).summary)
 
     @app.get("/api/alerts/detail")
     def alert_detail():
-        return log_response(operations.detail)
+        return log_response(operations_for(g.log_principal).detail)
 
     @app.get('/api/detection/history')
     def detection_history():

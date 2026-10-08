@@ -8,7 +8,17 @@ function browser(script,responses,search='?case='+id,options={}){
   const elements=new Map(),calls=[],locations=[];
   function element(){return {value:'',textContent:'',children:[],listeners:{},hidden:false,disabled:false,
     append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this.children=nodes;},addEventListener(n,f){this.listeners[n]=f;},querySelectorAll(){return[];}};}
-  const get=name=>{if(!elements.has(name))elements.set(name,element());return elements.get(name);};
+  const get=name=>{
+    if(!elements.has(name)){
+      const node=element();
+      if(name==='work-owner'){
+        let selected='';
+        Object.defineProperty(node,'value',{get(){return selected;},set(value){selected=node.children.some(option=>option.value===value)?value:'';}});
+      }
+      elements.set(name,node);
+    }
+    return elements.get(name);
+  };
   const context={document:{body:{dataset:{caseListPage:options.page}},getElementById:get,createElement:element},window:{location:{search,hash:options.hash},history:{replaceState(_a,_b,url){locations.push(url);}},addEventListener(){}},URLSearchParams,Date,crypto:{randomUUID},FormData:class{*[Symbol.iterator](){yield['status',options.status??'open'];yield['sort','priority'];}},fetch:async(url,options)=>{calls.push({url,options});return responses.shift()();}};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../'+script),'utf8'),context);
   return {get,calls,locations};
@@ -20,6 +30,25 @@ test('conflict preserves memo and sends server version, not actor',async()=>{
   const ui=browser('investigation.js',[ok(detail),()=>({ok:false,status:409,json:async()=>({code:'case_version_conflict',error:'PRIVATE_CANARY'})})]);await settle();
   ui.get('work-note').value='Analyst draft';ui.get('case-work-form').listeners.submit({preventDefault(){}});await settle();
   const sent=JSON.parse(ui.calls[1].options.body);assert.equal(sent.version,1);assert.ok(!('actor'in sent));assert.equal(ui.get('work-note').value,'Analyst draft');assert.match(ui.get('investigation-error').textContent,/다른 수정/);assert.ok(!ui.get('investigation-error').textContent.includes('PRIVATE_CANARY'));
+});
+test('note-only save preserves a different or retired current owner',async()=>{
+  for(const assigned of ['analyst-a','retired-user']){
+    const owned={...row,owner:assigned};
+    const ui=browser('investigation.js',[ok({...detail,case:owned}),ok({...owned,version:2}),ok({...detail,case:{...owned,version:2}})]);await settle();
+    assert.ok(ui.get('work-owner').children.some(option=>option.value===assigned));
+    assert.equal(ui.get('work-owner').value,assigned);
+    ui.get('work-note').value='Note only';ui.get('case-work-form').listeners.submit({preventDefault(){}});await settle();
+    const sent=JSON.parse(ui.calls[1].options.body);assert.equal(sent.note,'Note only');assert.ok(!Object.hasOwn(sent,'owner'));
+    assert.equal(ui.get('work-owner').value,assigned);
+  }
+});
+test('explicit owner reassignment and unassignment are sent',async()=>{
+  for(const selected of ['admin','']){
+    const owned={...row,owner:'analyst-a'},updated={...owned,owner:selected||null,version:2};
+    const ui=browser('investigation.js',[ok({...detail,case:owned}),ok(updated),ok({...detail,case:updated})]);await settle();
+    ui.get('work-owner').value=selected;ui.get('case-work-form').listeners.submit({preventDefault(){}});await settle();
+    assert.equal(JSON.parse(ui.calls[1].options.body).owner,selected||null);
+  }
 });
 test('uncertain save retries with same key and clears note only on success',async()=>{
   const ui=browser('investigation.js',[ok(detail),()=>{throw new TypeError('Network error');},ok({...row,version:2}),ok({...detail,case:{...row,version:2}})]);await settle();

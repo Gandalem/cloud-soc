@@ -24,7 +24,10 @@ OBSERVED = {"gnome-shell": ("process", "desktop_log_observed"),
 
 
 def parse_linux_operational(source):
-    if field(source, "labels.log_source") not in {"linux_file", "linux_journald", "linux_auth"}:
+    if not isinstance(source, dict):
+        return None
+    kind = field(source, "labels.log_source")
+    if not isinstance(kind, str) or kind not in {"linux_file", "linux_journald", "linux_auth"}:
         return None
     message = source.get("message")
     if not isinstance(message, str) or not message or len(message) > 8192 or "\n" in message or "\r" in message:
@@ -54,15 +57,19 @@ def parse_linux_operational(source):
     if prefix:
         app, body = prefix["app"], prefix["body"]
     elif field(source, "labels.log_source") == "linux_journald":
-        app = (field(source, "log.syslog.appname") or field(source, "process.name")
-               or field(source, "journald.syslog.identifier"))
+        programs = [field(source, key) for key in ("log.syslog.appname", "process.name", "journald.syslog.identifier")]
+        if any(value is not None and not isinstance(value, str) for value in programs):
+            return None
+        app = next((value for value in programs if value), None)
         body = message
     else:
         app, body = None, message
+    if app is not None and not isinstance(app, str):
+        return None
     if app is None:
         # No actor/action inference. The collector timestamp is an observation time.
         if (field(source, "labels.log_source") != "linux_journald"
-                and path not in {"/var/log/syslog", "/var/log/auth.log", "/var/log/kern.log"}):
+                and (not isinstance(path, str) or path not in {"/var/log/syslog", "/var/log/auth.log", "/var/log/kern.log"})):
             return None
         return {"adapter": "linux_unclassified_v1", "status": "partial",
                 "fields": {"category": None, "action": "host_log_observed", "outcome": "unknown"},
@@ -106,7 +113,8 @@ def parse_linux_operational(source):
                 data = {"level": "unknown"}
             else:
                 data = {"level": match[1]}
-        if not isinstance(data, dict) or data.get("level") not in {"debug", "info", "warning", "warn", "error", "fatal", "unknown"}:
+        if (not isinstance(data, dict) or not isinstance(data.get("level"), str)
+                or data["level"] not in {"debug", "info", "warning", "warn", "error", "fatal", "unknown"}):
             return None
         values.update(action="container_runtime_log_observed", daemon=app, log_level=data["level"])
     elif app in OBSERVED:

@@ -31,6 +31,27 @@ def fixture():
 
 
 class ProcessingTests(unittest.TestCase):
+    def test_malformed_linux_records_do_not_poison_checkpoint_or_good_events(self):
+        from test_linux_operational import hit
+        client = Mock(); client.options.return_value = client
+        client.bulk.side_effect = lambda **kw: {"items": [
+            {"create": {"status": 201}} for _ in range(len(kw["operations"]) // 2)]}
+        samples = [hit("Started PRIVATE_CANARY.", ["systemd"]),
+                   hit('{"level":["error"],"msg":"PRIVATE_CANARY"}', "dockerd"),
+                   hit("Started PRIVATE_CANARY.", "systemd")]
+        for position, sample in enumerate(samples):
+            sample["_id"] = str(position)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.sqlite"
+            first = run_once(client, path, START, now=NOW, scanner=lambda *_: samples)
+            self.assertEqual(first["counts"], {"normalized": 1, "unsupported": 2, "invalid": 0})
+            self.assertEqual(first["checkpoint"], "2026-09-22T01:05:00Z")
+            documents = client.bulk.call_args.kwargs["operations"][1::2]
+            self.assertEqual(len(documents), 4)
+            self.assertNotIn("PRIVATE_CANARY", json.dumps(documents))
+            second = run_once(client, path, START, now=NOW, scanner=lambda *_: [])
+            self.assertGreater(second["checkpoint"], first["checkpoint"])
+
     def test_windows_late_event_has_raw_lineage_no_body(self):
         key, record, event = normalize(fixture(), START)
         self.assertEqual(record["status"], "normalized")

@@ -80,8 +80,13 @@ def alert_row(hit):
 
 
 class Operations:
-    def __init__(self, client):
+    def __init__(self, client, *, organizations=None):
         self.client = client.options(request_timeout=5, max_retries=0) if client is not None else None
+        self.organizations = tuple(organizations) if organizations is not None else None
+
+    def visible(self, source):
+        organization = field(source, "organization.id")
+        return self.organizations is None or (isinstance(organization, str) and organization in self.organizations)
 
     def get(self, index, doc_id, fields):
         if not self.client:
@@ -90,11 +95,15 @@ class Operations:
             return None
         try:
             options = {"source_includes": fields} if fields is not None else {}
-            return self.client.get(index=index, id=identifier(doc_id), **options)["_source"]
+            source = self.client.get(index=index, id=identifier(doc_id), **options)["_source"]
+            return source if self.visible(source) else None
         except NotFoundError:
             return None
 
     def series(self, patterns, time_field, start, end, interval, *, records=False, alerts=False):
+        # Processing records have no tenant field; never disclose global totals to scoped users.
+        if records and self.organizations is not None:
+            return {"state": "unavailable"}
         if not self.client:
             raise RuntimeError()
         deadline = monotonic() + SERIES_TIMEOUT
@@ -119,10 +128,13 @@ class Operations:
                 raise ValueError("Time mapping missing")
             if monotonic() >= deadline:
                 raise RuntimeError("Query budget exhausted")
+            query = {"range": {time_field: {"gte": start, "lt": end}}}
+            if self.organizations is not None:
+                query = {"bool": {"filter": [query, {"terms": {"organization.id": list(self.organizations)}}]}}
             result = checked(self.client.search(index=batch, size=50 if alerts else 0,
                 source=ALERT_FIELDS if alerts else False, sort=[{"@timestamp": "desc"}] if alerts else None,
                 track_total_hits=True, timeout="4s", allow_partial_search_results=False,
-                query={"range": {time_field: {"gte": start, "lt": end}}}, aggs=aggs))
+                query=query, aggs=aggs))
             if monotonic() >= deadline:
                 raise RuntimeError("Query budget exhausted")
             if result["hits"]["total"]["relation"] != "eq":
@@ -147,12 +159,16 @@ class Operations:
                 key = bucket["key"] if bucket["key"] in ("normalized", "unsupported", "invalid") else "unknown"
                 statuses[key] = exact_count(statuses.get(key, 0) + exact_count(bucket["doc_count"]))
             if alerts:
+                if any(not self.visible(hit["_source"]) for hit in result["hits"]["hits"]):
+                    raise ValueError("Organization scope mismatch")
                 rows = [alert_row(hit) for hit in result["hits"]["hits"]]
         return {"state": "ok", "count": count,
                 "buckets": [{"time": iso(stamp), "count": buckets[stamp]} for stamp in sorted(buckets)],
                 "rows": rows, "statuses": [{"key": key, "doc_count": statuses[key]} for key in sorted(statuses)]}
 
     def worker_status(self, worker):
+        if self.organizations is not None:
+            return {"state": "unavailable"}
         value = self.get(STATUS, worker, ["@timestamp", "state", "last_success", "checkpoint", "error", "detection", "health", "lag_seconds", "late_total", "legacy_excluded", "excluded_total", "history_pending"])
         if value is None:
             return {"state": "not_started"}
@@ -254,14 +270,14 @@ class Operations:
                 number = int(position)
                 if number >= len(evidence):
                     raise LogQueryError("evidence_missing", 404, "요청한 근거 참조가 없습니다.")
-                result["evidence"] = self.evidence(evidence[number])
+                result["evidence"] = self.evidence(evidence[number], organization=field(source, "organization.id"))
             return bounded_json(result)
         except LogQueryError:
             raise
         except Exception:
             raise LogQueryError("alerts_unavailable", 503, "경보·근거를 조회하지 못했습니다. 권한과 참조를 확인하세요.") from None
 
-    def evidence(self, reference):
+    def evidence(self, reference, *, organization=None):
         if not isinstance(reference, dict):
             return {"state": "invalid_reference"}
         normalized, raw = reference.get("normalized"), reference.get("raw")
@@ -277,7 +293,11 @@ class Operations:
             return {"state": "unsupported_or_invalid_reference"}
         norm = self.get(normalized["index"], normalized["id"], None)
         if norm is None:
+            if self.organizations is not None:
+                return {"state": "normalized_missing_or_expired"}
             return {"state": "normalized_missing_or_expired", "normalized": normalized, "raw": raw}
+        if organization is not None and field(norm, "organization.id") != organization:
+            return {"state": "provenance_mismatch"}
         if field(norm, "cloud_soc.provenance.raw") != raw:
             return {"state": "provenance_mismatch"}
         expected_hash = reference.get('event_hash')
@@ -296,7 +316,11 @@ class Operations:
             integrity = 'normalized_hash_verified'
         source = self.get(raw["index"], raw["id"], list(SOURCE_FIELDS + DETAIL_FIELDS))
         if source is None:
+            if self.organizations is not None:
+                return {"state": "raw_missing_or_expired"}
             return {"state": "raw_missing_or_expired", "normalized": normalized, "raw": raw}
+        if organization is not None and field(source, "organization.id") != organization:
+            return {"state": "provenance_mismatch"}
         metadata = ({path: text(field(source, path)) for path in ("@timestamp", "host.name", "user.name", "event.action")}
                     if raw["index"].startswith("raw-logs-") else project_hit({"_index": raw["index"], "_id": raw["id"], "_source": source}))
         return {"state": "exact_reference", "normalized": normalized, "raw": raw,

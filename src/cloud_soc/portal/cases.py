@@ -47,10 +47,12 @@ def now():
 
 
 class CaseStore:
-    def __init__(self, path, admin, *, principals=None, owners=None):
+    def __init__(self, path, admin, *, principals=None, owners=None, organizations=None):
         self.path, self.admin = Path(path), admin
         self.principals = set(principals) if principals is not None else {admin}
         self.owners = set(owners) if owners is not None else {admin}
+        self.organizations = {name: None if organizations is None or organizations.get(name, ()) is None
+                              else tuple(organizations.get(name, ())) for name in self.principals}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
             db.executescript("""
@@ -87,8 +89,22 @@ class CaseStore:
         if actor not in self.principals:
             raise CaseError("case_forbidden", "사건 관리자 권한이 필요합니다.", 403)
 
+    def visible(self, actor, organization):
+        scope = self.organizations.get(actor, ())
+        return scope is None or organization in scope
+
+    def scope(self, actor, column="organization"):
+        organizations = self.organizations[actor]
+        if organizations is None:
+            return [], []
+        if not organizations:
+            return ["0"], []
+        return [column + " IN (" + ",".join("?" for _ in organizations) + ")"], list(organizations)
+
     def mutation(self, actor, token, payload, action):
         self.authorize(actor)
+        if self.organizations[actor] == ():
+            raise CaseError("case_forbidden", "사건 작업을 위한 조직 범위가 설정되지 않았습니다.", 403)
         if not isinstance(token, str) or not re.fullmatch(r"[0-9a-fA-F-]{36}", token):
             raise invalid()
         fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
@@ -98,14 +114,16 @@ class CaseStore:
             if previous:
                 if previous["actor"] != actor or previous["fingerprint"] != fingerprint:
                     raise CaseError("idempotency_conflict", "같은 요청 ID를 다른 작업에 사용할 수 없습니다.", 409)
-                return json.loads(previous["response"])
+                result = json.loads(previous["response"])
+                self.row(db, result["id"], actor)
+                return result
             result = action(db)
             db.execute("INSERT INTO case_requests VALUES (?,?,?,?)", (token, actor, fingerprint, json.dumps(result)))
             return result
 
-    def row(self, db, identifier):
+    def row(self, db, identifier, actor):
         row = db.execute("SELECT * FROM cases WHERE id=?", (case_id(identifier),)).fetchone()
-        if not row:
+        if not row or not self.visible(actor, row["organization"]):
             raise CaseError("case_missing", "사건을 찾을 수 없습니다.", 404)
         return dict(row)
 
@@ -124,13 +142,15 @@ class CaseStore:
         if body["priority"] not in PRIORITIES:
             raise invalid()
         def action(db):
-            if db.execute("SELECT 1 FROM case_alerts WHERE alert_id=?", (alert_id,)).fetchone():
-                raise CaseError("alert_already_linked", "이미 사건에 연결된 경보입니다. 사건 목록에서 확인하세요.", 409)
             # Replays do not need ES availability; only the first mutation resolves it.
             alert = fetch_alert(alert_id)
             organization = clean(alert.get("organization"), 128)
             if organization == REDACTED:
                 raise invalid()
+            if not self.visible(actor, organization):
+                raise CaseError("case_missing", "사건을 찾을 수 없습니다.", 404)
+            if db.execute("SELECT 1 FROM case_alerts WHERE alert_id=?", (alert_id,)).fetchone():
+                raise CaseError("alert_already_linked", "이미 사건에 연결된 경보입니다. 사건 목록에서 확인하세요.", 409)
             timestamp = now()
             row = {"id": uuid.uuid4().hex, "title": title, "organization": organization,
                    "priority": body["priority"], "status": "new", "owner": None, "verdict": "unreviewed",
@@ -153,10 +173,12 @@ class CaseStore:
         if "alert_id" in body:
             identifier_check = clean(body["alert_id"], 512)
         def action(db):
-            before = self.row(db, identifier)
+            before = self.row(db, identifier, actor)
             if before["version"] != body["version"]:
                 raise CaseError("case_version_conflict", "다른 수정이 먼저 저장되었습니다. 내용을 확인하고 다시 저장하세요.", 409)
             row = {**before, **{key: body[key] for key in ("status", "priority", "owner", "verdict") if key in body}}
+            if row["owner"] != before["owner"] and row["owner"] is not None and not self.visible(row["owner"], row["organization"]):
+                raise invalid()
             if row["status"] != before["status"] and row["status"] not in TRANSITIONS[before["status"]]:
                 raise CaseError("invalid_transition", "허용하지 않는 상태 전이입니다.")
             if before["status"] == "closed":
@@ -169,13 +191,13 @@ class CaseStore:
                 raise CaseError("verdict_reason_required", "판정 변경 시 사유 메모가 필요합니다.")
             changes = {key: {"before": before[key], "after": row[key]} for key in ("status", "priority", "owner", "verdict") if before[key] != row[key]}
             if "alert_id" in body:
+                alert = fetch_alert(identifier_check)
+                if alert.get("organization") != row["organization"]:
+                    raise CaseError("organization_mismatch", "같은 조직의 경보만 연결할 수 있습니다.")
                 if db.execute("SELECT 1 FROM case_alerts WHERE alert_id=?", (identifier_check,)).fetchone():
                     raise CaseError("alert_already_linked", "이미 사건에 연결된 경보입니다.", 409)
                 if db.execute("SELECT count(*) FROM case_alerts WHERE case_id=?", (identifier,)).fetchone()[0] >= 100:
                     raise CaseError("case_alert_limit", "한 사건에는 최대 100개의 경보를 연결할 수 있습니다.")
-                alert = fetch_alert(identifier_check)
-                if alert.get("organization") != row["organization"]:
-                    raise CaseError("organization_mismatch", "같은 조직의 경보만 연결할 수 있습니다.")
                 db.execute("INSERT INTO case_alerts VALUES (?,?,?,?)", (identifier_check, identifier, now(), json.dumps(alert, ensure_ascii=False)))
                 changes["alert_id"] = identifier_check
             if not changes and not note:
@@ -192,7 +214,7 @@ class CaseStore:
             raise invalid()
         with self.connect() as db:
             db.execute("BEGIN")
-            row = self.row(db, identifier)
+            row = self.row(db, identifier, actor)
             alerts = [{"id": entry["alert_id"], "linked_at": entry["linked_at"], "snapshot": json.loads(entry["snapshot"])}
                       for entry in db.execute("SELECT * FROM case_alerts WHERE case_id=? ORDER BY linked_at,alert_id", (identifier,))]
             rows = db.execute("SELECT * FROM case_history WHERE case_id=? AND seq<? ORDER BY seq DESC LIMIT 51",
@@ -204,7 +226,11 @@ class CaseStore:
     def lookup(self, alert_id, actor):
         self.authorize(actor)
         with self.connect() as db:
-            row = db.execute("SELECT case_id FROM case_alerts WHERE alert_id=?", (identifier(alert_id),)).fetchone()
+            conditions, params = self.scope(actor, "cases.organization")
+            where = " AND " + " AND ".join(conditions) if conditions else ""
+            # Scope fragments are code-owned; alert ID and organization values are bound.
+            row = db.execute("SELECT case_id FROM case_alerts JOIN cases ON cases.id=case_alerts.case_id WHERE alert_id=?" + where,  # nosec B608
+                             [identifier(alert_id), *params]).fetchone()
             return {"case_id": row[0] if row else None}
 
     def listing(self, pairs, actor):
@@ -212,7 +238,7 @@ class CaseStore:
         pairs = list(pairs); args = dict(pairs)
         if len(args) != len(pairs) or set(args) - {"status", "owner", "priority", "sort", "page", "days"}:
             raise invalid()
-        conditions, params = [], []
+        conditions, params = self.scope(actor)
         for key, allowed in (("status", STATUSES + ("open",)), ("priority", PRIORITIES), ("owner", ("unassigned", "me"))):
             if key not in args: continue
             if args[key] not in allowed: raise invalid()
