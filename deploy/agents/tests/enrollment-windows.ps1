@@ -1,5 +1,8 @@
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
+# A pwsh CI parent can expose Core modules to Windows PowerShell 5.1.
+# Load this shell's own Security module without changing host policy.
+Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -Force
 # Match install.ps1: helpers are dot-sourced in a launcher scope, not globally.
 & {
 . (Join-Path $PSScriptRoot '../enrollment-windows.ps1')

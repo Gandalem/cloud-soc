@@ -1,0 +1,1161 @@
+{
+  "created_at": "2026-10-05T02:17:24.344119+00:00",
+  "quality": {
+    "scope": "synthetic rule-condition conformance; not production attack accuracy",
+    "dataset_sha256": "a1f55c0106218bc9f266e6c1fe877e7816607c40d93169521308b35cb8557f82",
+    "cases": [
+      {
+        "rule": "AWS-IAM-001",
+        "case": "admin policy",
+        "expected": true,
+        "actual": true,
+        "outcome": "TP",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-IAM-001",
+        "case": "power user role",
+        "expected": true,
+        "actual": true,
+        "outcome": "TP",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-IAM-001",
+        "case": "read only",
+        "expected": false,
+        "actual": false,
+        "outcome": "TN",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-IAM-001",
+        "case": "denied admin",
+        "expected": false,
+        "actual": false,
+        "outcome": "TN",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-IAM-001",
+        "case": "missing policy",
+        "expected": false,
+        "actual": false,
+        "outcome": "TN",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-AUDIT-001",
+        "case": "stop logging",
+        "expected": true,
+        "actual": true,
+        "outcome": "TP",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-AUDIT-001",
+        "case": "delete trail",
+        "expected": true,
+        "actual": true,
+        "outcome": "TP",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-AUDIT-001",
+        "case": "start logging",
+        "expected": false,
+        "actual": false,
+        "outcome": "TN",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-AUDIT-001",
+        "case": "denied stop",
+        "expected": false,
+        "actual": false,
+        "outcome": "TN",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-AUDIT-001",
+        "case": "wrong provider",
+        "expected": false,
+        "actual": false,
+        "outcome": "TN",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-NETWORK-001",
+        "case": "public ssh",
+        "expected": true,
+        "actual": true,
+        "outcome": "TP",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-NETWORK-001",
+        "case": "public ipv6 rdp",
+        "expected": true,
+        "actual": true,
+        "outcome": "TP",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-NETWORK-001",
+        "case": "all protocols",
+        "expected": true,
+        "actual": true,
+        "outcome": "TP",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-NETWORK-001",
+        "case": "private ssh",
+        "expected": false,
+        "actual": false,
+        "outcome": "TN",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-NETWORK-001",
+        "case": "public web",
+        "expected": false,
+        "actual": false,
+        "outcome": "TN",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-NETWORK-001",
+        "case": "denied public ssh",
+        "expected": false,
+        "actual": false,
+        "outcome": "TN",
+        "unexpected_rules": []
+      },
+      {
+        "rule": "AWS-NETWORK-001",
+        "case": "missing permissions",
+        "expected": false,
+        "actual": false,
+        "outcome": "TN",
+        "unexpected_rules": []
+      }
+    ],
+    "metrics": {
+      "AWS-IAM-001": {
+        "TP": 2,
+        "FP": 0,
+        "FN": 0,
+        "TN": 3,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "AWS-AUDIT-001": {
+        "TP": 2,
+        "FP": 0,
+        "FN": 0,
+        "TN": 3,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "AWS-NETWORK-001": {
+        "TP": 3,
+        "FP": 0,
+        "FN": 0,
+        "TN": 4,
+        "precision": 1.0,
+        "recall": 1.0
+      }
+    }
+  },
+  "benchmark": {
+    "scope": "in-process AWS StopLogging positive events; no network/ES/indexing",
+    "events": 10000,
+    "repeats": 3,
+    "warmups": 1,
+    "python": "3.12.14",
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+    "processor": "x86_64",
+    "seconds_samples": {
+      "projection": [
+        1.0573786760000985,
+        0.7464145849999113,
+        0.815919225000016
+      ],
+      "normalization": [
+        1.6863524339999003,
+        1.6463463229999888,
+        1.7531577699999161
+      ],
+      "detection": [
+        2.712380775999918,
+        2.4639085940000314,
+        2.783070928000143
+      ],
+      "alert_build": [
+        0.07201719900012904,
+        0.4760193510001045,
+        0.09852085700003954
+      ]
+    },
+    "median_seconds": {
+      "projection": 0.815919225000016,
+      "normalization": 1.6863524339999003,
+      "detection": 2.712380775999918,
+      "alert_build": 0.09852085700003954
+    },
+    "total_median_seconds": 5.450668780000115,
+    "events_per_second": 1834.6372534490695
+  },
+  "demo": [
+    {
+      "scenario": "admin policy",
+      "raw": {
+        "_index": "soc-cloud-aws-2026.09.22",
+        "_id": "c69dc39c0f188bdf877caebbf8268439e5e348b91892e8638699fba715b7586b",
+        "_source": {
+          "@timestamp": "2026-09-22T01:20:00Z",
+          "event": {
+            "id": "11111111-2222-3333-4444-000000000001",
+            "kind": "event",
+            "dataset": "aws.cloudtrail",
+            "provider": "iam.amazonaws.com",
+            "action": "AttachUserPolicy",
+            "outcome": "success",
+            "ingested": "2026-09-22T01:20:00Z"
+          },
+          "cloud": {
+            "provider": "aws",
+            "account": {
+              "id": "123456789012"
+            },
+            "region": "us-east-1",
+            "service": {
+              "name": "iam.amazonaws.com"
+            }
+          },
+          "organization": {
+            "id": "portfolio-fixture"
+          },
+          "agent": {
+            "type": "cloudtrail",
+            "id": "aws-123456789012-us-east-1"
+          },
+          "labels": {
+            "log_source": "aws_cloudtrail",
+            "privacy_policy": "cloudtrail_metadata_v1"
+          },
+          "user": {
+            "id": "FIXTURE:session",
+            "name": null
+          },
+          "source": {
+            "address": "198.51.100.11",
+            "ip": "198.51.100.11"
+          },
+          "aws": {
+            "cloudtrail": {
+              "schema": 1,
+              "identity_type": "AssumedRole",
+              "identity_arn": "arn:aws:sts::123456789012:assumed-role/fixture/session",
+              "identity_invoked_by": null,
+              "identity_account": "123456789012",
+              "session_issuer_arn": "arn:aws:iam::123456789012:role/fixture",
+              "resources": [
+                {
+                  "arn": "arn:aws:iam::123456789012:user/target-fixture",
+                  "type": "AWS::IAM::User",
+                  "account_id": "123456789012"
+                }
+              ],
+              "resources_truncated": false,
+              "error_code": null,
+              "outcome_basis": "no_error_reported",
+              "management_only": true,
+              "read_only": false,
+              "target_user": null,
+              "target_role": null,
+              "target_policy_arn": "arn:aws:iam::aws:policy/AdministratorAccess",
+              "target_group": null
+            }
+          }
+        }
+      },
+      "normalized": {
+        "@timestamp": "2026-09-22T01:20:00Z",
+        "organization": {
+          "id": "portfolio-fixture"
+        },
+        "event": {
+          "kind": "event",
+          "category": [
+            "configuration"
+          ],
+          "action": "AttachUserPolicy",
+          "outcome": "success",
+          "ingested": "2026-09-22T01:20:00Z",
+          "dataset": "aws.cloudtrail",
+          "provider": "iam.amazonaws.com"
+        },
+        "cloud_soc": {
+          "normalized_at": "2026-10-05T00:00:00Z",
+          "normalizer_version": "intake-v1",
+          "parse_status": "recognized",
+          "detail": {
+            "version": 1,
+            "status": "recognized",
+            "adapter": "aws_cloudtrail_metadata_v1",
+            "audit_configuration": "not_checked",
+            "fields": {
+              "category": "cloud",
+              "action": "management_api_call",
+              "outcome": "success",
+              "api": "AttachUserPolicy",
+              "event_id": "11111111-2222-3333-4444-000000000001",
+              "provider": "iam.amazonaws.com",
+              "cloud_account": "123456789012",
+              "cloud_region": "us-east-1",
+              "identity_type": "AssumedRole",
+              "identity_arn": "arn:aws:sts::123456789012:assumed-role/fixture/session",
+              "identity_invoked_by": null,
+              "target_policy_arn": "arn:aws:iam::aws:policy/AdministratorAccess",
+              "identity_account": "123456789012",
+              "session_issuer_arn": "arn:aws:iam::123456789012:role/fixture",
+              "source_address": "198.51.100.11",
+              "target_user": null,
+              "target_role": null,
+              "target_group_id": null,
+              "error_code": null,
+              "outcome_basis": "no_error_reported",
+              "target_group": null,
+              "target_trail": null,
+              "actor": "FIXTURE:session",
+              "public_management_ingress": null,
+              "resource_arns": [
+                "arn:aws:iam::123456789012:user/target-fixture"
+              ]
+            },
+            "missing": [],
+            "process_link": "not_established",
+            "limitations": [
+              "not_a_detection",
+              "management_events_not_object_access",
+              "api_result_not_resource_effect"
+            ]
+          },
+          "provenance": {
+            "schema_version": 1,
+            "raw": {
+              "index": "soc-cloud-aws-2026.09.22",
+              "id": "c69dc39c0f188bdf877caebbf8268439e5e348b91892e8638699fba715b7586b"
+            },
+            "time": {
+              "basis": "source_timestamp"
+            }
+          }
+        },
+        "source": {
+          "ip": "198.51.100.11"
+        },
+        "user": {
+          "name": "FIXTURE:session",
+          "id": "FIXTURE:session"
+        },
+        "cloud": {
+          "provider": "aws",
+          "region": "us-east-1",
+          "account": {
+            "id": "123456789012"
+          }
+        },
+        "_cloud_soc_meta": {
+          "index": "soc-normalized-v1",
+          "document_id": "d26c9c6b42fd7a8d5e9e8c0ee9dfa52e3ce39ba02fe67f3e4172cb1e6fa49747"
+        }
+      },
+      "alert_id": "bec4f3352a1c2d4ac5d60bb5e817b748b5fd820cb8f8e4ff98b48d923bbc5f34",
+      "alert": {
+        "@timestamp": "2026-09-22T01:20:00+00:00",
+        "event": {
+          "kind": "alert",
+          "category": [
+            "iam"
+          ]
+        },
+        "rule": {
+          "id": "AWS-IAM-001",
+          "name": "AWS high privilege managed policy attached"
+        },
+        "organization": {
+          "id": "portfolio-fixture"
+        },
+        "cloud_soc": {
+          "alert_title": "AWS 고권한 관리형 정책 연결",
+          "severity": "high",
+          "event_count": 1,
+          "threshold": 1,
+          "time_window_seconds": 1,
+          "window_start": "2026-09-22T01:20:00+00:00",
+          "window_end": "2026-09-22T01:20:00+00:00",
+          "provenance": {
+            "schema_version": 1,
+            "engine_version": "single-v1",
+            "rule_version": "8852d0d26fa0bac1314f972abee27705ea91ce879a196d9a012761ffebe29f63",
+            "rule_snapshot": {
+              "id": "AWS-IAM-001",
+              "mitre": {
+                "tactic": [
+                  "Persistence",
+                  "Privilege Escalation"
+                ],
+                "technique": [
+                  {
+                    "id": "T1098.003",
+                    "name": "Additional Cloud Roles"
+                  }
+                ],
+                "mapping_status": "contextual",
+                "rationale": "Observed configuration change; analyst confirmation of intent and effective impact required.",
+                "references": [
+                  "https://attack.mitre.org/techniques/T1098/003/"
+                ]
+              },
+              "type": "single",
+              "name": "AWS high privilege managed policy attached",
+              "enabled": true,
+              "severity": "high",
+              "conditions": [
+                {
+                  "field": "event.dataset",
+                  "operator": "equals",
+                  "value": "aws.cloudtrail"
+                },
+                {
+                  "field": "event.provider",
+                  "operator": "equals",
+                  "value": "iam.amazonaws.com"
+                },
+                {
+                  "field": "event.outcome",
+                  "operator": "equals",
+                  "value": "success"
+                },
+                {
+                  "field": "event.action",
+                  "operator": "in",
+                  "value": [
+                    "AttachUserPolicy",
+                    "AttachRolePolicy",
+                    "AttachGroupPolicy"
+                  ]
+                },
+                {
+                  "field": "cloud_soc.detail.fields.target_policy_arn",
+                  "operator": "in",
+                  "value": [
+                    "arn:aws:iam::aws:policy/AdministratorAccess",
+                    "arn:aws:iam::aws:policy/PowerUserAccess"
+                  ]
+                }
+              ],
+              "alert": {
+                "title": "AWS 고권한 관리형 정책 연결",
+                "message": "고권한 정책 연결 API가 성공으로 관측되었습니다. 변경 승인과 대상 계정을 확인하세요. 악성 활동 또는 실제 유효 권한의 확정은 아닙니다.",
+                "category": "iam",
+                "tags": [
+                  "aws",
+                  "iam",
+                  "privilege-change"
+                ]
+              },
+              "group_by": [
+                "organization.id",
+                "cloud.account.id"
+              ],
+              "threshold": {
+                "count": 1
+              },
+              "time_window": {
+                "seconds": 1
+              },
+              "cooldown": {
+                "seconds": 0
+              }
+            },
+            "evidence": [
+              {
+                "normalized": {
+                  "index": "soc-normalized-v1",
+                  "id": "d26c9c6b42fd7a8d5e9e8c0ee9dfa52e3ce39ba02fe67f3e4172cb1e6fa49747"
+                },
+                "raw": {
+                  "index": "soc-cloud-aws-2026.09.22",
+                  "id": "c69dc39c0f188bdf877caebbf8268439e5e348b91892e8638699fba715b7586b"
+                },
+                "event_hash": "105e097bf5a07d901f6ddac99b980bf401e0887327ee8503d3ea0f96f69a39ed",
+                "complete": true
+              }
+            ],
+            "evidence_status": "complete"
+          },
+          "risk_score": 65,
+          "risk_level": "high",
+          "risk_version": "triage-v1",
+          "risk_factors": [
+            {
+              "name": "rule_severity",
+              "points": 65
+            }
+          ]
+        },
+        "message": "고권한 정책 연결 API가 성공으로 관측되었습니다. 변경 승인과 대상 계정을 확인하세요. 악성 활동 또는 실제 유효 권한의 확정은 아닙니다.",
+        "tags": [
+          "aws",
+          "iam",
+          "privilege-change"
+        ],
+        "mitre": {
+          "tactic": [
+            "Persistence",
+            "Privilege Escalation"
+          ],
+          "technique": [
+            {
+              "id": "T1098.003",
+              "name": "Additional Cloud Roles"
+            }
+          ],
+          "mapping_status": "contextual",
+          "rationale": "Observed configuration change; analyst confirmation of intent and effective impact required.",
+          "references": [
+            "https://attack.mitre.org/techniques/T1098/003/"
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "stop logging",
+      "raw": {
+        "_index": "soc-cloud-aws-2026.09.22",
+        "_id": "d8b41259d719cecd869955815036e38ba1ebb195e3932ef50b4205d9dc2ebccc",
+        "_source": {
+          "@timestamp": "2026-09-22T01:20:00Z",
+          "event": {
+            "id": "11111111-2222-3333-4444-000000000006",
+            "kind": "event",
+            "dataset": "aws.cloudtrail",
+            "provider": "cloudtrail.amazonaws.com",
+            "action": "StopLogging",
+            "outcome": "success",
+            "ingested": "2026-09-22T01:20:00Z"
+          },
+          "cloud": {
+            "provider": "aws",
+            "account": {
+              "id": "123456789012"
+            },
+            "region": "us-east-1",
+            "service": {
+              "name": "cloudtrail.amazonaws.com"
+            }
+          },
+          "organization": {
+            "id": "portfolio-fixture"
+          },
+          "agent": {
+            "type": "cloudtrail",
+            "id": "aws-123456789012-us-east-1"
+          },
+          "labels": {
+            "log_source": "aws_cloudtrail",
+            "privacy_policy": "cloudtrail_metadata_v1"
+          },
+          "user": {
+            "id": "FIXTURE:session",
+            "name": null
+          },
+          "source": {
+            "address": "198.51.100.11",
+            "ip": "198.51.100.11"
+          },
+          "aws": {
+            "cloudtrail": {
+              "schema": 1,
+              "identity_type": "AssumedRole",
+              "identity_arn": "arn:aws:sts::123456789012:assumed-role/fixture/session",
+              "identity_invoked_by": null,
+              "identity_account": "123456789012",
+              "session_issuer_arn": "arn:aws:iam::123456789012:role/fixture",
+              "resources": [
+                {
+                  "arn": "arn:aws:iam::123456789012:user/target-fixture",
+                  "type": "AWS::IAM::User",
+                  "account_id": "123456789012"
+                }
+              ],
+              "resources_truncated": false,
+              "error_code": null,
+              "outcome_basis": "no_error_reported",
+              "management_only": true,
+              "read_only": false,
+              "target_trail": "fixture-trail"
+            }
+          }
+        }
+      },
+      "normalized": {
+        "@timestamp": "2026-09-22T01:20:00Z",
+        "organization": {
+          "id": "portfolio-fixture"
+        },
+        "event": {
+          "kind": "event",
+          "category": [
+            "configuration"
+          ],
+          "action": "StopLogging",
+          "outcome": "success",
+          "ingested": "2026-09-22T01:20:00Z",
+          "dataset": "aws.cloudtrail",
+          "provider": "cloudtrail.amazonaws.com"
+        },
+        "cloud_soc": {
+          "normalized_at": "2026-10-05T00:00:00Z",
+          "normalizer_version": "intake-v1",
+          "parse_status": "recognized",
+          "detail": {
+            "version": 1,
+            "status": "recognized",
+            "adapter": "aws_cloudtrail_metadata_v1",
+            "audit_configuration": "not_checked",
+            "fields": {
+              "category": "cloud",
+              "action": "management_api_call",
+              "outcome": "success",
+              "api": "StopLogging",
+              "event_id": "11111111-2222-3333-4444-000000000006",
+              "provider": "cloudtrail.amazonaws.com",
+              "cloud_account": "123456789012",
+              "cloud_region": "us-east-1",
+              "identity_type": "AssumedRole",
+              "identity_arn": "arn:aws:sts::123456789012:assumed-role/fixture/session",
+              "identity_invoked_by": null,
+              "target_policy_arn": null,
+              "identity_account": "123456789012",
+              "session_issuer_arn": "arn:aws:iam::123456789012:role/fixture",
+              "source_address": "198.51.100.11",
+              "target_user": null,
+              "target_role": null,
+              "target_group_id": null,
+              "error_code": null,
+              "outcome_basis": "no_error_reported",
+              "target_group": null,
+              "target_trail": "fixture-trail",
+              "actor": "FIXTURE:session",
+              "public_management_ingress": null,
+              "resource_arns": [
+                "arn:aws:iam::123456789012:user/target-fixture"
+              ]
+            },
+            "missing": [],
+            "process_link": "not_established",
+            "limitations": [
+              "not_a_detection",
+              "management_events_not_object_access",
+              "api_result_not_resource_effect"
+            ]
+          },
+          "provenance": {
+            "schema_version": 1,
+            "raw": {
+              "index": "soc-cloud-aws-2026.09.22",
+              "id": "d8b41259d719cecd869955815036e38ba1ebb195e3932ef50b4205d9dc2ebccc"
+            },
+            "time": {
+              "basis": "source_timestamp"
+            }
+          }
+        },
+        "source": {
+          "ip": "198.51.100.11"
+        },
+        "user": {
+          "name": "FIXTURE:session",
+          "id": "FIXTURE:session"
+        },
+        "cloud": {
+          "provider": "aws",
+          "region": "us-east-1",
+          "account": {
+            "id": "123456789012"
+          }
+        },
+        "_cloud_soc_meta": {
+          "index": "soc-normalized-v1",
+          "document_id": "a61445e662ca7976ad973af7c28247cd351389b3a4792613c1827a10508e0b9a"
+        }
+      },
+      "alert_id": "d9c5c331aae4de81589130f3092a33f655fa287566e50e489fae327df5ef29f5",
+      "alert": {
+        "@timestamp": "2026-09-22T01:20:00+00:00",
+        "event": {
+          "kind": "alert",
+          "category": [
+            "configuration"
+          ]
+        },
+        "rule": {
+          "id": "AWS-AUDIT-001",
+          "name": "AWS trail logging stopped or trail deleted"
+        },
+        "organization": {
+          "id": "portfolio-fixture"
+        },
+        "cloud_soc": {
+          "alert_title": "AWS 감사 Trail 중지 또는 삭제",
+          "severity": "high",
+          "event_count": 1,
+          "threshold": 1,
+          "time_window_seconds": 1,
+          "window_start": "2026-09-22T01:20:00+00:00",
+          "window_end": "2026-09-22T01:20:00+00:00",
+          "provenance": {
+            "schema_version": 1,
+            "engine_version": "single-v1",
+            "rule_version": "e82f4b56b1487f2e2a0ff8291654c2f90d4193db7d1bb79816cd7966a305c18e",
+            "rule_snapshot": {
+              "id": "AWS-AUDIT-001",
+              "mitre": {
+                "tactic": [
+                  "Defense Evasion"
+                ],
+                "technique": [
+                  {
+                    "id": "T1562.008",
+                    "name": "Disable or Modify Cloud Logs"
+                  }
+                ],
+                "mapping_status": "contextual",
+                "rationale": "Observed configuration change; analyst confirmation of intent and effective impact required.",
+                "references": [
+                  "https://attack.mitre.org/techniques/T1562/008/"
+                ]
+              },
+              "type": "single",
+              "name": "AWS trail logging stopped or trail deleted",
+              "enabled": true,
+              "severity": "high",
+              "conditions": [
+                {
+                  "field": "event.dataset",
+                  "operator": "equals",
+                  "value": "aws.cloudtrail"
+                },
+                {
+                  "field": "event.provider",
+                  "operator": "equals",
+                  "value": "cloudtrail.amazonaws.com"
+                },
+                {
+                  "field": "event.outcome",
+                  "operator": "equals",
+                  "value": "success"
+                },
+                {
+                  "field": "event.action",
+                  "operator": "in",
+                  "value": [
+                    "StopLogging",
+                    "DeleteTrail"
+                  ]
+                }
+              ],
+              "alert": {
+                "title": "AWS 감사 Trail 중지 또는 삭제",
+                "message": "감사 Trail 중지 또는 삭제 API가 성공으로 관측되었습니다. 승인 여부와 다른 Trail의 보완 범위 및 실제 수집 영향을 확인하세요.",
+                "category": "configuration",
+                "tags": [
+                  "aws",
+                  "audit",
+                  "visibility"
+                ]
+              },
+              "group_by": [
+                "organization.id",
+                "cloud.account.id"
+              ],
+              "threshold": {
+                "count": 1
+              },
+              "time_window": {
+                "seconds": 1
+              },
+              "cooldown": {
+                "seconds": 0
+              }
+            },
+            "evidence": [
+              {
+                "normalized": {
+                  "index": "soc-normalized-v1",
+                  "id": "a61445e662ca7976ad973af7c28247cd351389b3a4792613c1827a10508e0b9a"
+                },
+                "raw": {
+                  "index": "soc-cloud-aws-2026.09.22",
+                  "id": "d8b41259d719cecd869955815036e38ba1ebb195e3932ef50b4205d9dc2ebccc"
+                },
+                "event_hash": "a9fd821b15f1e6ecb2813b6ce4b35179fac83b55b41148f8bdd1f3a83486a989",
+                "complete": true
+              }
+            ],
+            "evidence_status": "complete"
+          },
+          "risk_score": 65,
+          "risk_level": "high",
+          "risk_version": "triage-v1",
+          "risk_factors": [
+            {
+              "name": "rule_severity",
+              "points": 65
+            }
+          ]
+        },
+        "message": "감사 Trail 중지 또는 삭제 API가 성공으로 관측되었습니다. 승인 여부와 다른 Trail의 보완 범위 및 실제 수집 영향을 확인하세요.",
+        "tags": [
+          "aws",
+          "audit",
+          "visibility"
+        ],
+        "mitre": {
+          "tactic": [
+            "Defense Evasion"
+          ],
+          "technique": [
+            {
+              "id": "T1562.008",
+              "name": "Disable or Modify Cloud Logs"
+            }
+          ],
+          "mapping_status": "contextual",
+          "rationale": "Observed configuration change; analyst confirmation of intent and effective impact required.",
+          "references": [
+            "https://attack.mitre.org/techniques/T1562/008/"
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "public ssh",
+      "raw": {
+        "_index": "soc-cloud-aws-2026.09.22",
+        "_id": "6ffb2b488f5b084812fe7bc81b6c34fe03ef322714010b2ca94351208581c3a1",
+        "_source": {
+          "@timestamp": "2026-09-22T01:20:00Z",
+          "event": {
+            "id": "11111111-2222-3333-4444-000000000011",
+            "kind": "event",
+            "dataset": "aws.cloudtrail",
+            "provider": "ec2.amazonaws.com",
+            "action": "AuthorizeSecurityGroupIngress",
+            "outcome": "success",
+            "ingested": "2026-09-22T01:20:00Z"
+          },
+          "cloud": {
+            "provider": "aws",
+            "account": {
+              "id": "123456789012"
+            },
+            "region": "us-east-1",
+            "service": {
+              "name": "ec2.amazonaws.com"
+            }
+          },
+          "organization": {
+            "id": "portfolio-fixture"
+          },
+          "agent": {
+            "type": "cloudtrail",
+            "id": "aws-123456789012-us-east-1"
+          },
+          "labels": {
+            "log_source": "aws_cloudtrail",
+            "privacy_policy": "cloudtrail_metadata_v1"
+          },
+          "user": {
+            "id": "FIXTURE:session",
+            "name": null
+          },
+          "source": {
+            "address": "198.51.100.11",
+            "ip": "198.51.100.11"
+          },
+          "aws": {
+            "cloudtrail": {
+              "schema": 1,
+              "identity_type": "AssumedRole",
+              "identity_arn": "arn:aws:sts::123456789012:assumed-role/fixture/session",
+              "identity_invoked_by": null,
+              "identity_account": "123456789012",
+              "session_issuer_arn": "arn:aws:iam::123456789012:role/fixture",
+              "resources": [
+                {
+                  "arn": "arn:aws:iam::123456789012:user/target-fixture",
+                  "type": "AWS::IAM::User",
+                  "account_id": "123456789012"
+                }
+              ],
+              "resources_truncated": false,
+              "error_code": null,
+              "outcome_basis": "no_error_reported",
+              "management_only": true,
+              "read_only": false,
+              "public_management_ingress": true
+            }
+          }
+        }
+      },
+      "normalized": {
+        "@timestamp": "2026-09-22T01:20:00Z",
+        "organization": {
+          "id": "portfolio-fixture"
+        },
+        "event": {
+          "kind": "event",
+          "category": [
+            "configuration"
+          ],
+          "action": "AuthorizeSecurityGroupIngress",
+          "outcome": "success",
+          "ingested": "2026-09-22T01:20:00Z",
+          "dataset": "aws.cloudtrail",
+          "provider": "ec2.amazonaws.com"
+        },
+        "cloud_soc": {
+          "normalized_at": "2026-10-05T00:00:00Z",
+          "normalizer_version": "intake-v1",
+          "parse_status": "recognized",
+          "detail": {
+            "version": 1,
+            "status": "recognized",
+            "adapter": "aws_cloudtrail_metadata_v1",
+            "audit_configuration": "not_checked",
+            "fields": {
+              "category": "cloud",
+              "action": "management_api_call",
+              "outcome": "success",
+              "api": "AuthorizeSecurityGroupIngress",
+              "event_id": "11111111-2222-3333-4444-000000000011",
+              "provider": "ec2.amazonaws.com",
+              "cloud_account": "123456789012",
+              "cloud_region": "us-east-1",
+              "identity_type": "AssumedRole",
+              "identity_arn": "arn:aws:sts::123456789012:assumed-role/fixture/session",
+              "identity_invoked_by": null,
+              "target_policy_arn": null,
+              "identity_account": "123456789012",
+              "session_issuer_arn": "arn:aws:iam::123456789012:role/fixture",
+              "source_address": "198.51.100.11",
+              "target_user": null,
+              "target_role": null,
+              "target_group_id": null,
+              "error_code": null,
+              "outcome_basis": "no_error_reported",
+              "target_group": null,
+              "target_trail": null,
+              "actor": "FIXTURE:session",
+              "public_management_ingress": true,
+              "resource_arns": [
+                "arn:aws:iam::123456789012:user/target-fixture"
+              ]
+            },
+            "missing": [],
+            "process_link": "not_established",
+            "limitations": [
+              "not_a_detection",
+              "management_events_not_object_access",
+              "api_result_not_resource_effect"
+            ]
+          },
+          "provenance": {
+            "schema_version": 1,
+            "raw": {
+              "index": "soc-cloud-aws-2026.09.22",
+              "id": "6ffb2b488f5b084812fe7bc81b6c34fe03ef322714010b2ca94351208581c3a1"
+            },
+            "time": {
+              "basis": "source_timestamp"
+            }
+          }
+        },
+        "source": {
+          "ip": "198.51.100.11"
+        },
+        "user": {
+          "name": "FIXTURE:session",
+          "id": "FIXTURE:session"
+        },
+        "cloud": {
+          "provider": "aws",
+          "region": "us-east-1",
+          "account": {
+            "id": "123456789012"
+          }
+        },
+        "_cloud_soc_meta": {
+          "index": "soc-normalized-v1",
+          "document_id": "ade6b4ee6d94c68e062da2b79a8f3e1e6bed00186eccd49fc68669ae0c408d32"
+        }
+      },
+      "alert_id": "77e16649d4a827e98b2da6c94a589b3187cc48b81f8ce53cf23c4eb845a4691b",
+      "alert": {
+        "@timestamp": "2026-09-22T01:20:00+00:00",
+        "event": {
+          "kind": "alert",
+          "category": [
+            "network"
+          ]
+        },
+        "rule": {
+          "id": "AWS-NETWORK-001",
+          "name": "AWS public SSH or RDP ingress authorized"
+        },
+        "organization": {
+          "id": "portfolio-fixture"
+        },
+        "cloud_soc": {
+          "alert_title": "AWS 관리 포트의 전체 인터넷 허용",
+          "severity": "high",
+          "event_count": 1,
+          "threshold": 1,
+          "time_window_seconds": 1,
+          "window_start": "2026-09-22T01:20:00+00:00",
+          "window_end": "2026-09-22T01:20:00+00:00",
+          "provenance": {
+            "schema_version": 1,
+            "engine_version": "single-v1",
+            "rule_version": "dc5de482b04b01f10871d97b847df41cc8e49439bc75dd2db9d4d208e77e4eed",
+            "rule_snapshot": {
+              "id": "AWS-NETWORK-001",
+              "mitre": {
+                "tactic": [
+                  "Defense Evasion"
+                ],
+                "technique": [
+                  {
+                    "id": "T1562.007",
+                    "name": "Disable or Modify Cloud Firewall"
+                  }
+                ],
+                "mapping_status": "contextual",
+                "rationale": "Observed configuration change; analyst confirmation of intent and effective impact required.",
+                "references": [
+                  "https://attack.mitre.org/techniques/T1562/007/"
+                ]
+              },
+              "type": "single",
+              "name": "AWS public SSH or RDP ingress authorized",
+              "enabled": true,
+              "severity": "high",
+              "conditions": [
+                {
+                  "field": "event.dataset",
+                  "operator": "equals",
+                  "value": "aws.cloudtrail"
+                },
+                {
+                  "field": "event.provider",
+                  "operator": "equals",
+                  "value": "ec2.amazonaws.com"
+                },
+                {
+                  "field": "event.outcome",
+                  "operator": "equals",
+                  "value": "success"
+                },
+                {
+                  "field": "event.action",
+                  "operator": "equals",
+                  "value": "AuthorizeSecurityGroupIngress"
+                },
+                {
+                  "field": "cloud_soc.detail.fields.public_management_ingress",
+                  "operator": "equals",
+                  "value": true
+                }
+              ],
+              "alert": {
+                "title": "AWS 관리 포트의 전체 인터넷 허용",
+                "message": "IPv4 또는 IPv6 전체 주소에 SSH/RDP 또는 모든 프로토콜을 허용한 요청이 성공으로 관측되었습니다. 실제 라우팅 및 자산 노출을 확인하세요.",
+                "category": "network",
+                "tags": [
+                  "aws",
+                  "security-group",
+                  "public-management"
+                ]
+              },
+              "group_by": [
+                "organization.id",
+                "cloud.account.id"
+              ],
+              "threshold": {
+                "count": 1
+              },
+              "time_window": {
+                "seconds": 1
+              },
+              "cooldown": {
+                "seconds": 0
+              }
+            },
+            "evidence": [
+              {
+                "normalized": {
+                  "index": "soc-normalized-v1",
+                  "id": "ade6b4ee6d94c68e062da2b79a8f3e1e6bed00186eccd49fc68669ae0c408d32"
+                },
+                "raw": {
+                  "index": "soc-cloud-aws-2026.09.22",
+                  "id": "6ffb2b488f5b084812fe7bc81b6c34fe03ef322714010b2ca94351208581c3a1"
+                },
+                "event_hash": "932c4719fe56ca6b5ecd2057632fd602cd5863bd5669f86751d1b5e7fc40b653",
+                "complete": true
+              }
+            ],
+            "evidence_status": "complete"
+          },
+          "risk_score": 65,
+          "risk_level": "high",
+          "risk_version": "triage-v1",
+          "risk_factors": [
+            {
+              "name": "rule_severity",
+              "points": 65
+            }
+          ]
+        },
+        "message": "IPv4 또는 IPv6 전체 주소에 SSH/RDP 또는 모든 프로토콜을 허용한 요청이 성공으로 관측되었습니다. 실제 라우팅 및 자산 노출을 확인하세요.",
+        "tags": [
+          "aws",
+          "security-group",
+          "public-management"
+        ],
+        "mitre": {
+          "tactic": [
+            "Defense Evasion"
+          ],
+          "technique": [
+            {
+              "id": "T1562.007",
+              "name": "Disable or Modify Cloud Firewall"
+            }
+          ],
+          "mapping_status": "contextual",
+          "rationale": "Observed configuration change; analyst confirmation of intent and effective impact required.",
+          "references": [
+            "https://attack.mitre.org/techniques/T1562/007/"
+          ]
+        }
+      }
+    }
+  ]
+}

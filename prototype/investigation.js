@@ -4,7 +4,7 @@
   const states={new:"신규",triage:"초기 분류",investigating:"조사 중",escalated:"상위 이관",closed:"종결"};
   const verdicts={unreviewed:"미판정",malicious:"악성",benign:"정상",false_positive:"오탐",inconclusive:"판단 보류"};
   const priorities={critical:"긴급",high:"높음",medium:"중간",low:"낮음"};
-  const evidenceStates={exact_reference:"정확한 문서 참조 확인 · 내용 해시 재검증은 아님",normalized_missing_or_expired:"정규화 근거 누락 / 만료",raw_missing_or_expired:"원본 근거 누락 / 만료",provenance_mismatch:"근거 참조 불일치",unsupported_or_invalid_reference:"지원하지 않는 근거 참조",invalid_reference:"잘못된 참조"};
+  const evidenceStates={exact_reference:"정확한 문서 참조 확인",normalized_hash_mismatch:"정규화 근거 내용 변경 감지",invalid_evidence_hash:"저장된 근거 해시 형식 오류",normalized_missing_or_expired:"정규화 근거 누락 / 만료",raw_missing_or_expired:"원본 근거 누락 / 만료",provenance_mismatch:"근거 참조 불일치",unsupported_or_invalid_reference:"지원하지 않는 근거 참조",invalid_reference:"잘못된 참조"};
   const fmt=v=>v?new Date(v).toLocaleString("ko-KR",{timeZone:"Asia/Seoul"}):"미기록";
   let current=null, caseId=query.get("case"), alertId=query.get("alert"), historyNext=null, generation=0, pending=null, saving=false;
   const back=new URLSearchParams(query.get("return")||"");
@@ -51,15 +51,26 @@
       const data=await request("/api/alerts/detail?"+new URLSearchParams({id}));if(version!==generation)return;
       const c=data.condition;detail.replaceChildren(node("p","규칙 "+(data.alert.rule||"미기록")+" · 버전 "+(data.rule_version||"미기록")),node("p","관측 수 "+(c.event_count??"미기록")+" / 임계값 "+(c.threshold??"미기록")+" / 시간 창 "+(c.time_window_seconds??"미기록")+"초"));
       detail.append(node("p","관련 대상 (경보 필드): 조직 "+(data.alert.organization||"미기록")+" · 출발지 IP "+(data.alert.source_ip||"미관측")));
+      if(data.risk){
+        detail.append(node("p",data.risk.score===null?"위험 점수 미기록 (과거 경보)":"위험 점수 "+data.risk.score+" / 100 · "+data.risk.level+" · 계산 버전 "+data.risk.version));
+        if(Array.isArray(data.risk.factors))for(const factor of data.risk.factors)detail.append(node("p",factor.name+": +"+factor.points));
+      }
+      for(const [label,value] of [["탐지 규칙",data.rule_snapshot],["MITRE ATT&CK",data.mitre]])if(value){
+        const section=node("details");section.append(node("summary",label),node("pre",JSON.stringify(value,null,2)));detail.append(section);
+      }
       if(!data.evidence_count)detail.append(node("p","이 경보에는 정확한 근거 참조가 없습니다."));
-      if(data.evidence_count>data.evidence_limit)detail.append(node("p","근거 "+data.evidence_count+"건 중 처음 "+data.evidence_limit+"건만 지원합니다."));
-      for(let i=0;i<data.evidence_limit;i++){
+      if(data.evidence_count)detail.append(node('p','저장된 근거 '+data.evidence_count+'건 · 페이지별 전체 조회 가능'));
+      const navigation=node('div');detail.append(navigation);
+      function evidencePage(pageData){
+      const page=pageData.evidence_page||{positions:Array.from({length:pageData.evidence_limit},(_,i)=>i),next_offset:null};
+      for(const i of page.positions){
         const button=node("button","근거 "+(i+1)+" 조회"),result=node("div");button.type="button";
         button.addEventListener("click",async()=>{
           button.disabled=true;result.textContent="근거 조회 중";
           try{
             const reply=await request("/api/alerts/detail?"+new URLSearchParams({id,evidence:String(i)}));if(version!==generation)return;
             const e=reply.evidence;result.replaceChildren(node("p",evidenceStates[e.state]||"근거 상태 미확인"));
+            if(e.integrity)result.append(node('p',e.integrity==='normalized_hash_verified'?'정규화 내용 해시 일치 · 원본 내용 해시는 미검증':'과거 근거의 내용 해시는 미기록'));
             if(e.raw)result.append(node("p","원본 참조: "+e.raw.index+" / "+e.raw.id));
             if(e.normalized)result.append(node("p","정규화 참조: "+e.normalized.index+" / "+e.normalized.id));
             if(e.normalized_event)result.append(node("p","근거 이벤트 시각 (KST): "+fmt(e.normalized_event.timestamp)+" · 행위 "+(e.normalized_event.action||"미관측")+" · 결과 "+(e.normalized_event.outcome||"미관측")));
@@ -68,6 +79,16 @@
           }catch(failure){result.textContent=failure.message;}finally{button.disabled=false;}
         });detail.append(button,result);
       }
+      navigation.replaceChildren();
+      if(page.next_offset!==null){
+        const more=node('button','다음 근거 페이지');more.type='button';navigation.append(more);
+        more.addEventListener('click',async()=>{more.disabled=true;try{
+          const next=await request('/api/alerts/detail?'+new URLSearchParams({id,offset:String(page.next_offset)}));
+          if(version===generation)evidencePage(next);
+        }catch(error){more.textContent=error.message;}finally{more.disabled=false;}});
+      }
+      }
+      evidencePage(data);
     }catch(failure){if(version===generation)detail.textContent=(failure.status===404?"경보가 누락/만료되었습니다. 위 요약은 연결 당시 저장된 기록입니다.":failure.message);}
   }
   async function loadCase(){
@@ -80,6 +101,7 @@
       current=data.case;$("case-title").textContent=current.title;
       $("case-summary").textContent="조직 "+current.organization+" · "+states[current.status]+" · "+verdicts[current.verdict]+" · 수정 버전 "+current.version;
       const owner=$("work-owner");owner.replaceChildren();const none=node("option","미배정");none.value="";const me=node("option",data.actor);me.value=data.actor;owner.append(none,me);
+      if(current.owner&&current.owner!==data.actor){const assigned=node("option",current.owner+" (현재 담당자)");assigned.value=current.owner;owner.append(assigned);}
       for(const key of ["status","owner","priority","verdict"])$("work-"+key).value=current[key]||"";
       $("case-work-panel").hidden=false;$("case-create-panel").hidden=true;$("case-history-panel").hidden=false;
       history(data.history);historyNext=data.history_next;$("case-history-more").disabled=!historyNext;
@@ -97,7 +119,13 @@
     try{await mutate("/api/cases/"+caseId,"PATCH",{version:current.version,...body});if(Object.hasOwn(body,"note"))$("work-note").value="";$("case-link-id").value="";await loadCase();}
     catch(failure){error(failure.message);}finally{locked(false);}
   }
-  $("case-work-form").addEventListener("submit",event=>{event.preventDefault();save({status:$("work-status").value,owner:$("work-owner").value||null,priority:$("work-priority").value,verdict:$("work-verdict").value,note:$("work-note").value});});
+  $("case-work-form").addEventListener("submit",event=>{
+    event.preventDefault();if(!current)return;
+    const body={status:$("work-status").value,priority:$("work-priority").value,verdict:$("work-verdict").value,note:$("work-note").value};
+    const owner=$("work-owner").value||null;
+    if(owner!==(current.owner||null))body.owner=owner;
+    save(body);
+  });
   $("case-link-form").addEventListener("submit",event=>{event.preventDefault();save({alert_id:$("case-link-id").value});});
   $("case-reload").addEventListener("click",()=>{if(!saving)loadCase();});
   $("case-history-more").addEventListener("click",async()=>{

@@ -1,3 +1,5 @@
+# Local development base. Use -f compose.yaml -f compose.dev.yaml.
+# Production: -f compose.prod.yaml --env-file state/server/compose.env
 services:
   # Elasticsearch 서비스 실행 구문
   elasticsearch:
@@ -6,11 +8,9 @@ services:
 
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=false #나중에 true로 바꿔서 보안 적용
+      - xpack.security.enabled=false # Explicit local development only
       - ES_JAVA_OPTS=-Xms1g -Xmx1g
 
-    ports:
-      - "127.0.0.1:9200:9200"
 
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
@@ -37,8 +37,6 @@ services:
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
 
-    ports:
-      - "127.0.0.1:5601:5601"
 
 volumes:
   elasticsearch-data:

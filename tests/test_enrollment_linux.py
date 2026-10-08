@@ -1,7 +1,6 @@
 """Installer protocol/state tests; no real service, credential or capture."""
 import hashlib
 import importlib.util
-import json
 from pathlib import Path
 import tempfile
 import unittest

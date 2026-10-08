@@ -1,0 +1,651 @@
+diff --git a/deploy/server/detection.compose.yaml b/deploy/server/detection.compose.yaml
+index f0de443..251ee7d 100644
+--- a/deploy/server/detection.compose.yaml
++++ b/deploy/server/detection.compose.yaml
+@@ -4,13 +4,14 @@ services:
+     build:
+       context: ../..
+       dockerfile: deploy/server/Dockerfile
+-    command: ["python", "-m", "cloud_soc.detection", "--run", "--es-url", "https://elasticsearch:9200", "--ca-file", "/run/certs/ca.crt", "--api-key-file", "/run/keys/detector.key", "--max-documents", "${SOC_DETECTION_MAX_DOCUMENTS:-20000}"]
++    command: ["python", "-m", "cloud_soc.detection", "--run", "--es-url", "https://elasticsearch:9200", "--ca-file", "/run/certs/ca.crt", "--api-key-file", "/run/keys/detector.key", "--state", "/data/runtime.sqlite", "--start", "${SOC_DETECTION_START:?Set an explicit normalization UTC start}", "--max-documents", "${SOC_DETECTION_MAX_DOCUMENTS:-20000}"]
+     restart: unless-stopped
+     depends_on:
+       bootstrap: {condition: service_completed_successfully}
+     volumes:
+       - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+       - ${SOC_STATE_DIR}/secrets/detector.key:/run/keys/detector.key:ro
++      - ${SOC_STATE_DIR}/detection:/data
+     read_only: true
+     tmpfs: [/tmp]
+     security_opt: ["no-new-privileges:true"]
+diff --git a/docs/work_tracker.md b/docs/work_tracker.md
+index 038c495..9ffba5d 100644
+--- a/docs/work_tracker.md
++++ b/docs/work_tracker.md
+@@ -1,5 +1,9 @@
+ # Cloud SOC 작업 목록
+ 
++2026-10-04 P5-02 진행: 사용자 요청으로 영속 증분 탐지와 포털 장애 알림을 구현한다. 배치 경계, 재시작, 실패 재시도, 지연 이벤트 정책을 격리 검증한다. 기존 규칙 유지, 운영 배포·키 발급·Git push는 범위 밖이며 실제 운영 인수 전 전체 완료로 표시하지 않는다.
++
++2026-10-04 P5-02 코드·격리 검증: SQLite 영속 시간 창/cooldown/지연 버퍼/체크포인트와 create-only 재시도, 정규화 시각 매핑·15분 중첩 조회, 과거 필드 없는 자료의 명시적 제외 검사, Compose 상태 볼륨, 포털 실패/상태 중단/처리 지연/제외 경고 구현. 증분 14건, 기존 탐지 24건, 정규화 14건, 운영 API 11건 통과(합계 Python 63건). 운영 UI 8건 통과. P5-02 전체 완료 체크는 유지하지 않음: 실제 ES 최소 권한·Compose 재시작·운영 수집·브라우저 렌더링 미검증, 15분 초과 저장 가시성 지연과 과거 데이터 재평가/외부 알림 전송은 미지원. 적용 안내 docs/incremental_detection.md. 운영 서버·원격 Git 변경 없음.
++
+ 2026-10-01 Git 인계 준비(사용자 요청: 커밋·푸시만, 배포 없음): 누적 P0C-02 설치/복구 안정화 소스와 P0C-03 Windows 신규 통합 설치의 단일 토큰·자동 중앙 수신 확인 1차 구현을 함께 버전 관리한다. 개인 Word 문서, 개인 검증 JSON, state/비밀/실제 로그는 제외한다. 아래의 과거 "커밋/푸시 없음"은 각 검증 시점의 이력이며 이번 인계와 구분한다. P0C-02 완료 이력은 유지하고 P0C-03은 실제 배포/수신 및 Linux 지원이 남아 미완료다.
+ 
+ 새 채팅 재개 순서: 먼저 이 작업 목록과 docs/agent_enrollment.md를 읽고 최신 Git 상태/커밋을 확인한다. 집 환경에서 중앙 서버 접속 경로와 인증서 신뢰·접근 권한을 다시 확인한다(사설 IP/기존 접속이 계속 유효하다고 가정하지 않는다). 이후 사용자 요청 시 보호 백업 → 새 Docker 이미지와 인증 메타데이터 final pipeline/최소 권한 검증 → enrollment 기능·정리 서비스 명시 활성화 → 새 Windows 통합 ZIP 생성 → 승인된 빈/스냅샷 시험 VM에서 단일 토큰 설치·로그/네트워크 실제 중앙 수신 및 실패 키 폐기 확인 순서로 진행한다. 기존 설치에는 신규 Enroll을 재실행하지 않는다. 마지막으로 Linux/로그 전용 토큰 지원과 실패 설치의 새 키 재등록 UX를 보완한다. 이번에는 원격 배포·수집기 갱신·토큰 활성화를 수행하지 않는다. 전체 Python의 OCI 바이너리 호환 오류 3건도 별도로 확인해야 한다. 이전 시험 VM의 하루 키는 2026-10-02 약 14:17 KST 만료 예정이며 자동 연장된 것으로 간주하지 않는다.
+diff --git a/prototype/operations.js b/prototype/operations.js
+index 8e18b7a..7d8c334 100644
+--- a/prototype/operations.js
++++ b/prototype/operations.js
+@@ -56,6 +56,13 @@
+     const detector = pipeline.detector || { state: "not_started" };
+     const detectorLabels = { ...labels, success: "최근 탐지 성공", running: "탐지 실행 중", failed: "탐지 실패" };
+     $("ops-pipeline").textContent += " · SSH 탐지기: " + (detectorLabels[detector.state] || "미확인") + " · 탐지 마지막 성공: " + fmt(detector.last_success);
++    const healthLabels = { failed: "탐지 장애: 처리 실패", stale: "탐지 장애: 상태 갱신 중단", delayed: "탐지 지연: 처리 위치 확인 필요", warning: "탐지 경고: 탐지 제외 이벤트 확인 필요" };
++    if (healthLabels[detector.health]) $("ops-pipeline").textContent += " · " + healthLabels[detector.health];
++    if (Number.isSafeInteger(detector.lag_seconds)) $("ops-pipeline").textContent += " · 처리 지연 " + detector.lag_seconds + "초";
++    if (detector.late_total > 0) $("ops-pipeline").textContent += " · 지연 제외 누적 " + detector.late_total + "건";
++    if (detector.legacy_excluded > 0) $("ops-pipeline").textContent += " · 과거 형식 제외 " + detector.legacy_excluded + "건";
++    $("ops-pipeline").setAttribute("role", "status");
++    $("ops-pipeline").setAttribute("aria-live", "polite");
+     chart($("ops-intake-chart"), sections.intake); chart($("ops-alert-chart"), sections.alerts);
+     const alerts = sections.alerts; $("ops-alert-rows").replaceChildren();
+     $("ops-alert-state").textContent = alerts.state === "ok" ? "총 " + alerts.count + "건 · 최신 최대 50건 표시 (페이지 탐색 미지원)" : labels[alerts.state];
+diff --git a/prototype/tests/operations.test.cjs b/prototype/tests/operations.test.cjs
+index 64d19df..c929c1e 100644
+--- a/prototype/tests/operations.test.cjs
++++ b/prototype/tests/operations.test.cjs
+@@ -29,6 +29,13 @@ test('detector state is displayed separately from normalization',async()=>{
+   const ui=browser([ok({...data,sections:{...data.sections,pipeline:{state:'success',detector:{state:'failed'}}}})]);await settle();
+   assert.match(ui.get('ops-pipeline').textContent,/SSH 탐지기: 탐지 실패/);
+ });
++test('detector health alarms and excluded counts are visible',async()=>{
++  for (const [health,label] of [['failed','탐지 장애: 처리 실패'],['stale','상태 갱신 중단'],['delayed','탐지 지연'],['warning','탐지 제외 이벤트']]) {
++    const ui=browser([ok({...data,sections:{...data.sections,pipeline:{state:'success',detector:{state:'success',health,lag_seconds:1300,late_total:3,legacy_excluded:12}}}})]);await settle();
++    assert.ok(ui.get('ops-pipeline').textContent.includes(label));
++    assert.match(ui.get('ops-pipeline').textContent,/처리 지연 1300초.*지연 제외 누적 3건.*과거 형식 제외 12건/);
++  }
++});
+ test('successful zero, missing index and failed queries stay distinct',async()=>{
+   const ui=browser([ok({...data,sections:{...data.sections,processing:{state:'no_index'},quality:{state:'unavailable'}}})]);await settle();
+   const cards=ui.get('ops-metrics').children;
+diff --git a/src/cloud_soc/detection/__main__.py b/src/cloud_soc/detection/__main__.py
+index cba160f..f13ab7c 100644
+--- a/src/cloud_soc/detection/__main__.py
++++ b/src/cloud_soc/detection/__main__.py
+@@ -8,6 +8,7 @@ import time
+ from elasticsearch import Elasticsearch
+ from cloud_soc.aws.__main__ import endpoint, protected_key
+ from cloud_soc.detection.worker import approved_rules, run_once
++from cloud_soc.detection.incremental import run_incremental, utc
+ 
+ 
+ def main(argv=None):
+@@ -16,6 +17,11 @@ def main(argv=None):
+     parser.add_argument("--once", action="store_true")
+     parser.add_argument("--interval", type=int, default=60)
+     parser.add_argument("--max-documents", type=int, default=20000)
++    parser.add_argument("--state", default="state/detection/runtime.sqlite")
++    parser.add_argument("--start", help="Required explicit UTC normalization start on first run; keep unchanged on restart")
++    parser.add_argument("--lateness-seconds", type=int, default=900)
++    parser.add_argument("--snapshot", action="store_true", help="Explicit legacy offline/replay mode")
++    parser.add_argument("--accept-legacy-exclusion", action="store_true", help="Explicitly exclude old documents missing normalized_at; original documents remain unchanged")
+     parser.add_argument("--es-url")
+     parser.add_argument("--ca-file")
+     parser.add_argument("--api-key-file")
+@@ -25,6 +31,10 @@ def main(argv=None):
+                 or args.once and not args.run):
+             raise ValueError("Invalid options")
+         approved_rules()
++        if args.run and not args.snapshot:
++            utc(args.start)
++            if not 60 <= args.lateness_seconds <= 86400:
++                raise ValueError("Invalid lateness")
+         if not args.run:
+             print("AUTH-001 valid; source=soc-normalized-v1; offline; no writes")
+             return 0
+@@ -38,10 +48,14 @@ def main(argv=None):
+             while True:
+                 failed = False
+                 try:
+-                    print(json.dumps(run_once(client, max_documents=args.max_documents)), flush=True)
++                    result = (run_once(client, max_documents=args.max_documents) if args.snapshot else
++                              run_incremental(client, state_path=args.state, start=args.start,
++                                              max_documents=args.max_documents, lateness_seconds=args.lateness_seconds, source_id=url,
++                                              accept_legacy_exclusion=args.accept_legacy_exclusion))
++                    print(json.dumps(result), flush=True)
+                 except Exception:
+                     failed = True
+-                    print("detection_cycle_failed; check status, permissions and snapshot limit", flush=True)
++                    print("detection_cycle_failed; checkpoint retained; check portal health, state and permissions", flush=True)
+                 if args.once:
+                     return int(failed)
+                 time.sleep(args.interval)
+diff --git a/src/cloud_soc/detection/engine.py b/src/cloud_soc/detection/engine.py
+index 5a61bc4..6d523dd 100644
+--- a/src/cloud_soc/detection/engine.py
++++ b/src/cloud_soc/detection/engine.py
+@@ -248,6 +248,7 @@ def build_group_key(
+ def detect_rule(
+     events: list[dict[str, Any]],
+     rule: dict[str, Any],
++    *, runtime: dict | None = None,
+ ) -> list[dict[str, Any]]:
+     """
+     특정 Rule 하나를 이벤트 목록에 적용한다.
+@@ -337,6 +338,9 @@ def detect_rule(
+ 
+     for group_key, group_events in grouped_events.items():
+ 
++        state_key = json.dumps(group_key, ensure_ascii=True)
++        prior = runtime.get(state_key, {}) if runtime is not None else {}
++
+         # 반드시 시간순으로 처리한다.
+         group_events.sort(key=lambda item: (item[0], event_fingerprint(item[1])))
+ 
+@@ -346,9 +350,9 @@ def detect_rule(
+                 datetime,
+                 dict[str, Any],
+             ]
+-        ] = deque()
++        ] = deque((parse_event_timestamp(item), item) for item in prior.get("window", []))
+ 
+-        last_alert_time: datetime | None = None
++        last_alert_time = datetime.fromisoformat(prior["last_alert"]) if prior.get("last_alert") else None
+ 
+         for timestamp, event in group_events:
+ 
+@@ -463,6 +467,10 @@ def detect_rule(
+ 
+             last_alert_time = timestamp
+ 
++        if runtime is not None:
++            runtime[state_key] = {"window": [item[1] for item in window],
++                                  "last_alert": last_alert_time.isoformat() if last_alert_time else None}
++
+     return detections
+ 
+ 
+diff --git a/src/cloud_soc/elastic/pagination.py b/src/cloud_soc/elastic/pagination.py
+index e6fbb30..5d6850b 100644
+--- a/src/cloud_soc/elastic/pagination.py
++++ b/src/cloud_soc/elastic/pagination.py
+@@ -15,6 +15,7 @@ class IncompleteSearchError(RuntimeError):
+ def fetch_all_hits(
+     client: Elasticsearch, *, index: str, page_size: int = 1000,
+     max_documents: int | None = None,
++    query: dict | None = None,
+ ) -> list[dict[str, Any]]:
+     if type(page_size) is not int or not 1 <= page_size <= 10000:
+         raise ValueError("page_size must be between 1 and 10000")
+@@ -35,7 +36,7 @@ def fetch_all_hits(
+             request: dict[str, Any] = {
+                 "pit": {"id": pit_id, "keep_alive": "2m"},
+                 "size": page_size,
+-                "query": {"match_all": {}},
++                "query": query if query is not None else {"match_all": {}},
+                 # _shard_doc is unique and stable within this PIT.
+                 "sort": [{"_shard_doc": "asc"}],
+                 "track_total_hits": False,
+diff --git a/src/cloud_soc/portal/operations.py b/src/cloud_soc/portal/operations.py
+index 92886eb..9774404 100644
+--- a/src/cloud_soc/portal/operations.py
++++ b/src/cloud_soc/portal/operations.py
+@@ -147,14 +147,23 @@ class Operations:
+                 "rows": rows, "statuses": [{"key": key, "doc_count": statuses[key]} for key in sorted(statuses)]}
+ 
+     def worker_status(self, worker):
+-        value = self.get(STATUS, worker, ["@timestamp", "state", "last_success", "checkpoint", "error", "detection"])
++        value = self.get(STATUS, worker, ["@timestamp", "state", "last_success", "checkpoint", "error", "detection", "health", "lag_seconds", "late_total", "legacy_excluded"])
+         if value is None:
+             return {"state": "not_started"}
+         stamp = parse_time(value.get("@timestamp"))
+         age = (datetime.now(timezone.utc) - stamp).total_seconds() if stamp else None
+         state = value.get("state")
+-        return {"state": state if age is not None and 0 <= age <= 300 and state in ("success", "running", "failed", "waiting") else "stale",
+-                "last_success": text(value.get("last_success")), "checkpoint": text(value.get("checkpoint"))}
++        state = state if age is not None and 0 <= age <= 300 and state in ("success", "running", "failed", "waiting") else "stale"
++        checkpoint = parse_time(value.get('checkpoint'))
++        lag = max(0, int((datetime.now(timezone.utc) - checkpoint).total_seconds())) if checkpoint else None
++        late = value.get('late_total')
++        late = late if type(late) is int and late >= 0 else 0
++        legacy = value.get('legacy_excluded')
++        legacy = legacy if type(legacy) is int and legacy >= 0 else 0
++        health = 'failed' if state == 'failed' else 'stale' if state == 'stale' else 'delayed' if lag is not None and lag > 1200 else 'warning' if late or legacy else 'healthy'
++        return {"state": state, "health": health, "lag_seconds": lag, "late_total": late, "legacy_excluded": legacy,
++                "last_success": text(value.get("last_success")), "checkpoint": text(value.get("checkpoint")),
++                "error": text(value.get('error'))}
+ 
+     def pipeline(self):
+         try:
+diff --git a/src/cloud_soc/processing/contract.py b/src/cloud_soc/processing/contract.py
+index bb3ce39..dec213b 100644
+--- a/src/cloud_soc/processing/contract.py
++++ b/src/cloud_soc/processing/contract.py
+@@ -64,7 +64,7 @@ def normalize(hit, processed_at):
+     event = {"@timestamp": iso(occurred), "organization": {"id": organization},
+              "event": {"kind": "event", "category": [category], "action": values.get("api") or values["action"],
+                        "outcome": values["outcome"], "ingested": iso(received)},
+-             "cloud_soc": {"normalizer_version": VERSION, "parse_status": detail["status"],
++             "cloud_soc": {"normalized_at": processed_at, "normalizer_version": VERSION, "parse_status": detail["status"],
+                            "detail": detail, "provenance": {"schema_version": 1, "raw": reference, "time": time_metadata}}}
+     for name in ("source", "destination"):
+         ip = address(values.get(name + "_ip") or field(source, name + ".ip"))
+diff --git a/src/cloud_soc/processing/setup.py b/src/cloud_soc/processing/setup.py
+index 997f251..0d48842 100644
+--- a/src/cloud_soc/processing/setup.py
++++ b/src/cloud_soc/processing/setup.py
+@@ -21,13 +21,16 @@ def prepare(client):
+                      "cloud": {"properties": {"provider": KEYWORD, "region": KEYWORD, "account": {"properties": {"id": KEYWORD}}}},
+                      "network": {"properties": {"protocol": KEYWORD, "transport": KEYWORD}},
+                      "process": {"properties": {"pid": {"type": "long"}, "executable": KEYWORD}},
+-                     "cloud_soc": {"properties": {"normalizer_version": KEYWORD, "parse_status": KEYWORD,
++                     "cloud_soc": {"properties": {"normalized_at": DATE, "normalizer_version": KEYWORD, "parse_status": KEYWORD,
+                                                     "detail": {"type": "object", "enabled": False},
+                                                     "provenance": {"type": "object", "enabled": False}}}},
+         RECORDS: {"@timestamp": DATE, "event": {"properties": {"ingested": DATE}},
+                   **{k: KEYWORD for k in ("version", "status", "reason", "adapter")},
+                   "raw": {"type": "object", "enabled": False}, "normalized": {"type": "object", "enabled": False}},
+         STATUS: {"@timestamp": DATE, "last_success": DATE, "checkpoint": DATE,
++                 "health": KEYWORD, "lag_seconds": {"type": "long"}, "late_total": {"type": "long"},
++                 "legacy_excluded": {"type": "long"},
++                 "counts": {"type": "object", "enabled": False},
+                  "state": KEYWORD, "error": KEYWORD, "detection": KEYWORD},
+     }
+     for name, properties in mappings.items():
+@@ -38,4 +41,8 @@ def prepare(client):
+             found = client.indices.get_mapping(index=name)
+             if set(found) != {name} or found[name]["mappings"].get("_meta", {}).get("contract") != name:
+                 raise ValueError("Processing mapping conflict; manual review required")
++            if name == NORMALIZED:
++                client.indices.put_mapping(index=name, properties={"cloud_soc": {"properties": {"normalized_at": DATE}}})
++            if name == STATUS:
++                client.indices.put_mapping(index=name, properties={k: properties[k] for k in ('health', 'lag_seconds', 'late_total', 'legacy_excluded', 'counts')})
+     client.security.put_role(name="cloud_soc_normalizer", **ROLE)
+diff --git a/docs/incremental_detection.md b/docs/incremental_detection.md
+new file mode 100644
+index 0000000..ec7eb7b
+--- /dev/null
++++ b/docs/incremental_detection.md
+@@ -0,0 +1,46 @@
++# 영속 증분 탐지와 장애 표시
++
++2026-10-04 / P5-02. 코드와 모의 ES 시험 범위이며 실제 Elasticsearch·Docker·운영 배포 인수는 별도다.
++
++## 동작
++
++기본 CLI는 SQLite 영속 증분 모드다. 기존 전체 스냅샷은 `--snapshot`으로 명시 선택한다.
++기존 AUTH-001의 조직/IP 구분, 10건/300초, cooldown 및 불변 경보 저장을 유지한다.
++
++- 정규화 시각 `cloud_soc.normalized_at` 기준 5분 배치를 PIT/search_after로 완전히 읽는다.
++- 발생 시각 기준 기본 15분 지연 버퍼 후 평가한다. 상태에는 미평가 이벤트, 그룹별 시간 창/cooldown, 중첩 조회 중복 ID가 저장된다.
++- 조회는 15분 중첩한다. 이는 정규화 작업 시작 시각부터 실제 저장·검색 가능 시각까지 최대 15분 지연을 전제로 한다. 이 한계를 넘는 정규화/refresh 장애의 무손실은 보장하지 않으며 정규화 서비스 장애도 함께 감시해야 한다.
++- 시간 창과 cooldown은 재시작 후 유지된다. SQLite BEGIN IMMEDIATE로 같은 상태 파일의 동시 처리자를 거부한다. 동일 소스에 서로 다른 상태 파일을 사용한 다중 탐지기는 지원하지 않는다.
++- 경보를 create-only로 저장하고 상태 게시에 성공한 후 로컬 체크포인트를 커밋한다. 실패하면 체크포인트를 유지하며 같은 ID로 재시도한다. ES와 SQLite 간 분산 트랜잭션/정확히 한 번 처리 보장은 아니다.
++- 확정한 발생 시각보다 오래된 새 이벤트는 재평가하지 않고 `late_total`에 기록한다. 원본은 보존된다. 개별 제외 이벤트 전용 저장소와 자동 backfill은 후속 과제다.
++- 배치 조회/활성 상태 상한 초과, 불완전한 근거, 미래 시각 이상은 회차 실패다. 누적 전체 인덱스 크기는 조회 상한을 소비하지 않는다.
++
++## 적용 순서
++
++1. 기존 처리/탐지기를 중지하고 상태 파일과 ES Snapshot을 보호 백업한다.
++2. 관리자 준비 단계에서 `cloud_soc.processing.setup.prepare()`를 다시 실행해 정규화 시각 및 상태 지표 매핑을 추가한다. 기존 `cloud_soc.detection.setup --prepare-processing`도 이 경로를 사용하지만 새 키를 발급하므로 이미 있는 키 파일을 덮어쓰지 않는다.
++3. 변경된 normalizer를 사용한다. 기존 문서는 create-only이므로 자동으로 변경하지 않는다.
++4. 시작 시각을 결정한다. 과거 정규화 시각 필드가 없는 문서가 있으면 최초 증분 실행은 실패한다. 과거 자료는 별도 스냅샷 평가/이행 검토 후, 이후 자료만 평가할 때 `--accept-legacy-exclusion`을 명시한다. 제외 건수는 저장되고 포털 경고에 표시된다. 기존 자료의 조용한 제외나 해시/근거를 바꾸는 자동 덮어쓰기는 하지 않는다.
++5. 로컬 영속 상태 경로, UTC 시작 시각, 소스 endpoint를 고정해 실행한다.
++
++```sh
++python -m cloud_soc.detection --run \
++  --es-url https://elasticsearch:9200 --ca-file /run/certs/ca.crt \
++  --api-key-file /run/keys/detector.key \
++  --state /data/runtime.sqlite --start 2026-10-04T00:00:00Z
++```
++
++위 시작 시각은 예시다. `--start` 이전 자료는 평가 범위 밖이며 업무상 승인된 시작점을 사용한다. 시작점/규칙/지연 정책/endpoint/과거 제외 정책이 바뀌면 기존 상태 사용을 거부한다. 새 상태를 만들기 전 재처리와 경보 중복 영향을 검토한다.
++
++Compose는 `SOC_DETECTION_START`를 요구하고 `${SOC_STATE_DIR}/detection`을 `/data`에 영속 마운트한다. 과거 제외가 필요한 기존 환경은 별도 command override에 `--accept-legacy-exclusion`을 명시한다. Windows 상태 폴더 ACL과 Linux 디렉터리 0700/파일 0600을 적용한다. SQLite WAL/SHM도 함께 보호하고 온라인 백업 API 또는 탐지기 중지 후 일관된 백업을 사용한다.
++
++## 장애 알림
++
++운영 화면은 탐지 실패, 5분 초과 상태 미갱신, 20분 초과 체크포인트 지연, 지연/과거 제외 경고를 표시한다. 마지막 성공 시각은 실패 후에도 남긴다. 장애 상태는 보안 공격 경보로 저장하지 않는다.
++
++이 단계의 알림은 포털 상태 표시/API이며 이메일·메신저·SMS 발송은 포함하지 않는다. 포털에 접속하지 않아도 통지해야 하는 운영 환경은 독립 감시가 상태 API를 검사하도록 연결해야 한다. ES 전체 장애 시 탐지기가 상태를 쓰지 못하므로 포털 조회 실패와 외부 가용성 감시가 필요하다.
++
++## 검증 범위
++
++`tests/test_incremental_detection.py`: 배치 9+1, 재시작 cooldown, 조직 분리, 순서 뒤바뀜, 저장/상태 실패 재시도, 늦은 도착 표시, 상한 초과, 원본 범위 변경 거부, 잠금, 오래된 그룹 정리, 매핑/과거 이행 검사.
++기존 탐지·정규화·운영 API/UI 회귀도 실행한다. 실제 ES 최소 권한·장기 처리량·Docker 재시작·브라우저 렌더링은 운영 인수에서 별도 검증한다.
+diff --git a/src/cloud_soc/detection/incremental.py b/src/cloud_soc/detection/incremental.py
+new file mode 100644
+index 0000000..7e0e862
+--- /dev/null
++++ b/src/cloud_soc/detection/incremental.py
+@@ -0,0 +1,164 @@
++"""Transactional incremental threshold detection; ES writes precede local commit."""
++from copy import deepcopy
++from contextlib import closing
++from datetime import datetime, timedelta, timezone
++import json
++import os
++from pathlib import Path
++import sqlite3
++
++from cloud_soc.detection.engine import detect_rule, event_matches_rule, event_fingerprint, parse_event_timestamp, event_evidence, build_group_key
++from cloud_soc.detection.worker import approved_rules, ALERTS
++from cloud_soc.elastic.pagination import fetch_all_hits
++from cloud_soc.elastic.repository import ensure_provenance_mapping, save_security_alert
++from cloud_soc.main import make_alert_id, build_security_alert
++from cloud_soc.processing.contract import NORMALIZED, STATUS
++
++
++def utc(value):
++    stamp = datetime.fromisoformat(value.replace('Z', '+00:00')) if isinstance(value, str) else value
++    if not isinstance(stamp, datetime) or stamp.tzinfo is None:
++        raise ValueError('timezone_required')
++    return stamp.astimezone(timezone.utc)
++
++
++def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
++                    lateness_seconds=900, scanner=None, source_id='local', accept_legacy_exclusion=False):
++    """Late events beyond the finalized frontier are counted, never silently replayed.
++
++    A 15-minute normalization receipt overlap handles bounded refresh/write delays.
++    Rule/source identity is pinned; changing it requires a new explicit state file.
++    """
++    now, start = utc(now or datetime.now(timezone.utc)), utc(start)
++    if not 1 <= max_documents <= 100000 or not 60 <= lateness_seconds <= 86400 or start > now:
++        raise ValueError('invalid_incremental_options')
++    path = Path(state_path)
++    if path.is_symlink():
++        raise ValueError('unsafe_state_path')
++    path.parent.mkdir(parents=True, exist_ok=True)
++    try:
++        descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
++        os.close(descriptor)
++    except FileExistsError:
++        pass
++    rules = approved_rules()
++    identity = event_fingerprint({'rules': rules, 'start': start.isoformat(), 'lateness': lateness_seconds,
++                                  'index': NORMALIZED, 'source': source_id, 'legacy_exclusion': accept_legacy_exclusion})
++    with closing(sqlite3.connect(path, timeout=0)) as db:
++        db.execute('PRAGMA journal_mode=WAL')
++        db.execute('PRAGMA synchronous=FULL')
++        db.execute('CREATE TABLE IF NOT EXISTS runtime (id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL)')
++        db.execute('BEGIN IMMEDIATE')
++        row = db.execute('SELECT body FROM runtime WHERE id=1').fetchone()
++        saved = json.loads(row[0]) if row else {'identity': identity, 'checkpoint': start.isoformat(),
++            'frontier': (start - timedelta(seconds=lateness_seconds)).isoformat(),
++            'pending': {}, 'seen': {}, 'groups': {}, 'last_success': None, 'late_total': 0}
++        if saved['identity'] != identity:
++            raise ValueError('rule_or_scope_changed_requires_new_state')
++        state = deepcopy(saved)
++        checkpoint = utc(state['checkpoint'])
++        if checkpoint > now:
++            raise ValueError('clock_regression')
++        end = min(now - timedelta(seconds=30), checkpoint + timedelta(minutes=5))
++        lower = max(start, checkpoint - timedelta(minutes=15))
++        counts = {'events': 0, 'created': 0, 'existing': 0, 'late': 0}
++
++        def publish(kind, error=None):
++            health = 'failed' if kind == 'failed' else 'delayed' if (now - utc(state['checkpoint'])).total_seconds() > 1200 else 'warning' if state['late_total'] or state.get('legacy_excluded') else 'healthy'
++            client.index(index=STATUS, id='detector', document={'@timestamp': now.isoformat(),
++                'state': kind, 'detection': 'AUTH-001', 'checkpoint': state['checkpoint'],
++                'last_success': state['last_success'], 'error': error,
++                'health': health, 'legacy_excluded': state.get('legacy_excluded', 0),
++                'lag_seconds': max(0, int((now - utc(state['checkpoint'])).total_seconds())),
++                'late_total': state['late_total'], 'counts': counts}, refresh=False)
++
++        try:
++            publish('running')
++            if end <= checkpoint:
++                publish('waiting')
++                db.rollback()
++                return counts
++            resolved = client.indices.resolve_index(name=NORMALIZED)
++            if resolved.get('aliases') or resolved.get('data_streams') or [r['name'] for r in resolved.get('indices', [])] != [NORMALIZED]:
++                raise ValueError('unexpected_normalized_index')
++            caps = client.field_caps(index=NORMALIZED, fields=['cloud_soc.normalized_at'])['fields'].get('cloud_soc.normalized_at', {})
++            if set(caps) != {'date'}:
++                raise ValueError('normalization_time_mapping_required')
++            if not row:
++                legacy = client.count(index=NORMALIZED, query={'bool': {'must_not': [{'exists': {'field': 'cloud_soc.normalized_at'}}]}})
++                if legacy.get('_shards', {}).get('failed', 0) or type(legacy.get('count')) is not int:
++                    raise ValueError('legacy_scope_check_failed')
++                if legacy['count'] and not accept_legacy_exclusion:
++                    raise ValueError('legacy_missing_normalization_time_requires_explicit_exclusion')
++                state['legacy_excluded'] = legacy['count']
++            ensure_provenance_mapping(client, ALERTS)
++            query = {'range': {'cloud_soc.normalized_at': {'gte': lower.isoformat(), 'lt': end.isoformat()}}}
++            hits = (scanner or fetch_all_hits)(client, index=NORMALIZED, page_size=500,
++                                               max_documents=max_documents, query=query)
++            if len(hits) > max_documents:
++                raise ValueError('batch_limit')
++            frontier = utc(state['frontier'])
++            for hit in hits:
++                if hit.get('_index') != NORMALIZED or not hit.get('_id'):
++                    raise ValueError('invalid_reference')
++                event = deepcopy(hit['_source'])
++                received = utc(event['cloud_soc']['normalized_at'])
++                if not lower <= received < end:
++                    raise ValueError('outside_receipt_range')
++                key = hit['_id']
++                if key in state['seen']:
++                    continue
++                stamp = parse_event_timestamp(event)
++                event['_cloud_soc_meta'] = {'index': NORMALIZED, 'document_id': key}
++                if not event_evidence(event)['complete']:
++                    raise ValueError('incomplete_evidence')
++                state['seen'][key] = received.isoformat()
++                counts['events'] += 1
++                if not event_matches_rule(event, rules[0]):
++                    continue
++                organization = event.get('organization', {}).get('id')
++                if not isinstance(organization, str) or not organization.strip():
++                    raise ValueError('missing_organization')
++                if build_group_key(event, list(dict.fromkeys(['organization.id', *rules[0]['group_by']]))) is None:
++                    raise ValueError('missing_detection_group')
++                if stamp < frontier:
++                    counts['late'] += 1
++                    state['late_total'] += 1
++                    continue
++                if stamp > now + timedelta(minutes=5):
++                    raise ValueError('future_event_clock')
++                state['pending'][key] = event
++            final = max(frontier, end - timedelta(seconds=lateness_seconds))
++            ready = [e for e in state['pending'].values() if parse_event_timestamp(e) < final]
++            # Stateful engine preserves the same event ordering and cooldown as batch detection.
++            detections = detect_rule(ready, rules[0], runtime=state['groups'])
++            for detection in detections:
++                result = save_security_alert(client, build_security_alert(detection), index_name=ALERTS,
++                    document_id=make_alert_id(detection), refresh=False, index_prepared=True)
++                if result['result'] not in ('created', 'existing'):
++                    raise RuntimeError('unexpected_alert_write')
++                counts[result['result']] += 1
++            state['pending'] = {k: e for k, e in state['pending'].items() if parse_event_timestamp(e) >= final}
++            window = timedelta(seconds=rules[0]['time_window']['seconds'])
++            cooldown = timedelta(seconds=rules[0].get('cooldown', {}).get('seconds', 0))
++            for key, group in list(state['groups'].items()):
++                group['window'] = [e for e in group['window'] if parse_event_timestamp(e) >= final - window]
++                if not group['window'] and (not group['last_alert'] or utc(group['last_alert']) < final - cooldown):
++                    del state['groups'][key]
++            state['seen'] = {k: t for k, t in state['seen'].items() if utc(t) >= end - timedelta(minutes=15)}
++            if len(state['pending']) + sum(len(g['window']) for g in state['groups'].values()) > max_documents:
++                raise ValueError('active_state_limit')
++            state.update(checkpoint=end.isoformat(), frontier=final.isoformat(), last_success=now.isoformat())
++            # Publish before commit: a status/write failure must not advance the checkpoint.
++            publish('success')
++            db.execute('INSERT OR REPLACE INTO runtime VALUES(1,?)', (json.dumps(state),))
++            db.commit()
++            return counts
++        except Exception:
++            db.rollback()
++            state = saved
++            try:
++                publish('failed', 'incremental_cycle_failed')
++            except Exception:
++                pass
++            raise RuntimeError('incremental_cycle_failed; checkpoint retained') from None
+diff --git a/tests/test_incremental_detection.py b/tests/test_incremental_detection.py
+new file mode 100644
+index 0000000..298a772
+--- /dev/null
++++ b/tests/test_incremental_detection.py
+@@ -0,0 +1,160 @@
++from copy import deepcopy
++from contextlib import closing
++from datetime import timedelta
++import json
++from pathlib import Path
++import sqlite3
++import tempfile
++import unittest
++from unittest.mock import patch, Mock
++
++from test_intake_detection import raw, normalized, client_for
++from cloud_soc.detection.incremental import run_incremental, utc
++from cloud_soc.portal.operations import Operations
++
++
++class IncrementalTests(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory()
++        self.addCleanup(self.temp.cleanup)
++        self.path = Path(self.temp.name) / 'state.sqlite'
++        self.base = utc(raw(0)['_source']['@timestamp'])
++        self.hits = []
++        self.client = client_for([])
++        self.client.field_caps.return_value = {'fields': {'cloud_soc.normalized_at': {'date': {}}}}
++        self.client.count.return_value = {'count': 0}
++        self.ids = []
++        def write(*args, **kwargs):
++            key = kwargs['document_id']
++            result = 'existing' if key in self.ids else 'created'
++            if result == 'created': self.ids.append(key)
++            return {'result': result}
++        self.writer = patch('cloud_soc.detection.incremental.save_security_alert', side_effect=write).start()
++        self.addCleanup(patch.stopall)
++
++    def add(self, count, receipt, offset=0, organization='team-a'):
++        for i in range(count):
++            hit = normalized(raw(i + offset, organization=organization))
++            hit['_source']['cloud_soc']['normalized_at'] = (self.base + timedelta(seconds=receipt)).isoformat()
++            self.hits.append(hit)
++
++    def scan(self, client, **kwargs):
++        bounds = kwargs['query']['range']['cloud_soc.normalized_at']
++        return deepcopy([h for h in self.hits if utc(bounds['gte']) <= utc(h['_source']['cloud_soc']['normalized_at']) < utc(bounds['lt'])])
++
++    def run_at(self, seconds, **kwargs):
++        return run_incremental(self.client, state_path=self.path, start=self.base,
++            now=self.base + timedelta(seconds=seconds), lateness_seconds=60, scanner=self.scan, **kwargs)
++
++    def stored(self):
++        with closing(sqlite3.connect(self.path)) as db:
++            row = db.execute('SELECT body FROM runtime').fetchone()
++            return json.loads(row[0]) if row else None
++
++    def test_cross_batch_restart_overlap_and_cooldown(self):
++        self.add(9, 10)
++        self.assertEqual(self.run_at(70)['created'], 0)
++        self.add(1, 60, offset=9)
++        self.assertEqual(self.run_at(140)['created'], 1)
++        self.add(10, 130, offset=10)
++        self.assertEqual(self.run_at(210)['created'], 0)
++        self.assertEqual(len(self.ids), 1)
++        self.assertEqual(self.run_at(280)['events'], 0)
++
++    def test_separate_organizations(self):
++        self.add(5, 10)
++        self.add(5, 10, offset=5, organization='other')
++        self.assertEqual(self.run_at(140)['created'], 0)
++
++    def test_write_failure_retains_checkpoint_and_retry_id(self):
++        self.add(10, 10)
++        self.run_at(70)
++        old = self.stored()
++        self.writer.side_effect = RuntimeError('unavailable')
++        with self.assertRaises(RuntimeError): self.run_at(140)
++        attempted = self.writer.call_args.kwargs['document_id']
++        self.assertEqual(self.stored(), old)
++        self.writer.side_effect = None
++        self.writer.return_value = {'result': 'created'}
++        self.assertEqual(self.run_at(140)['created'], 1)
++        self.assertEqual(attempted, self.writer.call_args.kwargs['document_id'])
++
++    def test_status_failure_after_alert_retries_without_duplicate(self):
++        self.add(10, 10)
++        self.run_at(70)
++        old = self.stored()
++        self.client.index.side_effect = [None, RuntimeError('status unavailable'), None]
++        with self.assertRaises(RuntimeError): self.run_at(140)
++        self.assertEqual(self.stored(), old)
++        self.client.index.side_effect = None
++        self.assertEqual(self.run_at(140)['existing'], 1)
++
++    def test_late_input_is_visible(self):
++        self.run_at(140)
++        self.add(10, 120)
++        result = self.run_at(210)
++        self.assertEqual(result['late'], 10)
++        status = self.client.index.call_args.kwargs['document']
++        self.assertEqual(status['health'], 'warning')
++        self.assertEqual(status['late_total'], 10)
++
++    def test_partial_read_and_limit_retain_state(self):
++        self.run_at(70)
++        old = self.stored()
++        self.add(10, 60)
++        with self.assertRaises(RuntimeError): self.run_at(140, max_documents=5)
++        self.assertEqual(self.stored(), old)
++        with patch.object(self, 'scan', side_effect=RuntimeError('partial')):
++            with self.assertRaises(RuntimeError): self.run_at(140)
++        self.assertEqual(self.stored(), old)
++
++    def test_source_identity_change_rejected(self):
++        self.run_at(70)
++        with self.assertRaises(ValueError): self.run_at(140, source_id='other-cluster')
++
++    def test_second_window_after_cooldown(self):
++        self.add(10, 10)
++        self.run_at(140)
++        self.add(10, 360, offset=310)
++        self.run_at(390)
++        self.assertEqual(self.run_at(470)['created'], 1)
++        self.assertEqual(len(self.ids), 2)
++
++    def test_reordered_arrival_inside_lateness_window(self):
++        self.add(5, 10, offset=5)
++        self.run_at(70)
++        self.add(5, 60)
++        self.assertEqual(self.run_at(140)['created'], 1)
++
++    def test_concurrent_owner_is_rejected(self):
++        self.run_at(70)
++        with closing(sqlite3.connect(self.path)) as db:
++            db.execute('BEGIN IMMEDIATE')
++            with self.assertRaises(sqlite3.OperationalError): self.run_at(140)
++
++    def test_old_active_groups_expire(self):
++        self.add(10, 10)
++        self.run_at(140)
++        for stamp in (400, 700, 1000): self.run_at(stamp)
++        self.assertEqual(self.stored()['groups'], {})
++
++    def test_missing_mapping_rejected(self):
++        self.client.field_caps.return_value = {'fields': {}}
++        with self.assertRaises(RuntimeError): self.run_at(70)
++        self.assertIsNone(self.stored())
++
++    def test_legacy_exclusion_requires_explicit_choice(self):
++        self.client.count.return_value = {'count': 12}
++        with self.assertRaises(RuntimeError): self.run_at(70)
++        self.assertIsNone(self.stored())
++        self.run_at(70, accept_legacy_exclusion=True)
++        self.assertEqual(self.stored()['legacy_excluded'], 12)
++
++    def test_stopped_worker_surfaces_health_alarm(self):
++        reader = Operations(self.client)
++        with patch.object(reader, 'get', return_value={'@timestamp': self.base.isoformat(), 'state': 'success'}):
++            self.assertEqual(reader.worker_status('detector')['health'], 'stale')
++
++
++if __name__ == '__main__':
++    unittest.main()

@@ -1,6 +1,9 @@
 # Fully mocked host boundary: no downloads, credentials, tasks, services, NICs or capture.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+# A pwsh CI parent can expose Core modules to Windows PowerShell 5.1.
+# Load this shell's own Security module without changing host policy.
+Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -Force
 . (Join-Path $PSScriptRoot '../bundle-windows.ps1')
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('cloud-soc-bundle-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $testRoot | Out-Null

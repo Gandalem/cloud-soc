@@ -13,8 +13,7 @@ import threading
 from urllib.parse import urlsplit
 
 from elasticsearch import Elasticsearch
-from flask import Flask, abort, g, jsonify, request, send_file, send_from_directory
-from werkzeug.security import check_password_hash
+from flask import Flask, abort, g, jsonify, redirect, request, send_file, send_from_directory
 
 from cloud_soc.portal.packages import PackageStore, validate_endpoint
 from cloud_soc.portal.agent_status import decode_cursor, snapshot
@@ -22,8 +21,11 @@ from cloud_soc.portal.log_query import LogReader, LogQueryError
 from cloud_soc.portal.collection_health import snapshot as health_snapshot
 from cloud_soc.portal.operations import Operations
 from cloud_soc.portal.cases import CaseStore, CaseError
+from cloud_soc.portal.auth import COOKIE, PUBLIC, Sessions, load_users, permitted
+from cloud_soc.privacy import redact_metadata
+from cloud_soc.logging_config import configure_logging
 from cloud_soc.portal.enrollment import Enrollments, EnrollmentError
-from cloud_soc.portal.log_access import LogAccessPolicy, read_policy
+from cloud_soc.portal.log_access import LogAccessPolicy, LogPrincipal, read_policy
 from cloud_soc.portal.source_access import ProtectedSourceReader, SourceAudit
 
 PROJECT = Path(__file__).resolve().parents[3]
@@ -51,6 +53,7 @@ def settings_from_environment():
         "AGENT_SOURCE": PROJECT / "deploy" / "agents",
         "CA_BYTES": ca,
         "PUBLIC_URL": public_url,
+        "USERS_FILE": os.environ.get("SOC_USERS_FILE"),
         "ENROLLMENT_ENABLED": os.environ.get("SOC_ENROLLMENT_ENABLED") == "1",
         "ENDPOINT": validate_endpoint(os.environ.get("SOC_AGENT_ENDPOINT") or os.environ["SOC_ELASTIC_ENDPOINT"]),
         "ADMIN_USER": os.environ.get("SOC_ADMIN_USER", "admin"),
@@ -64,12 +67,16 @@ def settings_from_environment():
 
 
 def create_app(settings=None, *, issuer=None, monitor=None):
+    configure_logging()
     settings = settings if settings is not None else settings_from_environment()
     app = Flask(__name__, static_folder=None)
     app.config.update(MAX_CONTENT_LENGTH=8192, TRUSTED_HOSTS=[urlsplit(settings["PUBLIC_URL"]).hostname])
     store = PackageStore(Path(settings["STATE_DIR"]), Path(settings["AGENT_SOURCE"]), settings["CA_BYTES"], settings["ENDPOINT"],
                          portal_url=settings["PUBLIC_URL"] if settings["PUBLIC_URL"].startswith("https://") else None)
     app.extensions["packages"] = store
+    users = load_users(settings["USERS_FILE"]) if settings.get("USERS_FILE") else None
+    sessions = Sessions(Path(settings["STATE_DIR"]) / "sessions.sqlite", users) if users else None
+    app.extensions["sessions"] = sessions
     if issuer is None:
         issuer = Elasticsearch(settings["ES_URL"], basic_auth=("cloud_soc_issuer", settings["ES_PASSWORD"]),
                                ca_certs=settings["CA_FILE"], request_timeout=5, max_retries=0)
@@ -81,6 +88,12 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     enrollments = Enrollments(store, issuer, monitor)
     app.extensions["enrollments"] = enrollments
     access_policy = LogAccessPolicy(settings["ADMIN_USER"], settings["ADMIN_HASH"], settings.get("LOG_ACCESS_POLICY"))
+    if users:
+        for username, policy_user in access_policy.users.items():
+            if username in users:
+                expected_role = "analyst" if policy_user[1] == "investigator" else "viewer"
+                if users[username]["role"] != expected_role:
+                    raise ValueError("Session and log access roles must agree")
     audit = SourceAudit(Path(settings["STATE_DIR"]) / "log-access.sqlite")
     app.extensions["log_access"] = access_policy
     app.extensions["source_audit"] = audit
@@ -95,7 +108,17 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                     organizations=principal.organizations)
             return log_readers[principal.username]
     operations = Operations(monitor)
-    cases = CaseStore(Path(settings["STATE_DIR"]) / "cases.sqlite", settings["ADMIN_USER"])
+    def operations_for(principal):
+        return operations if principal.organizations is None else Operations(monitor, organizations=principal.organizations)
+
+    case_organizations = None
+    if users:
+        case_organizations = {name: None if row["role"] == "admin" else access_policy.users.get(name, (None, None, ()))[2]
+                              for name, row in users.items()}
+    cases = CaseStore(Path(settings["STATE_DIR"]) / "cases.sqlite", settings["ADMIN_USER"],
+                      principals=set(users) if users else None,
+                      owners={name for name, row in users.items() if row["role"] != "viewer"} if users else None,
+                      organizations=case_organizations)
     app.extensions["cases"] = cases
 
     @app.errorhandler(CaseError)
@@ -115,32 +138,32 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             return jsonify(code="case_storage_unavailable", error="사건 저장소에 접근하지 못했습니다. 같은 요청으로 재시도하거나 관리자에게 확인하세요."), 503
 
     def fetch_case_alert(identifier):
-        return json.loads(operations.detail([("id", identifier)]))["alert"]
+        return json.loads(operations_for(g.log_principal).detail([("id", identifier)]))["alert"]
 
     @app.get("/api/cases")
     def case_list():
-        return case_response(lambda: cases.listing(request.args.items(multi=True), settings["ADMIN_USER"]))
+        return case_response(lambda: cases.listing(request.args.items(multi=True), g.principal))
 
     @app.get("/api/case-link")
     def case_link():
         if set(request.args) != {"alert_id"} or len(request.args.getlist("alert_id")) != 1:
             return jsonify(error="경보 참조를 확인하세요."), 400
-        return case_response(lambda: cases.lookup(request.args["alert_id"], settings["ADMIN_USER"]))
+        return case_response(lambda: cases.lookup(request.args["alert_id"], g.principal))
 
     @app.post("/api/cases")
     def case_create():
-        return case_response(lambda: cases.create(request.get_json(), settings["ADMIN_USER"],
+        return case_response(lambda: cases.create(request.get_json(), g.principal,
                              request.headers.get("Idempotency-Key"), fetch_case_alert))
 
     @app.get("/api/cases/<identifier>")
     def case_detail(identifier):
         if set(request.args) - {"before"} or len(request.args.getlist("before")) > 1:
             return jsonify(error="지원하지 않는 조회 조건입니다."), 400
-        return case_response(lambda: cases.detail(identifier, settings["ADMIN_USER"], request.args.get("before")))
+        return case_response(lambda: cases.detail(identifier, g.principal, request.args.get("before")))
 
     @app.patch("/api/cases/<identifier>")
     def case_update(identifier):
-        return case_response(lambda: cases.update(identifier, request.get_json(), settings["ADMIN_USER"],
+        return case_response(lambda: cases.update(identifier, request.get_json(), g.principal,
                              request.headers.get("Idempotency-Key"), fetch_case_alert))
 
     @app.before_request
@@ -164,19 +187,14 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             if request.scheme != "https" and request.headers.get("X-Forwarded-Proto") != "https":
                 abort(403)
             return
-        credentials = request.authorization
-        principal = access_policy.authenticate(credentials.username, credentials.password or "") if credentials is not None and credentials.type.lower() == "basic" else None
-        if principal is None:
-            response = jsonify(error="관리자 로그인이 필요합니다.")
-            response.status_code = 401
-            response.headers["WWW-Authenticate"] = 'Basic realm="Cloud SOC Admin", charset="UTF-8"'
-            return response
-        g.log_principal = principal
-        if principal.role != "admin":
-            log_routes = {"logs", "log_detail", "log_access", "log_source"}
-            log_assets = {"logs.html", "logs.js", "logs.css", "source-view.js", "styles.css", "agents.css", "shell.js", "shell.css", "assets/mark.svg"}
-            if request.endpoint not in log_routes and not (request.endpoint == "static_file" and request.view_args.get("filename") in log_assets):
-                abort(403)
+        if sessions is None and request.endpoint not in PUBLIC:
+            credentials = request.authorization
+            principal = access_policy.authenticate(credentials.username, credentials.password or "") if credentials is not None and credentials.type.lower() == "basic" else None
+            if principal is None:
+                response = jsonify(error="관리자 로그인이 필요합니다.")
+                response.status_code = 401
+                response.headers["WWW-Authenticate"] = 'Basic realm="Cloud SOC Admin", charset="UTF-8"'
+                return response
         if request.headers.get("Sec-Fetch-Site") == "cross-site":
             abort(403)
         origin = request.headers.get("Origin")
@@ -184,6 +202,44 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             abort(403)
         if request.method not in ("GET", "HEAD", "OPTIONS"):
             if request.headers.get("X-Cloud-SOC") != "portal" or not request.is_json:
+                abort(403)
+        if request.endpoint in PUBLIC:
+            return
+        if sessions:
+            identity = sessions.get(request.cookies.get(COOKIE))
+            if not identity:
+                if request.method in ("GET", "HEAD") and (request.path == "/" or request.path.endswith(".html")):
+                    return redirect("/login")
+                return jsonify(code="login_required", error="로그인이 필요합니다."), 401
+            g.principal, g.role, g.csrf = identity["user"], identity["role"], identity["csrf"]
+            policy_user = access_policy.users.get(g.principal)
+            if policy_user:
+                policy_role, organizations = policy_user[1], policy_user[2]
+                source_organizations = organizations if access_policy.enabled and policy_role == "investigator" else ()
+                principal = LogPrincipal(g.principal, policy_role, organizations, source_organizations)
+            elif g.role == "admin":
+                principal = LogPrincipal(g.principal, "admin", None,
+                    access_policy.admin_source_organizations if access_policy.enabled else ())
+            else:
+                principal = LogPrincipal(g.principal, "viewer", (), ())
+            if not permitted(request.endpoint, request.method, g.role, (request.view_args or {}).get("filename")):
+                abort(403)
+            if request.method not in ("GET", "HEAD", "OPTIONS"):
+                if not secrets.compare_digest(request.headers.get("X-CSRF-Token", ""), g.csrf):
+                    abort(403)
+        else:
+            g.principal, g.role, g.csrf = principal.username, principal.role, None
+        g.log_principal = principal
+        if principal.role != "admin":
+            log_routes = {"logs", "log_detail", "log_access", "log_source", "auth_me", "logout", "auth_asset"}
+            log_assets = {"logs.html", "logs.js", "logs.css", "source-view.js", "auth-client.js", "styles.css", "agents.css", "shell.js", "shell.css", "assets/mark.svg"}
+            if sessions:
+                # Session RBAC permits case writes only for analysts; all case data is tenant-scoped.
+                log_routes |= {"index", "case_list", "case_link", "case_detail", "case_create", "case_update"}
+                log_assets |= {"index.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "workbench.html", "investigation.js"}
+                if principal.organizations:
+                    log_routes |= {"operations_summary", "alert_detail"}
+            if request.endpoint not in log_routes and not (request.endpoint == "static_file" and (request.view_args or {}).get("filename") in log_assets):
                 abort(403)
 
     @app.after_request
@@ -216,6 +272,56 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def failed(_error):
         return jsonify(error="서버 작업에 실패했습니다. 관리자 로그를 확인하세요."), 500
 
+    @app.get("/login")
+    def login_page():
+        return send_from_directory(PROJECT / "prototype", "login.html")
+
+    @app.get("/auth-client.js")
+    @app.get("/login.js")
+    def auth_asset():
+        return send_from_directory(PROJECT / "prototype", request.path.lstrip("/"))
+
+    @app.post("/api/auth/login")
+    def login():
+        if sessions is None:
+            return jsonify(error="세션 로그인이 활성화되지 않았습니다."), 404
+        body = request.get_json()
+        if not isinstance(body, dict) or set(body) != {"username", "password"}:
+            abort(400)
+        token = sessions.login(body["username"], body["password"])
+        if not token:
+            return jsonify(error="로그인 실패. 계정·비밀번호를 확인하고 반복 실패 시 5분 후 재시도하세요."), 401
+        sessions.logout(request.cookies.get(COOKIE, ""))
+        response = jsonify(ok=True)
+        response.set_cookie(COOKIE, token, max_age=sessions.ttl, secure=settings["PUBLIC_URL"].startswith("https://"),
+                            httponly=True, samesite="Strict", path="/")
+        return response
+
+    @app.get("/api/auth/me")
+    def auth_me():
+        return jsonify(user=g.principal, role=g.role, csrf=g.csrf, mode="session" if sessions else "basic")
+
+    @app.post("/api/auth/logout")
+    def logout():
+        if sessions:
+            sessions.logout(request.cookies.get(COOKIE, ""))
+        response = jsonify(ok=True)
+        response.delete_cookie(COOKIE, path="/", secure=settings["PUBLIC_URL"].startswith("https://"),
+                               httponly=True, samesite="Strict")
+        return response
+
+    @app.get("/api/healthz")
+    def healthz():
+        try:
+            if monitor is None:
+                raise RuntimeError("monitor_missing")
+            monitor.security.authenticate()
+            with cases.connect() as db:
+                db.execute("SELECT 1").fetchone()
+        except Exception:
+            return jsonify(status="unavailable"), 503
+        return jsonify(status="ready")
+
     @app.get("/api/portal")
     def portal():
         try:
@@ -245,7 +351,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
 
     def log_response(operation):
         try:
-            return app.response_class(operation(request.args.items(multi=True)), mimetype="application/json")
+            return app.response_class(json.dumps(redact_metadata(json.loads(operation(request.args.items(multi=True))))), mimetype="application/json")
         except LogQueryError as error:
             return jsonify(code=error.code, error=str(error)), error.status
 
@@ -296,13 +402,31 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         except LogQueryError as error:
             return jsonify(code=error.code, error=str(error)), error.status
 
+    @app.get("/api/reprocessing/history")
+    def reprocessing_history():
+        from cloud_soc.portal.reprocessing_history import history
+        try:
+            data = json.loads(history(monitor, request.args.items(multi=True)))
+            # Each row remains privacy-filtered; the bounded collection may exceed 256 rows.
+            rows = data.pop("rows")
+            response = redact_metadata(data)
+            response["rows"] = [redact_metadata(row) for row in rows]
+            return jsonify(response)
+        except LogQueryError as error:
+            return jsonify(code=error.code, error=str(error)), error.status
+
     @app.get("/api/operations")
     def operations_summary():
-        return log_response(operations.summary)
+        return log_response(operations_for(g.log_principal).summary)
 
     @app.get("/api/alerts/detail")
     def alert_detail():
-        return log_response(operations.detail)
+        return log_response(operations_for(g.log_principal).detail)
+
+    @app.get('/api/detection/history')
+    def detection_history():
+        from cloud_soc.portal.detection_history import history
+        return log_response(lambda pairs: history(operations, pairs))
 
     @app.post("/api/packages")
     def create_package():
@@ -468,7 +592,8 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     @app.get("/<path:filename>")
     def static_file(filename):
         # Never serve the repo, secrets, SQLite, source code, or arbitrary uploads.
-        allowed = {"agents.html", "agents.js", "agents.css", "styles.css", "shell.js", "shell.css", "assets/mark.svg",
+        allowed = {"reprocessing-history.html", "reprocessing-history.js", "agents.html", "agents.js", "agents.css", "styles.css", "shell.js", "shell.css", "assets/mark.svg",
+                   "detection-history.html", "detection-history.js",
                    "agent-status.html", "agent-status.js", "agent-status.css",
                    "collection-health.html", "collection-health.js",
                    "index.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css", "source-view.js"}

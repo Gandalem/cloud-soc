@@ -1,0 +1,5 @@
+# Compose 2.24.4+: internal-only Elasticsearch. Remote agents need a private
+# authenticated ingestion route; use the existing central entrypoint explicitly.
+services:
+  elasticsearch:
+    ports: !reset []

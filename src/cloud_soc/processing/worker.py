@@ -9,7 +9,8 @@ from cloud_soc.portal.log_contract import INDICES, SOURCE_FIELDS, document_refer
 from cloud_soc.portal.security_detail import DETAIL_FIELDS
 from cloud_soc.processing.contract import normalize, NORMALIZED, RECORDS, STATUS
 
-READ_FIELDS = list(SOURCE_FIELDS + DETAIL_FIELDS) + ["message", "event.timezone", "event.created"]
+READ_FIELDS = list(SOURCE_FIELDS + DETAIL_FIELDS) + ["message", "event.timezone", "event.created",
+    "log.syslog.appname", "process.name", "journald.syslog.identifier"]
 
 
 def checked(response):
@@ -65,6 +66,27 @@ def create(client, index, identifier, document):
         pass
 
 
+def create_batch(client, documents):
+    """Immutable creates; a partial failure must retain the window checkpoint."""
+    if not documents:
+        return
+    operations = []
+    for index, identifier, document in documents:
+        operations.extend([{"create": {"_index": index, "_id": identifier}}, document])
+    response = client.bulk(operations=operations)
+    items = response.get("items")
+    if not isinstance(items, list) or len(items) != len(documents):
+        raise RuntimeError("partial_bulk_response")
+    for item in items:
+        result = item.get("create", {})
+        status = result.get("status")
+        if status == 201 and not result.get("error"):
+            continue
+        if status == 409 and result.get("error", {}).get("type") == "version_conflict_engine_exception":
+            continue
+        raise RuntimeError("normalization_bulk_failed")
+
+
 def run_once(client, state_path, initial_start, *, now=None, scanner=scan):
     now = now or datetime.now(timezone.utc)
     initial = parse_time(initial_start)
@@ -87,18 +109,23 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=scan):
         start = max(initial, checkpoint - timedelta(minutes=15))
         end = min(now - timedelta(seconds=30), checkpoint + timedelta(minutes=5))
         counts = {"normalized": 0, "unsupported": 0, "invalid": 0}
-        status = {"@timestamp": iso(now), "state": "running", "detection": "disabled_pending_approval",
+        status = {"@timestamp": iso(now), "state": "running", "detection": "separate_worker",
                   "checkpoint": iso(checkpoint), "last_success": row[1] if row else None,
                   "range": {"start": iso(start), "end": iso(end)}, "counts": counts, "error": None}
         try:
             client.index(index=STATUS, id="normalizer", document=status)
             if end > checkpoint:
+                batch = []
                 for hit in scanner(client, iso(start), iso(end)):
                     identifier, record, event = normalize(hit, iso(now))
                     if event:
-                        create(client, NORMALIZED, identifier, event)
-                    create(client, RECORDS, identifier, record)
+                        batch.append((NORMALIZED, identifier, event))
+                    batch.append((RECORDS, identifier, record))
                     counts[record["status"]] += 1
+                    if len(batch) >= 200:
+                        create_batch(client, batch)
+                        batch.clear()
+                create_batch(client, batch)
                 checkpoint = end
             completed = end > (parse_time(row[0]) if row else initial)
             status.update(state="success" if completed else "waiting", checkpoint=iso(checkpoint),

@@ -1,0 +1,6 @@
+# Unauthenticated services restricted to loopback for local development.
+services:
+  elasticsearch:
+    ports: ["127.0.0.1:9200:9200"]
+  kibana:
+    ports: ["127.0.0.1:5601:5601"]

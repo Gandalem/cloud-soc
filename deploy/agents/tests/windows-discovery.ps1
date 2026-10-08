@@ -14,7 +14,7 @@ function Get-WinEvent {
         [pscustomobject]@{ LogName = '${SECRET}'; IsEnabled = $true; LogType = 'Operational' }
     )
 }
-$testParent = Join-Path ((Resolve-Path (Join-Path $PSScriptRoot '../../..')).ProviderPath) 'state'
+$testParent = Join-Path $env:SystemRoot 'Temp'
 $null = New-Item -ItemType Directory -Path $testParent -Force
 $temp = [IO.Path]::GetFullPath((Join-Path $testParent ('cloud-soc-discovery-' + [Guid]::NewGuid().ToString('N'))))
 $null = New-Item -ItemType Directory -Path $temp
@@ -82,6 +82,11 @@ try {
     $resolved = (Resolve-Path -LiteralPath $temp).ProviderPath
     $expectedParent = [IO.Path]::GetFullPath($testParent).TrimEnd('\')
     if ([IO.Path]::GetDirectoryName($resolved) -ne $expectedParent -or [IO.Path]::GetFileName($resolved) -notlike 'cloud-soc-discovery-*') { throw 'Unsafe test cleanup target' }
-    Remove-Item -LiteralPath $resolved -Recurse -Force
+    $testJunction = Join-Path $resolved 'logs\linked'
+    if (Test-Path -LiteralPath $testJunction) {
+        if (-not ((Get-Item -LiteralPath $testJunction -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Unsafe test junction cleanup target' }
+        [IO.Directory]::Delete($testJunction)
+    }
+    [IO.Directory]::Delete($resolved, $true)
 }
 Write-Output 'Windows channel/file/encoding/refresh/failure discovery tests passed'

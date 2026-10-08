@@ -11,7 +11,7 @@ from cloud_soc.processing.worker import run_once
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Metadata normalizer; detection is disabled")
+    parser = argparse.ArgumentParser(description="Metadata normalizer; detection runs in a separate worker")
     parser.add_argument("--start", required=True, help="Initial receipt-time floor, ISO8601 with zone")
     parser.add_argument("--state", default="state/processing/checkpoint.sqlite")
     parser.add_argument("--run", action="store_true")
@@ -25,7 +25,7 @@ def main(argv=None):
         if start is None or start >= datetime.now(timezone.utc) or (args.once and not args.run):
             raise ValueError()
         if not args.run:
-            print("Configuration valid. No network access. Detection disabled pending approval.")
+            print("Configuration valid. No network access. Detection requires a separate worker.")
             return 0
         url = endpoint(args.es_url)
         key = protected_key(args.api_key_file)

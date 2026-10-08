@@ -202,15 +202,13 @@ test('Linux failed enumeration does not silently publish a partial inventory', (
   assert.match(result.stderr, /Discovery failed/);
 });
 
-test('Linux refresh publishes policy-aware bounded health without source paths', () => fixture(dir => {
+test('Linux refresh publishes policy-aware bounded health without source paths', {skip: windows}, () => fixture(dir => {
   mkdirSync(path.join(dir, 'agent', 'inputs'), {recursive: true});
   mkdirSync(path.join(dir, 'logs'));
   writeFileSync(path.join(dir, 'logs', 'app.log'), 'synthetic only\n');
   const script = `source ./discover-linux.sh
 r=$TEST_ROOT
 command -v cygpath >/dev/null && r=$(cygpath -u "$r")
-# Git Bash cannot provide Linux advisory locks; this fixture checks rendering only.
-if [[ $OSTYPE == msys* ]]; then flock() { return 0; }; fi
 printf 'version=3\\nroot=%s/logs\\nexclude=%s/logs/app.log\\n' "$r" "$r" > "$r/agent/collection-policy.txt"
 refresh_linux_inputs "$r/agent"
 `;
