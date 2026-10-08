@@ -276,7 +276,7 @@ try {
     (Get-Service -Name $ServiceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
     Start-Sleep -Seconds 3
     if ((Get-Service -Name $ServiceName).Status -ne 'Running') { throw 'Service did not remain running.' }
-    Set-Service -Name $ServiceName -StartupType Automatic
+    Set-SocServiceStartup $ServiceName
     Write-Host 'Service active; TLS/auth connection test passed. Document ingestion is NOT yet verified. Check soc-host-raw-windows-* in Kibana.'
     exit 0
 } catch {

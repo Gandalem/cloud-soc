@@ -201,6 +201,18 @@ publish_health_report "$root"
 
 
 class NetworkProjectionTests(unittest.TestCase):
+    def test_transport_omitted_null_leaves_still_mean_unreported(self):
+        from cloud_soc.portal.collection_health import collector_metrics
+        sample = METRICS.parse(line('packetbeat'), 'packetbeat')
+        sample.update(scan_partial=False, last_problem_at=None)
+        sample['output_dropped'] = None
+        before = collector_metrics(sample, NOW, NOW)
+        transported = {key: value for key, value in sample.items() if value is not None}
+        after = collector_metrics(transported, NOW, NOW)
+        self.assertEqual(after, before)
+        self.assertIsNone(after['output_dropped'])
+        self.assertEqual(after['output_acked'], 8)
+
     def test_old_report_and_independent_invalid_network_sample(self):
         from cloud_soc.portal.collection_health import project
         from test_collection_health import SOURCE, KEY

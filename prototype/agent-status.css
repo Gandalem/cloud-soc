@@ -23,8 +23,8 @@
 .activity-table .agent-meta { display:block; color:var(--muted); font-size:10px; margin-top:4px; }
 .activity-table .agent-id { font-size:9px; }
 .activity-table time { white-space:nowrap; font-variant-numeric:tabular-nums; }
-.collection-quality .activity-table td:nth-child(6) { min-width:210px; }
-.collection-quality .activity-table td:nth-child(7) { min-width:310px; }
+.collection-quality .activity-table td:nth-child(6),.collection-quality .activity-table td:nth-child(8) { min-width:210px; }
+.collection-quality .activity-table td:nth-child(7),.collection-quality .activity-table td:nth-child(9) { min-width:310px; }
 .activity-badge { display:inline-block; padding:3px 8px; border-radius:3px; font-size:10px; white-space:nowrap; font-weight:600; }
 .activity-badge.recent { background:#e6f3ed; color:#1f6951; }
 .activity-badge.delayed { background:#fff4da; color:#886019; }

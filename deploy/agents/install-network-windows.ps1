@@ -222,7 +222,7 @@ try {
     (Get-Service -Name $ServiceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
     Start-Sleep -Seconds 3
     if ((Get-Service -Name $ServiceName).Status -ne 'Running') { throw 'Packetbeat did not remain running.' }
-    Set-Service -Name $ServiceName -StartupType Automatic
+    Set-SocServiceStartup $ServiceName
     Write-Host 'Packetbeat is active. Metadata only; no PCAP storage. Verify soc-network-windows-* documents; startup/TLS checks do not prove ingestion.'
     exit 0
 } catch {

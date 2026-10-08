@@ -40,7 +40,7 @@ try {
     $config | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $root 'filebeat.yml')
     $beatDirectory = Join-Path $root 'filebeat-9.5.2-windows-x86_64'
     $command = '"{0}" --environment=windows_service --path.home "{1}" --path.config "{2}" --path.data "{3}" --path.logs "{4}" -c "{5}" -E logging.files.redirect_stderr=true' -f (Join-Path $beatDirectory 'filebeat.exe'), $beatDirectory, $root, (Join-Path $root 'data'), (Join-Path $root 'logs'), (Join-Path $root 'filebeat.yml')
-    $script:service = [pscustomobject]@{ State = 'Stopped'; ProcessId = 0; StartMode = 'Disabled'; StartName = 'LocalSystem'; PathName = $command }
+    $script:service = [pscustomobject]@{ State = 'Stopped'; ProcessId = 0; StartMode = 'Disabled'; DelayedAutoStart = $false; StartName = 'LocalSystem'; PathName = $command }
     Assert-SocRepairIdentity $service $config $command $endpoint 'school' $root
     Assert-Throws { Assert-SocRepairIdentity $service $config $command $endpoint 'other' $root } 'organization'
     Assert-Throws { Assert-SocRepairIdentity $service $config ($command+' extra') $endpoint 'school' $root } 'identity/path'
@@ -134,6 +134,13 @@ try {
     function Set-Service { param($Name,$StartupType,$ErrorAction)
         $script:calls.Add('mode:'+ $StartupType)
         $script:service.StartMode = @{ Disabled='Disabled'; Manual='Manual'; Automatic='Auto' }[$StartupType]
+        $script:service.DelayedAutoStart = $false
+    }
+    function Invoke-SocServiceConfig { param($Name,$Start)
+        $mode = @{'delayed-auto'='Automatic';auto='Automatic';demand='Manual';disabled='Disabled'}[$Start]
+        $script:calls.Add('mode:' + $mode)
+        $script:service.StartMode = @{Disabled='Disabled';Manual='Manual';Automatic='Auto'}[$mode]
+        $script:service.DelayedAutoStart = ($Start -ceq 'delayed-auto')
     }
     function Start-Service { param($Name,$ErrorAction)
         $script:calls.Add('service-start')
@@ -200,7 +207,7 @@ try {
     Remove-Item -LiteralPath (Join-Path $root 'recovery-pending.json')
     $script:fail=''; $script:calls.Clear()
     Invoke-SocFilebeatRepairCore @params
-    if ($service.State -ne 'Running' -or $service.StartMode -ne 'Auto' -or -not $script:task) { throw 'Recovery did not activate verified resources' }
+    if ($service.State -ne 'Running' -or $service.StartMode -ne 'Auto' -or -not $service.DelayedAutoStart -or -not $script:task) { throw 'Recovery did not activate verified resources with delayed start' }
     if (($script:calls -join ',') -ne 'tls,build,probe,config,output,register,task-start,mode:Manual,service-start,mode:Automatic') { throw 'Wrong recovery order' }
     $manifests = @(Get-ChildItem (Join-Path $env:ProgramData 'Cloud-SOC\recovery') -Filter manifest.json -Recurse)
     if ($manifests.Count -ne 8) { throw 'Missing verified backups' }
@@ -211,7 +218,7 @@ try {
         }
     }
     # A disabled legacy SYSTEM task is preserved, not deleted/re-registered.
-    $script:service.State='Stopped'; $script:service.StartMode='Disabled'
+    $script:service.State='Stopped'; $script:service.StartMode='Disabled'; $script:service.DelayedAutoStart=$false
     foreach ($failure in @('probe','config','output','task-set','task-enable','task','start','')) {
         $script:task=New-FixtureTask
         $originalXml = Export-ScheduledTask
