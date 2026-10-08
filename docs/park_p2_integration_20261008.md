@@ -54,9 +54,19 @@ Ruff가 발견한 사용하지 않는 시험 import도 제거했다.
 
 ## 남은 제한
 
-- 원격 CI 및 PR 병합 결과는 실행 후 작업 기록에 별도로 남긴다.
+- 원격 CI 및 PR 병합은 아래 결과처럼 완료했다. 운영 배포와는 구분한다.
 - 이번에 통합한 소스를 중앙 서버/새 ZIP에 배포하거나 실제 에이전트 수신을 재검증하지 않았다. 과거 실제 VM 검증 기록과 구분한다.
 - P2-02의 독립 백업 저장소 연결은 계속 보류한다. 검토용 보고서가 운영 백업 성공이나 자동 보존 적용을 뜻하지 않는다.
 - P2-03의 정식 통합 소스 배포 및 과거 Linux 상태 spool 조사는 아직 미완료다.
 - OCI 연결이나 실제 클라우드 시험은 하지 않았다. 오프라인 규칙 검증은 실제 OCI 수집 검증이 아니다.
 - 기존 main의 보관용 patch 문서는 변경하지 않았다. 공백 검사 기준은 실제 PR 차이인 `origin/main`이다.
+
+## 원격 완료
+
+- [PR #4](https://github.com/Gandalem/cloud-soc/pull/4): `park-p2-02` → `main`, merge 방식으로 병합 완료.
+- 검증한 head: `051f3b46ae67922380c96d2da21b831a2c321e5d`.
+- [Ubuntu CI](https://github.com/Gandalem/cloud-soc/actions/runs/37726452853/job/113145609162): success. 전체 회귀·보안/의존성 검사·Compose 검증·서버 이미지 빌드 포함.
+- [Windows CI](https://github.com/Gandalem/cloud-soc/actions/runs/37726452853/job/113145608789): success. P2 시험·에이전트 설치/복구·화면 회귀 포함.
+- 병합 커밋: `ef8d9a7813bdab6a80f1874225cf7a6646a8941d`.
+- 완료 기록 커밋은 이 문서와 작업 목록만 변경한다. 테스트한 제품 코드와 원격 병합 코드가 동일하며 운영 배포/수신 완료를 주장하지 않는다.
+- 기존 Actions의 Node 20 런타임 폐기 경고는 후속 CI 유지보수가 필요하다. 이번 두 검사의 결과는 성공이다.
