@@ -19,10 +19,17 @@ Windows 로컬 Python 3.13의 별도 시험 가상환경(저장소 constraints �
 - 전체 pytest: 482 통과, 11 skip, 186 subtest 통과. Linux root/선택 Docker·클라우드·플랫폼 조건 시험은 skip이며 통과로 계산하지 않는다.
 - 후속 시험 공통 준비 코드 정리 후 관련 pytest: 47 통과, 21 subtest 통과.
 - 화면 `node --test prototype/tests/*.test.cjs`: 96 통과, 실패 0.
+- 수집기 `node --test --test-concurrency=1 deploy/agents/tests/*.test.cjs`: 100 통과, Linux 전용 1 skip, 실패 0. 격리 OS 모의 시험이며 실제 설치·수신 검증이 아니다.
 - `python -m ruff check src tests tools`: 통과.
 - `python -m bandit -r src -ll -q`: 중·고위험 지적 0. SQL 조직/ID는 바인딩하며 조건·정렬 조각은 프로그램 상수만 사용한다.
 - Windows CI에도 이번 Linux 파서·사건·세션·조직/원문 회귀 시험을 추가했다. Linux CI의 전체 시험은 유지한다.
 
 첫 추가 시험의 실패 2건은 시험 코드의 ES resolve 인자 이름과 유효하지 않은 원문 요청 본문 때문이었다. 실제 API 계약에 맞게 고친 뒤 재실행했다. Ruff의 fixture 이름 중복은 공통 준비 함수로 정리했고, Bandit의 동적 SQL 위치는 실제 값 바인딩을 확인하고 해당 식에 근거를 기록했다. 검사 오류를 숨기거나 테스트 전체를 비활성화하지 않았다.
 
-원격 CI·병합은 로컬 검증 이후 별도로 확인한다. 수집기 실제 설치·재부팅·운영 배포·실제 ES/에이전트 수신·자료 전환은 이번 단계에서 수행하지 않는다. 기존 인증/키/큐/DB·CA 설정은 변경하지 않는다.
+## 원격 CI와 병합
+
+수정 커밋 `8768bbd957167a072b0a8b750f8156e3b726724f`를 JEONGRIM-SEO에 반영했다. [PR CI](https://github.com/Gandalem/cloud-soc/actions/runs/37724776137)의 Ubuntu/Windows와 [브랜치 CI](https://github.com/Gandalem/cloud-soc/actions/runs/37724772477)의 Ubuntu/Windows, 총 4개 job이 모두 성공했다. Linux 전체 회귀·정적/보안 검사·의존성 감사·Compose 설정·운영 이미지 빌드와 Windows 관련 회귀·PowerShell 구문/격리 수집기·화면 회귀를 포함한다.
+
+[PR #3](https://github.com/Gandalem/cloud-soc/pull/3)의 최종 head 및 main 기준을 재확인하고 검증 head 지정으로 병합했다. 병합 커밋은 `983e70f8758681153038a0be0e5aafad795ec42a`이며 검증한 PR head와 병합 tree 차이가 없다. 이 최종 문서·작업 목록 업데이트는 실행 코드를 바꾸지 않는다. 원래 작업 폴더는 park-p2-02/384b6ce 및 사용자 변경을 그대로 유지했다.
+
+수집기 실제 설치·재부팅·운영 배포·실제 ES/에이전트 수신·자료 전환은 이번 단계에서 수행하지 않았다. 기존 인증/키/큐/DB·CA 설정은 변경하지 않았다. 별도 park-p2-02 기능의 main 통합도 이번 병합에 포함하지 않는다.
