@@ -22,6 +22,7 @@ DEFAULT_RULE_FILE = (
 # ============================================================
 
 SUPPORTED_OPERATORS = {
+    "exists",
     "equals",
     "not_equals",
     "contains",
@@ -129,6 +130,19 @@ def validate_rule(
             "각 탐지 규칙은 객체 형식이어야 합니다."
         )
 
+    kind = rule.get('type', 'threshold')
+    if kind not in ('single', 'threshold', 'sequence'):
+        raise ValueError('Unsupported rule type')
+    if kind == 'single':
+        rule.setdefault('group_by', ['organization.id', 'cloud.account.id'])
+        rule.setdefault('threshold', {'count': 1})
+        rule.setdefault('time_window', {'seconds': 1})
+        rule.setdefault('cooldown', {'seconds': 0})
+        if rule['threshold'] != {'count': 1} or rule['cooldown'] != {'seconds': 0}:
+            raise ValueError('Single event rules cannot aggregate or suppress independent events')
+    if kind == 'sequence' and rule.get('cooldown', {'seconds': 0}) != {'seconds': 0}:
+        raise ValueError('Failure-success sequences reset on successful authentication; cooldown must be zero')
+
     required_fields = [
         "id",
         "name",
@@ -185,6 +199,8 @@ def validate_rule(
                 f"{rule['id']}: "
                 f"지원하지 않는 operator입니다: {operator}"
             )
+        if operator == 'exists' and type(condition['value']) is not bool:
+            raise ValueError('exists requires a boolean value')
 
     # --------------------------------------------------------
     # group_by 확인

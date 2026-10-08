@@ -2,7 +2,7 @@
   "use strict";
   const $ = (id) => document.getElementById(id);
   const labels = {ok: "조회 성공", no_index: "인덱스 없음", unavailable: "조회 실패", not_started: "실행 기록 없음", stale: "상태 갱신 지연 / 중단 여부 확인 필요", success: "최근 정규화 성공", running: "정규화 실행 중", failed: "정규화 실패", waiting: "다음 수신 구간 대기"};
-  const evidenceLabels = {exact_reference: "정확한 문서 참조 확인 (내용 해시 재검증은 아님)", normalized_missing_or_expired: "정규화 근거 없음 / 만료", raw_missing_or_expired: "원본 근거 없음 / 만료", provenance_mismatch: "근거 참조 불일치", unsupported_or_invalid_reference: "지원하지 않거나 잘못된 근거 참조", invalid_reference: "잘못된 근거 참조"};
+  const evidenceLabels = {exact_reference: "정확한 문서 참조 확인", normalized_hash_mismatch: "정규화 근거 내용 변경 감지", invalid_evidence_hash: "저장된 근거 해시 형식 오류", normalized_missing_or_expired: "정규화 근거 없음 / 만료", raw_missing_or_expired: "원본 근거 없음 / 만료", provenance_mismatch: "근거 참조 불일치", unsupported_or_invalid_reference: "지원하지 않거나 잘못된 근거 참조", invalid_reference: "잘못된 근거 참조"};
   const fmt = (value) => value ? new Date(value).toLocaleString("ko-KR", {timeZone: "Asia/Seoul", hour12: false}) : "미확인";
   let generation = 0, detailGeneration = 0;
   function node(tag, value, className) {
@@ -53,6 +53,19 @@
     }
     const pipeline = sections.pipeline;
     $("ops-pipeline").textContent = "정규화 처리기: " + (labels[pipeline.state] || "미확인") + " · 마지막 성공: " + fmt(pipeline.last_success) + " · 수신 시각 체크포인트: " + fmt(pipeline.checkpoint);
+    const detector = pipeline.detector || { state: "not_started" };
+    const detectorLabels = { ...labels, success: "최근 탐지 성공", running: "탐지 실행 중", failed: "탐지 실패" };
+    const detectorName = detector.detection && detector.detection.includes(",") ? "SSH·클라우드 탐지기" : "SSH 탐지기";
+    $("ops-pipeline").textContent += " · " + detectorName + ": " + (detectorLabels[detector.state] || "미확인") + " · 탐지 마지막 성공: " + fmt(detector.last_success);
+    const healthLabels = { failed: "탐지 장애: 처리 실패", stale: "탐지 장애: 상태 갱신 중단", delayed: "탐지 지연: 처리 위치 확인 필요", warning: "탐지 경고: 탐지 제외 이벤트 확인 필요" };
+    if (healthLabels[detector.health]) $("ops-pipeline").textContent += " · " + healthLabels[detector.health];
+    if (Number.isSafeInteger(detector.lag_seconds)) $("ops-pipeline").textContent += " · 처리 지연 " + detector.lag_seconds + "초";
+    if (detector.late_total > 0) $("ops-pipeline").textContent += " · 지연 제외 누적 " + detector.late_total + "건";
+    if (detector.legacy_excluded > 0) $("ops-pipeline").textContent += " · 과거 형식 제외 " + detector.legacy_excluded + "건";
+    if (detector.history_pending > 0) $("ops-pipeline").textContent += " · 실행 이력 전송 대기 " + detector.history_pending + "건";
+    if (detector.excluded_total > 0) $("ops-pipeline").textContent += " · 규칙 평가 제외 누적 " + detector.excluded_total + "건";
+    $("ops-pipeline").setAttribute("role", "status");
+    $("ops-pipeline").setAttribute("aria-live", "polite");
     chart($("ops-intake-chart"), sections.intake); chart($("ops-alert-chart"), sections.alerts);
     const alerts = sections.alerts; $("ops-alert-rows").replaceChildren();
     $("ops-alert-state").textContent = alerts.state === "ok" ? "총 " + alerts.count + "건 · 최신 최대 50건 표시 (페이지 탐색 미지원)" : labels[alerts.state];
@@ -71,13 +84,17 @@
     try {
       const data = await request("/api/alerts/detail?" + new URLSearchParams({id}));
       if (version !== detailGeneration) return;
-      $("ops-detail-state").textContent = data.evidence_count ? "저장된 근거 " + data.evidence_count + "건 · 최대 100건 개별 확인" : "과거 경보에 정확한 근거 참조가 없습니다. 주변 로그로 대체하지 않습니다.";
+      $("ops-detail-state").textContent = data.evidence_count ? "저장된 근거 " + data.evidence_count + "건 · 페이지별 전체 조회 가능" : "과거 경보에 정확한 근거 참조가 없습니다. 주변 로그로 대체하지 않습니다.";
       const condition = data.condition;
       const investigate = node("a", "사건 조사 / 등록");
       investigate.href = "workbench.html?" + new URLSearchParams({alert: id, return: (window.location?.search || "").slice(1), return_page: "index.html"});
       $("ops-detail-content").append(investigate);
       $("ops-detail-content").append(node("p", (data.alert.title || data.alert.rule || "경보") + " · 규칙 버전 " + (data.rule_version || "미기록")), node("p", "관측 수 " + (condition.event_count ?? "미기록") + " / 임계값 " + (condition.threshold ?? "미기록") + " / 시간 창 " + (condition.time_window_seconds ?? "미기록") + "초"));
-      for (let i = 0; i < data.evidence_limit; i++) {
+      const evidenceContainer = node('div'), navigation = node('div');
+      $("ops-detail-content").append(evidenceContainer, navigation);
+      function evidencePage(pageData) {
+      const page = pageData.evidence_page || {positions: Array.from({length: pageData.evidence_limit}, (_, i) => i), next_offset: null};
+      for (const i of page.positions) {
         const box = node("section", undefined, "ops-evidence"), button = node("button", "근거 " + (i + 1) + " 확인"), result = node("div");
         button.type = "button";
         button.addEventListener("click", async () => {
@@ -87,12 +104,26 @@
             if (version !== detailGeneration) return;
             const item = reply.evidence;
             result.replaceChildren(node("p", evidenceLabels[item.state] || "미확인"));
+            if (item.integrity) result.append(node('p', item.integrity === 'normalized_hash_verified' ? '정규화 내용 해시 일치 · 원본 내용 해시는 미검증' : '과거 근거의 내용 해시는 미기록'));
             if (item.raw) result.append(node("p", "원본: " + item.raw.index + " / " + item.raw.id));
             if (item.metadata) result.append(node("pre", JSON.stringify(item.metadata, null, 2)));
           } catch (error) { result.textContent = error.message; } finally { button.disabled = false; }
         });
-        box.append(button, result); $("ops-detail-content").append(box);
+        box.append(button, result); evidenceContainer.append(box);
       }
+      navigation.replaceChildren();
+      if (page.next_offset !== null) {
+        const more = node('button', '다음 근거 페이지'); more.type = 'button'; navigation.append(more);
+        more.addEventListener('click', async () => {
+          more.disabled = true;
+          try {
+            const next = await request('/api/alerts/detail?' + new URLSearchParams({id, offset: String(page.next_offset)}));
+            if (version === detailGeneration) evidencePage(next);
+          } catch (error) { more.textContent = error.message; } finally { more.disabled = false; }
+        });
+      }
+      }
+      evidencePage(data);
     } catch (error) { if (version === detailGeneration) $("ops-detail-state").textContent = error.message; }
   }
   async function refresh() {

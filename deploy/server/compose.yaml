@@ -54,6 +54,7 @@ services:
     depends_on:
       bootstrap: {condition: service_completed_successfully}
     environment: &portal-environment
+      SOC_LOG_FORMAT: json
       SOC_PUBLIC_URL: https://${SOC_PUBLIC_HOST:?Run prepare.py first}
       SOC_ENROLLMENT_ENABLED: ${SOC_ENROLLMENT_ENABLED:-0}
       SOC_ELASTIC_ENDPOINT: https://${SOC_PUBLIC_HOST}:9200

@@ -1,0 +1,108 @@
+name: Cloud SOC quality
+on:
+  push:
+    branches: [main, JEONGRIM-SEO, 'integration/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: soc-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  python-and-ui:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements*.txt
+            constraints.txt
+            deploy/*/requirements.txt
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install tested dependencies
+        run: |
+          python -m pip install --upgrade pip==26.2.1
+          python -m pip install -c constraints.txt -r requirements-dev.txt
+      - name: Check dependency compatibility
+        run: python -m pip check
+      - name: Ruff correctness checks
+        run: python -m ruff check src tests tools
+      - name: Linux regression with coverage
+        if: runner.os == 'Linux'
+        run: |
+          python -m pytest -q --cov=cloud_soc --cov-report=term-missing --cov-report=xml --cov-report=json --cov-report=html
+          python tools/coverage_badge.py
+      - name: Windows detection and agent configuration regression
+        if: runner.os == 'Windows'
+        run: python -m pytest -q tests/test_portfolio.py tests/test_cloud_detection.py tests/test_sequence_detection.py tests/test_processing.py tests/test_agent_endpoint.py tests/test_agent_policy.py
+      - name: Windows PowerShell parser and offline agent tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $failures = @()
+          Get-ChildItem deploy/agents -Filter *.ps1 -Recurse | ForEach-Object {
+            $tokens = $null; $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors.Count) { $failures += $errors }
+          }
+          if ($failures.Count) { $failures | Format-List; exit 1 }
+          node --test --test-concurrency=1 deploy/agents/tests/*.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Linux coverage artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-${{ github.sha }}
+          path: |
+            coverage.xml
+            coverage.json
+            htmlcov/
+            docs/portfolio/coverage.svg
+          if-no-files-found: error
+      - name: Synthetic quality and benchmark artifact
+        if: runner.os == 'Linux'
+        run: python tools/portfolio_eval.py --events 1000 --output /tmp/portfolio-evaluation.json
+      - name: Evaluation artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: evaluation-${{ github.sha }}
+          path: /tmp/portfolio-evaluation.json
+          if-no-files-found: error
+      - name: Offline rule profiles
+        env:
+          PYTHONPATH: src
+        run: python -m cloud_soc.detection --include-cloud --include-sequence
+      - name: UI regressions and authentication syntax
+        run: |
+          node --test prototype/tests/*.test.cjs
+          node --check prototype/auth-client.js
+          node --check prototype/login.js
+      - name: Bandit medium and high severity
+        if: runner.os == 'Linux'
+        run: python -m bandit -r src -ll -q
+      - name: Known dependency vulnerabilities
+        if: runner.os == 'Linux'
+        run: python -m pip_audit
+      - name: Compose config and production image build
+        if: runner.os == 'Linux'
+        env:
+          SOC_STATE_DIR: /tmp/soc-ci-state
+          SOC_PUBLIC_HOST: soc.invalid
+        run: |
+          docker compose -f compose.yaml -f compose.dev.yaml config --quiet
+          docker compose -f compose.prod.yaml config --quiet
+          docker build -f deploy/server/Dockerfile -t cloud-soc:ci .

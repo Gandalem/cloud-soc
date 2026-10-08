@@ -14,6 +14,18 @@ from cloud_soc.elastic.pagination import fetch_all_hits
 ENGINE_VERSION = "threshold-v2"
 
 
+def rule_engine_version(rule):
+    if rule.get('type') == 'sequence':
+        return 'failure-success-v2'
+    if rule.get('type') == 'single':
+        return 'single-v1'
+    return 'threshold-v3' if any(c['operator'] in ('exists', 'not_equals') for c in rule['conditions']) else ENGINE_VERSION
+
+
+def rule_revision(rule):
+    return event_fingerprint({'engine': rule_engine_version(rule), 'rule': rule})
+
+
 def event_fingerprint(event: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(
         event, sort_keys=True, ensure_ascii=True, separators=(",", ":"),
@@ -85,6 +97,11 @@ def condition_matches(
         event,
         field,
     )
+
+    if operator == 'exists':
+        return (actual is not None) == expected if type(expected) is bool else False
+    if actual is None:
+        return False
 
     # --------------------------------------------------------
     # equals
@@ -245,9 +262,16 @@ def build_group_key(
     return tuple(values)
 
 
-def detect_rule(
+def detect_rule(events, rule, *, runtime=None, _single_event=False):
+    """Dispatch through the explicit registry; unknown types fail closed."""
+    from cloud_soc.detection.registry import detect
+    return detect(events, rule, runtime=runtime)
+
+
+def _detect_threshold(
     events: list[dict[str, Any]],
     rule: dict[str, Any],
+    *, runtime: dict | None = None, _single_event: bool = False,
 ) -> list[dict[str, Any]]:
     """
     특정 Rule 하나를 이벤트 목록에 적용한다.
@@ -265,6 +289,7 @@ def detect_rule(
         Threshold 검사
     """
 
+
     threshold_count = rule["threshold"]["count"]
 
     window_seconds = (
@@ -280,7 +305,8 @@ def detect_rule(
     # Organization scope is mandatory even when a rule omits it.
     group_by = list(dict.fromkeys(["organization.id", *rule["group_by"]]))
     rule_snapshot = deepcopy(rule)
-    rule_version = event_fingerprint({"engine": ENGINE_VERSION, "rule": rule_snapshot})
+    engine_version = rule_engine_version(rule)
+    rule_version = rule_revision(rule_snapshot)
 
     # --------------------------------------------------------
     # 1. Rule 조건과 일치하는 이벤트를 그룹별로 저장
@@ -337,6 +363,9 @@ def detect_rule(
 
     for group_key, group_events in grouped_events.items():
 
+        state_key = json.dumps(group_key, ensure_ascii=True)
+        prior = runtime.get(state_key, {}) if runtime is not None else {}
+
         # 반드시 시간순으로 처리한다.
         group_events.sort(key=lambda item: (item[0], event_fingerprint(item[1])))
 
@@ -346,9 +375,9 @@ def detect_rule(
                 datetime,
                 dict[str, Any],
             ]
-        ] = deque()
+        ] = deque((parse_event_timestamp(item), item) for item in prior.get("window", []))
 
-        last_alert_time: datetime | None = None
+        last_alert_time = datetime.fromisoformat(prior["last_alert"]) if prior.get("last_alert") else None
 
         for timestamp, event in group_events:
 
@@ -422,7 +451,7 @@ def detect_rule(
                 "organization_id": group_values["organization.id"],
                 "rule_version": rule_version,
                 "rule_snapshot": deepcopy(rule_snapshot),
-                "engine_version": ENGINE_VERSION,
+                "engine_version": engine_version,
                 "evidence": [event_evidence(item[1]) for item in window],
 
                 "event_count": len(window),
@@ -462,6 +491,10 @@ def detect_rule(
             detections.append(detection)
 
             last_alert_time = timestamp
+
+        if runtime is not None:
+            runtime[state_key] = {"window": [item[1] for item in window],
+                                  "last_alert": last_alert_time.isoformat() if last_alert_time else None}
 
     return detections
 
