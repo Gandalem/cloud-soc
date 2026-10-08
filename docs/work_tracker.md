@@ -2,6 +2,8 @@
 
 - [ ] INT-04 진행 중 (2026-10-08): 사용자 요청으로 park-p2-02의 저장량/스냅샷 검토·백업 준비·Linux/Packetbeat 계측·Windows 지연 자동 시작 4개 커밋을 최신 main(PR #3 수정 포함)에 통합하고 회귀/원격 CI 확인 후 푸시·PR 병합한다. 양쪽 이력을 보존하고 조직 격리·보호 원문 감사·세션/탐지/설치·키 기능을 덮어쓰지 않는다. 개인 Word/검증 JSON·운영 배포·실제 추가 수신 검증·보류한 독립 백업 저장소 연결/자동 삭제는 범위 밖이다.
 
+2026-10-08 INT-04 로컬 통합 검증: main 5dd532a(PR #3 수정/병합 포함)을 park-p2-02의 4개 기존 커밋에 병합했다. 작업 기록과 Windows 시험 모듈 로딩 충돌 2곳은 양쪽 이력·현재 셸 전용 보안 모듈 경로를 유지해 해결했다. Windows CI에 P2 저장량/백업 준비/계측 시험을 추가했으며 app.py·privacy.py·Linux 운영 파서·사건/경보 권한·서버 Dockerfile은 최신 main과 동일하다. Python 544 통과/14 생략/239 subtests 통과, UI 98 통과, 에이전트 직렬 101 통과/1 생략, PowerShell 5.1 36개 문법·Ruff·Bandit 중간/높음·오프라인 규칙 6개 검증 통과. 개인 프로필 아래 worktree의 임시 로그 시험이 수집 금지 정책에 차단된 최초 실패는 시험 전용 외부 scratch 경로로 해결했고 제품 정책은 완화하지 않았다. 사용하지 않는 시험 import 제거 및 공유 실행 문서 Python 3.12 기준 보완. 상세 docs/park_p2_integration_20261008.md. 원격 CI·PR 병합은 아직 대기 중이며 새 소스의 배포/실제 수신, 독립 백업 저장소 연결 및 자동 삭제는 수행하지 않았다. P2-02 보류와 P2-03 미완료·기존 완료 이력은 유지한다.
+
 2026-10-08 P0C-02R-01 최종 회귀/커밋 준비: 관련 Node 64/64·단일 복구 3/3, Python 24 통과/권한 1 생략, 변경 설치기 6개 PowerShell 5.1 문법 검사와 서비스 함수 모의 시험이 통과했다. 추가 bundle/transaction/enrollment 19개는 최초 병렬 실행에서 16 통과/3 실패(설치 잠금 충돌 및 부모 PowerShell 7 모듈 경로를 물려받은 Windows PowerShell 5.1 보안 모듈 로딩), 직렬 재실행에서 17 통과/모듈 2 실패였다. 저장 정책을 바꾸지 않고 해당 시험 프로세스에서만 PSModulePath를 제거해 각 자식 셸 기본 경로로 실패 관련 4개를 재실행/전부 통과했다(19개 고유 사례 모두 통과 근거 확보, 단일 전체 실행 성공으로 표현하지 않음). 모의 호스트 경계 이전 모듈 로딩을 보완했으며 실제 설치기의 전역 잠금은 유지했다. 실제 VM 부팅/중앙 수신 증거·임시 키 정리는 앞선 완료 기록과 같으며 추가 VM/중앙 변경 없이 한글 커밋만 수행한다. 푸시/새 포털 이미지·ZIP 배포는 하지 않는다.
 
 2026-10-08 P0C-02R-01 실제 부팅 후속 완료: 사용자가 이어서 보완/재부팅 검증 후 한글 커밋만 요청했다(푸시 제외). 제한 SSH 키 재등록·고정 지문 인증으로 Windows 시험 VM 두 서비스의 일반 Auto/지연 false 및 부팅 직후 45,000ms SCM 7009/7000·1053을 재확인했다. 보호된 전체 파일 백업 1,492/157개(키·대기 데이터 포함, 해시 검증)·서비스 원래 시작 설정·작업 XML을 보존한 뒤 해당 수집기 두 개만 지연 자동 시작으로 설정했다. 지정 VM 정상 재부팅 01:30:30.5000000Z 후 수동 시작 없이 Filebeat 01:32:40.0663566Z/Packetbeat 01:32:40.8938770Z 프로세스 자동 실행·Npcap System/Running·SYSTEM 새 실행 결과 0·이번 부팅 SCM 오류 없음, 설정/CA/keystore/수집기 ID·작업 XML 불변·diskqueue 유지·전역 제한/정책 불변을 확인했다. 큐를 과거 백업으로 복원하지 않았다.
@@ -77,6 +79,36 @@
 근거/인계: [P2-02 안내](p2_capacity_backup.md), [실제 검증 결과와 비민감 해시](p2_capacity_validation_20261007.md), 서버 보호 /home/kopo/p2-capacity-20261007/{first.json,live-result.json,before.txt,after.txt,linux-tests.txt}. 실제 원문·자격 증명·개인 Word/JSON·state는 커밋하지 않는다. 요청대로 한글 커밋만 하며 push/서비스 배포/운영 ILM·워터마크 적용/운영 저장소 생성·복원은 하지 않는다. 다음은 대표적인 24시간 간격의 추가 표본, 보존/사건 예외·디스크 대응·독립 백업 목적지/암호화/권한/주기/비용/RPO/RTO 승인, 운영 백업/승인된 격리 복원이다. 이 승인·운영 기준이 남아 P2-02 체크하지 않는다.
 
 2026-10-07 P2-02 진행 중(park-p2-02): 사용자 요청에 따라 최신 origin/main d670fb3에서 전용 브랜치를 생성했다. 정림 브랜치의 인증/탐지/파이프라인/UI/CI 및 공통 Docker/Compose는 수정하지 않는다. 읽기 전용 수신량·용량/디스크 표본과 스냅샷 상태/격리 복원 검증 도구, 승인 전 보존·백업 검토 안내 및 독립 회귀를 구현한다. 운영 보존/디스크 기준과 백업 저장 위치는 미확정이며 실제 서버 접근도 다시 확인해야 하므로 자동 삭제/ILM 적용·운영 저장소 등록/복원·배포는 하지 않는다. 관련 테스트 후 한글 커밋만 요청받았고 푸시는 하지 않는다. 개인 Word/검증 JSON과 기존 완료 이력은 보존한다.
+- [x] INT-03 완료 (2026-10-08, PR #3 검토 지적 3건 수정·회귀·CI·병합): Linux 비정상 입력 처리 중단, 메모 저장 시 기존 담당자 해제, 세션 분석가의 조직별 경보·근거·사건 접근 단절을 수정했다. 수정 8768bbd의 Windows/Linux PR·브랜치 CI 4개 모두 통과 후 983e70f로 main 병합을 확인했다. 기존 park-p2-02 변경·운영 배포·실제 에이전트 수신 검증은 범위 밖이며 기존 이력은 보존한다.
+
+2026-10-08 INT-03 최종 검증·병합 완료: 전체 로컬 pytest 482 통과/11 skip/186 subtest, 후속 관련 47 통과/21 subtest, 화면 Node 96 통과, 수집기 Node 100 통과/1 Linux 전용 skip, Ruff 및 Bandit 중·고위험 검사 통과. 정규화·6개 탐지 규칙 오프라인 검증도 통과했다. 8768bbd를 JEONGRIM-SEO에 한글 커밋·푸시한 뒤 GitHub Actions PR run 37724776137와 push run 37724772477의 Ubuntu/Windows 네 job 모두 success를 확인했다. 최종 PR head/base를 재확인하고 expected_head_sha로 PR #3을 병합(983e70f)했으며 병합 tree와 검증한 PR head 차이는 0이다. 이 기록은 코드·격리 회귀·원격 CI·Git 병합 인수이며 운영 배포/실제 ES·에이전트 수신 검증은 미실시다. park-p2-02 HEAD 384b6ce와 기존 사용자 변경은 불변이다. [수정·검증 보고서](pr3_review_fixes_20261008.md).
+
+2026-10-08 INT-03 코드·로컬 회귀 결과: 자료형 검증으로 Linux 잘못된 로그만 미지원 기록하며 혼합 배치의 체크포인트 전진을 확인했다. 기존 담당자를 화면에 보존하고 owner 실제 변경만 전송한다. 세션 분석가의 명시 조직 경보·근거·사건 접근을 연결하되 목록·건수·페이지·메모·배정·연결·저장 재시도에 조직 제한을 강제했고 Basic 로그 전용 계정/전역 이력·키·수집 현황/보호 원문 감사 권한은 보존했다. 전체 pytest 482 통과/11 skip/186 subtest, 후속 관련 47 통과/21 subtest, 화면 Node 96 통과, Ruff 및 Bandit 중·고위험 검사 통과. Windows CI에 관련 회귀를 추가했다. 수집기 기존 시험·원격 CI·병합은 후속 확인하므로 체크는 유지한다. [범위·결과·제한](pr3_review_fixes_20261008.md). 서버/PC 수집기·운영 DB·키/큐 및 사용자 작업 폴더의 변경은 건드리지 않았다.
+
+2026-10-08 INT-02 기존 JEONGRIM-SEO 충돌 해결·로컬 회귀 완료(병합 커밋 전): 091a194에서 사용자 통합 커밋 935f9b2의 병합 충돌 18개를 해결했다. 검증된 main+정림 보안/History/UI/수집기 변경을 유지하며 설정 중복만 정리하고 양쪽 작업 이력·README 설치/포트폴리오 안내 및 기존 아카이브를 보존했다. 실행 코드·설정·의존성·테스트의 staged 내용은 935f9b2와 동일하다. 다시 실행한 전체 pytest 471 통과/7 skip/168 subtest, 화면 Node 94 통과, 수집기 Node 100 통과/1 Linux 전용 skip, Ruff 및 staged diff 검사 통과, unmerged 0을 확인했다. 새 로그·병합 patch/tree/증거 해시는 docs/integration_validation_20261008.md의 후속 항목에 연결했다. Docker/TLS ES/Edge는 이번 충돌 해결에서 재실행하지 않았고 동일 실행 코드의 INT-01 증거를 참조한다. 에이전트/운영/원격 CI 완료로 확대하지 않는다. HEAD/원격 JEONGRIM-SEO는 091a194, main은 불변이며 merge 상태를 유지한다. 커밋·push는 사용자가 수행한다.
+
+2026-10-08 INT-02 기존 JEONGRIM-SEO 병합 충돌 해결 진행: 사용자가 기존 JEONGRIM-SEO에 반영하기로 하고 통합 커밋 935f9b2를 직접 생성했다. 대상 HEAD는 최초 비교한 091a194와 같고, 사용자 실행의 --no-ff --no-commit 병합에서 18개 파일이 충돌했다. 검증된 main+정림 기능 통합 내용을 기준으로 충돌을 해결하되 두 브랜치의 작업 이력·설치 및 포트폴리오 안내를 보존한다. main 직접 변경·자동 커밋·푸시는 하지 않고 병합 결과의 Python/보안/UI/수집기 회귀를 다시 검증한다. 이전 INT-01의 커밋 없음 기록은 당시 이력으로 유지한다.
+
+2026-10-04 소스 경로 복구 검증: files/ 중복을 제거하고 대응 루트에 증분/클라우드/조사 품질 구현 반영. README는 전달 ZIP으로 덮이기 전 a581bf7 부모의 프로젝트 안내로 복구(내용 유지·LF 정규화). 최신 Dockerfile의 enrollment-maintenance 복사 유지. 관련 Python 158건·화면 Node 79건 및 6개 규칙 오프라인 검사 통과. 전체 Python 407건은 392 통과/10 생략/설치기 Windows 실행 정책 2 실패/기존 수집기 정책 3 오류로 전체 통과 아님. 서버 접속/배포/실제 ES/자료 전환 미수행. 사용자 승인에 따라 이 수정 커밋·JEONGRIM-SEO 푸시 진행.
+
+2026-10-04 소스 경로 복구 진행: 사용자 요청으로 최신 6981097의 files/ 전달 소스를 실제 루트 경로에 반영하고 기존 README를 복구한다. 합성 회귀 후 커밋·JEONGRIM-SEO 푸시 승인. 사용자 추가 지시로 배포는 제외한다. 기존 완료 이력 보존, 실제 ES/운영 데이터 전환은 미검증 유지.
+
+2026-10-04 P5 후속 코드·합성 검증: 근거 event_hash 재계산/전체 페이지, 규칙별 evaluated/committed 이력과 원자적 전달 큐·개별 제외 참조, AUTH-SEQ-001 실패 5회 뒤 성공 선택 규칙 구현. 관련 Python 158건·화면 로직 79건 통과, 6개 규칙 오프라인 검사. 전체 최초 Python 407건은 391 통과/10 생략/3 실패/3 오류; 권한 목록 시험 1건 수정 후 관련 통과, 기존 수집기 정책 3 오류·Windows 실행 정책 설치기 2 실패는 미해결. runtime 계약 변경은 새 명시적 상태 필요. 실제 ES/운영 전환/배포/브라우저 실증 미수행으로 전체 완료 체크 유지. docs/investigation_quality.md 참고.
+
+2026-10-04 P5-04/P5-02/P5-03 후속 진행: 사용자 요청으로 근거 무결성·전체 페이지 조회, 규칙별 실행 이력/제외 이벤트, 인증 실패 후 성공 순차 탐지를 서버 접속 없이 코드·합성 시험으로 구현한다. 기존 변경 보존, 운영 배포·실제 ES/기존 데이터 전환은 보류 유지.
+
+2026-10-04 P5-03 진행: 사용자가 VM IP 변경으로 운영 배포를 보류하고 다음 프로세스 진행을 요청했다. 클라우드 핵심 규칙·명시적 단일 이벤트 유형·증분 다중 규칙 연결과 합성 검증을 구현한다. 운영 배포/실제 ES 인수는 미완료 유지, 새 클라우드 규칙은 명시적 실행 옵션으로 선택하며 기본 SSH 동작은 유지한다.
+
+2026-10-04 P5-03 코드·격리 검증: AWS 관리형 고권한 정책 연결·Trail 중지/삭제·전체 주소 SSH/RDP 허용, OCI IAM 정책 변경의 single 규칙 4개와 --include-cloud 선택, 규칙별 runtime/불변 근거·다중 프로필 포털 표시 구현. API provider/outcome 및 타입/필드 조건을 구분하고 missing not_equals를 false로 수정, exists 추가. AWS 요청 전체 대신 평가 불리언/선택 대상만 보존한다. 신규 cloud 14건, 증분 14건, 기존 탐지 24건, 정규화 14건, 보안 상세 14건, AWS 수집 15건 통과/1 opt-in 생략, 운영 API 11건, 신뢰성 40건 통과: Python 통과 146건·생략 1건. 운영 UI 9건 통과. CLI --include-cloud 오프라인 5개 규칙 검증 및 패치 적용 확인. 실제 ES/클라우드 로그·VM 배포와 기존 자료 전환 미수행. 승인 변경 자동 억제/고객 관리형·inline 정책 분석/OCI 정책 본문·네트워크 상세 위험 판정은 후속 과제이며 P5-03 전체 완료 체크하지 않는다. docs/cloud_detection.md 참고.
+
+2026-10-04 P5-02 운영 인수 진행: 사용자 요청으로 운영 배포·기존 데이터 전환·실제 Elasticsearch 검증을 승인받아 이전 '배포 범위 밖' 제한을 이번 단계에 한해 대체한다. 현재 환경에 SSH 설정/키 경로가 없고 기존 기록의 192.168.32.60:22는 4초 연결 시간 초과다. 현재 SSH 주소/계정/인증 경로를 사용자에게 요청했다. deploy/server/preflight-detection.py와 docs/detection_deployment_runbook.md를 준비하고 Python 구문 검사만 통과했다. 서버 접속·ES 조회·백업/전환/배포/키 발급은 수행하지 않았다. 기존 정규화 문서에 필드 추가를 하면 경보 event_hash가 바뀔 수 있어 직접 덮어쓰기보다 별도 이행 저장소/수신 목록을 실제 자료에 맞춰 검증해야 한다. P5-02 미완료 유지.
+
+2026-10-04 P5-02 진행: 사용자 요청으로 영속 증분 탐지와 포털 장애 알림을 구현한다. 배치 경계, 재시작, 실패 재시도, 지연 이벤트 정책을 격리 검증한다. 기존 규칙 유지, 운영 배포·키 발급·Git push는 범위 밖이며 실제 운영 인수 전 전체 완료로 표시하지 않는다.
+
+2026-10-04 P5-02 코드·격리 검증: SQLite 영속 시간 창/cooldown/지연 버퍼/체크포인트와 create-only 재시도, 정규화 시각 매핑·15분 중첩 조회, 과거 필드 없는 자료의 명시적 제외 검사, Compose 상태 볼륨, 포털 실패/상태 중단/처리 지연/제외 경고 구현. 증분 14건, 기존 탐지 24건, 정규화 14건, 운영 API 11건 통과(합계 Python 63건). 운영 UI 8건 통과. P5-02 전체 완료 체크는 유지하지 않음: 실제 ES 최소 권한·Compose 재시작·운영 수집·브라우저 렌더링 미검증, 15분 초과 저장 가시성 지연과 과거 데이터 재평가/외부 알림 전송은 미지원. 적용 안내 docs/incremental_detection.md. 운영 서버·원격 Git 변경 없음.
+2026-10-08 INT-01 로컬 기능 통합·필수 검증 완료(원격 미반영): main/지정 integration이 동일한 실제 파일 상태를 확인하고 main 보안 위에 정림 Detection/Pipeline/Linux Parser/History/세션/CI/UI를 병합했다. app.py/privacy.py/Dockerfile은 main 조직 정책·감사 실패 차단·마스킹·UID1000을 보존했다. 전체 pytest 471 통과/7 skip/168 subtest, Ruff·diff 검사, 화면 Node 94 통과, 수집기 Node 100 통과/1 Linux 전용 skip, PowerShell 문법, 실제 Docker 빌드/비관리자 read-only 규칙 로드, 합성 TLS ES9.5.2 저장·중복 방지·위험도·최소 권한·조직/감사/마스킹·History HTTP 검사 26개 및 실제 Edge desktop/390px 연동을 검증했다. 시험 실패와 수정·재실행 증거는 docs/integration_validation_20261008.md에 기록했다. 기존 P3/P5/P6/P7 운영 완료 상태는 변경하지 않는다. 실제 에이전트 송신·운영 자료 재처리·원격 CI·운영 배포는 별도이고 원격 main/integration은 불변이다. 커밋·push·main 직접 변경 없음. 임시 API key/서버/ES/데몬을 종료했고 전체 변경 patch·공개 증거 manifest를 전달한다.
+
+2026-10-08 INT-01 진행 중 (P3-01/P5-01/P5-02/P5-03/P6-02/P7-01 관련 사용자 우선순위 변경): 지정 integration/main-jeongrim-features-20261008 브랜치는 원격 main d670fb385fa3dfe4ca271ffad4be4439a156ca57과 동일하여 통합이 없음을 확인했다. 최신 main의 조직 격리·보호 원문 감사·마스킹·비관리자 런타임을 보존하고 JEONGRIM-SEO의 Detection/Pipeline/Linux Parser/History/세션 인증/CI/UI를 기능별 통합한다. pytest/Ruff/Node/Docker/UI API 실행 증거와 실패·건너뜀·환경 제한을 구분한다. 기존 완료 이력은 그대로 유지하며 이번 통합 완료를 검증 전에 주장하지 않는다. main 직접 수정·운영 배포·커밋·푸시는 수행하지 않는다.
 
 2026-10-04 P2-01 / P1-04 실제 후속 Git 반영 요청: 사용자가 완료 변경의 커밋·푸시와 진행도 안내를 요청했다. 기능 브랜치 codex/privacy-source-access의 Linux 프로비저닝 자료 기본 수집 제외·회귀, 보호 조회 사유 선택 CSS, 실제 검증 보고서·관련 정책/수집/백업/조회 안내와 작업 목록 9개 파일을 반영한다. fetch 후 origin의 같은 브랜치와 HEAD 5c79b99는 일치했고 최신 origin/main cb329e4가 선행 커밋임을 재확인했다. 앞선 커밋/푸시 없음은 당시 검증 종료 시점의 이력으로 보존한다. Git 제외 시험 도구·보호 정책·계정/키·DB/큐·환경·화면 증거는 추가하지 않는다. 이전 단계에서 실제 배포/실수신 검증을 마쳤으며 이번 Git 반영은 추가 배포·VM 재설치·과거 ES 삭제/재처리·보존 정책 적용을 뜻하지 않는다. 기존 Node 46/Python 21 통과 증거와 동일한 제품 소스를 반영하고 staged diff/배포 공개 파일 해시를 대조한다. P1 상위 4/4, P2 상위 1/4 완료이며 다음은 P2-02, 이어 P2-03/04다. AWS 운영 배포 P0-01은 별도 접근/승인 준비가 남아 있다.
 
@@ -633,3 +665,118 @@ EC2 안의 에이전트 로그와 AWS 계정의 제어 영역 기록은 별도 �
 | 2026-09-28 | P2C-08 커밋·푸시·VMware 배포 | dc3f6b3을 origin/main에 푸시하고 원격 clean 7935936에서 fast-forward. Node 152개 및 Python 95개 통과, diff 검사 통과. state/portal-backups/pre-dc3f6b3-20260928T0540Z 온라인 백업과 stopped-dc3f6b3-20260928T0545Z 중지 백업의 backup/verify 통과. rollback-dc3f6b3-20260928T0540Z/portal-image.tar에 이전 이미지 보호 저장, pre-dc3f6b3 태그 manifest 확인·네트워크 차단/읽기 전용 import 시험 통과. portal/bootstrap 이미지 빌드 후 portal만 교체; 실행 이미지 3fd7d666ecd62d31de35a8f6f6bb8dfed9ae0224d86abddce895880943dca90c. 패키지 5개·키 이력 6개·사건 테이블 전체 행/BLOB 및 SQLite 무결성/외래키 보존 확인. Git blob과 배포 핵심 7개 파일 SHA256 일치. 메모리 내 Windows 로그 전용/네트워크 번들의 SHA256SUMS·native 통계 소스 포함 검증. CA 검증 HTTPS 화면/API 비인증 401, 실제 monitor 인증 조회에서 수집기 1개 recent·health 보고 1개 확인. 포털 재시작 0, ES/Kibana/gateway 시작 시각·재시작 수 불변, ES healthy | bootstrap 이미지만 빌드하고 실행하지 않았으며 기존 런타임 템플릿/역할 변경 없음. DB에 새 패키지/키를 생성하거나 기존 ZIP을 교체하지 않음. PC worker는 미갱신으로 collector_metrics unavailable; 신규 통계 중앙 수신·로그인 브라우저 UI·실제 운영 롤백은 미검증. P2C-07 및 P0C-16 유지. 실행 앱은 dc3f6b3 기준이고 후속 문서 커밋은 이미지 재빌드 없이 동기화 |
 
 후속 기록에는 `날짜 / 작업 ID / 구현·배포 범위 / 실행한 검증과 결과 / 관련 파일 또는 커밋` / 남은 제약을 남긴다. 한 항목의 완료 기준이 바뀌면 기존 기록을 지우지 말고 변경 이유를 추가한다.
+
+
+## 2026-10-02: P5-01 / P5-02 c89f6c8 호환 패치 (진행 중)
+
+- [ ] 사용자 실제 커밋 c89f6c8d1bacf1030d1ff01e03efbee4418d2874에 맞춰 기존 탐지 연결 패치를 재작성. operations.py 분할 조회·시간 제한·집계 완전성 검사를 보존. 운영 배포는 범위 밖.
+- [x] c89f6c8의 수정 대상 원본을 받아 전체 패치를 재생성. operations.py의 pipeline 앞/뒤 코드는 원본과 동일함을 확인.
+- [x] 관련 Python 135개, c89f6c8의 분할 조회 회귀 11개, UI 66개 통과. 기준 원본에 적용/역적용 검사 수행.
+- [ ] Ubuntu 실제 적용과 ES/실수집 검증은 사용자 환경에서 수행 필요. P5-01/P5-02 전체 미완료 유지.
+- 관련 파일: src/cloud_soc/portal/operations.py와 기존 연결 패치 파일 일체, docs/intake_detection_bridge.md. 커밋/푸시/운영 배포 없음.
+
+## 2026-10-04 사용자 승인 개선 1–12 (IMP)
+
+사용자가 JEONGRIM-SEO 브랜치에 검토 제안 1–12 전체 코드 적용을 요청했다. 이번 우선순위는 IMP이며 기존 미완료 운영 인수 기준을 변경하지 않는다. 로컬 VS Code/VM 접근은 현재 도구에서 제공되지 않아 연결 저장소 checkout에서 구현·검증 후 요청된 브랜치 반영을 진행한다. 운영 배포/데이터 전환/계정 발급은 별도이다.
+
+- [x] IMP-01 완료(코드·오프라인 검증): 기존 운영 TLS·최소 권한 유지, 개발 클라이언트 CA/비밀 파일 인증 지원.
+- [x] IMP-02 완료(코드·CI Compose config·image build): dev/prod Compose 진입점 분리, 중앙 ES 포트 기본 미공개(에이전트 직접 수신은 명시적 override).
+- [x] IMP-03 완료(코드·오프라인 검증): 호환 의존성 범위 및 개발 도구 고정, pyproject 패키지 메타데이터.
+- [x] IMP-04 완료(코드·오프라인 검증): create-only/근거 무결성 유지 및 문서화/회귀 검증.
+- [x] IMP-05 완료(코드·오프라인 검증): CLI/파이프라인 책임 분리, 기존 import 호환 유지.
+- [x] IMP-06 완료(코드·오프라인 검증): 명시적 detector registry와 기존 threshold/single/sequence 연결.
+- [x] IMP-07 완료(코드·오프라인 검증): 기존 실패→성공 연관 탐지 재사용 및 중복 근거/조직 경계 검증.
+- [x] IMP-08 완료(코드·오프라인 검증): 설명 가능한 위험 점수·계산 근거/버전 저장, 과거 경보 불변.
+- [x] IMP-09 완료(코드·오프라인 검증): 위험 점수/규칙/MITRE/정확한 근거 UI 연결.
+- [x] IMP-10 완료(코드·오프라인 검증): opt-in 세션 인증·Admin/Analyst/Viewer 서버 권한·CSRF, 기존 관리자 Basic 호환.
+- [x] IMP-11 완료(코드·오프라인 검증): 구조화 키 마스킹과 추가 비밀 키 패턴 회귀.
+- [x] IMP-12 완료(코드·원격 전체 CI): Ruff/Pytest/Node/Bandit/pip-audit/Docker 검증 CI와 VS Code 작업.
+
+2026-10-04 IMP 검증 기록: Python 414 통과/5 opt-in 생략, unittest 하위 검사 154 통과. Node UI/인증 transport 82 통과. Ruff syntax/undefined/import gate, Bandit medium/high, pip check, 6개 규칙 오프라인 검사 통과. pip-audit에서 기존 cryptography/pip 취약점 확인 후 cryptography 50.0.2/pyOpenSSL 26.4.0/pip 26.2.1 갱신, 재검사 알려진 취약점 0. 순차 탐지 중복 제거의 버전 v2와 신규 runtime 이행 전제를 문서화했다. 코드 범위 IMP-01/03–11 완료. IMP-02/12의 실제 Docker·원격 CI는 미완료이며 운영 배포/실제 ES·원격 에이전트/브라우저·사용자 로컬 VS Code 갱신은 미수행. 사용자 요청에 따른 JEONGRIM-SEO 반영은 연결 GitHub API로 진행(일반 git push는 인증 설정 없음). docs/improvements_1_12.md 참고. 기존 작업/완료 이력과 운영 인수 기준을 변경하지 않는다.
+
+2026-10-04 IMP 원격 CI 1차: a8f4637 브랜치 반영/실제 Actions 시작 확인. GitHub Ubuntu의 /home checkout에서 정책 시험의 합성 경로가 금지된 /home에 생성되어 2건 실패, Linux pwsh가 존재해 Windows 설치기를 Windows OS 없이 실행한 subtest 2건 실패. 운영 수집 정책·설치기는 바꾸지 않고 Linux 정책 fixture를 시스템 temp로 옮기며 Windows 설치 실행은 Windows에서만 수행하도록 시험 전제를 명시한다. 원격 Python 408 통과/9 생략/4 실패였으며 전체 성공으로 기록하지 않는다. 후속 CI 재실행 필요.
+
+2026-10-04 IMP-01–12 코드 적용 종료: a8f4637 기능 구현, 5e366c4 CI 환경 전제 수정까지 JEONGRIM-SEO 반영 확인. 실제 GitHub Actions https://github.com/Gandalem/cloud-soc/actions/runs/37209050863 전체 success: Ubuntu Python 3.12.14 pytest 410 통과/11 OS/opt-in 생략/154 하위 검사 통과, Node 82 통과, Ruff·Bandit medium/high·pip check·pip-audit 알려진 취약점 0·6개 규칙 오프라인·dev/prod Compose config·production Docker image build 성공. 로컬 최종 414 통과/5 생략/154 하위 검사와 OS 전제 차이를 구분한다. IMP-02/12 코드를 포함한 전체 개선 코드 범위 완료 체크; Compose 실제 서비스 시작/운영 배포·실제 ES/이행·에이전트 수신·브라우저 화면/사용자 PC VS Code 갱신은 미수행이며 기존 P0/P5/P7 인수 항목은 그대로 둔다. 이번 마지막 변경은 검증 기록 문서만 갱신하며 [skip ci]로 동일 코드 검사의 중복 실행을 생략한다.
+
+## 2026-10-05 포트폴리오 개선 PORT (진행 중)
+
+사용자 최신 요청을 우선 적용. README + 7개 번호 목록의 중복 마지막 항목을 품질/성능으로 분리해 8개 산출물로 진행한다. 현재 checkout JEONGRIM-SEO / 8a0abd8. 운영 배포 및 실제 클라우드 공격 수행은 포함하지 않는다.
+
+- [x] PORT-01 README Portfolio Edition: 실제 소스에 근거한 소개, 설치 안내 보존.
+- [x] PORT-02 Architecture: 수집/정규화/탐지/저장/조사 흐름 도식.
+- [x] PORT-03 Screenshots: 실제 프로젝트 UI에 합성 자료를 넣어 캡처, 합성 표시/재현 방법.
+- [x] PORT-04 Demo: 3개 공격 행위 합성 재현→실제 정규화/탐지→근거/사건 조사 절차.
+- [x] PORT-05 MITRE: 근거 URL/조건부 매핑, 기존 엔진 형식 유지, metadata 회귀.
+- [x] PORT-06 Coverage: 실제 측정/배지/CI report artifact, 숫자 과장 없음.
+- [x] PORT-07 Windows CI: Linux/Windows matrix, Windows agent offline 시험/PowerShell 구문.
+- [x] PORT-08 Quality/benchmark: 라벨 사례별 TP/FP/FN/precision/recall 및 실제 반복 측정/환경/한계.
+
+2026-10-05 PORT 검증 기록: JEONGRIM-SEO checkout 8a0abd8 기준 로컬 코드/문서 적용. README 소개와 상세 설치 분리(상대경로 갱신), 실제 수집 흐름 Mermaid, 실제 UI 합성 screenshot 3개, AWS 3개 scenario/17개 label evaluation, 모든 승인 profile 6개 MITRE metadata, pytest-cov snapshot/CI XML·JSON·HTML·배지 artifact, ubuntu-24.04/windows-2025 matrix 구현. tools/portfolio_eval.py는 production projection/normalization/detection/alert build 호출; 10,000 고유 StopLogging 이벤트 warmup 1+3회 약 5.451초/1,835 EPS(ES/network/SQLite incremental 제외). AWS TP 7/TN 10/FP0/FN0은 설계한 합성 조건 적합성일 뿐 운영 precision/recall 아님. 전체 pytest 417통과/5생략/154 subtests, statement coverage 88.5%(4990 statements/575 missed). Node UI 82통과, Ruff src/tests/tools·Bandit medium/high·pip check·diff whitespace 검사 통과. Chromium 실제 UI에서 세 경보/근거 참조·정규화 해시 일치와 Flask 임시 SQLite 사건 생성/업무 저장·재로딩, 페이지 JS 오류 0 확인. Noto Sans KR 글꼴과 PNG 3개 육안 확인 후 스크롤 위치를 보정해 캡처.
+
+PORT-07은 설정 구현 완료/Windows 실제 실행 미검증으로 미체크 유지. GitHub Actions 신규 matrix, 실제 Windows/PowerShell agent 실행, Docker·운영 서버 배포·실제 ES/클라우드/agent ingestion은 이번 수행 아님. 사용자 VM/VS Code 접근 불가, checkout 수정이며 이번 요청에 commit/push 명시가 없어 AGENTS.md대로 미수행. 기존 완료/운영 인수 기준 보존. MITRE metadata 변경으로 rule_version/경보ID/runtime 계약이 달라질 수 있어 이행 주의 문서화, 기존 경보 수정 없음. 관련 README.md, docs/installation.md, docs/portfolio/*, tools/*, tests/test_portfolio.py, rules/cloud.yml/authentication_sequence.yml, requirements-dev.txt/constraints.txt, .github/workflows/ci.yaml.
+
+2026-10-05 PORT-07 실제 CI 검증 진행: 사용자 요청으로 작성한 포트폴리오/Windows matrix 변경을 JEONGRIM-SEO에 커밋·반영해 Actions를 실행하고 실패 원인 수정 후 재검증한다. 현재 원격 HEAD 8a0abd8로 checkout 기준과 일치 확인. 운영 배포·VM 갱신은 제외. 완료는 실제 Windows job 결과 확인 뒤 표시한다.
+
+2026-10-05 PORT-07 원격 1차: 0deaf2c / Actions 37255982234. Linux 전체 success(Python 413통과/11생략/154 subtests·coverage88.5%·Node82·보안/Docker). Windows Python51통과/5생략/35 subtests·Ruff/PowerShell parser 통과, agent Node100개 중97통과/3실패. PS5.1 mock 두 시험 ConvertTo-SecureString 모듈 자동 로딩 실패(Core parent의 module 경로 노출) 및 Git Bash의 Linux health publication 산출물 미생성. 두 mock에 해당 shell PSHOME의 Security 모듈 명시 로딩, Linux 파일발행 시험은 Linux OS에서 수행하도록 전제 수정. Windows5.1/7 시험 제거나 운영 정책/수집기 변경 없음. 후속 실제 CI 필요, PORT-07 미완료 유지.
+
+2026-10-05 PORT-07 실제 CI 완료: 후속 코드 8461f4374669e486a9d3f6e767398493c054a355를 JEONGRIM-SEO 반영, https://github.com/Gandalem/cloud-soc/actions/runs/37256359248 전체 success 확인. Windows job111594189576: pytest51통과/5생략/35 subtests, PowerShell parser 통과, agent Node99통과/1 Linux 전용 생략/0실패(PS5.1/7 기존 실패 2건 포함), UI82통과, Ruff/pip check/6개 rule profile 통과. Linux job111594189472도 전체 success(Python413/11생략/154 subtests·coverage88.5%·UI82·보안/Compose/Docker). PORT-07 기준 충족으로 완료 체크. 코드/포트폴리오 변경은 0deaf2c와 8461f43으로 원격 반영 완료, 사용자 VM/VS Code·운영 서버/에이전트 설치·실제 ES 수신은 변경/검증하지 않았다. README와 docs/portfolio/measurements.md에 실제 실행 근거를 기록한다. 마지막 기록은 문서만 변경하고 [skip ci]로 검증된 코드에 대한 동일 CI 재실행을 생략한다.
+
+## 2026-10-05 DEPLOY-PORT 운영 반영 (진행 중 / 접속 차단)
+
+- [ ] DEPLOY-PORT: 사용자 요청으로 JEONGRIM-SEO 최신 158d32b를 VM 반영·운영 배포. 기존 데이터/설정/이미지 보호 백업, 실제 소스/Compose/runtime 계약 확인, 단계별 교체 및 실제 수신/근거/상태 검증이 완료 기준.
+
+이전 기록에서 최신 노트북 VM192.168.38.128, 계정lyn, /home/lyn/cloud-soc, deploy/server Compose 사용을 확인했다. 현재 실행 환경에서 192.168.38.128의 TCP22/443 모두 OSError errno101 Network is unreachable. 등록된 SSH 설정/키 없음. 이전 kopo/192.168.32.60 배포 안내를 현재 주소로 간주하지 않는다. 사용자 VM의 실제 Git/컨테이너/runtime/백업 상태는 조회하지 못했고 VM 파일변경·서비스 중지/교체·키발급·배포는 수행하지 않았다. VM에서 읽기 전용 상태 출력 또는 접근 가능한 승인 SSH 연결 경로가 필요하다. detection 규칙 metadata 변경의 runtime 계약과 증적 무결성/기존 데이터 이행 확인 전 일반 compose up 일괄 배포를 실행하지 않는다.
+
+2026-10-05 DEPLOY-PORT 사용자 VM 실행 증거: 로컬 8ee0f94와 origin/JEONGRIM-SEO 158d32b를 보존 병합해 VM HEAD cdb20d2, 원격보다 2 커밋 앞섬. 기존 portal/detector/normalizer 이미지 및 정지 상태 server 파일 백업 state/deploy-backups/20261005-115826 완료 후 재기동. snapshot.compose.yaml의 ES path.repo/bind mount 적용 및 ES healthy 확인, 정상 서비스 6개 재기동. 사용자 출력으로 cloud_soc_backup 저장소 검증 노드 1, pre-deploy-20261005-030626 snapshot SUCCESS, 인덱스59/샤드59 성공/실패0 확인. 최신 앱 이미지 빌드·runtime 호환·교체·실제 수신 검증은 아직 미완료. Compose orphan normalizer는 활성 서비스이므로 제거하지 않는다. 직접 VM 접속 불가 상태에서 사용자 실행 출력에 근거한 기록이다.
+
+2026-10-05 DEPLOY-PORT 교체/초기 검증: 사용자 출력으로 새 image sha256:cfba41f871a23abf0f4150346b7472e9e6a45e15c038c08dbc38eee089aee800 빌드 확인. 정지 복사본 runtime 검사에서 AUTH-001 identity 일치, start 2026-10-04T15:45:00Z 유지 확인. app-cutover-20261005-121520 추가 백업 후 portfolio.compose.yaml로 portal/normalizer/detector만 --no-deps --no-build --pull never 교체, 세 컨테이너 running/restart0. ES yellow/미할당 primary0, 두 pipeline success/error null, detector checkpoint 00:30→00:55 UTC 전진, lag8470초 delayed(신규 처리0). sudo TLS curl /api/healthz HTTP401 관리자 인증 요구, 첨부 화면에서 Kibana Home과 Cloud SOC admin 통합 로그 화면 정상 표시 확인. 최근1시간 수신 로그 목록 비어 있음. 로그인된 health 응답·지연 해소·실제 agent 신규 수신은 아직 미검증이므로 DEPLOY-PORT 완료 체크하지 않는다.
+
+2026-10-05 DEPLOY-PORT healthz 수정: 사용자 계정 인증 성공/info AuthorizationException403/사건DB 정상 증거로 클러스터 권한 없는 monitor의 info 호출이 원인 확인. portal/app.py healthz를 security.authenticate로 바꾸어 기존 최소 권한 유지; tests/test_portal.py에 cluster info 금지 계정의 ready 및 인증실패503/비밀 미노출 회귀 추가. 로컬 portal/backup 38통과/3생략/2subtests, Ruff/diff check 통과. 코드 수정 완료, VM 해당 수정 재빌드/포털 교체 및 ready 확인은 미완료. 원격 commit/push 미수행.
+
+2026-10-05 DEPLOY-PORT 범위 Ubuntu VM만으로 확정(클라우드 AWS/OCI 설치 취소). 사용자 healthfix 배포 후 ready 확인. Ubuntu22.04/x86_64 기존agent없음, lyn-vm/school/Filebeat-only 패키지 SHA256 검증 후 한글 다운로드 경로 제한으로 /home/lyn/lyn-vm-agent에서 신규 설치, Filebeat/discovery timer active. 화면으로 실제 lyn-virtual-machine Filebeat9.5.2 최근수신1 및 12:49 신규로그 확인. 탐지 lag30초/error없음/warning 누적late1 excluded1 outbox0. normalizer 최초유입140333건, unsupported126100/normalized11 누적 확인, 03:50 UTC 구간 성공이나 이후 중복15분 조회의 개별create 요청으로 지연 지속. worker.py 200개 단위 bulk create 및 항목별201/정상409만 허용, 부분실패/불완전응답시checkpoint유지 수정. 관련79통과/3생략/9subtests, 추가배치 포함 processing17통과/3subtests/Ruff/diff check통과. VM bulk수정 적용·배포·지연해소·시험표시 일치 검증 미완료. 원격commit/push미수행.
+
+2026-10-05 DEPLOY-PORT 최종 사용자 증거: bulk image sha256:5770d5dcf3a30dad6a96052531bcd2d5ea41b8762338b8e6c6e4973f97a0f7de 빌드 및 normalizer만 교체 후 normalization_success checkpoint04:00→04:05→04:08→04:09 UTC 전진. 최종 normalizer success/checkpoint04:13:48/last_success04:14:18/error null/normalized0 unsupported755 invalid0, detector success/lag30/error null/late_total1 excluded_total1 history_pending0. 대량 처리 지연 해소 및 Ubuntu 실제 raw ingestion/포털 ready 검증 완료. warning은 기존 누적late/excluded로 유지, 기록 초기화하지 않음. 최근15분 normalized0이며 신규 지원 보안 이벤트·시험marker 일치·경보→근거/사건 전체 검증은 미수행; 전체 인수 기준 DEPLOY-PORT 체크는 보류하고 배포/실제수신 완료 범위만 기록. VM 소스healthz/bulk수정 및 snapshot/portfolio compose overlay 유지 필요; VM 로컬merge2커밋과 수정/새overlay, workspace tests/docs 수정은 원격에 미반영. 재시작/재배포 시 기존 overlay 및 start 유지. 클라우드 설치는 사용자 취소로 범위 제외.
+
+2026-10-05 DEPLOY-PORT 독립 합성 신규 이벤트 탐지 검증 완료(사용자 VM 실행 출력 근거): soc_validation_20261005_045509/시험 전 normalized·alerts 사용0인 예약문서IP192.0.2.177, 전용filestream/명시UTC 입력으로 SSH실패10건 수집. 원본10/정규화10/조건일치SSH실패10/경보1, AUTH-001 alert1ddbfb80b5c7db765f200f7f14c78bd64f605a9a9918eed4b1051c7ab869dcde의 고유normalized근거 집합10개가 해당시험문서 집합과 정확히같고 event_count10, 전체일치True/최종검증성공 확인. 앞선198.51.100.77시험은 기존이벤트와같은group으로 섞였으며 IP/규칙조회만으로 동일시험이라한판정은 철회, 독립문서근거집합으로 재검증했다. 실제공격/운영precision·recall검증아님. 신규지원SSH 이벤트 수집→정규화→실제production detector경보/참조집합 완료; 별도 사건저장/업무재로딩은 이번VM에서 미수행이므로 원래전체 DEPLOY-PORT 체크보류. healthz/bulkVM적용 수정의 원격반영미수행, 755 unsupported 로그유형확대파서는 미구현. 시험입력·문서·경보는 보존, 상태초기화나운영로그삭제없음.
+
+2026-10-05 PARSER-UBUNTU 사용자 요청: 미지원755건의 parser확장 착수. 755는 당시normalizer20분중복조회구간의unsupported처리횟수이며 전체고유미지원수나필요parser수가 아님. 원본본문/개인정보공유없이 해당시각근처processing reason/source/service/message형식분류를 먼저확인하고 실제유형에맞는parser및regression을 추가한다. 이전healthz/bulk수정과운영이력보존. 파서변경시버전/기존immutable처리기록/재처리상태이행과탐지late정책을검토하며기존checkpoint삭제안함. 현재진행중/미완료.
+
+2026-10-05 PARSER-UBUNTU 분류증거: 대상고유757/표본500/adapter_not_supported500, journald265 file235, 기타400 sudo22 systemd13 Docker62 kernel2 web1, 원본누락0. linux_operational.py 추가(sudo구조화명령기록, systemd시작/정지/실패, dockerd/containerd JSON/logfmt 수준metadata), worker metadata readfields와contract연결. journal원본시각유지/fileRFC3164명시timezone필수, 실행성공추측금지/명령인자·본문삭제, 새adapter namespace linux-operational-v1로기존immutable기록보존. 기타400/kernel/web은미구현이고실제VM추가metadata와새parser적합성확인필요. VM적용/재처리미완료.
+
+2026-10-05 PARSER-UBUNTU 추가 분류: journald프로그램gnome-shell144 systemd57 sudo17 dockerd17 kernel11 기타desktop5 networkmanager3 avahi3 udev2/containerd4, 파일syslog215 auth18 kern1 access1. 일반GNOME/kernel/network/udev/systemd operational metadata와sudo PAMsession/authfailure, NCSAweb접근(offset포함) 추가. 알려진provider만metadata해석, unknown결과보존/본문·URL·인자제외, RFC3164 timezone필수. 관련65통과/7subtests/Ruff/diffcheck통과. 소스적용tool tools/install_linux_parser_update.py에 expected원본sha확인/소스백업/원자적파일교체/중복실행검증 구현. VM적용/build/deploy/timezone설정 및757개별샘플dryrun·별도원본재처리 미완료. 지원율100%주장하지않음.
+
+2026-10-05 PARSER-UBUNTU v2: 사용자 VM v1 적용/8개 시험 통과/normalization checkpoint 전진, Filebeat 조건부 timezone 설정 검사·재시작 성공 확인. 고유757 읽기전용 검사에서 timezone +09:00 복사본 보완 후 normalized730/unsupported27/invalid0, 원본누락0. 잔여27은 프로그램미확인13/sudo8/dbus-daemon4/chrome2. sudo 일반 관측 및 D-Bus/Chrome 운영 metadata 지원, 프로그램미확인13은 별도 linux_unclassified_v1/partial·collector_timestamp/빈category/본문제외로 구분. 새 의미 추정이나 보안탐지 주장 없음. 관련109통과/11subtests, Ruff/diff check 및 v1 원본hash 기반 v2 installer 적용·중복실행 검사 통과. tools/install_linux_parser_update_v2.py 제공 준비; VM v2 적용/배포·757 재검사·과거기록 재처리 미완료, 원격반영 미수행.
+
+2026-10-05 PARSER-UBUNTU v3: 사용자 v2 배포 running/restart0 및 checkpoint06:18→06:19UTC 성공. 757 dryrun 실제 operational744/unclassified12/unsupported1/invalid0/원본누락0, timezone복사본385. 마지막 access_log1건은 비IP 첫필드/대시2/명시offset시각/HTTP요청/숫자2/문자열2 형태 확인. 제한된 hostname 및 끝의 운영token2개 형식 추가, hostname/sourceIP와 추가token은 저장하지 않고 partial·해석한계 표시. 해당프로그램종류는 미확인으로 CUPS라고 단정하지 않음. 관련110통과/11subtests/Ruff/v3 installer 적용·중복실행 성공. VM v3배포/757 재검사 및 과거재처리 미완료.
+
+2026-10-05 PARSER-UBUNTU 저장 재처리 착수: 사용자 명시 요청. VM v3 running 및 checkpoint06:43→06:47 성공, 757 읽기검사 normalized757/recognized744/partial13/operational745/unclassified12/unsupported0/invalid0/누락0 확인. tools/reprocess_linux_history.py에 정확한757 범위/385 timezone복사보완/사전검증·고정manifest·별도immutable history2indices·동일내용충돌허용/다른내용중단·전건GET검증·1시간최소권한임시키폐기 구현. 로컬 새저장/재실행/충돌중단 및 Ruff 통과. 현재 탐지late/cooldown와checkpoint 영향을 피하도록 soc-normalized-history-v1/soc-processing-history-v1 사용, 포털 자동표시는 포함하지 않음. VM 실제 저장 실행·결과검증 미완료.
+
+2026-10-05 PARSER-UBUNTU 사용자 VM 실제 이력 저장 완료: reprocess_linux_history.py 출력으로 사전757/시간대보완385/recognized744/partial13 확인 후 soc-normalized-history-v1 정규화757 및 soc-processing-history-v1 처리기록757, 총created1514 전건GET내용일치 검증 성공. operational745/unclassified12, 원본·기존처리기록·현재탐지checkpoint 변경없음, 임시저장키폐기완료 확인. v3 운영배포 및 대상757 읽기검증·실제 별도이력 재처리 범위 완료. 현재포털의자동이력표시·원격commit/push는 미수행이며 이번완료에포함하지않음. 전체757이 완전해석된것은아니며 partial13의한계보존.
+
+- [x] HISTORY-PORTAL: 재처리 이력 인덱스 포털 조회 연결 진행 중. 인증된 읽기전용 API·부분정규화/시간대보완 표시·기존 monitor에 이력2indices 읽기권한만 추가·소스백업/충돌검사 updater 준비. 구현/로컬검증/VM배포/실제757표시를 구분하며 완료기준은 VM실제조회 확인.
+
+2026-10-05 HISTORY-PORTAL 구현·로컬검증: 인증된 /api/reprocessing/history와 reprocessing-history.html/js 및 공통메뉴 연결. 고정history정규화index/contract/job 확인, 최대2000 전건응답 아니면503, metadata allowlist, recognized/partial/보완건수·KST·50행page/filter·원본참조 상세 제공. 최소읽기 supplementalrole 부여tool과 향후bootstrap reader범위추가. Python32통과/3기존생략/2subtests, Node공통메뉴4+이력UI2통과, Ruff/JS구문/diffcheck 통과. updater에 기존파일hash충돌검사·소스백업 포함. VM소스적용/build/portal교체/읽기권한·실제757화면 검증 미완료.
+
+2026-10-05 HISTORY-PORTAL 사용자 화면에서 메뉴/화면배포 확인하였으나 state.rows.filter is not a function으로 조회실패. 공통redact_metadata가 256초과배열을문자열로치환한원인 확인. endpoint에서최대2000행검증은유지하고 각행별privacy필터로배열보존, UI배열형검증추가. 실제Flask응답757행+비밀가림회귀추가, Python33통과/3생략/2subtests 및 기존UI6통과. v1소스hash기반fix updater 적용·중복실행검증통과. VM수정배포·실제757목록 확인은아직미완료.
+
+2026-10-05 HISTORY-PORTAL VM 실조회 인수 확인: 사용자 16:32:25 스크린샷에서 admin 재처리이력 메뉴/페이지, 전체757·지원형식744·부분정규화13·시간대보완385 집계 및 lyn-virtual-machine 운영로그 목록/KST/행위/해석상태/보완여부/상세버튼 정상표시 확인. 이전 rows.filter 오류 해소. 이력조회연결·실제목록표시 완료로 체크; 상세버튼 클릭·필터·페이지이동은 로컬UI검증만 통과이고 해당VM클릭검증은 미수행. 원격commit/push 미수행.
+
+2026-10-05 HISTORY-PORTAL VM 상세클릭 사용자 미동작 보고. 목록아래 상세영역 대신 native dialog/showModal로 즉시팝업표시 및 닫기/Esc 제공하도록 변경. VM동작완료판정은보류, 수정소스·UI회귀검증 진행.
+
+2026-10-05 HISTORY-PORTAL 사용자 실제 상세popup 필드표시 확인; 시각근거미확인은추가조사대상. VM다음/이전 비정상보고로 페이지검증재착수. 버튼을표상단으로이동·전역순번/표시구간·페이지경계검사·목록위치자동이동 추가. 기존계산이VM에서실제실패했는지원인은미확정. 정확757행전체16페이지/고유순번/역이동/13건필터경계 검증추가. VM수정배포/클릭인수미완료.
+
+2026-10-05 HISTORY-PORTAL VM페이지버튼 정상 사용자확인. 검색입력실패보고로 후속수정: history filters에밝은theme용log-filters wrapper누락 확인(기존dark입력배경/밝은화면darktext), wrapper추가 및검색trim/input/search/change/IME완료반영. sudo/없는호스트/공백/삭제회귀추가. VM배포·실제검색확인은미완료.
+
+2026-10-05 HISTORY-PORTAL VM검색 인수: 사용자1~4 정상확인으로 흰검색입력/sudo필터/없는호스트0건/검색삭제757복귀 실제동작 확인. 앞서상세popup및다음·이전페이지 실제동작도확인. 이력2indices 저장757+757, 화면집계757/744/13/385 및read-only조회기능 완료. 최신search패치후 새로고침/healthz 최종확인은진행예정. 시각근거미확인표시원인은미해결로보존, 원격commit/push미수행.
+
+2026-10-05 운영 최종 사용자출력: portal/normalizer/detector/ES/gateway/Kibana 6개 Up, EShealthy. normalizer success checkpoint08:01:02→08:05:04UTC 연속전진. detector최근counts events6/6/6/8/149, created0/existing0/late0 확인; events값은각출력처리건수이며고유총계나공격건수로합산하지않음. 해당구간신규경보0을탐지실패로판정하지않음. 최근출력error로그없으나detectorcheckpoint/health상세는이번출력에없음. 최신수정후healthz ready와화면새로고침집계유지는사용자명시출력미수신. 원격반영미수행.
+
+2026-10-05 17:10 KST 최종 운영검증 완료: 사용자 ready정상·새로고침집계유지 명시확인. 최신portal history수정배포 후 인증healthz ready와757/744/13/385집계 유지, 상세popup/다음이전/검색/빈결과/검색삭제VM동작 확인완료. Ubuntu실수집·normalizer전진·독립SSH합성10근거AUTH-001경보 검증 및 과거757이력저장/포털조회 범위완료. 클라우드범위취소유지, 기존전체DEPLOY-PORT 사건저장재로딩미확인 및 시각근거표시미확인원인/원격소스반영은별도남은항목. 원본/기존상태보존.
+
+2026-10-05 SOURCE-SYNC 사용자 명시 요청으로 GitHub JEONGRIM-SEO 수정소스 반영 착수. 원격HEAD158d32b와checkout기준일치 확인. 전체회귀 최초438통과/9생략/157subtests·reader권한exactfixture1실패(추가이력read범위기대값미갱신), 해당기대값에고정2historyindices 반영. UI전체87통과/Ruff통과. 운영secret/상태/ES문서/VM로컬compose는이번소스커밋에포함하지않음. 원격반영은진행중.
+
+2026-10-05 SOURCE-SYNC 최종로컬검증: 전체pytest439통과/9OS·opt-in생략/157subtests, 전체UI87통과, Ruff src/tests/tools와diff whitespace통과. GitHub반영대상은healthz권한수정·200문서bulk·Linux운영파서·별도history재처리/읽기권한도구·인증포털조회·팝업/페이지/검색·관련회귀 및작업기록. VM기존merge cdb20d2/rootCompose수정과실제state/secret은여기서업로드하지않으며원격소스반영후VM동기화는별도이력보존필요.
+
+2026-10-05 SOURCE-SYNC 원격 및VM 완료 사용자증거: GitHub JEONGRIM-SEO 07c42be796da23a4bb4dcb59ead4aadee8d0790c 28파일반영 및tree일치확인, 로컬직접push인증부재로연결GitHub앱을사용한fast-forward 갱신. CI37282971787 시작확인(최종결과별도). VM백업 /home/lyn/cloud-soc-git-backups/20261005-082906, 로컬소스보존3242ef5 후이력UItest추가/추가충돌1개를원격검증버전으로해결, merge76a0ee5 완료. src/prototype/tests/tools origin차이출력없음확인. VMahead4는기존이력보존결과, untracked portfolio.compose.yaml/snapshot.compose.yaml 운영overlay 유지. VM컨테이너재시작/원격ahead4재push는이번동기화에서수행하지않음.
+
+2026-10-05 후속CI 실제완료: code07c42be/Actions37282971787 Windows job111675122343 및Linux job111675122827 success/전체step확인. Linux439통과/11생략/157subtests·coverage88.9%(5190/576)·UI87·보안/Compose/Docker성공, Windows54통과/5생략/38subtests·PowerShell·agent99통과/1생략·UI87·Ruff/pip/rules성공. docs/portfolio/measurements.md 기록. VM실제Windows설치/클라우드추가배포미수행구분, 전체DEPLOY-PORT 사건저장재로딩미확인 및시각근거표시미확인원인은남은항목. 이번후속커밋은검증문서만이며[skip ci]로동일코드CI재실행생략.

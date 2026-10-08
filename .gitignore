@@ -23,3 +23,8 @@ Thumbs.db
 
 # Runtime state
 state/
+
+.coverage*
+coverage.xml
+coverage.json
+htmlcov/

@@ -371,6 +371,10 @@ SECURITY_ALERTS_MAPPING = {
                 "alert_title": {
                     "type": "keyword",
                 },
+                "risk_score": {"type": "integer"},
+                "risk_level": {"type": "keyword"},
+                "risk_version": {"type": "keyword"},
+                "risk_factors": {"type": "object", "enabled": False},
                 "severity": {
                     "type": "keyword",
                 },

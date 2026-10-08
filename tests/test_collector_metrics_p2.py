@@ -256,8 +256,11 @@ class NetworkProjectionTests(unittest.TestCase):
 class NativeMetricsTests(unittest.TestCase):
     def test_compiled_packetbeat_contract_and_existing_native_worker(self):
         framework = Path(os.environ['WINDIR']) / 'Microsoft.NET/Framework64/v4.0.30319'
-        (ROOT / 'state').mkdir(exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix='p2-metrics-', dir=ROOT / 'state') as scratch:
+        # Worktrees under USERPROFILE are intentionally forbidden collection roots.
+        # Allow an isolated test scratch root without weakening the production policy.
+        fixture_root = Path(os.environ.get('SOC_TEST_P2_METRICS_DIR', ROOT / 'state'))
+        fixture_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='p2-metrics-', dir=fixture_root) as scratch:
             exe = Path(scratch) / 'metrics-test.exe'
             result = subprocess.run([str(framework / 'csc.exe'), '/noconfig', '/nologo', '/target:exe',
                 '/platform:x64', '/main:P2MetricsTests',

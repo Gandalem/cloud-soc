@@ -1,0 +1,96 @@
+rules:
+  - id: AWS-IAM-001
+    mitre:
+      tactic: ['Persistence', 'Privilege Escalation']
+      technique:
+        - id: T1098.003
+          name: Additional Cloud Roles
+      mapping_status: contextual
+      rationale: "Observed configuration change; analyst confirmation of intent and effective impact required."
+      references: [https://attack.mitre.org/techniques/T1098/003/]
+    type: single
+    name: AWS high privilege managed policy attached
+    enabled: true
+    severity: high
+    conditions:
+      - {field: event.dataset, operator: equals, value: aws.cloudtrail}
+      - {field: event.provider, operator: equals, value: iam.amazonaws.com}
+      - {field: event.outcome, operator: equals, value: success}
+      - {field: event.action, operator: in, value: [AttachUserPolicy, AttachRolePolicy, AttachGroupPolicy]}
+      - {field: cloud_soc.detail.fields.target_policy_arn, operator: in, value: ['arn:aws:iam::aws:policy/AdministratorAccess', 'arn:aws:iam::aws:policy/PowerUserAccess']}
+    alert:
+      title: AWS 고권한 관리형 정책 연결
+      message: 고권한 정책 연결 API가 성공으로 관측되었습니다. 변경 승인과 대상 계정을 확인하세요. 악성 활동 또는 실제 유효 권한의 확정은 아닙니다.
+      category: iam
+      tags: [aws, iam, privilege-change]
+  - id: AWS-AUDIT-001
+    mitre:
+      tactic: ['Defense Evasion']
+      technique:
+        - id: T1562.008
+          name: Disable or Modify Cloud Logs
+      mapping_status: contextual
+      rationale: "Observed configuration change; analyst confirmation of intent and effective impact required."
+      references: [https://attack.mitre.org/techniques/T1562/008/]
+    type: single
+    name: AWS trail logging stopped or trail deleted
+    enabled: true
+    severity: high
+    conditions:
+      - {field: event.dataset, operator: equals, value: aws.cloudtrail}
+      - {field: event.provider, operator: equals, value: cloudtrail.amazonaws.com}
+      - {field: event.outcome, operator: equals, value: success}
+      - {field: event.action, operator: in, value: [StopLogging, DeleteTrail]}
+    alert:
+      title: AWS 감사 Trail 중지 또는 삭제
+      message: 감사 Trail 중지 또는 삭제 API가 성공으로 관측되었습니다. 승인 여부와 다른 Trail의 보완 범위 및 실제 수집 영향을 확인하세요.
+      category: configuration
+      tags: [aws, audit, visibility]
+  - id: AWS-NETWORK-001
+    mitre:
+      tactic: ['Defense Evasion']
+      technique:
+        - id: T1562.007
+          name: Disable or Modify Cloud Firewall
+      mapping_status: contextual
+      rationale: "Observed configuration change; analyst confirmation of intent and effective impact required."
+      references: [https://attack.mitre.org/techniques/T1562/007/]
+    type: single
+    name: AWS public SSH or RDP ingress authorized
+    enabled: true
+    severity: high
+    conditions:
+      - {field: event.dataset, operator: equals, value: aws.cloudtrail}
+      - {field: event.provider, operator: equals, value: ec2.amazonaws.com}
+      - {field: event.outcome, operator: equals, value: success}
+      - {field: event.action, operator: equals, value: AuthorizeSecurityGroupIngress}
+      - {field: cloud_soc.detail.fields.public_management_ingress, operator: equals, value: true}
+    alert:
+      title: AWS 관리 포트의 전체 인터넷 허용
+      message: IPv4 또는 IPv6 전체 주소에 SSH/RDP 또는 모든 프로토콜을 허용한 요청이 성공으로 관측되었습니다. 실제 라우팅 및 자산 노출을 확인하세요.
+      category: network
+      tags: [aws, security-group, public-management]
+  - id: OCI-IAM-001
+    mitre:
+      tactic: ['Persistence', 'Privilege Escalation']
+      technique:
+        - id: T1098
+          name: Account Manipulation
+      mapping_status: contextual
+      rationale: "Observed configuration change; analyst confirmation of intent and effective impact required."
+      references: [https://attack.mitre.org/techniques/T1098/]
+    type: single
+    name: OCI IAM policy created or updated
+    enabled: true
+    severity: medium
+    conditions:
+      - {field: event.dataset, operator: equals, value: oci.audit}
+      - {field: event.provider, operator: equals, value: IdentityControlPlane}
+      - {field: event.outcome, operator: equals, value: success}
+      - {field: event.action, operator: in, value: [CreatePolicy, UpdatePolicy]}
+      - {field: cloud_soc.detail.fields.resource_id, operator: exists, value: true}
+    alert:
+      title: OCI IAM 정책 생성 또는 변경
+      message: OCI 정책 변경 API가 성공으로 관측되었습니다. 정책 내용과 변경 승인을 확인하세요. 현재 수집 메타데이터만으로 고권한 부여를 확정하지 않습니다.
+      category: iam
+      tags: [oci, iam, policy-change]

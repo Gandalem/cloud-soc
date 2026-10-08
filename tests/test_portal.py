@@ -53,6 +53,24 @@ class PortalTests(unittest.TestCase):
         self.assertEqual(result.status_code, 201, result.get_data(as_text=True))
         return result.json
 
+    def test_healthz_with_index_only_monitor(self):
+        monitor = Mock()
+        monitor.info.side_effect = PermissionError("cluster monitor forbidden")
+        app = create_app(self.settings, issuer=self.issuer, monitor=monitor)
+        response = app.test_client().get("/api/healthz", headers={"Authorization": AUTH})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json, {"status": "ready"})
+        monitor.security.authenticate.assert_called_once_with()
+        monitor.info.assert_not_called()
+
+    def test_healthz_authentication_failure_is_unavailable(self):
+        monitor = Mock()
+        monitor.security.authenticate.side_effect = RuntimeError("SENSITIVE_HEALTH_CANARY")
+        app = create_app(self.settings, issuer=self.issuer, monitor=monitor)
+        response = app.test_client().get("/api/healthz", headers={"Authorization": AUTH})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json, {"status": "unavailable"})
+
     def test_every_page_and_api_require_authentication(self):
         for path in ("/", "/agents.js", "/api/portal", "/api/packages/a/download", "/api/keys", "/api/agents/health", "/collection-health.html", "/api/operations", "/api/alerts/detail", "/operations.js", "/cases.html"):
             response = self.client.get(path)
@@ -284,6 +302,8 @@ class PortalTests(unittest.TestCase):
                 self.skipTest(f"Shell for {platform} is not installed")
             for network in (False, True):
                 with self.subTest(platform=platform, network=network):
+                    if platform == "windows" and os.name != "nt":
+                        self.skipTest("Windows installer needs Windows filesystem and OS APIs, not only pwsh")
                     item = self.package({**SPEC, "name": f"dry-{platform}-{network}", "os": platform, "network": network})
                     _, data = self.app.extensions["packages"].get(item["id"], archive=True)
                     folder = Path(self.temp.name) / item["id"]
@@ -323,6 +343,27 @@ class PortalTests(unittest.TestCase):
         again = PackageStore(Path(self.temp.name), ROOT / "deploy/agents", CA, self.settings["ENDPOINT"])
         self.assertEqual(again.get(item["id"])["sha256"], item["sha256"])
         self.assertEqual(self.client.post("/api/packages", data="x" * 9000, content_type="application/json", headers={"Authorization": AUTH, "X-Cloud-SOC": "portal"}).status_code, 413)
+
+
+    def test_history_api_preserves_757_privacy_filtered_rows(self):
+        from unittest.mock import patch
+        rows = [{"id": str(i), "host": "safe", "password": "PRIVATE_CANARY"} for i in range(757)]
+        data = {"total": 757, "recognized": 744, "partial": 13, "timezone_corrected": 385, "rows": rows}
+        with patch("cloud_soc.portal.reprocessing_history.history", return_value=json.dumps(data)):
+            response = self.request("GET", "/api/reprocessing/history")
+        self.assertEqual(response.status_code, 200)
+        self.assertIsInstance(response.json["rows"], list)
+        self.assertEqual(len(response.json["rows"]), 757)
+        self.assertEqual(response.json["total"], 757)
+        self.assertNotIn("PRIVATE_CANARY", response.get_data(as_text=True))
+
+    def test_history_endpoint_requires_auth_and_reports_connection_failure(self):
+        response = self.client.get("/api/reprocessing/history")
+        self.assertEqual(response.status_code, 401)
+        response = self.request("GET", "/api/reprocessing/history")
+        self.assertEqual(response.status_code, 503)
+        response = self.request("GET", "/reprocessing-history.html")
+        self.assertEqual(response.status_code, 200)
 
 
 class DeploymentTests(unittest.TestCase):

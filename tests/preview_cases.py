@@ -1,11 +1,11 @@
 """Loopback synthetic UI with real temporary SQLite. Never deploy this helper."""
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import tempfile
 from unittest.mock import Mock, patch
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import urlsplit
 
 import test_portal
 from cloud_soc.portal.app import create_app

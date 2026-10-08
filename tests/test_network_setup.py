@@ -8,7 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
-from cloud_soc.portal.network_setup import install_network_pipelines, pipeline_body
+from cloud_soc.portal.network_setup import install_network_pipelines
 from cloud_soc.portal.status_setup import SetupConflict
 
 

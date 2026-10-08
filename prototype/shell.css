@@ -25,3 +25,8 @@
   #app-shell .sidebar.is-open { display: flex; }
 }
 @media print { #app-shell { display: none; } }
+
+/* Read-only workspaces retain evidence navigation, without mutation forms. */
+body[data-soc-role="viewer"] #case-work-form,
+body[data-soc-role="viewer"] #case-link-form,
+body[data-soc-role="viewer"] #case-create-panel { display: none; }

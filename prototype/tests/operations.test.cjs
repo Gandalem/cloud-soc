@@ -22,7 +22,23 @@ function browser(responses) {
 function allText(element){return element.textContent+element.children.map(allText).join(' ');}
 test('real page loads no demo scripts',()=>{
   const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
-  assert.ok(!html.includes('demo-data.js')); assert.ok(html.includes('operations.js')); assert.ok(html.includes('승인 대기'));
+  assert.ok(!html.includes('demo-data.js')); assert.ok(html.includes('operations.js')); assert.ok(html.includes('SSH 탐지 현황'));
+});
+
+test('detector state is displayed separately from normalization',async()=>{
+  const ui=browser([ok({...data,sections:{...data.sections,pipeline:{state:'success',detector:{state:'failed'}}}})]);await settle();
+  assert.match(ui.get('ops-pipeline').textContent,/SSH 탐지기: 탐지 실패/);
+});
+test('cloud profile is identified in the operations view',async()=>{
+  const ui=browser([ok({...data,sections:{...data.sections,pipeline:{state:'success',detector:{state:'success',detection:'AUTH-001,AWS-IAM-001'}}}})]);await settle();
+  assert.match(ui.get('ops-pipeline').textContent,/SSH·클라우드 탐지기/);
+});
+test('detector health alarms and excluded counts are visible',async()=>{
+  for (const [health,label] of [['failed','탐지 장애: 처리 실패'],['stale','상태 갱신 중단'],['delayed','탐지 지연'],['warning','탐지 제외 이벤트']]) {
+    const ui=browser([ok({...data,sections:{...data.sections,pipeline:{state:'success',detector:{state:'success',health,lag_seconds:1300,late_total:3,legacy_excluded:12}}}})]);await settle();
+    assert.ok(ui.get('ops-pipeline').textContent.includes(label));
+    assert.match(ui.get('ops-pipeline').textContent,/처리 지연 1300초.*지연 제외 누적 3건.*과거 형식 제외 12건/);
+  }
 });
 test('successful zero, missing index and failed queries stay distinct',async()=>{
   const ui=browser([ok({...data,sections:{...data.sections,processing:{state:'no_index'},quality:{state:'unavailable'}}})]);await settle();
@@ -56,4 +72,19 @@ test('alert IDs are encoded and untrusted titles are text nodes',async()=>{
   const investigation = new URL(ui.get('ops-detail-content').children[0].href,'https://example.test');
   assert.equal(investigation.searchParams.get('return_page'),'index.html');
   assert.match(ui.get('ops-detail-state').textContent,/주변 로그로 대체하지/);
+});
+
+test('evidence pagination reaches global positions and reports normalized integrity',async()=>{
+ const row={id:'alert',title:'sequence',timestamp:data.start};
+ const ui=browser([ok({...data,sections:{...data.sections,alerts:{...section,rows:[row]}}}),
+ ok({alert:row,condition:{},evidence_count:251,evidence_page:{positions:[0],next_offset:250}}),
+ ok({evidence_count:251,evidence_page:{positions:[250],next_offset:null}}),
+ ok({evidence:{state:'exact_reference',integrity:'normalized_hash_verified'}})]);await settle();
+ ui.get('ops-alert-rows').children[0].children[5].children[0].listeners.click();await settle();
+ const content=ui.get('ops-detail-content');const container=content.children[3],nav=content.children[4];
+ nav.children[0].listeners.click();await settle();
+ assert.equal(new URL(ui.calls[2].url,'https://test').searchParams.get('offset'),'250');
+ container.children[1].children[0].listeners.click();await settle();
+ assert.equal(new URL(ui.calls[3].url,'https://test').searchParams.get('evidence'),'250');
+ assert.match(allText(container.children[1]),/해시 일치.*원본 내용 해시는 미검증/);
 });

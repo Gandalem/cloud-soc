@@ -1,11 +1,9 @@
 """Real isolated ES evidence -> authenticated Flask API -> durable case work."""
-import json
 from pathlib import Path
 import tempfile
 import uuid
 from unittest.mock import Mock
 from cloud_soc.portal.app import create_app
-from cloud_soc.portal.operations import Operations
 import test_portal
 
 

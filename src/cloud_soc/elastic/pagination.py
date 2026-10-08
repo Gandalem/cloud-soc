@@ -14,9 +14,13 @@ class IncompleteSearchError(RuntimeError):
 
 def fetch_all_hits(
     client: Elasticsearch, *, index: str, page_size: int = 1000,
+    max_documents: int | None = None,
+    query: dict | None = None,
 ) -> list[dict[str, Any]]:
     if type(page_size) is not int or not 1 <= page_size <= 10000:
         raise ValueError("page_size must be between 1 and 10000")
+    if max_documents is not None and (type(max_documents) is not int or max_documents < 1):
+        raise ValueError("max_documents must be a positive integer")
 
     opened = client.open_point_in_time(
         index=index, keep_alive="2m", allow_partial_search_results=False,
@@ -32,7 +36,7 @@ def fetch_all_hits(
             request: dict[str, Any] = {
                 "pit": {"id": pit_id, "keep_alive": "2m"},
                 "size": page_size,
-                "query": {"match_all": {}},
+                "query": query if query is not None else {"match_all": {}},
                 # _shard_doc is unique and stable within this PIT.
                 "sort": [{"_shard_doc": "asc"}],
                 "track_total_hits": False,
@@ -53,6 +57,8 @@ def fetch_all_hits(
             if not next_cursor or next_cursor == cursor:
                 raise IncompleteSearchError("Missing or non-advancing search_after cursor")
             hits.extend(page)
+            if max_documents is not None and len(hits) > max_documents:
+                raise IncompleteSearchError("Snapshot exceeds configured document limit")
             cursor = next_cursor
     finally:
         try:

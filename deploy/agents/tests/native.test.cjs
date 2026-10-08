@@ -5,8 +5,8 @@ const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 
 test('independent .NET worker synthetic contract', {skip:process.platform !== 'win32'}, () => {
-  fs.mkdirSync(path.resolve(__dirname,'../../../state'), {recursive:true});
-  const temp = fs.mkdtempSync(path.resolve(__dirname, '../../../state/soc-native-build-'));
+  const testParent = path.join(process.env.WINDIR, 'Temp');
+  const temp = fs.mkdtempSync(path.join(testParent, 'soc-native-build-'));
   try {
     const exe = path.join(temp, 'native-tests.exe');
     const framework = path.join(process.env.WINDIR, 'Microsoft.NET', 'Framework64', 'v4.0.30319');
@@ -17,7 +17,7 @@ test('independent .NET worker synthetic contract', {skip:process.platform !== 'w
     const run=spawnSync(exe,[temp],{encoding:'utf8',windowsHide:true,timeout:30000});
     assert.ifError(run.error); assert.equal(run.status,0,run.stdout+run.stderr);
   } finally {
-    assert.equal(path.dirname(path.resolve(temp)), path.resolve(__dirname,'../../../state'));
+    assert.equal(path.dirname(path.resolve(temp)), path.resolve(testParent));
     assert.ok(path.basename(temp).startsWith('soc-native-build-'));
     fs.rmSync(temp,{recursive:true,force:true});
   }

@@ -34,7 +34,7 @@ ILM 적용, 저장소 등록, 기존 인덱스로의 복원 기능은 제공하�
 
 ## 서버에서 읽기 전용으로 실행
 
-중앙 이미지 재빌드 없이 저장소 루트에서 Python 3.10 이상과 프로젝트 Elasticsearch 의존성으로 실행합니다.
+중앙 이미지 재빌드 없이 저장소 루트에서 Python 3.12 이상(통합 프로젝트 기준)과 프로젝트 Elasticsearch 의존성으로 실행합니다.
 CA와 별도 **읽기 전용 API 키 파일**이 필요합니다. 기존 수집 키는 조회 권한이 없어 사용할 수 없습니다.
 `deploy/server/capacity-reader-role.json`은 운영자가 검토할 권한 명세이며 자동 계정 생성은 하지 않습니다.
 cluster `monitor`/`monitor_snapshot`, 지정 수집 인덱스의 `read`/`monitor`만 요청합니다.

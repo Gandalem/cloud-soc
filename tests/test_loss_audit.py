@@ -74,13 +74,13 @@ class LossAuditTests(unittest.TestCase):
 
     def test_partial_or_inexact_results_fail_closed(self):
         valid = Reader().search()
-        for patch in ({"timed_out": True}, {"_shards": {"total": 2, "successful": 1, "failed": 1}},
+        for response_patch in ({"timed_out": True}, {"_shards": {"total": 2, "successful": 1, "failed": 1}},
                       {"hits": {"total": {"relation": "gte", "value": 10000}}},
                       {"hits": {"total": {"relation": "eq", "value": True}}},
                       {"hits": {"total": {"relation": "eq", "value": -1}}}, {"_shards": {}}):
             class Partial:
                 def search(self, **kwargs):
-                    return {**copy.deepcopy(valid), **patch}
+                    return {**copy.deepcopy(valid), **response_patch}
             with self.assertRaises(AuditError):
                 inspect_window(Partial(), AGENT, SINCE, UNTIL)
 

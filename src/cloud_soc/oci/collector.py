@@ -11,7 +11,7 @@ import sqlite3
 import time
 
 # Reuse only cloud-neutral error/time/ES primitives, never AWS clients or state.
-from cloud_soc.aws.collector import CollectionError, ElasticsearchSink
+from cloud_soc.aws.collector import CollectionError, ElasticsearchSink as ElasticsearchSink
 from cloud_soc.aws.cloudtrail import iso, timestamp
 from cloud_soc.oci.audit import project_event
 

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>재처리 이력 | Cloud SOC</title>
+<link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css"><link rel="stylesheet" href="logs.css"><link rel="stylesheet" href="shell.css">
+<script src="auth-client.js"></script><script src="shell.js" defer></script><script src="reprocessing-history.js" defer></script>
+</head>
+<body class="agents-page logs-page">
+<a class="skip-link" href="#main">본문으로 이동</a><div id="app-shell"></div>
+<main id="main" class="main-content agents-main logs-main">
+<div class="page-heading"><div><h1>재처리 이력</h1><p>기존 미지원 로그를 확장 파서로 다시 해석한 저장 결과입니다.</p></div><button id="refresh" type="button">새로고침</button></div>
+<section class="panel log-scope-note"><h2>과거 로그의 해석 결과</h2><p>지원 형식과 일치한 로그와 부분 정규화를 구분합니다. 부분 정규화는 프로그램·필드·원본 시각 중 일부를 해석하지 못한 기록입니다. 보안 경보나 공격 건수를 의미하지 않습니다.</p><p>시간대 보완은 재처리 복사본에 적용한 +09:00입니다. 원본과 현재 탐지 체크포인트는 변경하지 않았습니다. 본문·URL·명령 인자는 표시하지 않습니다.</p></section>
+<section class="panel log-workspace" aria-labelledby="list-title">
+<h2 id="list-title">저장된 이력 목록</h2><p id="summary" role="status">조회 중</p><p id="error" role="alert" hidden></p>
+<div class="log-filters" role="search" aria-label="재처리 이력 검색">
+<label>해석 상태 <select id="status"><option value="">전체</option><option value="recognized">지원 형식 일치</option><option value="partial">부분 정규화</option></select></label>
+<label>호스트·행위 검색 <input id="search" type="search" maxlength="128" placeholder="sudo 또는 호스트명 입력" autocomplete="off"></label>
+</div>
+<div class="log-query-summary"><p id="page-state" role="status"></p><button id="previous" type="button">이전</button> <button id="next" type="button">다음</button></div>
+<div class="table-scroll"><table><thead><tr><th>순번</th><th>이벤트 시각 (KST)</th><th>호스트</th><th>행위</th><th>해석 상태</th><th>시간대 보완</th><th>상세</th></tr></thead><tbody id="rows"></tbody></table></div>
+
+</section>
+<dialog class="log-detail-dialog" id="detail-panel" aria-labelledby="history-detail-title"><div class="log-detail-heading"><h2 id="history-detail-title">이력 메타데이터 상세</h2><button id="detail-close" type="button">닫기</button></div><dl id="detail"></dl></dialog>
+<noscript>이력 조회에는 JavaScript가 필요합니다.</noscript>
+</main></body></html>

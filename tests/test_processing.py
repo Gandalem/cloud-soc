@@ -11,8 +11,8 @@ import unittest
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from cloud_soc.processing.contract import normalize, NORMALIZED, RECORDS, STATUS
-from cloud_soc.processing.worker import run_once, scan
+from cloud_soc.processing.contract import normalize, NORMALIZED
+from cloud_soc.processing.worker import run_once, scan, create_batch
 from cloud_soc.processing.__main__ import main
 from cloud_soc.portal.operations import Operations
 from cloud_soc.portal.log_query import LogQueryError
@@ -31,6 +31,27 @@ def fixture():
 
 
 class ProcessingTests(unittest.TestCase):
+    def test_malformed_linux_records_do_not_poison_checkpoint_or_good_events(self):
+        from test_linux_operational import hit
+        client = Mock(); client.options.return_value = client
+        client.bulk.side_effect = lambda **kw: {"items": [
+            {"create": {"status": 201}} for _ in range(len(kw["operations"]) // 2)]}
+        samples = [hit("Started PRIVATE_CANARY.", ["systemd"]),
+                   hit('{"level":["error"],"msg":"PRIVATE_CANARY"}', "dockerd"),
+                   hit("Started PRIVATE_CANARY.", "systemd")]
+        for position, sample in enumerate(samples):
+            sample["_id"] = str(position)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.sqlite"
+            first = run_once(client, path, START, now=NOW, scanner=lambda *_: samples)
+            self.assertEqual(first["counts"], {"normalized": 1, "unsupported": 2, "invalid": 0})
+            self.assertEqual(first["checkpoint"], "2026-09-22T01:05:00Z")
+            documents = client.bulk.call_args.kwargs["operations"][1::2]
+            self.assertEqual(len(documents), 4)
+            self.assertNotIn("PRIVATE_CANARY", json.dumps(documents))
+            second = run_once(client, path, START, now=NOW, scanner=lambda *_: [])
+            self.assertGreater(second["checkpoint"], first["checkpoint"])
+
     def test_windows_late_event_has_raw_lineage_no_body(self):
         key, record, event = normalize(fixture(), START)
         self.assertEqual(record["status"], "normalized")
@@ -80,11 +101,12 @@ class ProcessingTests(unittest.TestCase):
 
     def test_checkpoint_replay_failure_and_start_lock(self):
         client = Mock(); client.options.return_value = client
+        client.bulk.return_value = {"items": [{"create": {"status": 201}}] * 2}
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "state.sqlite"
             first = run_once(client, path, START, now=NOW, scanner=lambda *_: [fixture()])
             self.assertEqual(first["checkpoint"], "2026-09-22T01:05:00Z")
-            self.assertEqual(client.create.call_count, 2)
+            self.assertEqual(len(client.bulk.call_args.kwargs["operations"]), 4)
             def failure(*_):
                 yield fixture()
                 raise RuntimeError("PRIVATE_CANARY")
@@ -98,6 +120,50 @@ class ProcessingTests(unittest.TestCase):
             second = run_once(client, path, START, now=NOW, scanner=lambda *_: [])
             self.assertEqual(second["checkpoint"], "2026-09-22T01:10:00Z")
             self.assertEqual(second["range"]["start"], START)
+
+    def test_bulk_failure_retains_checkpoint_and_replay_uses_create(self):
+        client = Mock(); client.options.return_value = client
+        client.bulk.return_value = {"items": [{"create": {"status": 201}},
+            {"create": {"status": 403, "error": {"type": "security_exception"}}}]}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.sqlite"
+            run_once(client, path, START, now=NOW, scanner=lambda *_: [])
+            with self.assertRaisesRegex(RuntimeError, "checkpoint retained"):
+                run_once(client, path, START, now=NOW, scanner=lambda *_: [fixture()])
+            with closing(sqlite3.connect(path)) as db:
+                self.assertEqual(db.execute("SELECT checkpoint FROM state").fetchone()[0],
+                                 "2026-09-22T01:05:00Z")
+            client.bulk.return_value = {"items": [{"create": {"status": 409,
+                "error": {"type": "version_conflict_engine_exception"}}},
+                {"create": {"status": 201}}]}
+            result = run_once(client, path, START, now=NOW, scanner=lambda *_: [fixture()])
+            self.assertEqual(result["checkpoint"], "2026-09-22T01:10:00Z")
+            operations = client.bulk.call_args.kwargs["operations"]
+            self.assertEqual(operations[0], {"create": {"_index": NORMALIZED,
+                "_id": normalize(fixture(), START)[0]}})
+
+    def test_bulk_rejects_incomplete_and_nonconflict_results(self):
+        for response in ({"items": []}, {"items": [{"create": {"status": 429}}]},
+                         {"items": [{"create": {"status": 409, "error": {"type": "other"}}}]}):
+            with self.subTest(response=response):
+                client = Mock(); client.bulk.return_value = response
+                with self.assertRaises(RuntimeError):
+                    create_batch(client, [(NORMALIZED, "fixture", {})])
+
+    def test_bulk_batches_keep_all_evidence_and_records(self):
+        client = Mock(); client.options.return_value = client
+        client.bulk.side_effect = lambda **kw: {"items": [
+            {"create": {"status": 201}} for _ in range(len(kw["operations"]) // 2)]}
+        hits = []
+        for number in range(250):
+            hit = fixture(); hit["_id"] = str(number); hits.append(hit)
+        with tempfile.TemporaryDirectory() as directory:
+            result = run_once(client, Path(directory) / "state.sqlite", START,
+                              now=NOW, scanner=lambda *_: hits)
+        self.assertEqual(result["counts"]["normalized"], 250)
+        self.assertEqual(client.bulk.call_count, 3)
+        self.assertEqual([len(call.kwargs["operations"]) // 2
+                          for call in client.bulk.call_args_list], [200, 200, 100])
 
     def test_partial_search_and_cursor_failure_close_pit(self):
         for response in ({"timed_out": True}, {"_shards": {"failed": 1}}, {"hits": {"hits": [{"sort": None}]}}):

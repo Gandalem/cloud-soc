@@ -1,0 +1,63 @@
+"""Apply the reviewed portal history update with source conflict checks and backup."""
+import argparse
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import tempfile
+
+PAYLOAD = json.loads('{"prototype/reprocessing-history.html": {"before": "b38a849f6d0aee42e51c50665cd5b4550b842166a6babf72181dd8dad5b6adb7", "text": "<!doctype html>\\n<html lang=\\"ko\\">\\n<head>\\n<meta charset=\\"utf-8\\"><meta name=\\"viewport\\" content=\\"width=device-width,initial-scale=1\\">\\n<title>\\uc7ac\\ucc98\\ub9ac \\uc774\\ub825 | Cloud SOC</title>\\n<link rel=\\"icon\\" href=\\"assets/mark.svg\\" type=\\"image/svg+xml\\">\\n<link rel=\\"stylesheet\\" href=\\"styles.css\\"><link rel=\\"stylesheet\\" href=\\"agents.css\\"><link rel=\\"stylesheet\\" href=\\"logs.css\\"><link rel=\\"stylesheet\\" href=\\"shell.css\\">\\n<script src=\\"auth-client.js\\"></script><script src=\\"shell.js\\" defer></script><script src=\\"reprocessing-history.js\\" defer></script>\\n</head>\\n<body class=\\"agents-page logs-page\\">\\n<a class=\\"skip-link\\" href=\\"#main\\">\\ubcf8\\ubb38\\uc73c\\ub85c \\uc774\\ub3d9</a><div id=\\"app-shell\\"></div>\\n<main id=\\"main\\" class=\\"main-content agents-main logs-main\\">\\n<div class=\\"page-heading\\"><div><h1>\\uc7ac\\ucc98\\ub9ac \\uc774\\ub825</h1><p>\\uae30\\uc874 \\ubbf8\\uc9c0\\uc6d0 \\ub85c\\uadf8\\ub97c \\ud655\\uc7a5 \\ud30c\\uc11c\\ub85c \\ub2e4\\uc2dc \\ud574\\uc11d\\ud55c \\uc800\\uc7a5 \\uacb0\\uacfc\\uc785\\ub2c8\\ub2e4.</p></div><button id=\\"refresh\\" type=\\"button\\">\\uc0c8\\ub85c\\uace0\\uce68</button></div>\\n<section class=\\"panel log-scope-note\\"><h2>\\uacfc\\uac70 \\ub85c\\uadf8\\uc758 \\ud574\\uc11d \\uacb0\\uacfc</h2><p>\\uc9c0\\uc6d0 \\ud615\\uc2dd\\uacfc \\uc77c\\uce58\\ud55c \\ub85c\\uadf8\\uc640 \\ubd80\\ubd84 \\uc815\\uaddc\\ud654\\ub97c \\uad6c\\ubd84\\ud569\\ub2c8\\ub2e4. \\ubd80\\ubd84 \\uc815\\uaddc\\ud654\\ub294 \\ud504\\ub85c\\uadf8\\ub7a8\\u00b7\\ud544\\ub4dc\\u00b7\\uc6d0\\ubcf8 \\uc2dc\\uac01 \\uc911 \\uc77c\\ubd80\\ub97c \\ud574\\uc11d\\ud558\\uc9c0 \\ubabb\\ud55c \\uae30\\ub85d\\uc785\\ub2c8\\ub2e4. \\ubcf4\\uc548 \\uacbd\\ubcf4\\ub098 \\uacf5\\uaca9 \\uac74\\uc218\\ub97c \\uc758\\ubbf8\\ud558\\uc9c0 \\uc54a\\uc2b5\\ub2c8\\ub2e4.</p><p>\\uc2dc\\uac04\\ub300 \\ubcf4\\uc644\\uc740 \\uc7ac\\ucc98\\ub9ac \\ubcf5\\uc0ac\\ubcf8\\uc5d0 \\uc801\\uc6a9\\ud55c +09:00\\uc785\\ub2c8\\ub2e4. \\uc6d0\\ubcf8\\uacfc \\ud604\\uc7ac \\ud0d0\\uc9c0 \\uccb4\\ud06c\\ud3ec\\uc778\\ud2b8\\ub294 \\ubcc0\\uacbd\\ud558\\uc9c0 \\uc54a\\uc558\\uc2b5\\ub2c8\\ub2e4. \\ubcf8\\ubb38\\u00b7URL\\u00b7\\uba85\\ub839 \\uc778\\uc790\\ub294 \\ud45c\\uc2dc\\ud558\\uc9c0 \\uc54a\\uc2b5\\ub2c8\\ub2e4.</p></section>\\n<section class=\\"panel log-workspace\\" aria-labelledby=\\"list-title\\">\\n<h2 id=\\"list-title\\">\\uc800\\uc7a5\\ub41c \\uc774\\ub825 \\ubaa9\\ub85d</h2><p id=\\"summary\\" role=\\"status\\">\\uc870\\ud68c \\uc911</p><p id=\\"error\\" role=\\"alert\\" hidden></p>\\n<div class=\\"log-filters\\" role=\\"search\\" aria-label=\\"\\uc7ac\\ucc98\\ub9ac \\uc774\\ub825 \\uac80\\uc0c9\\">\\n<label>\\ud574\\uc11d \\uc0c1\\ud0dc <select id=\\"status\\"><option value=\\"\\">\\uc804\\uccb4</option><option value=\\"recognized\\">\\uc9c0\\uc6d0 \\ud615\\uc2dd \\uc77c\\uce58</option><option value=\\"partial\\">\\ubd80\\ubd84 \\uc815\\uaddc\\ud654</option></select></label>\\n<label>\\ud638\\uc2a4\\ud2b8\\u00b7\\ud589\\uc704 \\uac80\\uc0c9 <input id=\\"search\\" type=\\"search\\" maxlength=\\"128\\" placeholder=\\"sudo \\ub610\\ub294 \\ud638\\uc2a4\\ud2b8\\uba85 \\uc785\\ub825\\" autocomplete=\\"off\\"></label>\\n</div>\\n<div class=\\"log-query-summary\\"><p id=\\"page-state\\" role=\\"status\\"></p><button id=\\"previous\\" type=\\"button\\">\\uc774\\uc804</button> <button id=\\"next\\" type=\\"button\\">\\ub2e4\\uc74c</button></div>\\n<div class=\\"table-scroll\\"><table><thead><tr><th>\\uc21c\\ubc88</th><th>\\uc774\\ubca4\\ud2b8 \\uc2dc\\uac01 (KST)</th><th>\\ud638\\uc2a4\\ud2b8</th><th>\\ud589\\uc704</th><th>\\ud574\\uc11d \\uc0c1\\ud0dc</th><th>\\uc2dc\\uac04\\ub300 \\ubcf4\\uc644</th><th>\\uc0c1\\uc138</th></tr></thead><tbody id=\\"rows\\"></tbody></table></div>\\n\\n</section>\\n<dialog class=\\"log-detail-dialog\\" id=\\"detail-panel\\" aria-labelledby=\\"history-detail-title\\"><div class=\\"log-detail-heading\\"><h2 id=\\"history-detail-title\\">\\uc774\\ub825 \\uba54\\ud0c0\\ub370\\uc774\\ud130 \\uc0c1\\uc138</h2><button id=\\"detail-close\\" type=\\"button\\">\\ub2eb\\uae30</button></div><dl id=\\"detail\\"></dl></dialog>\\n<noscript>\\uc774\\ub825 \\uc870\\ud68c\\uc5d0\\ub294 JavaScript\\uac00 \\ud544\\uc694\\ud569\\ub2c8\\ub2e4.</noscript>\\n</main></body></html>\\n"}, "prototype/reprocessing-history.js": {"before": "275c2c5e32390e99212a60c54e4992b7ec62a596b81e4f542a8294ab8c4c5161", "text": "(() => {\\n  \\"use strict\\";\\n  const state = {rows: [], page: 0};\\n  const $ = id => document.getElementById(id);\\n  const names = {recognized: \\"\\uc9c0\\uc6d0 \\ud615\\uc2dd \\uc77c\\uce58\\", partial: \\"\\ubd80\\ubd84 \\uc815\\uaddc\\ud654\\"};\\n  function date(value) {\\n    if (!value || Number.isNaN(Date.parse(value))) return \\"\\ubbf8\\ud655\\uc778\\";\\n    return new Intl.DateTimeFormat(\\"ko-KR\\", {timeZone: \\"Asia/Seoul\\", dateStyle: \\"short\\", timeStyle: \\"medium\\"}).format(new Date(value));\\n  }\\n  function detail(row) {\\n    $(\\"detail\\").replaceChildren();\\n    for (const [name, value] of [\\n      [\\"\\uc815\\uaddc\\ud654 \\ubb38\\uc11c ID\\", row.id], [\\"\\ud30c\\uc11c\\", row.adapter], [\\"\\ud574\\uc11d \\uc0c1\\ud0dc\\", names[row.parse_status]],\\n      [\\"\\uc774\\ubca4\\ud2b8 \\uc2dc\\uac01 (KST)\\", date(row.timestamp)], [\\"\\uc218\\uc2e0 \\uc2dc\\uac01 (KST)\\", date(row.ingested)],\\n      [\\"\\uc2dc\\uac01 \\uadfc\\uac70\\", row.time_basis], [\\"\\uad00\\uce21 \\uacb0\\uacfc\\", row.outcome],\\n      [\\"\\uc2dc\\uac04\\ub300 \\ubcf4\\uc644\\", row.timezone_corrected ? \\"+09:00 / \\uc6d0\\ubcf8 \\ubcc0\\uacbd \\uc5c6\\uc74c\\" : \\"\\uc5c6\\uc74c\\"],\\n      [\\"\\uc6d0\\ubcf8 \\uc778\\ub371\\uc2a4\\", row.raw.index], [\\"\\uc6d0\\ubcf8 \\ubb38\\uc11c ID\\", row.raw.id]\\n    ]) {\\n      const dt = document.createElement(\\"dt\\"), dd = document.createElement(\\"dd\\");\\n      dt.textContent = name; dd.textContent = value || \\"\\ubbf8\\ud655\\uc778\\";\\n      $(\\"detail\\").append(dt, dd);\\n    }\\n    if (!$(\\"detail-panel\\").open) $(\\"detail-panel\\").showModal();\\n  }\\n  function render() {\\n    const query = $(\\"search\\").value.trim().toLocaleLowerCase();\\n    const rows = state.rows.filter(row => (!$(\\"status\\").value || row.parse_status === $(\\"status\\").value)\\n      && `${row.host || \\"\\"} ${row.action || \\"\\"}`.toLocaleLowerCase().includes(query));\\n    const pages = Math.max(1, Math.ceil(rows.length / 50));\\n    state.page = Math.max(0, Math.min(state.page, pages - 1));\\n    $(\\"rows\\").replaceChildren();\\n    for (const [offset, row] of rows.slice(state.page * 50, (state.page + 1) * 50).entries()) {\\n      const tr = document.createElement(\\"tr\\");\\n      for (const value of [state.page * 50 + offset + 1, date(row.timestamp), row.host, row.action, names[row.parse_status], row.timezone_corrected ? \\"+09:00\\" : \\"\\uc5c6\\uc74c\\"]) {\\n        const td = document.createElement(\\"td\\"); td.textContent = value || \\"\\ubbf8\\ud655\\uc778\\"; tr.append(td);\\n      }\\n      const td = document.createElement(\\"td\\"), button = document.createElement(\\"button\\");\\n      button.type = \\"button\\"; button.textContent = \\"\\uc0c1\\uc138\\"; button.addEventListener(\\"click\\", () => detail(row));\\n      td.append(button); tr.append(td); $(\\"rows\\").append(tr);\\n    }\\n    $(\\"page-state\\").textContent = `${rows.length}\\uac74 \\u00b7 ${state.page + 1} / ${pages}\\ud398\\uc774\\uc9c0 \\u00b7 ${rows.length ? state.page * 50 + 1 : 0}~${Math.min((state.page + 1) * 50, rows.length)}\\ubc88\\uc9f8 \\uae30\\ub85d`;\\n    $(\\"previous\\").disabled = state.page === 0; $(\\"next\\").disabled = state.page + 1 >= pages;\\n  }\\n  async function load() {\\n    $(\\"refresh\\").disabled = true; $(\\"error\\").hidden = true; $(\\"summary\\").textContent = \\"\\uc870\\ud68c \\uc911\\";\\n    if ($(\\"detail-panel\\").open) $(\\"detail-panel\\").close();\\n    state.rows = []; state.page = 0; render();\\n    try {\\n      const response = await fetch(\\"/api/reprocessing/history\\", {credentials: \\"same-origin\\"});\\n      const result = await response.json();\\n      if (!response.ok) throw new Error(result.error || \\"\\uc774\\ub825 \\uc870\\ud68c \\uc2e4\\ud328\\");\\n      if (!Array.isArray(result.rows)) throw new Error(\\"\\uc774\\ub825 \\ubaa9\\ub85d \\uc751\\ub2f5 \\ud615\\uc2dd\\uc774 \\uc62c\\ubc14\\ub974\\uc9c0 \\uc54a\\uc2b5\\ub2c8\\ub2e4. \\ud3ec\\ud138 \\uc5c5\\ub370\\uc774\\ud2b8\\ub97c \\ud655\\uc778\\ud558\\uc138\\uc694.\\");\\n      state.rows = result.rows;\\n      $(\\"summary\\").textContent = `\\uc804\\uccb4 ${result.total}\\uac74 \\u00b7 \\uc9c0\\uc6d0 \\ud615\\uc2dd \\uc77c\\uce58 ${result.recognized}\\uac74 \\u00b7 \\ubd80\\ubd84 \\uc815\\uaddc\\ud654 ${result.partial}\\uac74 \\u00b7 \\uc2dc\\uac04\\ub300 \\ubcf4\\uc644 ${result.timezone_corrected}\\uac74`;\\n      render();\\n    } catch (error) {\\n      $(\\"summary\\").textContent = \\"\\uc870\\ud68c \\uc2e4\\ud328\\"; $(\\"error\\").textContent = error.message; $(\\"error\\").hidden = false;\\n    } finally { $(\\"refresh\\").disabled = false; }\\n  }\\n  $(\\"detail-close\\").addEventListener(\\"click\\", () => $(\\"detail-panel\\").close());\\n  $(\\"refresh\\").addEventListener(\\"click\\", load);\\n  function filter() {state.page = 0; render();}\\n  $(\\"status\\").addEventListener(\\"change\\", filter);\\n  $(\\"status\\").addEventListener(\\"input\\", filter);\\n  for (const event of [\\"input\\", \\"search\\", \\"change\\", \\"compositionend\\"]) $(\\"search\\").addEventListener(event, filter);\\n  function move(delta) {\\n    const button = $(delta < 0 ? \\"previous\\" : \\"next\\");\\n    if (button.disabled) return;\\n    state.page += delta;\\n    render();\\n    $(\\"page-state\\").scrollIntoView({block: \\"center\\", behavior: \\"auto\\"});\\n  }\\n  $(\\"previous\\").addEventListener(\\"click\\", () => move(-1));\\n  $(\\"next\\").addEventListener(\\"click\\", () => move(1));\\n  load();\\n})();\\n"}}')
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repo", required=True)
+    args = parser.parse_args()
+    repo = Path(args.repo).resolve()
+    if not (repo / ".git").exists():
+        raise SystemExit("Not a git checkout")
+    changes = []
+    for name, item in PAYLOAD.items():
+        target = repo / name
+        if target.is_symlink() or repo not in target.resolve().parents:
+            raise SystemExit("Unsafe source path: " + name)
+        current = hashlib.sha256(target.read_bytes()).hexdigest() if target.exists() else None
+        wanted = hashlib.sha256(item["text"].encode()).hexdigest()
+        if current == wanted:
+            continue
+        if current != item["before"]:
+            raise SystemExit("Source differs; no files changed: " + name)
+        changes.append((name, item, target))
+    if not changes:
+        print("Already applied")
+        return
+    backup = repo / "state/deploy-backups" / datetime.now(timezone.utc).strftime("portal-history-source-%Y%m%d-%H%M%S-%f")
+    os.umask(0o077)
+    backup.mkdir(parents=True, mode=0o700)
+    for name, item, target in changes:
+        if target.exists():
+            dest = backup / name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(target, dest)
+    for name, item, target in changes:
+        attrs = target.stat() if target.exists() else target.parent.stat()
+        descriptor, temporary = tempfile.mkstemp(dir=target.parent, prefix=".linux-parser-")
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                output.write(item["text"])
+            os.chmod(temporary, target.stat().st_mode & 0o777 if target.exists() else 0o644)
+            if os.geteuid() == 0:
+                os.chown(temporary, attrs.st_uid, attrs.st_gid)
+            os.replace(temporary, target)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        print("Updated:", name)
+    print("Source backup:", backup)
+    print("No services restarted; no state files or collected documents changed")
+
+
+if __name__ == "__main__":
+    main()

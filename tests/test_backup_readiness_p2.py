@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 from cloud_soc.backup_readiness import (
     backup_health, balanced_capacity, CRON_UTC, expected_collection_indices, next_measurement,
-    plan, POLICY_ID, PROFILE, repository_candidate, slm_candidate,
+    plan, POLICY_ID, PROFILE, repository_candidate,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
