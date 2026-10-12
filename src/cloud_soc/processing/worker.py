@@ -13,7 +13,7 @@ from cloud_soc.elastic.index_scope import index_batches
 from cloud_soc.processing import continuation
 
 READ_FIELDS = list(SOURCE_FIELDS + DETAIL_FIELDS) + ["message", "event.timezone", "event.created",
-    "log.syslog.appname", "process.name", "journald.syslog.identifier"]
+    "log.syslog.appname", "process.name", "journald.syslog.identifier", "journald.process.name", "journald.pid"]
 
 
 def checked(response):
@@ -108,11 +108,14 @@ def create_batch(client, documents):
         raise RuntimeError("normalization_bulk_failed")
 
 
-def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_pages=1000):
+def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_pages=1000, ssh_v2_start=None):
     now = now or datetime.now(timezone.utc)
     initial = parse_time(initial_start)
     if initial is None or initial > now or type(max_pages) is not int or not 1 <= max_pages <= 10000:
         raise ValueError("A past aware initial start is required")
+    ssh_start = parse_time(ssh_v2_start) if ssh_v2_start is not None else None
+    if ssh_v2_start is not None and (ssh_start is None or not initial <= ssh_start <= now):
+        raise ValueError("An aware SSH adapter start within the configured receipt range is required")
     client = client.options(request_timeout=15, max_retries=0)
     with closing(sqlite3.connect(state_path, timeout=0)) as db:
         db.execute("CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), checkpoint TEXT, last_success TEXT)")
@@ -121,6 +124,12 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
         if configured and configured[0] != iso(initial):
             raise ValueError("Initial start cannot change for an existing state file")
         db.execute("INSERT OR IGNORE INTO config VALUES (1,?)", (iso(initial),))
+        db.execute("CREATE TABLE IF NOT EXISTS adapter_config (name TEXT PRIMARY KEY, start TEXT NOT NULL)")
+        saved_ssh = db.execute("SELECT start FROM adapter_config WHERE name='linux_ssh_v2'").fetchone()
+        if saved_ssh and (ssh_start is None or saved_ssh[0] != iso(ssh_start)):
+            raise ValueError("SSH adapter start cannot change for an existing state file")
+        if ssh_start is not None:
+            db.execute("INSERT OR IGNORE INTO adapter_config VALUES ('linux_ssh_v2',?)", (iso(ssh_start),))
         db.commit()
         db.execute("BEGIN IMMEDIATE")
         row = db.execute("SELECT checkpoint,last_success FROM state WHERE id=1").fetchone()
@@ -140,7 +149,7 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
                 def consume(hits, counters):
                     batch = []
                     for hit in hits:
-                        identifier, record, event = normalize(hit, iso(now))
+                        identifier, record, event = normalize(hit, iso(now), ssh_v2_start=ssh_start)
                         if event:
                             batch.append((NORMALIZED, identifier, event))
                         batch.append((RECORDS, identifier, record))

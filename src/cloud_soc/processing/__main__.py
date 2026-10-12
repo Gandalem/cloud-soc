@@ -29,6 +29,7 @@ def main(argv=None):
     parser.add_argument("--es-url")
     parser.add_argument("--ca-file")
     parser.add_argument("--api-key-file")
+    parser.add_argument("--linux-ssh-v2-start", help="Pinned receipt-time floor for new SSH formats; preserve earlier processing records")
     parser.add_argument("--max-pages", type=page_limit, default=1000,
                         help="Input page budget per cycle (200 documents/page); default 1000. "
                              "Larger receipt windows resume on the next cycle without skipping documents.")
@@ -37,6 +38,10 @@ def main(argv=None):
         start = parse_time(args.start)
         if start is None or start >= datetime.now(timezone.utc) or (args.once and not args.run):
             raise ValueError()
+        if args.linux_ssh_v2_start is not None:
+            ssh_start = parse_time(args.linux_ssh_v2_start)
+            if ssh_start is None or not start <= ssh_start <= datetime.now(timezone.utc):
+                raise ValueError()
         if not args.run:
             print("Configuration valid. No network access. Detection requires a separate worker.")
             return 0
@@ -50,7 +55,7 @@ def main(argv=None):
         with Elasticsearch(url, api_key=key, ca_certs=str(ca), request_timeout=15, max_retries=0) as client:
             while True:
                 try:
-                    result = run_once(client, state, args.start, max_pages=args.max_pages)
+                    result = run_once(client, state, args.start, max_pages=args.max_pages, ssh_v2_start=args.linux_ssh_v2_start)
                     print("normalization_" + result["state"] + " checkpoint=" + result["checkpoint"], flush=True)
                 except Exception:
                     print("normalization_failed; checkpoint retained; inspect permissions and service status", flush=True)

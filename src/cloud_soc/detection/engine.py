@@ -3,6 +3,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import re
 from typing import Any
 
 from elasticsearch import Elasticsearch
@@ -45,6 +46,27 @@ def event_evidence(event: dict[str, Any]) -> dict[str, Any]:
         "normalized": normalized, "raw": deepcopy(raw),
         "event_hash": event_fingerprint(event), "complete": complete,
     }
+
+
+def ssh_collection_mirror(first, second):
+    """Match only opposite journal/ISO views of one bounded SSH observation."""
+    observations = [get_field_value(e, 'cloud_soc.observation') for e in (first, second)]
+    for event, observation in zip((first, second), observations):
+        if (get_field_value(event, 'cloud_soc.detail.adapter') != 'linux_ssh_v2'
+                or not isinstance(observation, dict) or type(observation.get('version')) is not int
+                or observation['version'] != 1 or not isinstance(observation.get('id'), str)
+                or not re.fullmatch(r'[0-9a-f]{64}', observation['id'])):
+            return False
+    if {o.get('origin') for o in observations if isinstance(o.get('origin'), str)} != {'journald', 'rfc3339'}:
+        return False
+    paths = ('organization.id', 'host.id', 'process.pid', 'source.ip', 'source.port',
+             'user.name', 'event.action', 'event.outcome', 'network.protocol', 'cloud_soc.detail.fields.auth_method')
+    values = [get_field_value(first, p) for p in paths]
+    if any(v is None for v in values) or values != [get_field_value(second, p) for p in paths]:
+        return False
+    # rsyslog can stamp its file mirror about 1ms after the journal event.
+    # Preserve both original times; never merge same-source or separate attempts.
+    return abs(parse_event_timestamp(first) - parse_event_timestamp(second)) <= timedelta(milliseconds=5)
 
 
 def get_field_value(
@@ -399,6 +421,10 @@ def _detect_threshold(
                     break
 
                 window.popleft()
+
+            # Keep both immutable documents, but count a journal/file mirror once.
+            if any(ssh_collection_mirror(event, item) for _, item in window):
+                continue
 
             # 현재 이벤트 추가
             window.append(
