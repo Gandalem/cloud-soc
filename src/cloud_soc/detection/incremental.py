@@ -6,11 +6,12 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import stat
 from uuid import uuid4
 
 from cloud_soc.detection.engine import detect_rule, event_fingerprint, parse_event_timestamp, event_evidence, build_group_key, get_field_value, rule_revision
 from cloud_soc.detection.worker import approved_rules, ALERTS
-from cloud_soc.elastic.pagination import fetch_all_hits
+from cloud_soc.detection import staging
 from cloud_soc.elastic.repository import ensure_provenance_mapping, save_security_alert
 from cloud_soc.main import make_alert_id, build_security_alert
 from cloud_soc.processing.contract import NORMALIZED, STATUS
@@ -24,15 +25,17 @@ def utc(value):
     return stamp.astimezone(timezone.utc)
 
 
-def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
-                    lateness_seconds=900, scanner=None, source_id='local', accept_legacy_exclusion=False, include_cloud=False, include_sequence=False):
+def run_incremental(client, *, state_path, start, now=None, max_documents=20000, max_active_events=20000,
+                    lateness_seconds=900, scanner=None, source_id='local', accept_legacy_exclusion=False, include_cloud=False, include_sequence=False, include_attacks=False):
     """Late events beyond the finalized frontier are counted, never silently replayed.
 
     A 15-minute normalization receipt overlap handles bounded refresh/write delays.
     Rule/source identity is pinned; changing it requires a new explicit state file.
     """
     now, start = utc(now or datetime.now(timezone.utc)), utc(start)
-    if not 1 <= max_documents <= 100000 or not 60 <= lateness_seconds <= 86400 or start > now:
+    if (type(max_documents) is not int or type(max_active_events) is not int
+            or not 1 <= max_documents <= 100000 or not 1 <= max_active_events <= 1_000_000
+            or not 60 <= lateness_seconds <= 86400 or start > now):
         raise ValueError('invalid_incremental_options')
     path = Path(state_path)
     if path.is_symlink():
@@ -42,8 +45,9 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
         descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         os.close(descriptor)
     except FileExistsError:
-        pass
-    rules = approved_rules(include_cloud=include_cloud, include_sequence=include_sequence)
+        if not path.is_file() or (os.name != 'nt' and stat.S_IMODE(path.stat().st_mode) & 0o077):
+            raise ValueError('state_file_must_be_private_and_regular')
+    rules = approved_rules(include_cloud=include_cloud, include_sequence=include_sequence, include_attacks=include_attacks)
     identity = event_fingerprint({'rules': rules, 'start': start.isoformat(), 'lateness': lateness_seconds,
                                   'index': NORMALIZED, 'source': source_id, 'legacy_exclusion': accept_legacy_exclusion,
                                   'runtime_contract': 2, 'rule_versions': [rule_revision(rule) for rule in rules]})
@@ -65,6 +69,8 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
             raise ValueError('clock_regression')
         end = min(now - timedelta(seconds=30), checkpoint + timedelta(minutes=5))
         lower = max(start, checkpoint - timedelta(minutes=15))
+        scan_state = staging.prepare(db, identity, checkpoint.isoformat(), lower.isoformat(), end.isoformat())
+        lower, end = utc(scan_state['lower']), utc(scan_state['end'])
         counts = {'events': 0, 'created': 0, 'existing': 0, 'late': 0}
         rule_stats = stats_for(rules)
         run_id = str(uuid4())
@@ -103,13 +109,13 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                     raise ValueError('legacy_missing_normalization_time_requires_explicit_exclusion')
                 state['legacy_excluded'] = legacy['count']
             ensure_provenance_mapping(client, ALERTS)
-            query = {'range': {'cloud_soc.normalized_at': {'gte': lower.isoformat(), 'lt': end.isoformat()}}}
-            hits = (scanner or fetch_all_hits)(client, index=NORMALIZED, page_size=500,
-                                               max_documents=max_documents, query=query)
-            if len(hits) > max_documents:
-                raise ValueError('batch_limit')
+            if not staging.read_window(client, db, scan_state, budget=max_documents, seen=state['seen'], scanner=scanner):
+                counts['input_pending'] = db.execute('SELECT count(*) FROM input_hits').fetchone()[0]
+                publish('running', 'input_scan_pending')
+                db.commit()
+                return counts
             frontier = utc(state['frontier'])
-            for hit in hits:
+            for hit in staging.staged_hits(db):
                 if hit.get('_index') != NORMALIZED or not hit.get('_id'):
                     raise ValueError('invalid_reference')
                 event = deepcopy(hit['_source'])
@@ -136,6 +142,10 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                     metrics = rule_stats[rule['id']]
                     metrics['input_events'] += 1
                     outcome, missing = evaluate(event, rule)
+                    if outcome == 'excluded':
+                        metrics['policy_excluded'] += 1
+                        exclusion(client, event, rule, 'approved_policy_exception', [], now.isoformat(), run_id)
+                        continue
                     metrics[outcome] += 1
                     if outcome == 'not_matched':
                         continue
@@ -162,7 +172,7 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
             # Stateful engine preserves the same event ordering and cooldown as batch detection.
             extra_groups = state.setdefault('rule_groups', {})
             runtimes = {rule['id']: state['groups'] if i == 0 else extra_groups.setdefault(rule['id'], {})
-                        for i, rule in enumerate(rules) if rule.get('type', 'threshold') in ('threshold', 'sequence')}
+                        for i, rule in enumerate(rules) if rule.get('type', 'threshold') in ('threshold', 'sequence', 'ordered', 'diversity')}
             detections = []
             for rule in rules:
                 eligible_ready = [e for e in ready if evaluate(e, rule)[0] == 'matched' and
@@ -191,7 +201,7 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                     if not group[slot] and (not group.get('last_alert') or utc(group['last_alert']) < final - cooldown):
                         del groups[key]
             state['seen'] = {k: t for k, t in state['seen'].items() if utc(t) >= end - timedelta(minutes=15)}
-            if len(state['pending']) + sum(len(g.get('window', g.get('failures', []))) for groups in runtimes.values() for g in groups.values()) > max_documents:
+            if len(state['pending']) + sum(len(g.get('window', g.get('failures', []))) for groups in runtimes.values() for g in groups.values()) > max_active_events:
                 raise ValueError('active_state_limit')
             state.update(checkpoint=end.isoformat(), frontier=final.isoformat(), last_success=now.isoformat())
             state['excluded_total'] = state.get('excluded_total', 0) + sum(c['excluded'] for c in rule_stats.values())
@@ -202,6 +212,7 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
             db.execute('INSERT OR REPLACE INTO runtime VALUES(1,?)', (json.dumps(state),))
             queue_committed_runs(db, rules, rule_stats, run_id=run_id, stamp=now.isoformat(),
                                  start=lower.isoformat(), end=end.isoformat())
+            staging.clear(db)
             db.commit()
             # Checkpoint and delivery intent are now committed together. A later ES
             # failure must not rewind them or label this completed run as failed.
@@ -216,16 +227,23 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                 except Exception:
                     pass
             return counts
-        except Exception:
+        except Exception as error:
+            code = str(error) if isinstance(error, ValueError) and str(error) in {
+                'active_state_limit', 'input_spool_limit', 'input_document_size_limit'} else 'incremental_cycle_failed'
             db.rollback()
+            if scan_state.get('pit'):
+                try:
+                    client.close_point_in_time(id=scan_state['pit'])
+                except Exception:
+                    pass
             state = saved
             try:
                 runs(client, rules, rule_stats, run_id=run_id, stamp=now.isoformat(), start=lower.isoformat(),
-                     end=end.isoformat(), state='failed', error='incremental_cycle_failed')
+                     end=end.isoformat(), state='failed', error=code)
             except Exception:
                 pass
             try:
-                publish('failed', 'incremental_cycle_failed')
+                publish('failed', code)
             except Exception:
                 pass
             raise RuntimeError('incremental_cycle_failed; checkpoint retained') from None

@@ -1,0 +1,133 @@
+# Experimental local profile. Only --include-attacks selects these rules.
+# Thresholds are hypotheses, not approved production thresholds.
+rules:
+  - id: ATTACK-01
+    name: SSH authentication sequence followed by root sudo session metadata
+    type: ordered
+    enabled: true
+    severity: high
+    detection_type: attack_correlation
+    group_by: [organization.id, host.id, user.name]
+    conditions:
+      - {field: cloud_soc.detail.adapter, operator: in, value: [linux_ssh_v1, linux_sudo_session_v1]}
+      - {field: user.name, operator: not_equals, value: root}
+    threshold: {count: 5}
+    time_window: {seconds: 900}
+    cooldown: {seconds: 600}
+    exclusions: []
+    stages:
+      - name: ssh_failures
+        count: 5
+        reset_on_next: true
+        required_fields: [source.ip]
+        conditions:
+          - {field: event.category, operator: contains, value: authentication}
+          - {field: network.protocol, operator: equals, value: ssh}
+          - {field: event.outcome, operator: equals, value: failure}
+      - name: ssh_success
+        count: 1
+        within_seconds: 300
+        latest_only: true
+        link_fields: [source.ip]
+        conditions:
+          - {field: event.category, operator: contains, value: authentication}
+          - {field: network.protocol, operator: equals, value: ssh}
+          - {field: event.outcome, operator: equals, value: success}
+      - name: sudo_root_metadata
+        count: 1
+        within_seconds: 600
+        conditions:
+          - {field: event.action, operator: equals, value: sudo_session_opened}
+          - {field: cloud_soc.detail.fields.target_user, operator: equals, value: root}
+          - {field: cloud_soc.detail.fields.target_uid, operator: equals, value: 0}
+    limitations:
+      - host_user_time_context_only_not_same_session
+      - sudo_record_not_command_execution_or_privilege_success
+      - normal_login_retries_and_approved_administration_can_match
+      - candidate_threshold_not_live_validated
+    falsepositives: [Normal password retries followed by approved sudo work]
+    references: [https://attack.mitre.org/techniques/T1110/, https://attack.mitre.org/techniques/T1548/003/]
+    alert:
+      title: SSH 인증 공격 이후 권한 관련 활동 의심
+      message: 동일 조직·호스트·계정에서 같은 IP의 SSH 실패 5건 후 성공과 10분 이내 root(uid=0) 대상 PAM sudo 세션 기록이 관측되었습니다. sudo의 SSH 세션·출발지 및 명령 실행 결과는 연결되지 않았으므로 계정 탈취·권한 상승 성공을 확정하지 않습니다. 정상 관리 작업 여부를 조사하세요.
+      category: authentication
+      tags: [experimental, ssh, sudo, correlation, context-only]
+
+  - id: ATTACK-02
+    name: AWS management API enumeration volume and diversity
+    type: diversity
+    enabled: true
+    severity: medium
+    detection_type: attack_indicator
+    group_by: [organization.id, cloud.account.id, user.id, cloud_soc.detail.fields.identity_arn]
+    conditions:
+      - {field: event.dataset, operator: equals, value: aws.cloudtrail}
+      - {field: cloud.provider, operator: equals, value: aws}
+      - {field: cloud_soc.detail.fields.identity_type, operator: in, value: [IAMUser, AssumedRole, FederatedUser, Root]}
+    api_pairs:
+      ec2.amazonaws.com: [DescribeInstances, DescribeSecurityGroups, DescribeVpcs, DescribeSubnets]
+      iam.amazonaws.com: [ListUsers, ListRoles, ListPolicies, ListAttachedUserPolicies, ListAttachedRolePolicies]
+      s3.amazonaws.com: [ListBuckets]
+      lambda.amazonaws.com: [ListFunctions]
+      ecs.amazonaws.com: [DescribeServices, ListClusters, ListServices]
+    threshold: {count: 20}
+    distinct: {field: event.action, count: 4}
+    time_window: {seconds: 300}
+    cooldown: {seconds: 300}
+    exclusions: []
+    limitations:
+      - successful_and_denied_enumeration_requests_counted
+      - no_user_agent_or_normal_activity_baseline
+      - principal_and_arn_scope_not_human_attacker_identity
+      - normal_inventory_and_admin_tools_can_match
+      - candidate_threshold_not_live_validated
+    falsepositives: [Approved inventory automation, Administrator resource inspection]
+    references: [https://attack.mitre.org/detectionstrategies/DET0402/]
+    alert:
+      title: AWS 비정상 API 열거 및 정찰 의심
+      message: 동일 조직·AWS 계정·principal ID·ARN에서 5분 이내 명시된 열거 API 20건 이상과 서로 다른 API 4종 이상이 관측되었습니다. 중복 event ID는 제외합니다. 정상 인벤토리·관리 작업일 수 있으며 사용자 에이전트·평소 활동 대비 이상이나 정찰 성공을 판정한 것은 아닙니다.
+      category: configuration
+      tags: [experimental, aws, discovery, enumeration]
+
+  - id: ATTACK-03
+    name: AWS managed privilege policy attachment followed by trail impairment
+    type: ordered
+    enabled: true
+    severity: high
+    detection_type: attack_correlation
+    group_by: [organization.id, cloud.account.id, user.id, cloud_soc.detail.fields.identity_arn]
+    conditions:
+      - {field: event.dataset, operator: equals, value: aws.cloudtrail}
+      - {field: cloud.provider, operator: equals, value: aws}
+      - {field: cloud_soc.detail.fields.identity_type, operator: in, value: [IAMUser, AssumedRole, FederatedUser, Root]}
+      - {field: event.outcome, operator: equals, value: success}
+    threshold: {count: 1}
+    time_window: {seconds: 900}
+    cooldown: {seconds: 0}
+    exclusions: []
+    stages:
+      - name: high_privilege_policy_attachment
+        required_fields: [cloud_soc.detail.fields.event_id]
+        conditions:
+          - {field: event.provider, operator: equals, value: iam.amazonaws.com}
+          - {field: event.action, operator: in, value: [AttachUserPolicy, AttachRolePolicy, AttachGroupPolicy]}
+          - {field: cloud_soc.detail.fields.target_policy_arn, operator: in, value: ['arn:aws:iam::aws:policy/AdministratorAccess', 'arn:aws:iam::aws:policy/PowerUserAccess']}
+      - name: trail_stop_or_delete
+        required_fields: [cloud_soc.detail.fields.event_id]
+        within_seconds: 900
+        conditions:
+          - {field: event.provider, operator: equals, value: cloudtrail.amazonaws.com}
+          - {field: event.action, operator: in, value: [StopLogging, DeleteTrail]}
+    limitations:
+      - same_principal_and_arn_not_proof_of_same_credential_session
+      - policy_target_not_assumed_to_be_the_actor
+      - api_result_not_effective_privilege_or_all_audit_logs_removed
+      - normal_approved_admin_change_can_match
+      - candidate_threshold_not_live_validated
+    falsepositives: [Approved policy and trail migration]
+    references: [https://attack.mitre.org/techniques/T1098/003/]
+    alert:
+      title: AWS 권한 변경 이후 감사 기능 비활성화 의심
+      message: 동일 조직·AWS 계정·principal ID·ARN에서 고권한 관리형 정책 연결 이후 15분 안에 Trail 중지·삭제 성공 응답이 관측되었습니다. 변경 대상이 실행 주체인지, 변경 승인과 다른 Trail의 범위를 조사하세요. 실제 권한 상승·모든 감사 제거·공격 성공은 확정하지 않습니다.
+      category: configuration
+      tags: [experimental, aws, iam, audit, correlation]

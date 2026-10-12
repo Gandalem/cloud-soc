@@ -102,11 +102,15 @@ class IncrementalTests(unittest.TestCase):
         self.run_at(70)
         old = self.stored()
         self.add(10, 60)
-        with self.assertRaises(RuntimeError): self.run_at(140, max_documents=5)
+        self.assertEqual(self.run_at(140, max_documents=5)['input_pending'], 5)
         self.assertEqual(self.stored(), old)
         with patch.object(self, 'scan', side_effect=RuntimeError('partial')):
             with self.assertRaises(RuntimeError): self.run_at(140)
         self.assertEqual(self.stored(), old)
+        self.assertEqual(self.run_at(200, max_documents=5)['input_pending'], 10)
+        self.assertEqual(self.stored(), old)
+        self.assertEqual(self.run_at(260, max_documents=5)['events'], 10)
+        self.assertGreater(self.stored()['checkpoint'], old['checkpoint'])
 
     def test_source_identity_change_rejected(self):
         self.run_at(70)

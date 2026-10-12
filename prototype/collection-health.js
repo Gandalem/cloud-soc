@@ -30,17 +30,19 @@
     paragraph(queue, `전송 대기 ${number(m.queue_events)}건`);
     paragraph(queue, Number.isSafeInteger(m.queue_bytes) && m.queue_bytes >= 0 ? `${(m.queue_bytes / 1048576).toFixed(1)} MiB (${number(m.queue_bytes)} bytes)` : '대기 크기 미보고');
     paragraph(queue, `사용률 ${typeof m.queue_pct === 'number' && Number.isFinite(m.queue_pct) && m.queue_pct >= 0 && m.queue_pct <= 1 ? (m.queue_pct * 100).toFixed(1) + '%' : '미보고'}${m.queue_state === 'high' ? ' · 적체 주의' : ''}`);
-    paragraph(queue, '아직 출력 확인 전인 큐 표본 · 유실량 아님');
     paragraph(queue, time(m.sampled_at));
-    paragraph(transport, `표본 구간 ${number(m.interval_seconds)}초 · 전송 시도 ${number(m.output_total)} / 수신 확인(ACK) ${number(m.output_acked)}`);
+    paragraph(transport, `전송 시도 ${number(m.output_total)} / 수신 확인(ACK) ${number(m.output_acked)}`);
     paragraph(transport, `전송 실패 ${number(m.output_failed)} / 전송 포기 ${number(m.output_dropped)}`);
-    paragraph(transport, `통신 읽기 오류 ${number(m.read_errors)} / 쓰기 오류 ${number(m.write_errors)}`);
-    if ((m.output_dead_letter || 0) > 0 || (m.output_failure_store || 0) > 0) paragraph(transport, `실패 보관소 이동 ${number(m.output_dead_letter)} / ${number(m.output_failure_store)}`);
-    if (m.last_problem_at) paragraph(transport, '최근 오류 관측: ' + time(m.last_problem_at));
     if (m.transport_state === 'error_observed') paragraph(transport, '전송 오류 기록 있음 · 수집기 확인 필요');
-    paragraph(transport, '관측 구간만 표시 · 누적 유실량/전체 정상 판정 아님');
-    if (['output_failed', 'output_dropped', 'read_errors', 'write_errors'].some(key => m[key] == null)) paragraph(transport, '미보고 항목은 오류 0으로 판단할 수 없습니다.');
-    if (m.scan_partial) paragraph(transport, '통계 로그 읽기 범위 제한 · 원본 로그 수집 실패를 뜻하지 않음');
+    const details = document.createElement('details'), summary = document.createElement('summary');
+    summary.textContent = '상세 통계'; details.append(summary);
+    paragraph(details, `표본 구간 ${number(m.interval_seconds)}초 · 누적 유실량/전체 정상 판정 아님`);
+    paragraph(details, `통신 읽기 오류 ${number(m.read_errors)} / 쓰기 오류 ${number(m.write_errors)}`);
+    if ((m.output_dead_letter || 0) > 0 || (m.output_failure_store || 0) > 0) paragraph(details, `실패 보관소 이동 ${number(m.output_dead_letter)} / ${number(m.output_failure_store)}`);
+    if (m.last_problem_at) paragraph(details, '최근 오류: ' + time(m.last_problem_at));
+    if (['output_failed', 'output_dropped', 'read_errors', 'write_errors'].some(key => m[key] == null)) paragraph(details, '미보고 항목은 오류 0으로 판단할 수 없습니다.');
+    if (m.scan_partial) paragraph(details, '통계 로그 읽기 범위 제한 · 원본 로그 수집 실패를 뜻하지 않음');
+    transport.append(details);
   }
   async function load(after = null) {
     controller?.abort(); controller = new AbortController();
@@ -76,7 +78,7 @@
         td.append(details); rows.append(tr);
       }
       cursor = data.next_cursor; next.disabled = !cursor;
-      state.textContent = data.rows.length ? `${data.rows.length}개 보고 · 큐/전송은 표본 기준, 미지원 에이전트는 미측정` : '수신된 보고가 없습니다. 에이전트 미설치·구버전·전송 지연을 확인하세요.';
+      state.textContent = data.rows.length ? `${data.rows.length}개 보고 · 통계 미보고 항목은 미측정` : '수신된 보고가 없습니다. 설치 상태와 전송 지연을 확인하세요.';
     } catch (error) {
       if (request !== generation) return;
       rows.replaceChildren(); cursor = null; next.disabled = true;

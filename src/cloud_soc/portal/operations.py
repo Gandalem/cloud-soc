@@ -260,6 +260,9 @@ class Operations:
                               "version": text(field(source, "cloud_soc.risk_version")),
                               "factors": redact_metadata(field(source, "cloud_soc.risk_factors"))}
             result["rule_snapshot"] = redact_metadata(field(source, "cloud_soc.provenance.rule_snapshot"))
+            assessment = field(source, 'cloud_soc.provenance.assessment')
+            if isinstance(assessment, dict):
+                result['assessment'] = redact_metadata(assessment)
             result["mitre"] = redact_metadata(field(source, "mitre"))
             if offset > len(evidence):
                 raise LogQueryError('invalid_evidence_offset', 400, '근거 페이지 범위를 확인하세요.')

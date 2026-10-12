@@ -22,6 +22,7 @@ from cloud_soc.portal.collection_health import snapshot as health_snapshot
 from cloud_soc.portal.operations import Operations
 from cloud_soc.portal.cases import CaseStore, CaseError
 from cloud_soc.portal.auth import COOKIE, PUBLIC, Sessions, load_users, permitted
+from cloud_soc.portal.basic_auth import BasicAuthGuard
 from cloud_soc.privacy import redact_metadata
 from cloud_soc.logging_config import configure_logging
 from cloud_soc.portal.enrollment import Enrollments, EnrollmentError
@@ -88,6 +89,8 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     enrollments = Enrollments(store, issuer, monitor)
     app.extensions["enrollments"] = enrollments
     access_policy = LogAccessPolicy(settings["ADMIN_USER"], settings["ADMIN_HASH"], settings.get("LOG_ACCESS_POLICY"))
+    basic_guard = BasicAuthGuard(Path(settings["STATE_DIR"]) / "basic-auth.sqlite", access_policy) if sessions is None else None
+    app.extensions["basic_auth"] = basic_guard
     if users:
         for username, policy_user in access_policy.users.items():
             if username in users:
@@ -189,7 +192,19 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             return
         if sessions is None and request.endpoint not in PUBLIC:
             credentials = request.authorization
-            principal = access_policy.authenticate(credentials.username, credentials.password or "") if credentials is not None and credentials.type.lower() == "basic" else None
+            principal = None
+            if request.headers.get("Authorization"):
+                basic = credentials is not None and credentials.type.lower() == "basic"
+                try:
+                    principal, wait = basic_guard.authenticate(credentials.username if basic else None,
+                        (credentials.password or "") if basic else None, request.remote_addr)
+                except sqlite3.Error:
+                    return jsonify(code="authentication_unavailable", error="로그인을 확인하지 못했습니다. 잠시 후 다시 시도하세요."), 503
+                if wait:
+                    response = jsonify(code="authentication_throttled", error="로그인 시도가 많습니다. 잠시 후 다시 시도하세요.")
+                    response.status_code = 429
+                    response.headers["Retry-After"] = str(wait)
+                    return response
             if principal is None:
                 response = jsonify(error="관리자 로그인이 필요합니다.")
                 response.status_code = 401
@@ -278,8 +293,14 @@ def create_app(settings=None, *, issuer=None, monitor=None):
 
     @app.get("/auth-client.js")
     @app.get("/login.js")
+    @app.get("/login/styles.css")
+    @app.get("/login/agents.css")
+    @app.get("/login/mark.svg")
     def auth_asset():
-        return send_from_directory(PROJECT / "prototype", request.path.lstrip("/"))
+        assets = {"/auth-client.js": "auth-client.js", "/login.js": "login.js",
+                  "/login/styles.css": "styles.css", "/login/agents.css": "agents.css",
+                  "/login/mark.svg": "assets/mark.svg"}
+        return send_from_directory(PROJECT / "prototype", assets[request.path])
 
     @app.post("/api/auth/login")
     def login():

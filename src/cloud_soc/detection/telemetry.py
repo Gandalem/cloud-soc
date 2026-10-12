@@ -9,6 +9,9 @@ EXCLUSIONS = 'soc-detection-exclusions-v1'
 
 
 def evaluate(event, rule):
+    if rule.get('type') in ('ordered', 'diversity'):
+        from cloud_soc.detection.behavior import evaluate_behavior
+        return evaluate_behavior(event, rule)
     missing = []
     mismatch = False
     for condition in rule['conditions']:
@@ -50,7 +53,8 @@ def exclusion(client, event, rule, reason, missing, stamp, run_id):
 
 def stats_for(rules):
     return {rule['id']: {'input_events': 0, 'matched': 0, 'not_matched': 0, 'unknown': 0,
-                         'excluded': 0, 'late': 0, 'alerts_created': 0, 'alerts_existing': 0}
+                         'excluded': 0, 'late': 0, 'alerts_created': 0, 'alerts_existing': 0,
+                         'policy_excluded': 0}
             for rule in rules}
 
 

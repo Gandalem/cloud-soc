@@ -22,7 +22,7 @@ function browser(responses) {
 function allText(element){return element.textContent+element.children.map(allText).join(' ');}
 test('real page loads no demo scripts',()=>{
   const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
-  assert.ok(!html.includes('demo-data.js')); assert.ok(html.includes('operations.js')); assert.ok(html.includes('SSH 탐지 현황'));
+  assert.ok(!html.includes('demo-data.js')); assert.ok(html.includes('operations.js')); assert.ok(html.includes('처리 상태'));
 });
 
 test('detector state is displayed separately from normalization',async()=>{
@@ -32,6 +32,54 @@ test('detector state is displayed separately from normalization',async()=>{
 test('cloud profile is identified in the operations view',async()=>{
   const ui=browser([ok({...data,sections:{...data.sections,pipeline:{state:'success',detector:{state:'success',detection:'AUTH-001,AWS-IAM-001'}}}})]);await settle();
   assert.match(ui.get('ops-pipeline').textContent,/SSH·클라우드 탐지기/);
+});
+
+test('experimental attack profile is not mislabeled as the default SSH detector',async()=>{
+  const ui=browser([ok({...data,sections:{...data.sections,pipeline:{state:'success',detector:{state:'success',detection:'AUTH-001,ATTACK-01,ATTACK-02'}}}})]);await settle();
+  assert.match(ui.get('ops-pipeline').textContent,/공격 행위 탐지기.*시험 프로필/);
+});
+
+test('attack rationale shows measured diversity and limitations as safe text',async()=>{
+  const row={id:'alert',title:'AWS 정찰 의심',timestamp:data.start};
+  const ui=browser([ok({...data,sections:{...data.sections,alerts:{...section,rows:[row]}}}),
+    ok({alert:row,evidence_count:20,evidence_limit:0,condition:{event_count:20,threshold:20,time_window_seconds:300},
+      assessment:{type:'attack_indicator',reason:'call_count_and_api_diversity',observed_count:20,distinct_count:4,
+        limitations:['no_user_agent_or_normal_activity_baseline','candidate_threshold_not_live_validated','<img src=x>']}})]);await settle();
+  ui.get('ops-alert-rows').children[0].children[5].children[0].listeners.click();await settle();
+  const content=allText(ui.get('ops-detail-content'));
+  assert.match(content,/API 호출 20건.*API 4종/);
+  assert.match(content,/공격 성공 미확정/);
+  assert.match(content,/평소 활동과의 차이는 평가하지/);
+  assert.ok(!content.includes('<img src=x>'));
+});
+
+test('SSH correlation detail states the missing session link',async()=>{
+  const row={id:'alert',title:'SSH 후속 활동',timestamp:data.start};
+  const ui=browser([ok({...data,sections:{...data.sections,alerts:{...section,rows:[row]}}}),
+    ok({alert:row,evidence_count:7,evidence_limit:0,condition:{},assessment:{type:'attack_correlation',reason:'ordered_metadata_stages',
+      stages:[{name:'ssh_failures',count:5},{name:'ssh_success',count:1},{name:'sudo_root_metadata',count:1}],
+      limitations:['host_user_time_context_only_not_same_session']}})]);await settle();
+  ui.get('ops-alert-rows').children[0].children[5].children[0].listeners.click();await settle();
+  const content=allText(ui.get('ops-detail-content'));
+  assert.match(content,/SSH 인증 실패 5건/);
+  assert.match(content,/동일 SSH 세션인지는 확인되지/);
+});
+
+test('attack detail keeps versions and evidence lists collapsed without hiding limitations',async()=>{
+  const row={id:'alert',title:'SSH 후속 활동',timestamp:data.start};
+  const ui=browser([ok({...data,sections:{...data.sections,alerts:{...section,rows:[row]}}}),
+    ok({alert:row,rule_version:'version-canary',evidence_count:7,evidence_limit:0,condition:{event_count:7,threshold:5,time_window_seconds:900},
+      assessment:{type:'attack_correlation',limitations:['candidate_threshold_not_live_validated']}})]);await settle();
+  ui.get('ops-alert-rows').children[0].children[5].children[0].listeners.click();await settle();
+  const content=ui.get('ops-detail-content');
+  assert.equal(content.children[1].textContent,row.title);
+  assert.equal(content.children[2].textContent,'관측 로그 7건');
+  assert.match(allText(content.children[3]),/공격 성공 미확정.*운영 기준 미확정/);
+  const evidence=content.children[4],rule=content.children[5];
+  assert.equal(evidence.open,false);assert.equal(rule.open,false);
+  assert.equal(evidence.children[0].textContent,'근거 로그 보기 (7건)');
+  assert.equal(rule.children[0].textContent,'규칙 정보');
+  assert.match(allText(rule),/version-canary.*임계값 5.*900초/);
 });
 test('detector health alarms and excluded counts are visible',async()=>{
   for (const [health,label] of [['failed','탐지 장애: 처리 실패'],['stale','상태 갱신 중단'],['delayed','탐지 지연'],['warning','탐지 제외 이벤트']]) {

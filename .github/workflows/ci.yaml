@@ -47,7 +47,7 @@ jobs:
           python tools/coverage_badge.py
       - name: Windows detection and agent configuration regression
         if: runner.os == 'Windows'
-        run: python -m pytest -q tests/test_portfolio.py tests/test_cloud_detection.py tests/test_sequence_detection.py tests/test_processing.py tests/test_agent_endpoint.py tests/test_agent_policy.py tests/test_linux_operational.py tests/test_cases.py tests/test_case_scope.py tests/test_integration_security.py tests/test_improvements.py tests/test_source_access.py tests/test_capacity_p2.py tests/test_backup_readiness_p2.py tests/test_collector_metrics_p2.py
+        run: python -m pytest -q tests/test_portfolio.py tests/test_cloud_detection.py tests/test_sequence_detection.py tests/test_attack_detection.py tests/test_processing.py tests/test_worker_index_batches.py tests/test_detection_resume.py tests/test_incremental_detection.py tests/test_basic_auth_guard.py tests/test_agent_endpoint.py tests/test_agent_policy.py tests/test_linux_operational.py tests/test_cases.py tests/test_case_scope.py tests/test_integration_security.py tests/test_improvements.py tests/test_source_access.py tests/test_capacity_p2.py tests/test_backup_readiness_p2.py tests/test_collector_metrics_p2.py
       - name: Windows PowerShell parser and offline agent tests
         if: runner.os == 'Windows'
         shell: pwsh
@@ -85,7 +85,7 @@ jobs:
       - name: Offline rule profiles
         env:
           PYTHONPATH: src
-        run: python -m cloud_soc.detection --include-cloud --include-sequence
+        run: python -m cloud_soc.detection --include-cloud --include-sequence --include-attacks
       - name: UI regressions and authentication syntax
         run: |
           node --test prototype/tests/*.test.cjs
@@ -106,3 +106,13 @@ jobs:
           docker compose -f compose.yaml -f compose.dev.yaml config --quiet
           docker compose -f compose.prod.yaml config --quiet
           docker build -f deploy/server/Dockerfile -t cloud-soc:ci .
+      - name: Gateway allowlist integration on isolated loopback
+        if: runner.os == 'Linux'
+        env:
+          SOC_TEST_CADDY: /tmp/cloud-soc-test-caddy
+        run: |
+          docker create --name cloud-soc-test-gateway caddy:2.11.4-alpine
+          docker cp cloud-soc-test-gateway:/usr/bin/caddy /tmp/cloud-soc-test-caddy
+          docker rm cloud-soc-test-gateway
+          chmod u+x /tmp/cloud-soc-test-caddy
+          python -m pytest -q tests/test_gateway_allowlist.py

@@ -3,11 +3,13 @@
 from datetime import datetime, timedelta, timezone
 from contextlib import closing
 import sqlite3
+import sys
 from elasticsearch import ConflictError
 from cloud_soc.portal.agent_status import iso, parse_time
 from cloud_soc.portal.log_contract import INDICES, SOURCE_FIELDS, document_reference
 from cloud_soc.portal.security_detail import DETAIL_FIELDS
 from cloud_soc.processing.contract import normalize, NORMALIZED, RECORDS, STATUS
+from cloud_soc.elastic.index_scope import index_batches
 
 READ_FIELDS = list(SOURCE_FIELDS + DETAIL_FIELDS) + ["message", "event.timezone", "event.created",
     "log.syslog.appname", "process.name", "journald.syslog.identifier"]
@@ -26,37 +28,55 @@ def resolve(client, patterns):
     names = [item["name"] for item in response.get("indices", [])]
     if any(document_reference(name, "check") is None for name in names):
         raise RuntimeError("unexpected_index")
-    return names
+    return list(dict.fromkeys(names))
 
 
 def scan(client, start, end, *, page_size=200, max_pages=1000):
     names = resolve(client, INDICES)
     if not names:
         return
-    caps = client.field_caps(index=names, fields=["event.ingested"], include_unmapped=True)["fields"].get("event.ingested", {})
-    if not caps or set(caps) - {"date", "date_nanos"}:
-        raise RuntimeError("receipt_mapping_missing")
+    batches = list(index_batches(names))
+    for batch in batches:
+        caps = client.field_caps(index=batch, fields=["event.ingested"], include_unmapped=True)["fields"].get("event.ingested", {})
+        if not caps or set(caps) - {"date", "date_nanos"}:
+            raise RuntimeError("receipt_mapping_missing")
+    pages = 0
+    for batch in batches:
+        for hits in scan_batch(client, batch, start, end, page_size=page_size, max_pages=max_pages - pages):
+            pages += 1
+            yield from hits
+
+
+def scan_batch(client, names, start, end, *, page_size, max_pages):
     pit, after = None, None
     try:
-        pit = checked(client.open_point_in_time(index=names, keep_alive="2m", allow_partial_search_results=False))["id"]
+        opened = client.open_point_in_time(index=names, keep_alive="2m", allow_partial_search_results=False)
+        pit = opened["id"]
+        checked(opened)
         for _ in range(max_pages):
-            response = checked(client.search(pit={"id": pit, "keep_alive": "2m"}, size=page_size,
+            response = client.search(pit={"id": pit, "keep_alive": "2m"}, size=page_size,
                 sort=["_shard_doc"], search_after=after, source=READ_FIELDS, track_total_hits=False,
                 allow_partial_search_results=False, timeout="10s",
-                query={"range": {"event.ingested": {"gte": start, "lt": end}}}))
+                query={"range": {"event.ingested": {"gte": start, "lt": end}}})
             pit = response.get("pit_id", pit)
+            checked(response)
             hits = response["hits"]["hits"]
             if not hits:
                 return
             cursor = hits[-1].get("sort")
             if not cursor or cursor == after:
                 raise RuntimeError("cursor_not_advancing")
-            yield from hits
+            yield hits
             after = cursor
         raise RuntimeError("window_page_limit")
     finally:
         if pit:
-            client.close_point_in_time(id=pit)
+            failing = sys.exc_info()[0] is not None
+            try:
+                client.close_point_in_time(id=pit)
+            except Exception:
+                if not failing:
+                    raise
 
 
 def create(client, index, identifier, document):

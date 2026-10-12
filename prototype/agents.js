@@ -88,17 +88,21 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
       $('#form-endpoint').defaultValue = data.endpoint;
       $('#beat-version').textContent = data.version;
       $('#server-status').textContent = data.elasticsearch === 'connected' ? '연결 확인' : '연결 확인 실패';
+      $('#add-package').disabled = false;
       $('#server-status').className = data.elasticsearch === 'connected' ? 'status-ok' : 'status-error';
       $('#add-package').disabled = false;
       if (data.elasticsearch !== 'connected') {
         $('#page-message').hidden = false;
-        $('#page-message').textContent = '패키지는 생성할 수 있지만 Elasticsearch 연결을 확인하지 못했습니다. 키 발급과 실제 수집은 서버 연결을 복구한 후 확인하세요.';
+        $('#page-message').textContent = 'Elasticsearch 연결 실패. 설치 파일은 생성할 수 있지만 키 발급·수신 확인은 서버 연결이 필요합니다.';
       }
       render();
     } catch (error) {
       if (generation !== state.loadGeneration) return;
+      state.packages = []; state.selected.clear(); render();
+      $('#empty-state').hidden = true; $('#package-total').textContent = '조회 실패';
+      $('#add-package').disabled = true;
       $('#page-message').hidden = false;
-      $('#page-message').textContent = `서버 조회 실패: ${error.message} 이 화면은 중앙 서버에서 열어야 하며, 정적 파일 미리보기는 API에 연결되지 않습니다. 기존 표시 데이터는 최신으로 간주하지 마세요.`;
+      $('#page-message').textContent = `서버 조회 실패: ${error.message} 연결을 확인한 뒤 새로고침하세요.`;
       $('#server-status').textContent = '확인 불가';
       $('#server-status').className = 'status-error';
     } finally { if (generation === state.loadGeneration) $('#refresh').disabled = false; }
@@ -185,7 +189,7 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
     $('#enrollment-package').textContent = item.filename;
     $('#enrollment-token').value = '';
     $('#enrollment-target').value = '';
-    $('#enrollment-message').textContent = '신규 설치에 토큰 한 개를 입력합니다. 확인된 실패 설치는 새 토큰과 Windows -ReEnroll / Ubuntu --reenroll로 재등록하세요. 정상 설치·일반 복구·갱신에는 사용하지 마세요.';
+    $('#enrollment-message').textContent = '설치할 서버마다 토큰을 발급하세요. 정상 설치의 갱신·일반 복구에는 사용하지 마세요.';
     $('#mint-enrollment').disabled = false;
     $('#enrollment-command').textContent = item.os === 'ubuntu'
       ? `sudo bash install.sh --enroll --package-sha256 '${item.sha256}'${item.network ? ' --interface <수집할-NIC>' : ''}`
@@ -309,7 +313,7 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
       state.keys = state.keys.map(item => item.id === id ? data.key : item);
       if (action === 'revoke') state.pendingRevoke = null;
       if (action === 'label' && state.keyDrafts.get(id) === label) state.keyDrafts.delete(id);
-      $('#history-message').textContent = action === 'revoke' ? '키 폐기를 확인했습니다. 사용은 중지되며 감사 이력은 보존됩니다.' : action === 'label' ? '대상 별칭을 저장했습니다. 실제 설치 대상의 자동 확인은 아닙니다.' : '서버 조회 결과를 반영했습니다. 실제 수집 성공을 뜻하지 않습니다.';
+      $('#history-message').textContent = action === 'revoke' ? '키 폐기 완료. 이력은 보존됩니다.' : action === 'label' ? '별칭을 저장했습니다.' : '키 상태를 확인했습니다. 수신 확인은 별도입니다.';
     } catch (error) {
       if (generation !== state.historyGeneration) return;
       if (action === 'check') state.keys = state.keys.map(item => item.id === id && !item.revoked_at ? { ...item, status: 'unavailable' } : item);

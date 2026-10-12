@@ -12,7 +12,7 @@
   for(const [key,value]of back)if(["case_status","case_owner","case_priority","case_days","case_sort","case_page"].includes(key)&&value.length<40)safeBack.set(key,value);
   const returnPage=query.get("return_page")==="index.html"?"index.html":"cases.html";
   $("case-back").href=returnPage+"?"+safeBack+"#case-queue";
-  $("case-back").textContent=returnPage==="index.html"?"관제 현황의 사건 업무 큐로 돌아가기":"사건 목록으로 돌아가기";
+  $("case-back").textContent=returnPage==="index.html"?"관제 현황으로":"사건 목록으로";
   function node(tag,text){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;}
   function error(message){$("investigation-error").hidden=false;$("investigation-error").textContent=message;}
   async function request(url,options={}){
@@ -38,7 +38,9 @@
       const names={status:"상태",owner:"담당자",priority:"우선순위",verdict:"판정",alert_id:"연결 경보",title:"제목"};
       for(const [key,change]of Object.entries(item.changes)){
         const show=value=>value===null?"미배정":(key==="status"?states[value]:key==="verdict"?verdicts[value]:key==="priority"?priorities[value]:value)||"미기록";
-        li.append(node("p",(names[key]||key)+": "+(change&&typeof change==="object"?show(change.before)+" → "+show(change.after):show(change))));
+        const value=(change&&typeof change==="object"?show(change.before)+" → "+show(change.after):show(change));
+        if(key==='alert_id') {const refs=node('details');refs.append(node('summary','연결 경보 ID'),node('p',value));li.append(refs);}
+        else li.append(node("p",(names[key]||key)+": "+value));
       }
       if(item.note)li.append(node("p",item.note));$("case-history").append(li);
     }
@@ -49,18 +51,31 @@
     const detail=node("div","경보 조회 중");box.append(detail);container.append(box);
     try{
       const data=await request("/api/alerts/detail?"+new URLSearchParams({id}));if(version!==generation)return;
-      const c=data.condition;detail.replaceChildren(node("p","규칙 "+(data.alert.rule||"미기록")+" · 버전 "+(data.rule_version||"미기록")),node("p","관측 수 "+(c.event_count??"미기록")+" / 임계값 "+(c.threshold??"미기록")+" / 시간 창 "+(c.time_window_seconds??"미기록")+"초"));
-      detail.append(node("p","관련 대상 (경보 필드): 조직 "+(data.alert.organization||"미기록")+" · 출발지 IP "+(data.alert.source_ip||"미관측")));
+      const c=data.condition;detail.replaceChildren(node("p","규칙 "+(data.alert.rule||"미기록")),node("p","관측 로그 "+(c.event_count??"미기록")+"건"));
+      detail.append(node("p","조직 "+(data.alert.organization||"미기록")+" · 출발지 IP "+(data.alert.source_ip||"미관측")));
+      const ruleInfo=node('details');ruleInfo.append(node('summary','규칙 정보'),node('p','버전 '+(data.rule_version||'미기록')),node('p','임계값 '+(c.threshold??'미기록')+' / 시간 범위 '+(c.time_window_seconds??'미기록')+'초'));detail.append(ruleInfo);
+      if(data.assessment) {
+        const assessment=data.assessment;
+        detail.append(node('p','공격 의심 · 공격 성공 미확정'));
+        if(assessment.reason==='call_count_and_api_diversity' && Number.isSafeInteger(assessment.observed_count) && Number.isSafeInteger(assessment.distinct_count)) detail.append(node('p','API 호출 '+assessment.observed_count+'건 · API '+assessment.distinct_count+'종 (중복 제외)'));
+        const limits={host_user_time_context_only_not_same_session:'동일 SSH 세션인지는 확인되지 않았습니다.',sudo_record_not_command_execution_or_privilege_success:'명령 실행·권한 상승 성공은 확인되지 않았습니다.',no_user_agent_or_normal_activity_baseline:'평소 활동과의 차이는 평가하지 않았습니다.',api_result_not_effective_privilege_or_all_audit_logs_removed:'실제 권한 적용·전체 감사 중단 여부는 확인되지 않았습니다.',candidate_threshold_not_live_validated:'시험 규칙 · 운영 기준 미확정'};
+        if(Array.isArray(assessment.limitations)) for(const code of assessment.limitations.slice(0,12)) if(Object.hasOwn(limits,code)) detail.append(node('p',limits[code]));
+      }
       if(data.risk){
-        detail.append(node("p",data.risk.score===null?"위험 점수 미기록 (과거 경보)":"위험 점수 "+data.risk.score+" / 100 · "+data.risk.level+" · 계산 버전 "+data.risk.version));
-        if(Array.isArray(data.risk.factors))for(const factor of data.risk.factors)detail.append(node("p",factor.name+": +"+factor.points));
+        const level={critical:'긴급',high:'높음',medium:'중간',low:'낮음'};
+        detail.append(node("p",data.risk.score===null?"위험 점수 미기록":"위험 점수 "+data.risk.score+" / 100 · "+(level[data.risk.level]||'미확인')));
+        const scoring=node('details');scoring.append(node('summary','점수 계산'),node('p','계산 버전 '+data.risk.version));
+        const factors={rule_severity:'규칙 심각도',frequency_above_twice_threshold:'임계값 2배 초과',failure_then_success:'인증 실패 후 성공'};
+        if(Array.isArray(data.risk.factors))for(const factor of data.risk.factors)scoring.append(node("p",(factors[factor.name]||factor.name)+": +"+factor.points));
+        detail.append(scoring);
       }
       for(const [label,value] of [["탐지 규칙",data.rule_snapshot],["MITRE ATT&CK",data.mitre]])if(value){
         const section=node("details");section.append(node("summary",label),node("pre",JSON.stringify(value,null,2)));detail.append(section);
       }
-      if(!data.evidence_count)detail.append(node("p","이 경보에는 정확한 근거 참조가 없습니다."));
-      if(data.evidence_count)detail.append(node('p','저장된 근거 '+data.evidence_count+'건 · 페이지별 전체 조회 가능'));
-      const navigation=node('div');detail.append(navigation);
+      if(!data.evidence_count)detail.append(node("p","근거 로그가 없습니다."));
+      const evidenceDetails=node('details'),evidenceBody=node('div'),navigation=node('div');
+      evidenceDetails.append(node('summary','근거 로그 보기 ('+(data.evidence_count||0)+'건)'),evidenceBody,navigation);
+      if(data.evidence_count)detail.append(evidenceDetails);
       function evidencePage(pageData){
       const page=pageData.evidence_page||{positions:Array.from({length:pageData.evidence_limit},(_,i)=>i),next_offset:null};
       for(const i of page.positions){
@@ -77,7 +92,7 @@
             if(e.metadata)result.append(node("pre",JSON.stringify(e.metadata,null,2)));
             if(e.security)result.append(node("pre",JSON.stringify(e.security,null,2)));
           }catch(failure){result.textContent=failure.message;}finally{button.disabled=false;}
-        });detail.append(button,result);
+        });evidenceBody.append(button,result);
       }
       navigation.replaceChildren();
       if(page.next_offset!==null){
@@ -99,7 +114,7 @@
     try{
       const data=await request("/api/cases/"+encodeURIComponent(caseId));if(version!==generation)return;
       current=data.case;$("case-title").textContent=current.title;
-      $("case-summary").textContent="조직 "+current.organization+" · "+states[current.status]+" · "+verdicts[current.verdict]+" · 수정 버전 "+current.version;
+      $("case-summary").textContent="조직 "+current.organization+" · "+states[current.status]+" · "+verdicts[current.verdict];
       const owner=$("work-owner");owner.replaceChildren();const none=node("option","미배정");none.value="";const me=node("option",data.actor);me.value=data.actor;owner.append(none,me);
       if(current.owner&&current.owner!==data.actor){const assigned=node("option",current.owner+" (현재 담당자)");assigned.value=current.owner;owner.append(assigned);}
       for(const key of ["status","owner","priority","verdict"])$("work-"+key).value=current[key]||"";
@@ -111,7 +126,7 @@
         const box=node("section"),button=node("button",(row.snapshot.title||row.id)+" · "+fmt(row.snapshot.timestamp)+" · 경보 열기");button.type="button";
         button.addEventListener("click",()=>{button.disabled=true;alertCard(box,row.id,row.snapshot,version);});box.append(button);$("case-alerts").append(box);
       }
-      $("investigation-status").textContent="저장된 사건을 불러왔습니다. 미저장 메모는 서버에 전송되지 않습니다.";
+      $("investigation-status").textContent="조회 완료";
     }catch(failure){if(version===generation){current=null;error(failure.message);$("investigation-status").textContent="사건 조회 실패";}}
   }
   async function save(body){
@@ -140,7 +155,7 @@
   });
   async function init(){
     if(caseId){if(!/^[0-9a-f]{32}$/.test(caseId)){error("사건 ID를 확인하세요.");return;}await loadCase();return;}
-    if(!alertId){$("investigation-status").textContent="선택한 사건이 없습니다. 위의 ‘사건 목록으로 돌아가기’에서 조사할 사건을 선택하세요. 새 사건은 관제 현황의 경보에서 등록할 수 있습니다.";return;}
+    if(!alertId){$("investigation-status").textContent="선택한 사건이 없습니다. 사건 목록에서 선택하세요.";return;}
     try{
       const linked=await request("/api/case-link?"+new URLSearchParams({alert_id:alertId}));
       if(linked.case_id){caseId=linked.case_id;await loadCase();return;}

@@ -2,7 +2,7 @@
   'use strict';
   const labels = { recent: '최근 수신', delayed: '수신 지연', silent: '장기 미수신', unknown: '판단 불가' };
   const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-  const date = value => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value)) : '없음';
+  const date = value => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value)) : '없음';
   const status = value => Object.hasOwn(labels, value) ? value : 'unknown';
   function rowsFor(rows, query, selected) {
     const q = query.trim().toLowerCase();
@@ -30,7 +30,7 @@
     $('#row-count').textContent = state.healthy ? `현재 페이지 ${rows.length}개 · 필터 결과 ${shown.length}개` : '조회 결과 없음';
     $('#status-empty').hidden = state.busy || (state.healthy && shown.length > 0);
     $('#empty-title').textContent = !state.healthy ? '수신 상태를 판단할 수 없습니다.' : rows.length ? '현재 페이지에서 일치하는 수집기가 없습니다.' : state.page ? '이후 수집기가 없습니다.' : '관측된 수집기가 없습니다.';
-    $('#empty-description').textContent = !state.healthy ? '오류를 확인한 뒤 새로고침하세요. 조회 실패는 에이전트 오프라인을 의미하지 않습니다.' : rows.length ? '검색어·상태 필터를 바꾸거나 다른 페이지를 확인하세요.' : '설치만 완료해도 표시되는 목록이 아닙니다. 최근 30일 안에 수집 데이터가 도착해야 합니다.';
+    $('#empty-description').textContent = !state.healthy ? '새로고침 후 다시 확인하세요. 조회 실패로 오프라인을 판단할 수는 없습니다.' : rows.length ? '검색어나 상태 필터를 바꿔보세요.' : '최근 30일 내 데이터가 도착한 수집기만 표시합니다.';
     $('#status-page').textContent = `${state.page + 1} 페이지`;
     $('#status-previous').disabled = state.busy || state.page === 0;
     $('#status-next').disabled = state.busy || !state.healthy || !state.snapshot.next_cursor;

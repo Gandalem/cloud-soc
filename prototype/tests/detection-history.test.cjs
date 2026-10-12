@@ -12,7 +12,7 @@ function browser(responses) {
 const ok=data=>()=>({ok:true,json:async()=>data});
 test('history keeps time bounds across seek pages and renders text only',async()=>{
  const ui=browser([ok({state:'ok',rows:[{rule:{id:'<img src=x>'},state:'committed'}],next:'cursor'}),ok({state:'ok',rows:[],next:null})]);await settle();
- assert.equal(ui.get('history-rows').children[0].children[0].textContent,'<img src=x> · 처리 완료 · 처리 위치 저장됨');
+ assert.equal(ui.get('history-rows').children[0].children[0].textContent,'<img src=x> · 처리 완료');
  ui.get('history-next').listeners.click();await settle();
  const a=new URL(ui.calls[0],'https://test'),b=new URL(ui.calls[1],'https://test');
  assert.equal(a.searchParams.get('start'),b.searchParams.get('start'));assert.equal(a.searchParams.get('end'),b.searchParams.get('end'));assert.equal(b.searchParams.get('after'),'cursor');
