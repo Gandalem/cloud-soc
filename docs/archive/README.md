@@ -38,3 +38,5 @@
 - [새 대시보드·세션 로그아웃 실제 배포 — 2026-10-12](validation/dashboard_deployment_20261012.md)
 
 - [전역 테마·대비 검증 — 2026-10-12](validation/theme_validation_20261012.md)
+
+- [실제 대시보드 추이 복구 — 2026-10-12](validation/chart_validation_20261012.md)
