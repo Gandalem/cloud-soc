@@ -100,13 +100,23 @@ class SourceAccessTests(unittest.TestCase):
   r=self.post();self.assertEqual(r.status_code,503);self.assertNotIn('PRIVATE_CANARY',r.get_data(as_text=True));self.assertEqual(self.audit()[-1][2],'unavailable')
   for path in ['/api/logs/export','/api/logs/raw']:
    self.assertNotEqual(self.http.get(path,headers=auth()).status_code,200)
- def test_audit_backup_v2_restore(self):
+ def test_audit_backup_current_and_v2_restore(self):
   self.assertEqual(self.post().status_code,200)
   extra=tempfile.TemporaryDirectory();self.addCleanup(extra.cleanup)
-  root=Path(self.tmp.name);out=Path(extra.name)/'backup';report=backup.backup(root,out)
-  self.assertEqual(report['format'],2);self.assertIn('log-access.sqlite',[f['name']for f in report['files']]);backup.verify(out)
-  restored=Path(extra.name)/'restored';backup.restore(out,restored)
-  with closing(sqlite3.connect(restored/'log-access.sqlite'))as db:self.assertEqual(db.execute('SELECT outcome FROM source_access').fetchall(),[('granted',)])
+  root=Path(self.tmp.name)
+  for version in (3,2):
+   with self.subTest(format=version):
+    if version==2:
+     # A pre-dashboard portal has the audit database but no preference database.
+     (root/'dashboards.sqlite').unlink()
+    out=Path(extra.name)/f'backup-v{version}';report=backup.backup(root,out)
+    self.assertEqual(report['format'],version)
+    names=[f['name']for f in report['files']]
+    self.assertIn('log-access.sqlite',names)
+    self.assertEqual('dashboards.sqlite'in names,version==3)
+    self.assertEqual(backup.verify(out),report)
+    restored=Path(extra.name)/f'restored-v{version}';backup.restore(out,restored)
+    with closing(sqlite3.connect(restored/'log-access.sqlite'))as db:self.assertEqual(db.execute('SELECT outcome FROM source_access').fetchall(),[('granted',)])
 
 class PureSourceTests(unittest.TestCase):
  def test_typed_bounds_unknown_objects_arrays_and_secret_option_forms(self):
