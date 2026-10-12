@@ -7,7 +7,7 @@ from cloud_soc.portal.agent_status import iso, parse_time
 from cloud_soc.portal.log_contract import document_reference, field
 from cloud_soc.portal.security_detail import security_detail, address, text
 from cloud_soc.privacy import REDACTED
-from cloud_soc.parsers.linux_security import parse_linux_ssh
+from cloud_soc.parsers.linux_security import parse_linux_ssh, parse_linux_ssh_source
 from cloud_soc.parsers.linux_operational import parse_linux_operational, VERSION as LINUX_OPERATIONAL_VERSION, SUDO_SESSION_VERSION
 from cloud_soc.normalizers.ecs import parse_syslog_timestamp
 from cloud_soc.normalizers.time_context import raw_time_context, parse_utc_offset
@@ -18,7 +18,7 @@ RECORDS = "soc-processing-v1"
 STATUS = "soc-pipeline-status"
 
 
-def normalize(hit, processed_at):
+def normalize(hit, processed_at, *, ssh_v2_start=None):
     reference = document_reference(hit.get("_index"), hit.get("_id"))
     if reference is None:
         raise ValueError("Invalid raw reference")
@@ -36,6 +36,14 @@ def normalize(hit, processed_at):
         return identifier, record, None
     detail = security_detail(source)
     time_metadata = {"basis": "source_timestamp"}
+    modern_ssh = (parse_linux_ssh_source(source) if detail["status"] == "unsupported"
+                  and (ssh_v2_start is None or received >= ssh_v2_start) else None)
+    if modern_ssh:
+        occurred = modern_ssh.pop('occurred')
+        origin = modern_ssh.pop('origin')
+        time_metadata = {'basis': 'journald_timestamp' if origin == 'journald' else 'rfc3339_timestamp', 'year_inferred': False}
+        detail = {'adapter': 'linux_ssh_v2', 'status': 'recognized', 'fields': modern_ssh,
+                  'missing': [], 'limitations': ['metadata_only', 'authentication_failure_not_attack_confirmation']}
     if detail["status"] == "unsupported":
         operational = parse_linux_operational(source)
         if operational:
@@ -92,7 +100,7 @@ def normalize(hit, processed_at):
     if detail["status"] == "unsupported":
         record.update(status="unsupported", reason="adapter_not_supported")
         return identifier, record, None
-    expected = {"windows_security_v1": "soc-host-raw-", "sysmon_v1": "soc-host-raw-", "linux_ssh_v1": "soc-host-raw-",
+    expected = {"windows_security_v1": "soc-host-raw-", "sysmon_v1": "soc-host-raw-", "linux_ssh_v1": "soc-host-raw-", "linux_ssh_v2": "soc-host-raw-",
                 "linux_operational_v1": "soc-host-raw-", "linux_sudo_session_v1": "soc-host-raw-", "linux_unclassified_v1": "soc-host-raw-", "packetbeat_metadata_v1": "soc-network-", "aws_cloudtrail_metadata_v1": "soc-cloud-aws-", "oci_audit_metadata_v1": "soc-cloud-oci-"}
     if not reference["index"].startswith(expected[detail["adapter"]]):
         record.update(status="invalid", reason="source_scope_mismatch")
@@ -133,6 +141,15 @@ def normalize(hit, processed_at):
         event["process"] = {"pid": values["process_pid"]}
         if values.get("process_path") not in (None, REDACTED):
             event["process"]["executable"] = values["process_path"]
+    if modern_ssh:
+        host_id = field(source, 'host.id')
+        if isinstance(host_id, str) and 0 < len(host_id) <= 128 and text(host_id) == host_id:
+            # Millisecond precision is shared by journald and its ISO file mirror.
+            identity = ['ssh-observation-v1', organization, host_id, occurred.isoformat(timespec='milliseconds'),
+                        values['process_pid'], values['action'], values['outcome'], values['target_user'],
+                        values['source_ip'], values['source_port'], values['auth_method']]
+            event['cloud_soc']['observation'] = {'version': 1, 'id': hashlib.sha256(json.dumps(identity).encode()).hexdigest(),
+                                                'origin': origin}
     record.update(status="normalized", reason=detail["status"], adapter=detail["adapter"],
                   normalized={"index": NORMALIZED, "id": identifier})
     return identifier, record, event

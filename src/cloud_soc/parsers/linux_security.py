@@ -5,10 +5,11 @@ records with the same full audit ID; PID alone never groups records. Output is
 selected, privacy-filtered metadata, never raw text or command arguments.
 """
 
+from datetime import datetime, timezone
 import re
 import shlex
 
-from cloud_soc.parsers.linux_auth import parse_linux_auth_line
+from cloud_soc.parsers.linux_auth import parse_linux_auth_line, ACCEPTED_PATTERN, FAILED_PASSWORD_PATTERN
 from cloud_soc.privacy import display, REDACTED
 
 AUDIT_HEADER = re.compile(r"^type=(SYSCALL|PATH|CWD|EXECVE|PROCTITLE|EOE) msg=audit\((\d{10}(?:\.\d{1,9})?:\d{1,20})\):\s*(.*)$")
@@ -36,6 +37,61 @@ def parse_linux_ssh(line):
             "source_ip": parsed["source_ip"], "source_port": parsed["source_port"],
             "process_pid": parsed["process_id"], "source_host": display(parsed["host"]),
             "time_text": parsed["timestamp_raw"], "time_basis": "year_timezone_required"}
+
+
+ISO_SSH = re.compile(r"^(?P<time>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2}))\s+\S+\s+sshd(?:-session)?\[(?P<pid>\d{1,10})\]:\s*(?P<body>.*)$")
+
+
+def parse_linux_ssh_source(source):
+    """Decode explicit ISO syslog/journal SSH metadata; never infer a timezone."""
+    from cloud_soc.portal.log_contract import field
+    if not isinstance(source, dict):
+        return None
+    message = source.get('message')
+    if not isinstance(message, str) or not message or len(message) > 8192 or any(c in message for c in '\r\n'):
+        return None
+    kind = field(source, 'labels.log_source')
+    prefix = ISO_SSH.fullmatch(message) if kind in ('linux_file', 'linux_auth') else None
+    if prefix:
+        body, stamp, pid, origin = prefix['body'], prefix['time'], int(prefix['pid']), 'rfc3339'
+    elif kind == 'linux_journald':
+        programs = [field(source, key) for key in ('journald.process.name', 'process.name', 'log.syslog.appname', 'journald.syslog.identifier')]
+        present = [v for v in programs if v is not None]
+        if not present or any(v not in ('sshd', 'sshd-session') for v in present):
+            return None
+        body, stamp, pid, origin = message, source.get('@timestamp'), field(source, 'journald.pid'), 'journald'
+    else:
+        return None
+    if type(pid) is not int or not 0 < pid < 2**32 or not isinstance(stamp, str):
+        return None
+    try:
+        occurred = datetime.fromisoformat(stamp.replace('Z', '+00:00'))
+        if occurred.tzinfo is None or occurred.utcoffset() is None:
+            return None
+        occurred = occurred.astimezone(timezone.utc)
+    except (ValueError, TypeError, OverflowError):
+        return None
+    match = FAILED_PASSWORD_PATTERN.match(body)
+    outcome = 'failure'
+    if not match:
+        match, outcome = ACCEPTED_PATTERN.match(body), 'success'
+    if not match or not re.fullmatch(r'(?: ssh2)?', body[match.end():]):
+        return None
+    from ipaddress import ip_address
+    try:
+        ip = str(ip_address(match['ip']))
+        port = int(match['port'])
+        if not 1 <= port <= 65535:
+            return None
+    except ValueError:
+        return None
+    user = display(match['username'])
+    if user in (None, REDACTED) or len(user) > 128:
+        return None
+    return {'adapter': 'linux_ssh_v2', 'category': 'authentication', 'action': 'ssh_login',
+            'outcome': outcome, 'target_user': user, 'source_ip': ip, 'source_port': port,
+            'process_pid': pid, 'protocol': 'ssh', 'auth_method': match['method'] if outcome == 'success' else 'password',
+            'occurred': occurred, 'origin': origin}
 
 
 def _fields(body):
