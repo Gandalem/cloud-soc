@@ -75,4 +75,3 @@ class DashboardStore:
             db.execute('INSERT INTO dashboards VALUES(?,?,?) ON CONFLICT(actor) DO UPDATE SET revision=excluded.revision,body=excluded.body',
                        (actor, revision + 1, json.dumps(layout, ensure_ascii=False)))
         return {'revision': revision + 1, 'layout': layout}
-
