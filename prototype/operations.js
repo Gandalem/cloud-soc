@@ -52,11 +52,12 @@
       metrics.append(card);
     }
     const pipeline = sections.pipeline;
-    $("ops-pipeline").textContent = "정규화 처리기: " + (labels[pipeline.state] || "미확인") + " · 마지막 성공: " + fmt(pipeline.last_success) + " · 수신 시각 체크포인트: " + fmt(pipeline.checkpoint);
+    $("ops-pipeline").textContent = "정규화 처리기: " + (labels[pipeline.state] || "미확인");
     const detector = pipeline.detector || { state: "not_started" };
     const detectorLabels = { ...labels, success: "최근 탐지 성공", running: "탐지 실행 중", failed: "탐지 실패" };
-    const detectorName = detector.detection && detector.detection.includes(",") ? "SSH·클라우드 탐지기" : "SSH 탐지기";
-    $("ops-pipeline").textContent += " · " + detectorName + ": " + (detectorLabels[detector.state] || "미확인") + " · 탐지 마지막 성공: " + fmt(detector.last_success);
+    const detectorName = detector.detection?.includes("ATTACK-") ? "공격 행위 탐지기 (시험 프로필)" : detector.detection && detector.detection.includes(",") ? "SSH·클라우드 탐지기" : "SSH 탐지기";
+    $("ops-pipeline").textContent += " · " + detectorName + ": " + (detectorLabels[detector.state] || "미확인");
+    if ($("ops-pipeline-times")) $("ops-pipeline-times").textContent = "정규화 마지막 성공: " + fmt(pipeline.last_success) + " · 처리 위치: " + fmt(pipeline.checkpoint) + " · 탐지 마지막 성공: " + fmt(detector.last_success);
     const healthLabels = { failed: "탐지 장애: 처리 실패", stale: "탐지 장애: 상태 갱신 중단", delayed: "탐지 지연: 처리 위치 확인 필요", warning: "탐지 경고: 탐지 제외 이벤트 확인 필요" };
     if (healthLabels[detector.health]) $("ops-pipeline").textContent += " · " + healthLabels[detector.health];
     if (Number.isSafeInteger(detector.lag_seconds)) $("ops-pipeline").textContent += " · 처리 지연 " + detector.lag_seconds + "초";
@@ -68,7 +69,7 @@
     $("ops-pipeline").setAttribute("aria-live", "polite");
     chart($("ops-intake-chart"), sections.intake); chart($("ops-alert-chart"), sections.alerts);
     const alerts = sections.alerts; $("ops-alert-rows").replaceChildren();
-    $("ops-alert-state").textContent = alerts.state === "ok" ? "총 " + alerts.count + "건 · 최신 최대 50건 표시 (페이지 탐색 미지원)" : labels[alerts.state];
+    $("ops-alert-state").textContent = alerts.state === "ok" ? "총 " + alerts.count + "건 · 최신 50건까지 표시" : labels[alerts.state];
     for (const row of alerts.rows || []) {
       const tr = node("tr");
       const severity = {critical: "긴급", high: "높음", medium: "중간", low: "낮음"}[row.severity] || row.severity || "미확인";
@@ -84,14 +85,47 @@
     try {
       const data = await request("/api/alerts/detail?" + new URLSearchParams({id}));
       if (version !== detailGeneration) return;
-      $("ops-detail-state").textContent = data.evidence_count ? "저장된 근거 " + data.evidence_count + "건 · 페이지별 전체 조회 가능" : "과거 경보에 정확한 근거 참조가 없습니다. 주변 로그로 대체하지 않습니다.";
+      $("ops-detail-state").textContent = data.evidence_count ? "근거 로그 " + data.evidence_count + "건" : "근거 로그가 없습니다. 주변 로그로 대체하지 않습니다.";
       const condition = data.condition;
       const investigate = node("a", "사건 조사 / 등록");
       investigate.href = "workbench.html?" + new URLSearchParams({alert: id, return: (window.location?.search || "").slice(1), return_page: "index.html"});
       $("ops-detail-content").append(investigate);
-      $("ops-detail-content").append(node("p", (data.alert.title || data.alert.rule || "경보") + " · 규칙 버전 " + (data.rule_version || "미기록")), node("p", "관측 수 " + (condition.event_count ?? "미기록") + " / 임계값 " + (condition.threshold ?? "미기록") + " / 시간 창 " + (condition.time_window_seconds ?? "미기록") + "초"));
+      $("ops-detail-content").append(node("p", data.alert.title || data.alert.rule || "경보"), node("p", "관측 로그 " + (condition.event_count ?? "미기록") + "건"));
+      if (data.assessment && typeof data.assessment === "object") {
+        const box = node("section", undefined, "ops-evidence"), assessment = data.assessment;
+        box.append(node("h3", "탐지 이유"));
+        box.append(node("p", assessment.type === "attack_correlation" ? "여러 행위의 연계 의심 · 공격 성공 미확정" : "공격 징후 의심 · 공격 성공 미확정"));
+        if (assessment.reason === "call_count_and_api_diversity" && Number.isSafeInteger(assessment.observed_count) && Number.isSafeInteger(assessment.distinct_count)) {
+          box.append(node("p", "API 호출 " + assessment.observed_count + "건 · API " + assessment.distinct_count + "종 (중복 제외)"));
+        }
+        const stageNames = {ssh_failures: "SSH 인증 실패", ssh_success: "SSH 인증 성공", sudo_root_metadata: "root 대상 PAM sudo 세션 기록", high_privilege_policy_attachment: "고권한 정책 연결", trail_stop_or_delete: "Trail 중지·삭제"};
+        if (Array.isArray(assessment.stages)) for (const stage of assessment.stages.slice(0, 3)) {
+          if (stage && Number.isSafeInteger(stage.count)) box.append(node("p", (stageNames[stage.name] || "관측 단계") + " " + stage.count + "건"));
+        }
+        const limits = {
+          host_user_time_context_only_not_same_session: "동일 SSH 세션인지는 확인되지 않았습니다.",
+          sudo_record_not_command_execution_or_privilege_success: "명령 실행·권한 상승 성공은 확인되지 않았습니다.",
+          no_user_agent_or_normal_activity_baseline: "사용자 에이전트·평소 활동과의 차이는 평가하지 않았습니다.",
+          api_result_not_effective_privilege_or_all_audit_logs_removed: "실제 권한 적용·전체 감사 중단 여부는 확인되지 않았습니다.",
+          candidate_threshold_not_live_validated: "시험 규칙 · 운영 기준 미확정"
+        };
+        if (Array.isArray(assessment.limitations)) for (const code of assessment.limitations.slice(0, 12)) {
+          if (typeof code === "string" && Object.hasOwn(limits, code)) box.append(node("p", limits[code]));
+        }
+        // Existing evidence pagination positions stay unchanged for old alerts.
+        $("ops-detail-content").append(box);
+      }
       const evidenceContainer = node('div'), navigation = node('div');
-      $("ops-detail-content").append(evidenceContainer, navigation);
+      if (data.assessment && typeof data.assessment === "object") {
+        const evidenceDetails = node('details', undefined, 'ops-evidence');
+        evidenceDetails.append(node('summary', '근거 로그 보기 (' + (data.evidence_count || 0) + '건)'), evidenceContainer, navigation);
+        $("ops-detail-content").append(evidenceDetails);
+      } else $("ops-detail-content").append(evidenceContainer, navigation);
+      const ruleDetails = node('details', undefined, 'ops-evidence');
+      ruleDetails.append(node('summary', '규칙 정보'),
+        node('p', '규칙 버전: ' + (data.rule_version || '미기록')),
+        node('p', '임계값 ' + (condition.threshold ?? '미기록') + ' / 시간 범위 ' + (condition.time_window_seconds ?? '미기록') + '초'));
+      $("ops-detail-content").append(ruleDetails);
       function evidencePage(pageData) {
       const page = pageData.evidence_page || {positions: Array.from({length: pageData.evidence_limit}, (_, i) => i), next_offset: null};
       for (const i of page.positions) {
@@ -129,6 +163,7 @@
   async function refresh() {
     const version = ++generation;
     $("ops-error").hidden = true; $("ops-range").textContent = "조회 중";
+    if ($("ops-pipeline-times")) $("ops-pipeline-times").textContent = "";
     // Clear stale counts while loading a different interval or after failure.
     for (const id of ["ops-metrics", "ops-intake-chart", "ops-alert-chart", "ops-alert-rows"]) $(id).replaceChildren();
     $("ops-pipeline").textContent = "처리기 상태 조회 중"; $("ops-alert-state").textContent = "조회 중";

@@ -141,7 +141,7 @@
     $("#log-empty").hidden = current.rows.length !== 0;
     $("#log-result").textContent = `현재 페이지 ${current.rows.length}건 · 전체 건수 미집계`;
     $("#log-page-label").textContent = `${offset + page + 1} 페이지`;
-    $("#log-state-label").textContent = "조회 완료 · 스냅샷";
+    $("#log-state-label").textContent = "조회 완료";
     $("#log-query-range").textContent = `${current.filters.time_basis === "ingested" ? "서버 수신 시각" : "로그 기준 시각"}: ${time(current.filters.start)} ~ ${time(current.filters.end)} (종료 미포함, KST)`;
     controls();
   }
@@ -172,7 +172,7 @@
   async function detail(row) {
     const ticket = ++detailGeneration; detailPending?.abort(); detailPending = new AbortController();
     const controller = detailPending;
-    $("#log-detail-fields").replaceChildren(); $("#log-detail-title").textContent = row.reference.id;
+    $("#log-detail-fields").replaceChildren(); $("#log-detail-title").textContent = "로그 상세";
     $("#log-detail-state").textContent = "상세 조회 중";
     if (!$("#log-detail-dialog").open) $("#log-detail-dialog").showModal();
     try {
@@ -185,7 +185,7 @@
         dd.textContent = Array.isArray(value) ? value.join(", ") || "없음" : value == null ? "미관측" : String(value);
         $("#log-detail-fields").append(dt, dd);
       }
-      $("#log-detail-state").textContent = "제한된 메타데이터 · 전체 원문 접근 제한";
+      $("#log-detail-state").textContent = "조회 완료 · 전체 원문 제한";
       window.cloudSocSource?.open(data.row.reference);
     } catch (error) {
       if (ticket === detailGeneration) $("#log-detail-state").textContent = error.name === "AbortError" || error instanceof TypeError ? "상세 조회 연결에 실패했습니다. 다시 열어 주세요." : error.message;

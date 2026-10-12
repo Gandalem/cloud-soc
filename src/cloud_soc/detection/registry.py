@@ -24,8 +24,15 @@ class SequenceDetector:
         return detect_sequence(events, rule, runtime if runtime is not None else {})
 
 
+class BehaviorDetector:
+    def detect(self, events, rule, runtime):
+        from cloud_soc.detection.behavior import detect_behavior
+        return detect_behavior(events, rule, runtime)
+
+
 DETECTORS: dict[str, Detector] = {
     "threshold": ThresholdDetector(), "single": SingleDetector(), "sequence": SequenceDetector(),
+    "ordered": BehaviorDetector(), "diversity": BehaviorDetector(),
 }
 
 

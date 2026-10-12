@@ -15,6 +15,8 @@ ENGINE_VERSION = "threshold-v2"
 
 
 def rule_engine_version(rule):
+    if rule.get('type') in ('ordered', 'diversity'):
+        return 'behavior-v1'
     if rule.get('type') == 'sequence':
         return 'failure-success-v2'
     if rule.get('type') == 'single':

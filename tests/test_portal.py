@@ -29,6 +29,14 @@ HASH = generate_password_hash("synthetic-test-password", method="pbkdf2:sha256:1
 
 
 class PortalTests(unittest.TestCase):
+    def test_login_assets_are_fixed_public_paths_without_exposing_portal(self):
+        for path in ('/login', '/login/styles.css', '/login/agents.css', '/login/mark.svg', '/login.js'):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200, path)
+            self.assertNotIn("unsafe-inline", response.headers['Content-Security-Policy'])
+        for path in ('/api/portal', '/api/keys', '/agents.html', '/styles.css', '/login/app.py'):
+            self.assertIn(self.client.get(path).status_code, (401, 404), path)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="cloud-soc-portal-test-")
         self.addCleanup(self.temp.cleanup)

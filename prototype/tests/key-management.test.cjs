@@ -65,6 +65,19 @@ test('enrollment is opt-in, one hidden token is cleared on close and never sent 
   assert.doesNotMatch(disabled.get('#package-rows').innerHTML,/data-enrollment/);
 });
 
+test('failed package refresh removes stale actions and disables creation until recovery',async()=>{
+  const ui=browser([ok(portal),fail('SYNTHETIC-UNAVAILABLE'),ok(portal)]);await settle();
+  assert.match(ui.get('#package-rows').innerHTML,/lab-setup\.zip/);
+  await ui.get('#refresh').listeners.click();await settle();
+  assert.equal(ui.get('#package-rows').innerHTML,'');
+  assert.equal(ui.get('#package-total').textContent,'조회 실패');
+  assert.equal(ui.get('#add-package').disabled,true);
+  assert.equal(ui.get('#delete-selected').disabled,true);
+  await ui.get('#refresh').listeners.click();await settle();
+  assert.equal(ui.get('#add-package').disabled,false);
+  assert.match(ui.get('#package-rows').innerHTML,/lab-setup\.zip/);
+});
+
 test('enrollment history escapes metadata, completed installs are not cancellable and failed cleanup stays visible', async () => {
   const pending = {id:'session', package_id:'pkg', target_label:'<script>bad</script>', state:'cleanup_pending', expires:1900000000};
   const ui = browser([ok(enrollmentPortal), ok({enrollments:[pending,{...pending,id:'completed',state:'complete'}]}), fail('키 폐기 확인 필요'), ok({enrollments:[pending]})]);
@@ -91,7 +104,8 @@ test('Ubuntu and log-only token commands select the right launcher and explicit 
     await settle();
     assert.match(ui.get('#enrollment-command').textContent,/sudo bash install.sh --enroll --package-sha256/);
     assert.equal(ui.get('#enrollment-command').textContent.includes('--interface'), network);
-    assert.match(ui.get('#enrollment-message').textContent,/--reenroll/);
+    assert.match(ui.get('#enrollment-message').textContent,/일반 복구에는 사용하지/);
+    assert.match(fs.readFileSync(require('node:path').join(__dirname,'../agents.html'),'utf8'),/Windows -ReEnroll \/ Ubuntu --reenroll/);
   }
 });
 
@@ -150,7 +164,7 @@ test('revocation confirmation persists in refreshed history and no secret is fet
   assert.match(ui.get('#history-content').innerHTML, /Filebeat/);
   await ui.action('revoke');
   await ui.action('confirm-revoke');
-  assert.match(ui.get('#history-message').textContent, /폐기를 확인/);
+  assert.match(ui.get('#history-message').textContent, /키 폐기 완료/);
   assert.match(ui.get('#history-content').innerHTML, /폐기 완료/);
   await ui.get('#history-refresh').listeners.click();
   assert.match(ui.get('#history-content').innerHTML, /data-key-action="revoke"[^>]*disabled/);

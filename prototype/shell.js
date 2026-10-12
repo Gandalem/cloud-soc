@@ -21,7 +21,7 @@
     const active = current(pathname, hash);
     const title = groups.flatMap(group => group.items).find(([href]) => href === active)?.[1] || "Cloud SOC";
     const nav = groups.map(group => `<section class="shell-group" aria-label="${group.title}"><h2 class="nav-group">${group.title}</h2>${group.items.map(([href, label]) => `<a class="nav-item${href === active ? " active" : ""}" href="${href}"${href === active ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</section>`).join("");
-    return `<header class="app-header"><a class="brand" href="index.html"><img src="assets/mark.svg" alt="">Cloud SOC</a><span class="workspace-label">${title}</span><span class="header-context">관리자 전용 · 중앙 관리</span><button type="button" class="shell-toggle" aria-expanded="false" aria-controls="portal-sidebar">메뉴</button></header><aside id="portal-sidebar" class="sidebar" aria-label="공통 업무 메뉴"><nav aria-label="전체 메뉴">${nav}</nav><div class="sidebar-footer"><strong>Cloud SOC Mini SIEM</strong>수집 · 관제 · 사건 조사</div></aside>`;
+    return `<header class="app-header"><a class="brand" href="index.html"><img src="assets/mark.svg" alt="">Cloud SOC</a><span class="workspace-label">${title}</span><span class="header-context">중앙 관리</span><button type="button" class="shell-toggle" aria-expanded="false" aria-controls="portal-sidebar">메뉴</button></header><aside id="portal-sidebar" class="sidebar" aria-label="공통 업무 메뉴"><nav aria-label="전체 메뉴">${nav}</nav><div class="sidebar-footer"><strong>Cloud SOC</strong></div></aside>`;
   }
   if (typeof module !== "undefined" && module.exports) module.exports = { groups, current, markup };
   if (typeof document === "undefined") return;

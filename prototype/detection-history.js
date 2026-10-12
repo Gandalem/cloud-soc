@@ -2,7 +2,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   let generation = 0, cursor = null, scope = {};
-  const states = {evaluated: '평가 종료 · 처리 위치 확정 전', committed: '처리 완료 · 처리 위치 저장됨', failed: '실행 실패', waiting: '새 처리 구간 대기'};
+  const states = {evaluated: '평가 종료 · 저장 대기', committed: '처리 완료', failed: '실행 실패', waiting: '대기'};
   const reasons = {late_event: '허용 지연 초과', missing_condition_fields: '조건 필드 누락', missing_group_fields: '그룹 필드 누락', invalid_event_time: '발생 시각 오류', future_event_clock: '미래 시각 이상'};
   const fmt = value => value ? new Date(value).toLocaleString('ko-KR', {timeZone: 'Asia/Seoul'}) : '미기록';
   function node(tag, text) { const element = document.createElement(tag); if (text !== undefined) element.textContent = text; return element; }
@@ -31,8 +31,12 @@
           box.append(node('p', '새 입력 ' + c.input_events + ' · 조건 일치 ' + c.matched + ' · 불일치 ' + c.not_matched + ' · 평가 불가 ' + c.unknown + ' · 제외 ' + c.excluded));
           box.append(node('p', '시간 창 평가 이벤트 ' + (c.evaluated_events ?? '미기록') + ' · 탐지 일치 ' + (c.detection_matches ?? '미기록') + ' · 새 경보 ' + c.alerts_created + ' · 기존 경보 ' + c.alerts_existing));
         }
-        if (row.normalized) box.append(node('p', '정규화 참조: ' + row.normalized.index + ' / ' + row.normalized.id));
-        if (row.raw) box.append(node('p', '원본 참조: ' + row.raw.index + ' / ' + row.raw.id));
+        if (row.normalized || row.raw) {
+          const refs = node('details'); refs.append(node('summary', '문서 참조'));
+          if (row.normalized) refs.append(node('p', '정규화 참조: ' + row.normalized.index + ' / ' + row.normalized.id));
+          if (row.raw) refs.append(node('p', '원본 참조: ' + row.raw.index + ' / ' + row.raw.id));
+          box.append(refs);
+        }
         if (row.missing_fields?.length) box.append(node('p', '누락 필드: ' + row.missing_fields.join(', ')));
         if (row.error) box.append(node('p', '실행 실패 · 처리 위치는 운영 현황에서 확인하세요.'));
         $('history-rows').append(box);

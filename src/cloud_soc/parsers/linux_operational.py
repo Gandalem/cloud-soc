@@ -8,6 +8,8 @@ from cloud_soc.portal.log_contract import field
 from cloud_soc.privacy import display, REDACTED
 
 VERSION = "linux-operational-v1"
+SUDO_SESSION_VERSION = "linux-sudo-session-v1"
+SUDO_SESSION = re.compile(r"^pam_unix\(sudo:session\): session opened for user (?P<target>[A-Za-z0-9_.@-]{1,128})\(uid=(?P<target_uid>\d{1,10})\) by (?P<actor>[A-Za-z0-9_.@-]{1,128})\(uid=(?P<actor_uid>\d{1,10})\)$")
 PREFIX = re.compile(r"^(?P<time>[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+\S+\s+(?P<app>[A-Za-z0-9_.@-]+)(?:\[(?P<pid>\d{1,10})\])?:\s*(?P<body>.*)$")
 SUDO = re.compile(r"^(?P<actor>[A-Za-z0-9_.@-]{1,128})\s*:\s*TTY=[^;\n]{1,128}\s*;\s*PWD=[^;\n]{1,1024}\s*;\s*USER=(?P<target>[A-Za-z0-9_.@-]{1,128})\s*;\s*(?:GROUP=[^;\n]{1,128}\s*;\s*)?(?:TSID=[^;\n]{1,128}\s*;\s*)?COMMAND=.+$")
 SERVICE = re.compile(r"^(Starting|Started|Stopping|Stopped|Failed to start)\s+.{1,1024}$")
@@ -76,9 +78,19 @@ def parse_linux_operational(source):
                 "missing": ["source_program", "source_event_time"],
                 "limitations": ["metadata_only", "source_event_time_unknown", "message_body_excluded", "not_a_detection"]}
     values = {"category": "process", "outcome": "unknown"}
+    sudo_session = None
     if app == "sudo":
+        sudo_session = SUDO_SESSION.fullmatch(body)
         match = SUDO.fullmatch(body)
-        if not match:
+        if sudo_session:
+            actor, target = display(sudo_session['actor']), display(sudo_session['target'])
+            if actor in (None, REDACTED) or target in (None, REDACTED) or any(
+                    int(sudo_session[k]) >= 2**32 for k in ('actor_uid', 'target_uid')):
+                return None
+            values.update(category='authentication', action='sudo_session_opened', actor=actor,
+                          target_user=target, actor_uid=int(sudo_session['actor_uid']),
+                          target_uid=int(sudo_session['target_uid']))
+        elif not match:
             session = re.match(r"^pam_[A-Za-z0-9_]+\(sudo:session\): session (opened|closed)\b", body)
             failure = re.match(r"^pam_[A-Za-z0-9_]+\(sudo:auth\): authentication failure(?:;|$)", body)
             if session:
@@ -124,6 +136,9 @@ def parse_linux_operational(source):
         return None
     result = {"adapter": "linux_operational_v1", "status": "recognized", "fields": values,
               "missing": [], "limitations": ["message_body_and_arguments_excluded", "not_a_detection"]}
+    if sudo_session:
+        result['adapter'] = 'linux_sudo_session_v1'
+        result['limitations'].append('sudo_session_not_command_execution_or_ssh_session_link')
     if prefix:
         result["time_text"] = prefix["time"]
     return result

@@ -131,8 +131,13 @@ def validate_rule(
         )
 
     kind = rule.get('type', 'threshold')
-    if kind not in ('single', 'threshold', 'sequence'):
+    if kind not in ('single', 'threshold', 'sequence', 'ordered', 'diversity'):
         raise ValueError('Unsupported rule type')
+    if kind in ('ordered', 'diversity') and any(not isinstance(rule.get(key), dict)
+                                              for key in ('threshold', 'time_window')):
+        raise ValueError('Behavior bounds must be objects')
+    if kind in ('ordered', 'diversity') and not isinstance(rule.get('cooldown', {}), dict):
+        raise ValueError('Behavior cooldown must be an object')
     if kind == 'single':
         rule.setdefault('group_by', ['organization.id', 'cloud.account.id'])
         rule.setdefault('threshold', {'count': 1})
@@ -251,6 +256,22 @@ def validate_rule(
             "time_window.seconds는 "
             "1 이상의 정수여야 합니다."
         )
+
+    if kind in ('ordered', 'diversity'):
+        from cloud_soc.detection.behavior import validate_behavior
+
+        def validate_conditions(conditions):
+            if not isinstance(conditions, list) or not conditions:
+                raise ValueError('Behavior stages require conditions')
+            for condition in conditions:
+                if (not isinstance(condition, dict) or not {'field', 'operator', 'value'} <= condition.keys()
+                        or not isinstance(condition['field'], str)
+                        or condition['operator'] not in SUPPORTED_OPERATORS
+                        or condition['operator'] == 'exists' and type(condition['value']) is not bool):
+                    raise ValueError('Invalid behavior condition')
+
+        validate_conditions(rule['conditions'])
+        validate_behavior(rule, validate_conditions)
 
 
 # ============================================================

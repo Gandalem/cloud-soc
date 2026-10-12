@@ -26,6 +26,22 @@ function run(source, fail = false) {
   return event;
 }
 
+test('P5 SSH and PAM sudo metadata survive unchanged while sudo command logs stay masked', () => {
+  const bodies = [
+    'Oct  1 00:00:00 host sshd[100]: Failed password for fixture from 192.0.2.10 port 12345 ssh2',
+    'Oct  1 00:00:10 host sshd[100]: Accepted password for fixture from 192.0.2.10 port 12345 ssh2',
+    'Oct  1 00:01:00 host sudo[200]: pam_unix(sudo:session): session opened for user root(uid=0) by fixture(uid=1000)'
+  ];
+  for (const message of bodies) {
+    const event = run({labels:{log_source:'linux_file'},message});
+    assert.equal(event.cancelled, false);
+    assert.equal(event.source.message,message);
+  }
+  const command=run({labels:{log_source:'linux_file'},message:'fixture : TTY=pts/0 ; PWD=/PRIVATE_CANARY ; USER=root ; COMMAND=/bin/echo PRIVATE_CANARY'});
+  assert.equal(command.source.message,'[REDACTED]');
+  assert.ok(!JSON.stringify(command.source).includes('PRIVATE_CANARY'));
+});
+
 test('privacy removes duplicate raw, arguments and structured credentials', () => {
   const event = run({event: {code: '4625', original: 'CANARY'}, process: {args: ['CANARY'], command_line: 'CANARY'},
     winlog: {event_data: {Password: 'CANARY', clientSecret: 'CANARY', User: 'alice'}}, message: 'authentication failed'});

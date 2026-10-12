@@ -110,6 +110,7 @@ services:
     depends_on: [portal, kibana]
     environment:
       SOC_PUBLIC_HOST: ${SOC_PUBLIC_HOST}
+      SOC_ADMIN_ALLOWED_CIDRS: ${SOC_ADMIN_ALLOWED_CIDRS:-0.0.0.0/0 ::/0}
     ports:
       - "${SOC_BIND_IP:-127.0.0.1}:443:443"
       - "${SOC_BIND_IP:-127.0.0.1}:5601:5601"

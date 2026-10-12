@@ -25,7 +25,8 @@
     if (!user) return;
     document.body.dataset.socRole = user.role;
     const context = document.querySelector(".header-context");
-    if (context) context.textContent = `${user.user} · ${user.role} · 중앙 관리`;
+    const roles = {admin: "관리자", analyst: "분석가", viewer: "조회 전용"};
+    if (context) context.textContent = `${user.user} · ${roles[user.role] || "권한 미확인"}`;
     if (user.role !== "admin") {
       for (const link of document.querySelectorAll('a[href^="agents.html"]')) link.hidden = true;
     }

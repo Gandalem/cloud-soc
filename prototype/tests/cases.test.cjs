@@ -26,6 +26,22 @@ function browser(script,responses,search='?case='+id,options={}){
 test('workbench has no demo script or save-disabled placeholder',()=>{
   const html=fs.readFileSync(path.join(__dirname,'../workbench.html'),'utf8');assert.ok(html.includes('investigation.js'));assert.ok(!html.includes('demo-data.js'));
 });
+
+test('investigation keeps attack limits visible and folds evidence and calculation details',async()=>{
+  const alert={id:'fixture',rule:'ATTACK-02',title:'정찰 의심'};
+  const payload={alert,condition:{event_count:20,threshold:20,time_window_seconds:300},rule_version:'version-canary',
+    assessment:{reason:'call_count_and_api_diversity',observed_count:20,distinct_count:4,limitations:['no_user_agent_or_normal_activity_baseline']},
+    risk:{score:45,level:'medium',version:'risk-canary',factors:[{name:'rule_severity',points:45}]},evidence_count:20,evidence_limit:0};
+  const ui=browser('investigation.js',[ok({case_id:null}),ok(payload),ok(payload)],'?alert=fixture');await settle();await settle();
+  const text=n=>(n.textContent||'')+n.children.map(text).join(' ');
+  const contents=ui.get('case-alerts').children[0].children[2];
+  assert.match(text(contents),/공격 성공 미확정/);
+  assert.match(text(contents),/API 호출 20건.*API 4종/);
+  assert.match(text(contents),/평소 활동과의 차이는 평가하지/);
+  assert.ok(contents.children.some(n=>n.children[0]?.textContent==='근거 로그 보기 (20건)'));
+  assert.ok(contents.children.some(n=>n.children[0]?.textContent==='점수 계산'));
+  assert.ok(!contents.children.some(n=>n.textContent?.includes('risk-canary')));
+});
 test('conflict preserves memo and sends server version, not actor',async()=>{
   const ui=browser('investigation.js',[ok(detail),()=>({ok:false,status:409,json:async()=>({code:'case_version_conflict',error:'PRIVATE_CANARY'})})]);await settle();
   ui.get('work-note').value='Analyst draft';ui.get('case-work-form').listeners.submit({preventDefault(){}});await settle();

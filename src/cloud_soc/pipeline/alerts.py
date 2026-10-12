@@ -58,6 +58,9 @@ def build_security_alert(detection: dict[str, Any]) -> dict[str, Any]:
         "mitre": detection.get("mitre", {}),
     }
     document["cloud_soc"].update(calculate_risk(detection))
+    if 'assessment' in detection:
+        # Keep structured rationale in the existing non-indexed provenance object.
+        document['cloud_soc']['provenance']['assessment'] = detection['assessment']
     if source_ip := detection["group"].get("source.ip"):
         document["source"] = {"ip": source_ip}
     return document

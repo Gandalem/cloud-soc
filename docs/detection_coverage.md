@@ -1,5 +1,7 @@
 # Cloud SOC Detection Capability and Coverage
 
+2026-10-12 추가 대조: 아래 날짜가 붙은 과거 현황은 유지한다. 현재 single/threshold/인증 sequence에 선택적 ordered/diversity 로컬 탐지를 추가했다. [P5-03 명세](p5_03_attack_scenarios.md)와 [검증 기록](p5_03_attack_detection_validation.md)을 참고한다. 웹 SQLi/웹 실행 연계·정상 활동 기준선·완전한 SSH 세션 연결은 미지원이며 운영 coverage 완료를 주장하지 않는다.
+
 2026-09-10 / 제품 설계 제안. 순서: 분석가 질문 -> 필요한 탐지 기능 -> Telemetry/필드 -> 로컬 규칙 -> 검증 -> 조사 화면. 새 Rule을 작성/배포하지 않았다.
 
 ## 1. 탐지 기능부터 정의

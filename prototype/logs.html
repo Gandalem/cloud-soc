@@ -20,10 +20,9 @@
   <a class="skip-link" href="#main">본문으로 이동</a>
   <div id="app-shell"></div>
   <main id="main" class="main-content agents-main logs-main">
-    <div class="page-heading"><div><p class="eyebrow">LOG EXPLORER</p><h1>통합 로그</h1><p class="subheading">호스트 로그·네트워크 관측·AWS/OCI 감사 이벤트를 하나의 표에서 조회합니다.</p></div><button id="log-refresh" class="primary-button" type="button">새로고침</button></div>
-    <section class="log-scope-note panel" aria-label="조회 범위"><h2>수집된 기록과 해석 결과는 다릅니다.</h2><p>실제 수신 인덱스의 메타데이터와 지원되는 보안 이벤트 해석을 표시합니다. 행위 해석 미지원은 수집 실패가 아닙니다. 이벤트 ID·공급자로 기록을 구분하며, 없는 IP·계정·결과를 추측하거나 안전 판정으로 표시하지 않습니다.</p><p>행위·결과는 지원 해석기가 있으면 그 근거를 사용하고, 없으면 원본 필드를 표시합니다. Windows SID는 이름으로 확인되지 않은 주체 ID입니다. IP 검색은 원본의 호스트·출발지·목적지 IP 필드 기준입니다. 민감정보 보호 정책 검증 전까지 메시지 본문·전체 원문·내보내기는 제한됩니다. 네트워크 기록은 흐름·DNS·TLS 메타데이터이며 원본 PCAP이 아닙니다.</p></section>
+    <div class="page-heading"><div><h1>통합 로그</h1><p class="subheading">호스트 · 네트워크 · 클라우드 감사 로그</p></div><button id="log-refresh" class="primary-button" type="button">새로고침</button></div>
     <section class="panel log-workspace" id="log-panel" aria-labelledby="log-list-title" aria-busy="true">
-      <div class="log-list-heading"><div><h2 id="log-list-title">수신 로그 목록</h2><p>조회 시점의 스냅샷을 시간 내림차순으로 탐색합니다. 새 로그는 새로고침 후 표시됩니다.</p></div><span id="log-state-label" role="status">조회 준비</span></div>
+      <div class="log-list-heading"><div><h2 id="log-list-title">로그 목록</h2><p>최신순 · 새 로그는 새로고침 후 표시</p></div><span id="log-state-label" role="status">조회 준비</span></div>
       <form id="log-filters" class="log-filters" role="search" aria-label="로그 메타데이터 검색">
         <label>기간<select id="log-period"><option value="60">최근 1시간</option><option value="1440">최근 24시간</option><option value="10080">최근 7일</option><option value="43200">최근 30일</option><option value="custom">직접 지정 (KST)</option></select></label>
         <label>시간 기준<select id="log-time-basis"><option value="ingested">서버 수신 시각</option><option value="event">로그 기준 시각</option></select></label>
@@ -36,7 +35,7 @@
         <label>페이지당<select id="log-page-size"><option value="10">10행</option><option value="25" selected>25행</option><option value="50">50행</option></select></label>
         <button class="primary-button" type="submit" id="log-apply">조회</button><button type="button" id="log-reset">초기화</button>
       </form>
-      <div class="log-query-summary"><span id="log-query-range">조회 범위 확인 중</span><span>본문 검색·임의 열 정렬: 미지원</span></div>
+      <div class="log-query-summary"><span id="log-query-range">조회 범위 확인 중</span></div>
       <div id="log-error" role="alert" hidden></div>
       <div class="table-scroll log-sheet-scroll" tabindex="0" aria-label="로그 표 가로 스크롤 영역">
         <table class="log-sheet"><caption class="sr-only">수신된 로그의 제한된 메타데이터. 문서 ID를 누르면 상세를 조회합니다.</caption><thead><tr><th scope="col">문서 ID</th><th scope="col">서버 수신 시각 (KST)</th><th scope="col">로그 기준 시각 (KST)</th><th scope="col">호스트 / 클라우드 계정·리전</th><th scope="col">OS / 영역</th><th scope="col">수집기</th><th scope="col">소스</th><th scope="col">채널 / 파일 / 데이터셋</th><th scope="col">이벤트 ID / 공급자</th><th scope="col">출발지 IP</th><th scope="col">목적지 IP</th><th scope="col">사용자 / 주체 ID</th><th scope="col">행위 / 결과</th><th scope="col">해석 상태</th></tr></thead><tbody id="log-rows"></tbody></table>
@@ -44,16 +43,16 @@
       <div id="log-empty" class="empty-state" hidden><strong>해당 조건의 로그가 없습니다.</strong><p>기간과 시간 기준을 확인하세요. 수신 시각이 없는 과거 문서는 로그 기준 시각으로 조회할 수 있습니다.</p></div>
       <div class="log-pagination"><span id="log-result" role="status">불러오는 중</span><div><button id="log-prev" type="button" disabled>이전</button><span id="log-page-label">1 페이지</span><button id="log-next" type="button" disabled>다음</button></div></div>
     </section>
-    <p class="scope-note">목록의 건수는 현재 페이지의 문서 수이며 전체 로그 수·공격 수·연결 수가 아닙니다. 스냅샷은 마지막 요청 후 90초, 전체 조회는 최대 10분 동안 유효합니다. 이전 페이지는 이번 조회의 메모리 캐시입니다. 창을 닫으면 지워집니다.</p>
+    <details class="usage-details"><summary>조회·해석 기준</summary><p>목록 건수는 현재 페이지 기준입니다. 전체 로그 수나 공격 수가 아닙니다. 해석 미지원은 수집 실패가 아니며, 기록에 없는 값은 ‘미관측’으로 표시합니다. 행위 해석이 없으면 원본 필드를 사용합니다.</p><p>Windows SID는 주체 ID입니다. IP 필터는 호스트·출발지·목적지 IP를 검색합니다. 본문 검색·열 정렬·내보내기는 제공하지 않습니다. 전체 원문은 제한되며 네트워크 기록은 흐름·DNS·TLS 정보입니다.</p><p>조회는 마지막 요청 후 90초, 최대 10분간 유지됩니다. 이전 페이지는 창을 닫으면 지워집니다.</p></details>
   </main>
   <dialog id="log-detail-dialog" class="log-detail-dialog" aria-labelledby="log-detail-title">
-    <div class="log-detail-heading"><div><p class="eyebrow">DOCUMENT METADATA</p><h2 id="log-detail-title">로그 상세</h2></div><button id="log-detail-close" type="button">닫기</button></div>
+    <div class="log-detail-heading"><div><h2 id="log-detail-title">로그 상세</h2></div><button id="log-detail-close" type="button">닫기</button></div>
     <p id="log-detail-state" role="status">조회 중</p>
-    <p class="log-detail-footnote">제한된 메타데이터 상세입니다. 메시지 본문·전체 원문은 제공하지 않습니다. 목록 이후 변경되거나 삭제된 문서는 상세 조회 시 결과가 달라질 수 있습니다.</p>
+    <p class="log-detail-footnote">전체 원문은 제한됩니다.</p>
     <dl id="log-detail-fields"></dl>
     <section id="source-panel" class="source-panel" aria-label="보호된 원문 필드" hidden>
       <h3>보호된 원문 필드</h3>
-      <p>허용된 저장 필드만 표시합니다. 본문·명령 인자·비밀·알 수 없는 필드는 제외하며 전체 원본의 복사본이 아닙니다. 조회 사유와 접근 결과를 기록합니다.</p>
+      <p>민감정보를 제외한 허용 필드만 조회합니다. 조회 사유와 결과가 기록됩니다.</p>
       <label for="source-purpose">조회 사유</label>
       <select id="source-purpose"><option value="investigation">사건 조사</option><option value="receipt_validation">수신 대조</option><option value="support">운영 지원</option></select>
       <button id="source-read" type="button">원문 필드 조회</button>
@@ -61,6 +60,6 @@
       <pre id="source-json" tabindex="0" aria-label="마스킹된 원문 필드 JSON" hidden></pre>
     </section>
   </dialog>
-  <noscript><p>로그 조회에는 JavaScript가 필요합니다. 이 페이지는 샘플 데이터를 대신 표시하지 않습니다.</p></noscript>
+  <noscript><p>JavaScript를 켜야 조회할 수 있습니다.</p></noscript>
 </body>
 </html>

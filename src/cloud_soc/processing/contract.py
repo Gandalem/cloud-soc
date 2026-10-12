@@ -8,7 +8,7 @@ from cloud_soc.portal.log_contract import document_reference, field
 from cloud_soc.portal.security_detail import security_detail, address, text
 from cloud_soc.privacy import REDACTED
 from cloud_soc.parsers.linux_security import parse_linux_ssh
-from cloud_soc.parsers.linux_operational import parse_linux_operational, VERSION as LINUX_OPERATIONAL_VERSION
+from cloud_soc.parsers.linux_operational import parse_linux_operational, VERSION as LINUX_OPERATIONAL_VERSION, SUDO_SESSION_VERSION
 from cloud_soc.normalizers.ecs import parse_syslog_timestamp
 from cloud_soc.normalizers.time_context import raw_time_context, parse_utc_offset
 
@@ -67,6 +67,8 @@ def normalize(hit, processed_at):
             detail = operational
             version = ("linux-unclassified-v1" if detail["adapter"] == "linux_unclassified_v1"
                        else LINUX_OPERATIONAL_VERSION)
+            if detail['adapter'] == 'linux_sudo_session_v1':
+                version = SUDO_SESSION_VERSION
             if detail["adapter"] == "linux_unclassified_v1":
                 time_metadata = {"basis": "collector_timestamp", "source_event_time_known": False}
             identifier = hashlib.sha256(json.dumps([version, reference], sort_keys=True).encode()).hexdigest()
@@ -91,12 +93,14 @@ def normalize(hit, processed_at):
         record.update(status="unsupported", reason="adapter_not_supported")
         return identifier, record, None
     expected = {"windows_security_v1": "soc-host-raw-", "sysmon_v1": "soc-host-raw-", "linux_ssh_v1": "soc-host-raw-",
-                "linux_operational_v1": "soc-host-raw-", "linux_unclassified_v1": "soc-host-raw-", "packetbeat_metadata_v1": "soc-network-", "aws_cloudtrail_metadata_v1": "soc-cloud-aws-", "oci_audit_metadata_v1": "soc-cloud-oci-"}
+                "linux_operational_v1": "soc-host-raw-", "linux_sudo_session_v1": "soc-host-raw-", "linux_unclassified_v1": "soc-host-raw-", "packetbeat_metadata_v1": "soc-network-", "aws_cloudtrail_metadata_v1": "soc-cloud-aws-", "oci_audit_metadata_v1": "soc-cloud-oci-"}
     if not reference["index"].startswith(expected[detail["adapter"]]):
         record.update(status="invalid", reason="source_scope_mismatch")
         return identifier, record, None
     values = detail["fields"]
     user_name = (values.get("target_user") or values.get("actor")) if values["category"] == "authentication" else values.get("actor")
+    if detail['adapter'] == 'linux_sudo_session_v1':
+        user_name = values['actor']
     category = {"account": "iam", "group": "iam", "privilege": "iam", "object": "file", "cloud": "configuration"}.get(values["category"], values["category"])
     event = {"@timestamp": iso(occurred), "organization": {"id": organization},
              "event": {"kind": "event", "category": [category] if category else [], "action": values.get("api") or values["action"],

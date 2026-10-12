@@ -19,6 +19,39 @@ def hit(message, app="sudo", kind="linux_journald"):
 
 
 class LinuxOperationalTests(unittest.TestCase):
+    def test_pam_sudo_session_actor_is_not_replaced_by_target_root(self):
+        sample = hit('pam_unix(sudo:session): session opened for user root(uid=0) by fixture(uid=1000)')
+        original = copy.deepcopy(sample)
+        key, record, event = normalize(sample, NOW)
+        self.assertEqual(sample, original)
+        self.assertEqual(record['version'], 'linux-sudo-session-v1')
+        self.assertEqual(event['user']['name'], 'fixture')
+        self.assertEqual(event['event']['outcome'], 'unknown')
+        values = event['cloud_soc']['detail']['fields']
+        self.assertEqual((values['actor_uid'], values['target_uid']), (1000, 0))
+        self.assertEqual(values['target_user'], 'root')
+        self.assertNotIn('message', event)
+        self.assertEqual(key, normalize(sample, '2026-10-05T05:00:00Z')[0])
+
+    def test_pam_sudo_session_missing_identity_or_uid_overflow_is_not_usable(self):
+        for message in ('pam_unix(sudo:session): session opened for user root by fixture',
+                        'pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1000)',
+                        'pam_unix(sudo:session): session opened for user root(uid=4294967295) by fixture(uid=1000)'):
+            _, record, event = normalize(hit(message), NOW)
+            self.assertTrue(event is None or event['cloud_soc']['detail']['adapter'] != 'linux_sudo_session_v1'
+                            or event['cloud_soc']['detail']['fields']['target_uid'] != 0)
+        self.assertIsNone(parse_linux_operational(hit(
+            'pam_unix(sudo:session): session opened for user root(uid=4294967296) by fixture(uid=1000)')['_source']))
+
+    def test_new_sudo_session_metadata_obeys_raw_source_and_timezone_scope(self):
+        message = 'Oct  5 04:00:00 fixture sudo[12]: pam_unix(sudo:session): session opened for user root(uid=0) by fixture(uid=1000)'
+        sample = hit(message, kind='linux_file')
+        self.assertEqual(normalize(sample, NOW)[1]['reason'], 'linux_timezone_missing')
+        sample['_source']['event']['timezone'] = 'UTC'
+        self.assertEqual(normalize(sample, NOW)[2]['@timestamp'], NOW)
+        sample['_index'] = 'soc-network-test'
+        self.assertEqual(normalize(sample, NOW)[1]['reason'], 'source_scope_mismatch')
+
     def test_malformed_programs_and_levels_are_unsupported_not_exceptions(self):
         for value in ([], ["systemd"], {}, {"name": "systemd"}, 1, False):
             for key in ("log.syslog.appname", "process.name", "journald.syslog.identifier"):

@@ -113,7 +113,21 @@ sudo sysctl -w vm.max_map_count=1048576
 | TCP 5601 | 분석가 VPN/허용 IP만 | Kibana |
 | TCP 9200 | 승인된 수집 서버/VPN만 | HTTPS Elasticsearch 수신 |
 
-인터넷 전체에 위 포트를 열지 않습니다. 특히 포털은 단일 관리자 Basic 인증이며 MFA·로그인 속도 제한·사용자별 RBAC가 없으므로 반드시 관리망/VPN으로 제한합니다. Docker 공개 포트는 UFW 규칙을 우회할 수 있어 클라우드 보안그룹 및 실제 Docker 방화벽 경로를 확인해야 합니다. [Docker 방화벽 설명](https://docs.docker.com/engine/network/packet-filtering-firewalls/)
+인터넷 전체에 위 포트를 열지 않습니다. 기본 포털은 Basic 인증이며 반복 인증 실패를 제한하지만 MFA는 없습니다. 세션/RBAC는 별도 설정이 필요하므로 관리망/VPN 제한을 유지합니다. Docker 공개 포트는 UFW 규칙을 우회할 수 있어 클라우드 보안그룹 및 실제 Docker 방화벽 경로를 확인해야 합니다. [Docker 방화벽 설명](https://docs.docker.com/engine/network/packet-filtering-firewalls/)
+
+### 인증 실패 제한과 허용 IP
+
+Basic 인증은 5분 동안 계정별 5회, 직접 연결 주소별 10회, 포털 전체 20회 실패 후 `429`와 `Retry-After`를 반환합니다. 알 수 없는 계정명은 하나의 제한을 공유합니다. 제한은 보호된 `portal/basic-auth.sqlite`에 저장돼 프로세스/재시작 간 유지되며, 정상 요청은 실패 횟수에 더하지 않습니다. 제한 중에는 올바른 비밀번호도 대기해야 합니다. 저장소 오류는 `503`으로 차단합니다. DB를 지워 제한을 해제하지 말고 표시된 시간 후 재시도하세요. 세션 로그인은 기존 제한을 유지합니다.
+
+승인된 연결 주소만 받으려면 보호 백업 후 기존 `state/server/compose.env`에 `SOC_ADMIN_ALLOWED_CIDRS`를 추가합니다. 예시는 문서용 주소이며 실제 관리자 VPN/설치 대상 주소로 바꿔야 합니다.
+
+```text
+SOC_ADMIN_ALLOWED_CIDRS=192.0.2.35/32 198.51.100.0/24
+```
+
+이 설정은 Caddy의 443 포털(설치 토큰/다운로드 포함)과 5601 Kibana에 적용됩니다. 9200 수신 주소는 별도로 보안그룹/VPN에서 제한합니다. 미설정 시 기존 접근을 유지하므로 자동 외부 차단 설정이 아닙니다. 관리자가 직접 접속할 때의 주소를 먼저 확인하고 로컬 콘솔/기존 설정 복구 경로를 확보한 뒤 `config --quiet`와 Caddy 설정 검증을 거쳐 gateway를 재생성합니다. 설정 오류 시 접근이 중단될 수 있으며 설치기 전체를 다시 실행하지 않습니다.
+
+허용 주소는 [Caddy `remote_ip`](https://caddyserver.com/docs/caddyfile/matchers#remote-ip)의 직접 연결 상대 기준입니다. `X-Forwarded-For`로 우회하지 못하지만 ngrok·NAT·다른 프록시 뒤에서는 그 프록시 주소만 보일 수 있습니다. 그런 환경은 실제 진입점/VPN에서도 제한해야 합니다. 포털 내부 HTTP 포트를 직접 공개하거나 임의 전달 헤더를 신뢰하지 않습니다. 인증 실패 제한도 프록시 뒤에서는 공유되므로 인터넷 공개나 서비스 거부 공격의 해결책으로 간주하지 않습니다.
 
 `--bind-ip`는 **서버에 실제 할당된 인터페이스 IP**입니다. NAT 공인 IP가 서버 인터페이스에 없으면 공인 IP를 바인딩 값에 넣지 않습니다. `--host`에는 대상 서버에서 접근 가능한 외부 DNS/IP, `--bind-ip`에는 내부 IP를 사용합니다. 포트포워딩에서도 위 허용 대상을 제한합니다.
 

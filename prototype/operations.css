@@ -20,8 +20,10 @@
 #ops-error { color: #a62e26; }
 #ops-detail { width: min(840px, calc(100vw - 32px)); max-height: 85vh; overflow: auto; border: 1px solid #c5d3e2; border-radius: 8px; padding: 24px; box-sizing: border-box; }
 #ops-detail::backdrop { background: #17283f88; }
+#ops-detail p { overflow-wrap: anywhere; }
 .ops-dialog-heading { display: flex; gap: 16px; justify-content: space-between; align-items: start; }
 #ops-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
 .ops-evidence { padding-top: 14px; border-top: 1px solid #dce3ec; margin-top: 14px; }
+#ops-detail summary { cursor: pointer; color: #30506d; padding: 8px 0; }
 @media (max-width: 1050px) { .ops-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .ops-charts { grid-template-columns: 1fr; } .ops-toolbar { align-items: start; } .ops-metrics article { padding: 14px; } .ops-value { font-size: 24px; } #ops-range { overflow-wrap: anywhere; } }
