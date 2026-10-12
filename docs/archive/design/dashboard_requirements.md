@@ -2,7 +2,7 @@
 
 기준일: 2026-09-10. 전체 목표 요구사항과 구현 범위를 구분하는 문서다. 최초 설계 단계에서는 문서만 작성했으며, 후속 구현 상태는 아래와 같다.
 
-후속 구현 상태: 읽기 전용 `SOC Operations`를 먼저 구성했다. 아래 네 화면은 전체 목표 요구사항이며, 현재 사용 가능한 범위는 [Kibana 사용 안내](kibana_setup.md)에 구분한다.
+후속 구현 상태: 읽기 전용 `SOC Operations`를 먼저 구성했다. 아래 네 화면은 전체 목표 요구사항이며, 현재 사용 가능한 범위는 [Kibana 사용 안내](../../kibana_setup.md)에 구분한다.
 
 관련 문서: [데이터 요구사항 및 Gap Analysis](dashboard_data_requirements.md), [단계별 구현 계획](dashboard_implementation_plan.md).
 

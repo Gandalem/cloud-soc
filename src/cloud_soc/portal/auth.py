@@ -13,11 +13,11 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 ROLES = {"admin", "analyst", "viewer"}
 COOKIE = "soc_session"
-PUBLIC = {"login_page", "auth_asset", "login"}
+PUBLIC = {"login_page", "auth_asset", "login", "login_config"}
 READ_ENDPOINTS = {
     "index", "static_file", "auth_me", "logout", "case_list", "case_link", "case_detail",
     "agent_status", "collection_health", "logs", "log_detail", "log_access", "operations_summary", "alert_detail",
-    "detection_history", "reprocessing_history", "healthz",
+    "detection_history", "reprocessing_history", "healthz", "operations_status", "dashboard_get",
 }
 CASE_WRITES = {"case_create", "case_update"}
 
@@ -50,6 +50,8 @@ def permitted(endpoint, method, role, filename=None):
     if endpoint == "logout":
         return True
     if endpoint == "log_source" and method == "POST":
+        return True
+    if endpoint == 'dashboard_save' and method == 'POST':
         return True
     return role == "analyst" and endpoint in CASE_WRITES
 

@@ -2,6 +2,7 @@
 import json
 from collections import Counter
 import re
+from elasticsearch import NotFoundError
 
 from cloud_soc.portal.log_contract import field, document_reference
 from cloud_soc.portal.log_query import LogQueryError
@@ -36,7 +37,19 @@ def history(client, pairs):
     if client is None:
         raise LogQueryError("monitor_not_configured", 503, "이력 조회 계정이 준비되지 않았습니다.")
     try:
-        mapping = client.indices.get_mapping(index=INDEX)
+        try:
+            mapping = client.indices.get_mapping(index=INDEX)
+        except NotFoundError as missing:
+            body = missing.body
+            error = body.get('error', {}) if isinstance(body, dict) else {}
+            if (not isinstance(error, dict) or error.get('type') != 'index_not_found_exception'
+                    or error.get('index') != INDEX):
+                raise
+            response = {'state': 'no_index', 'total': 0, 'recognized': 0, 'partial': 0,
+                        'timezone_corrected': 0, 'rows': []}
+            if args:
+                response.update(filtered_total=0, page=page, limit=limit, pages=1)
+            return json.dumps(response, ensure_ascii=False)
         if (set(mapping) != {INDEX} or mapping[INDEX]["mappings"].get("_meta", {}).get("contract")
                 != "ubuntu-linux-parser-757-v3"):
             raise ValueError("history_contract_mismatch")

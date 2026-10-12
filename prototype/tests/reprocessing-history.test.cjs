@@ -43,6 +43,13 @@ test('permission failure displays an error without stale or synthetic rows', asy
   assert.equal(nodes.rows.children.length, 0);
   assert.equal(nodes.refresh.disabled, false);
 });
+
+test('absent optional history is explained without an error or invented rows', async () => {
+  const nodes = await boot({ok: true, json: async () => ({state: 'no_index', total: 0, rows: []})});
+  assert.match(nodes.summary.textContent, /저장된 과거 분석 이력이 없습니다/);
+  assert.equal(nodes.error.hidden, true);
+  assert.equal(nodes.rows.children.length, 0);
+});
 test('redacted collection produces a clear schema error without crashing', async () => {
   const nodes = await boot({ok: true, json: async () => ({total: 757, rows: '[REDACTED]'})});
   assert.match(nodes.error.textContent, /응답 형식/);

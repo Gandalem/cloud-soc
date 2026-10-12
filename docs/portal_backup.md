@@ -4,9 +4,11 @@ P2-02 중 **사건/메모·패키지/키 발급 이력의 유실 방지**를 위
 
 ## 포함 범위와 한계
 
+2026-10-12 대시보드 배포 보완: `dashboards.sqlite`가 있으면 format 3 백업에 계정별 이름·위젯·순서/너비·기간·테마·revision을 포함한다. format 1/2의 파일 목록·검증·격리 복원 호환은 유지한다. 로그인 세션 DB와 로그인 계정 설정/해시는 별도 보호 대상이며 비밀번호를 백업 출력에 포함하지 않는다. 구형 도구는 개인 설정 DB를 포함하지 않으므로 새 코드의 도구를 사용한다. 관련 백업/설정/권한 로컬 시험 37건을 통과했고 실제 배포 전 백업/복원·배포 후 개인 설정 복원은 별도로 기록한다.
+
 2026-10-04 P2-01 후속 코드: `log-access.sqlite`의 보호된 원문 접근 감사도 백업한다. 감사 DB가 존재하면 manifest format 2로 최대 세 DB를 포함한다. 기존 format 1 백업의 verify/격리 restore는 유지한다. 새 포털은 원문 기능 차단 상태에서도 감사 DB를 만들므로 배포 버전과 맞는 백업 도구를 사용한다. 정책 파일·조회 계정 해시는 별도 보호 백업 대상이다. format 2 합성 감사 DB 백업/복원은 로컬 검증했으며 VM의 실제 감사 백업·배포·운영 복구 완료는 아니다([조회 정책](log_access_policy.md)).
 
-2026-10-04 실제 후속 검증: 위 문단의 로컬 단계 이후 지정 VMware에서 초기 format 1 및 새 감사 포함 format 2의 online/stopped/final backup·verify·새 경로 restore·verify를 통과했다. 실제 감사 34개 행의 모든 컬럼·순번과 기존 패키지 10/키 이력 18/등록 15·사건 테이블을 대조했다([보고서](p2_source_access_validation_20261004.md)). 복원은 격리 경로에만 했으며 운영 DB 교체·ES 스냅샷·외부 백업·보존 기간 승인은 별도다.
+2026-10-04 실제 후속 검증: 위 문단의 로컬 단계 이후 지정 VMware에서 초기 format 1 및 새 감사 포함 format 2의 online/stopped/final backup·verify·새 경로 restore·verify를 통과했다. 실제 감사 34개 행의 모든 컬럼·순번과 기존 패키지 10/키 이력 18/등록 15·사건 테이블을 대조했다([보고서](archive/validation/p2_source_access_validation_20261004.md)). 복원은 격리 경로에만 했으며 운영 DB 교체·ES 스냅샷·외부 백업·보존 기간 승인은 별도다.
 
 | 대상 | 포함 여부 |
 | --- | --- |
@@ -66,3 +68,5 @@ sudo python3 deploy/server/portal-backup.py verify --source "$RESTORE"
 `tests/test_portal_backup.py`는 합성 DB를 백업한 후 복원본의 실제 Flask API에서 사건·이력·담당·목록을 조회하고 설치 묶음 바이트와 키 ID, 요청 중복 방지를 대조합니다. WAL 커밋/미커밋, 경합, 손상, manifest 변조, 복원 중 변경, 용량/시간 제한, 실패 종료 코드도 시험합니다. Linux 권한/실제 symlink 검증은 `tests/portal_backup_posix_checks.py`입니다.
 
 이는 실제 AWS 백업/복구 완료가 아닙니다. 현재 남은 우선순위는 P0 배포·수신 확인, P2 큐/전송 오류 계측 및 운영 ES 백업·보존 승인입니다. 백업 예약/자동 삭제/외부 저장소 연결은 추가하지 않았습니다.
+
+2026-10-12 후속 실제 배포: 개인 대시보드 DB가 생성된 지정 VMware에서 format 3 backup/verify/격리 restore와 최종 관리자 revision 2 구성 대조를 완료했다. 기존 format 1/2 이력과 독립 저장소 보류는 유지하며 운영 DB 교체는 하지 않았다. [배포 결과](archive/validation/dashboard_deployment_20261012.md)

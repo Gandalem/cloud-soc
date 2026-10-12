@@ -2,6 +2,7 @@
 import copy
 from contextlib import closing
 from datetime import datetime, timezone
+from functools import partial
 import json
 from pathlib import Path
 import sqlite3
@@ -194,6 +195,70 @@ class ProcessingTests(unittest.TestCase):
         with patch("cloud_soc.processing.__main__.Elasticsearch") as client:
             self.assertEqual(main(["--start", START]), 0)
             client.assert_not_called()
+
+    def test_explicit_page_budget_recovers_failed_window_without_overwriting(self):
+        client = Mock(); client.options.return_value = client
+        client.indices.resolve_index.return_value = {"indices": [{"name": "soc-host-raw-test"}]}
+        client.field_caps.return_value = {"fields": {"event.ingested": {"date": {}}}}
+        client.open_point_in_time.return_value = {"id": "pit"}
+        existing = set()
+
+        def bulk(**kwargs):
+            items = []
+            for operation in kwargs["operations"][::2]:
+                self.assertEqual(set(operation), {"create"})
+                identity = (operation["create"]["_index"], operation["create"]["_id"])
+                if identity in existing:
+                    items.append({"create": {"status": 409, "error": {"type": "version_conflict_engine_exception"}}})
+                else:
+                    existing.add(identity); items.append({"create": {"status": 201}})
+            return {"items": items}
+
+        client.bulk.side_effect = bulk
+        hit = fixture(); hit["sort"] = [1]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.sqlite"
+            run_once(client, path, START, now=NOW, scanner=lambda *_: [])
+            # Write a full batch, then hit the page bound before seeing the empty page.
+            page = [copy.deepcopy(hit) for _ in range(100)]
+            for i, value in enumerate(page):
+                value["_id"] = str(i); value["sort"] = [i]
+            client.search.side_effect = [{"hits": {"hits": page}}]
+            with self.assertRaisesRegex(RuntimeError, "checkpoint retained"):
+                run_once(client, path, START, now=NOW, scanner=partial(scan, max_pages=1))
+            with closing(sqlite3.connect(path)) as db:
+                self.assertEqual(db.execute("SELECT checkpoint FROM state").fetchone()[0],
+                                 "2026-09-22T01:05:00Z")
+            self.assertEqual(len(existing), 200)
+            client.search.side_effect = [{"hits": {"hits": page}}, {"hits": {"hits": []}}]
+            result = run_once(client, path, START, now=NOW, scanner=partial(scan, max_pages=2))
+            self.assertEqual(result["checkpoint"], "2026-09-22T01:10:00Z")
+            self.assertEqual(result["range"]["start"], START)
+            self.assertEqual(len(existing), 200)
+            self.assertEqual(client.close_point_in_time.call_count, 2)
+
+    def test_cli_page_budget_validated_before_connecting(self):
+        with patch("cloud_soc.processing.__main__.Elasticsearch") as client:
+            for value in ("0", "10001", "invalid", "1.5"):
+                with self.subTest(value=value), self.assertRaises(SystemExit) as error:
+                    main(["--start", START, "--max-pages", value])
+                self.assertEqual(error.exception.code, 2)
+            for value in ("1", "5000", "10000"):
+                self.assertEqual(main(["--start", START, "--max-pages", value]), 0)
+            client.assert_not_called()
+
+    def test_cli_passes_default_and_explicit_page_budget_to_scanner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ca = Path(directory) / "ca.crt"; ca.write_text("synthetic")
+            with patch("cloud_soc.processing.__main__.Elasticsearch"), \
+                 patch("cloud_soc.processing.__main__.protected_key", return_value="synthetic"), \
+                 patch("cloud_soc.processing.__main__.run_once", return_value={"state": "success", "checkpoint": START}) as run:
+                args = ["--run", "--once", "--start", START, "--state", str(Path(directory) / "state.sqlite"),
+                        "--es-url", "https://example.test:9200", "--ca-file", str(ca), "--api-key-file", "unused"]
+                self.assertEqual(main(args), 0)
+                self.assertEqual(run.call_args.kwargs["max_pages"], 1000)
+                self.assertEqual(main(args + ["--max-pages", "5000"]), 0)
+                self.assertEqual(run.call_args.kwargs["max_pages"], 5000)
 
 
 class OperationsTests(unittest.TestCase):

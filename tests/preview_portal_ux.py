@@ -15,13 +15,14 @@ from cloud_soc.portal.app import create_app
 from cloud_soc.portal.collection_health import project as project_health
 from cloud_soc.portal.log_query import project_list_hit
 from cloud_soc.portal.security_detail import security_detail
+from cloud_soc.portal.operations import analysis_coverage
 from preview_logs import FIXTURES, ROOT
 from preview_p5_attacks import ALERTS, ROWS, READER
 
 URL = 'http://127.0.0.1:8773'
 
 
-def build(directory):
+def build(directory, *, session_login=True):
     def now():
         return datetime.now(timezone.utc).isoformat()
     password_hash = generate_password_hash('synthetic-password', method='pbkdf2:sha256:1000')
@@ -61,7 +62,7 @@ def build(directory):
                       'CA_BYTES': b'SYNTHETIC PUBLIC CA - not a valid certificate',
                       'PUBLIC_URL': URL, 'ENDPOINT': 'https://soc.example.invalid:9200',
                       'ADMIN_USER': 'admin', 'ADMIN_HASH': password_hash,
-                      'USERS_FILE': str(users), 'ENROLLMENT_ENABLED': True}, issuer=issuer, monitor=monitor)
+                      'USERS_FILE': str(users) if session_login else None, 'ENROLLMENT_ENABLED': True}, issuer=issuer, monitor=monitor)
     app.config['TESTING'] = True
     scenario = {'value': 'populated'}
     original_portal = app.view_functions['portal']
@@ -78,7 +79,7 @@ def build(directory):
     def control():
         if request.path == '/__fixture/scenario':
             value = request.args.get('value')
-            if value not in ('populated', 'empty', 'error'):
+            if value not in ('populated', 'empty', 'error', 'blocked', 'catching_up'):
                 return jsonify(error='Unknown fixture scenario'), 400
             scenario['value'] = value
             return jsonify(synthetic=True, scenario=value)
@@ -100,12 +101,30 @@ def build(directory):
         sections = {k: deepcopy(empty) for k in ('intake', 'processing', 'alerts', 'quality')}
         if scenario['value'] != 'empty':
             for name, count in (('intake', 1240), ('processing', 1210), ('alerts', 3), ('quality', 2)):
-                sections[name].update(count=count, buckets=[{'time': end, 'count': count}])
+                # Synthetic shape only; never infer a live trend from these values.
+                finish = datetime.fromisoformat(end.replace('Z', '+00:00'))
+                weights = [4, 5, 6, 10, 12, 16, 13, 8, 7, 8, 6, 5]
+                counts = [count * weight // sum(weights) for weight in weights]
+                counts[-1] += count - sum(counts)
+                sections[name].update(count=count, buckets=[
+                    {'time': (finish - timedelta(minutes=(11 - i) * 5)).isoformat(), 'count': amount}
+                    for i, amount in enumerate(counts)])
             sections['alerts']['rows'] = ROWS
             sections['processing']['statuses'] = [{'key': 'normalized', 'doc_count': 1200}, {'key': 'unsupported', 'doc_count': 10}]
         sections['pipeline'] = {'state': 'success', 'last_success': end, 'checkpoint': end,
                                 'detector': {'state': 'success', 'last_success': end, 'detection': 'AUTH-001,ATTACK-01,ATTACK-02,ATTACK-03'}}
+        if scenario['value'] in ('blocked', 'catching_up'):
+            sections['alerts'] = deepcopy(empty)
+            sections['pipeline']['detector'].update(detection='AUTH-001', latest_input_count=0)
+            sections['pipeline']['state'] = 'failed' if scenario['value'] == 'blocked' else 'running'
+            sections['pipeline']['checkpoint'] = (datetime.now(timezone.utc) - timedelta(minutes=44)).isoformat()
+            if scenario['value'] == 'catching_up':
+                sections['pipeline']['progress'] = {'state': 'catching_up', 'processed': 200000, 'range_complete': False}
+        sections['pipeline']['coverage'] = analysis_coverage(sections['pipeline'], sections['pipeline']['detector'])
         return jsonify(start=start, end=end, sections=sections)
+
+    def operations_status():
+        return jsonify(operations().get_json()['sections']['pipeline'])
 
     def alert_detail():
         source = ALERTS.get(request.args.get('id'))
@@ -158,7 +177,16 @@ def build(directory):
     def detection_history():
         row = {'rule': {'id': 'ATTACK-02'}, '@timestamp': now(), 'state': 'committed',
                'counts': {'input_events': 20, 'matched': 20, 'not_matched': 0, 'unknown': 0, 'excluded': 0,
-                          'evaluated_events': 20, 'detection_matches': 1, 'alerts_created': 1, 'alerts_existing': 0}}
+                          'evaluated_events': 20, 'detection_matches': 1, 'alerts_created': 1, 'alerts_existing': 0, 'late': 0, 'policy_excluded': 0}}
+        if scenario['value'] in ('blocked', 'catching_up') and request.args.get('kind', 'runs') == 'runs':
+            rows = []
+            for i in range(12):
+                quiet = deepcopy(row)
+                quiet.update(run_id='fixture-run-' + str(i), rule={'id': 'AUTH-001'},
+                    phases=['committed', 'evaluated'], **{'@timestamp': (datetime.now(timezone.utc) - timedelta(minutes=i)).isoformat()})
+                quiet['counts'] = {key: 0 for key in quiet['counts']}
+                rows.append(quiet)
+            return jsonify(state='ok', rows=rows, next=None)
         if request.args.get('kind') == 'exclusions':
             row = {'rule': {'id': 'ATTACK-02'}, '@timestamp': now(), 'reason': 'missing_group_fields',
                    'missing_fields': ['user.id'], 'normalized': {'index': 'soc-normalized-v1', 'id': 'synthetic-reference'}}
@@ -173,7 +201,7 @@ def build(directory):
             rows = []
         return jsonify(rows=rows, total=len(rows), recognized=0, partial=len(rows), timezone_corrected=len(rows))
 
-    for endpoint, view in {'operations_summary': operations, 'alert_detail': alert_detail,
+    for endpoint, view in {'operations_summary': operations, 'operations_status': operations_status, 'alert_detail': alert_detail,
                            'portal': portal,
                            'agent_status': status, 'collection_health': health, 'logs': logs,
                            'log_detail': log_detail, 'reprocessing_history': reprocessing,

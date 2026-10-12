@@ -412,7 +412,7 @@
 
 ## 8. 구현 가능성 대조
 
-외부 조사/목표 화면 정의 후 2026-09-10 작업 트리의 Python, Rule, 설정 및 Kibana export를 정적으로 대조했다. **이번 작업에서는 라이브 화면/데이터를 재조회하지 않았다.** 현재 근거: [Alert builder](../src/cloud_soc/main.py), [Engine](../src/cloud_soc/detection/engine.py), [Normalizer](../src/cloud_soc/normalizers/ecs.py), [Kibana 정의](../kibana/operations.dashboard.json), [기존 검증 기록](kibana_setup.md).
+외부 조사/목표 화면 정의 후 2026-09-10 작업 트리의 Python, Rule, 설정 및 Kibana export를 정적으로 대조했다. **이번 작업에서는 라이브 화면/데이터를 재조회하지 않았다.** 현재 근거: [Alert builder](../../../src/cloud_soc/main.py), [Engine](../../../src/cloud_soc/detection/engine.py), [Normalizer](../../../src/cloud_soc/normalizers/ecs.py), [Kibana 정의](../../../kibana/operations.dashboard.json), [기존 검증 기록](../../kibana_setup.md).
 
 `부분`은 기존 데이터로 일부 읽기 기능이 가능하다는 뜻이며 아래 목표 패널 구현 완료가 아니다. 현재 Kibana의 7개 패널은 선택 기간 경보 수/High/경보 목록/발생 추이/규칙별 집계/설명이며 Incident 업무는 없다.
 

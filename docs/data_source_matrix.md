@@ -95,4 +95,4 @@ Cloud API의 HTTP method와 operation 이름을 혼동하지 않는다. 예를 �
 
 두 소스가 있다고 자동 cross-source account-compromise detection이 가능한 것은 아니다. 공유된 안정적 자원/주체 관계가 있어야 한다. 연관성이 없는 실습 이벤트를 같은 사건으로 강제 병합하지 않는다. 실제 보호 대상이 웹 서비스로 확정되면 세 번째 소스를 auditd 대신 Web/WAF로 바꾸는 결정을 재검토한다.
 
-현재 소스의 목표 구조상 위치는 [로드맵의 현재 구현 배치](implementation_roadmap_v2.md)에 별도로 기록한다.
+현재 소스의 목표 구조상 위치는 [로드맵의 현재 구현 배치](archive/design/implementation_roadmap_v2.md)에 별도로 기록한다.

@@ -124,7 +124,13 @@ test('overview queue keeps its source and does not steal alert anchor',async()=>
   const href=ui.get('case-rows').children[0].children[0].children[0].href;
   const query=new URLSearchParams(href.split('?')[1]);assert.equal(query.get('return_page'),'index.html');
   const detailUI=browser('investigation.js',[ok(detail)],'?'+query);await settle();
-  assert.match(detailUI.get('case-back').href,/^index\.html\?.*#case-queue$/);
+  assert.match(detailUI.get('case-back').href,/^index\.html\?.*#dashboard-grid$/);
+});
+
+test('personal dashboard evidence returns to its dashboard without an external redirect',async()=>{
+  const ui=browser('investigation.js',[ok(detail)],'?case='+id+'&return_page=dashboard.html');await settle();
+  assert.equal(ui.get('case-back').href,'dashboard.html?#dashboard-grid');
+  assert.equal(ui.get('case-back').textContent,'내 대시보드로');
 });
 
 test('empty list, direct detail and untrusted return page never redirect to overview',async()=>{

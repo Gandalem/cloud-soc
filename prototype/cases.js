@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const $ = id => document.getElementById(id), form = $("case-filters");
-  const listPage = document.body?.dataset?.caseListPage === "cases.html" ? "cases.html" : "index.html";
+  const listPage = ['cases.html','operations.html'].includes(document.body?.dataset?.caseListPage) ? document.body.dataset.caseListPage : 'index.html';
   const states = {new:"신규",triage:"초기 분류",investigating:"조사 중",escalated:"상위 이관",closed:"종결"};
   const priorities = {critical:"긴급",high:"높음",medium:"중간",low:"낮음"};
   let page = 1, generation = 0;

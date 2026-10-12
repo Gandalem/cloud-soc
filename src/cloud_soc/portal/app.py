@@ -100,6 +100,31 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     audit = SourceAudit(Path(settings["STATE_DIR"]) / "log-access.sqlite")
     app.extensions["log_access"] = access_policy
     app.extensions["source_audit"] = audit
+    from cloud_soc.portal.dashboards import DashboardStore, DashboardError
+    dashboards = DashboardStore(Path(settings['STATE_DIR']) / 'dashboards.sqlite')
+    app.extensions['dashboards'] = dashboards
+
+    @app.errorhandler(DashboardError)
+    def dashboard_error(error):
+        return jsonify(error=str(error)), error.status
+
+    @app.get('/api/dashboard')
+    def dashboard_get():
+        if request.args:
+            abort(400)
+        try:
+            return jsonify(dashboards.get(g.principal))
+        except sqlite3.Error:
+            return jsonify(error='대시보드 구성을 불러오지 못했습니다. 잠시 후 다시 시도하세요.'), 503
+
+    @app.post('/api/dashboard')
+    def dashboard_save():
+        if request.args:
+            abort(400)
+        try:
+            return jsonify(dashboards.save(g.principal, request.get_json()))
+        except sqlite3.Error:
+            return jsonify(error='구성을 저장하지 못했습니다. 편집 내용은 유지됩니다. 다시 시도하세요.'), 503
     log_readers = {}
     log_reader_lock = threading.Lock()
     def reader_for(principal):
@@ -250,10 +275,10 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             log_assets = {"logs.html", "logs.js", "logs.css", "source-view.js", "auth-client.js", "styles.css", "agents.css", "shell.js", "shell.css", "assets/mark.svg"}
             if sessions:
                 # Session RBAC permits case writes only for analysts; all case data is tenant-scoped.
-                log_routes |= {"index", "case_list", "case_link", "case_detail", "case_create", "case_update"}
-                log_assets |= {"index.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "workbench.html", "investigation.js"}
+                log_routes |= {"index", "case_list", "case_link", "case_detail", "case_create", "case_update", "dashboard_get", "dashboard_save"}
+                log_assets |= {"index.html", "dashboard.html", "dashboard.js", "dashboard.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "workbench.html", "investigation.js"}
                 if principal.organizations:
-                    log_routes |= {"operations_summary", "alert_detail"}
+                    log_routes |= {"operations_summary", "operations_status", "alert_detail"}
             if request.endpoint not in log_routes and not (request.endpoint == "static_file" and (request.view_args or {}).get("filename") in log_assets):
                 abort(403)
 
@@ -291,13 +316,19 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def login_page():
         return send_from_directory(PROJECT / "prototype", "login.html")
 
+    @app.get("/api/auth/config")
+    def login_config():
+        return jsonify(mode="session" if sessions else "basic")
+
+    @app.get("/theme.js")
+    @app.get("/theme.css")
     @app.get("/auth-client.js")
     @app.get("/login.js")
     @app.get("/login/styles.css")
     @app.get("/login/agents.css")
     @app.get("/login/mark.svg")
     def auth_asset():
-        assets = {"/auth-client.js": "auth-client.js", "/login.js": "login.js",
+        assets = {"/theme.js": "theme.js", "/theme.css": "theme.css", "/auth-client.js": "auth-client.js", "/login.js": "login.js",
                   "/login/styles.css": "styles.css", "/login/agents.css": "agents.css",
                   "/login/mark.svg": "assets/mark.svg"}
         return send_from_directory(PROJECT / "prototype", assets[request.path])
@@ -320,7 +351,13 @@ def create_app(settings=None, *, issuer=None, monitor=None):
 
     @app.get("/api/auth/me")
     def auth_me():
-        return jsonify(user=g.principal, role=g.role, csrf=g.csrf, mode="session" if sessions else "basic")
+        navigation = ["logs.html"]
+        if g.log_principal.role == "admin":
+            navigation += ["index.html", "dashboard.html", "cases.html", "agents.html", "agents.html#keys", "agent-status.html"]
+        elif sessions:
+            navigation += ["index.html", "dashboard.html", "cases.html"]
+        return jsonify(user=g.principal, role=g.role, csrf=g.csrf,
+                       mode="session" if sessions else "basic", navigation=navigation)
 
     @app.post("/api/auth/logout")
     def logout():
@@ -370,9 +407,9 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             return jsonify(error="수신 현황을 조회하지 못했습니다. 서버 연결·조회 권한·수신 시각 설정을 확인하세요.",
                            code="status_unavailable"), 503
 
-    def log_response(operation):
+    def log_response(operation, projector=redact_metadata):
         try:
-            return app.response_class(json.dumps(redact_metadata(json.loads(operation(request.args.items(multi=True))))), mimetype="application/json")
+            return app.response_class(json.dumps(projector(json.loads(operation(request.args.items(multi=True))))), mimetype="application/json")
         except LogQueryError as error:
             return jsonify(code=error.code, error=str(error)), error.status
 
@@ -438,7 +475,14 @@ def create_app(settings=None, *, issuer=None, monitor=None):
 
     @app.get("/api/operations")
     def operations_summary():
-        return log_response(operations_for(g.log_principal).summary)
+        from cloud_soc.portal.operations import display_summary
+        return log_response(operations_for(g.log_principal).summary, display_summary)
+
+    @app.get("/api/operations/status")
+    def operations_status():
+        if request.args:
+            return jsonify(error="분석 상태 조회에는 검색 조건을 사용할 수 없습니다."), 400
+        return jsonify(operations_for(g.log_principal).pipeline())
 
     @app.get("/api/alerts/detail")
     def alert_detail():
@@ -617,7 +661,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                    "detection-history.html", "detection-history.js",
                    "agent-status.html", "agent-status.js", "agent-status.css",
                    "collection-health.html", "collection-health.js",
-                   "index.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css", "source-view.js"}
+                   "index.html", "dashboard.html", "dashboard.js", "dashboard.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css", "source-view.js"}
         if filename not in allowed:
             abort(404)
         return send_from_directory(PROJECT / "prototype", filename)

@@ -78,7 +78,9 @@
         td.append(details); rows.append(tr);
       }
       cursor = data.next_cursor; next.disabled = !cursor;
-      state.textContent = data.rows.length ? `${data.rows.length}개 보고 · 통계 미보고 항목은 미측정` : '수신된 보고가 없습니다. 설치 상태와 전송 지연을 확인하세요.';
+      const attention = data.rows.filter(item => item.errors > 0 || [item.collector_metrics, item.network_collector_metrics].some(m => m?.queue_state === 'high' || m?.transport_state === 'error_observed')).length;
+      const uncertain = data.rows.filter(item => item.report_state !== 'recent' || [item.collector_metrics, item.network_collector_metrics].some(m => m?.state !== 'recent')).length;
+      state.textContent = data.rows.length ? `조회한 ${data.rows.length}개 보고 · 오류·적체 확인 ${attention}개 · 미확인·미측정 ${uncertain}개 · 통계 미보고 항목은 미측정` : '수신된 보고가 없습니다. 설치 상태와 전송 지연을 확인하세요.';
     } catch (error) {
       if (request !== generation) return;
       rows.replaceChildren(); cursor = null; next.disabled = true;

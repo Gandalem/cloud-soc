@@ -29,8 +29,17 @@ HASH = generate_password_hash("synthetic-test-password", method="pbkdf2:sha256:1
 
 
 class PortalTests(unittest.TestCase):
+    def test_login_mode_and_navigation_match_actual_basic_configuration(self):
+        self.assertEqual(self.client.get('/api/auth/config').status_code, 200)
+        self.assertEqual(self.client.get('/api/auth/config').json, {'mode': 'basic'})
+        identity = self.request('GET', '/api/auth/me').json
+        self.assertEqual(identity['mode'], 'basic')
+        self.assertNotIn('detection-history.html', identity['navigation'])
+        self.assertNotIn('operations.html', identity['navigation'])
+        self.assertEqual(self.client.get('/api/operations/status').status_code, 401)
+
     def test_login_assets_are_fixed_public_paths_without_exposing_portal(self):
-        for path in ('/login', '/login/styles.css', '/login/agents.css', '/login/mark.svg', '/login.js'):
+        for path in ('/login', '/login/styles.css', '/login/agents.css', '/login/mark.svg', '/login.js', '/theme.js', '/theme.css'):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, path)
             self.assertNotIn("unsafe-inline", response.headers['Content-Security-Policy'])
@@ -92,7 +101,8 @@ class PortalTests(unittest.TestCase):
         self.assertEqual(self.request("GET", "/api/operations?bad=1").status_code, 400)
         self.assertEqual(self.request("GET", "/api/alerts/detail?id=fixture").status_code, 503)
         root = self.request("GET", "/")
-        self.assertIn(b"operations.js", root.data)
+        self.assertIn(b"dashboard.js", root.data)
+        self.assertIn(b"operations.js", self.request('GET', '/operations.html').data)
         self.assertNotIn(b"demo-data.js", root.data)
         root.close()
 

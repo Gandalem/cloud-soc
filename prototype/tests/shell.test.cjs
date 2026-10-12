@@ -2,8 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {groups, current, markup} = require('../shell.js');
-const pages = ['index.html','logs.html','cases.html','workbench.html','collection-health.html','agents.html','agent-status.html','detection-history.html','reprocessing-history.html'];
+const {groups, current, markup, coverageView} = require('../shell.js');
+const pages = ['index.html','dashboard.html','operations.html','logs.html','cases.html','workbench.html','collection-health.html','agents.html','agent-status.html','detection-history.html','reprocessing-history.html'];
 
 test('every live page loads one shared shell and no duplicate header or sidebar', () => {
   for (const page of pages) {
@@ -13,17 +13,19 @@ test('every live page loads one shared shell and no duplicate header or sidebar'
     assert.equal((html.match(/href="shell.css"/g) || []).length, 1, page);
     assert.doesNotMatch(html, /class="(?:app-header|sidebar|ops-mobile|logs-mobile-nav|status-mobile-nav|case-page-links)"/, page);
     assert.ok(html.indexOf('shell.js') < html.indexOf('<main'), page);
+    assert.equal((html.match(/src="\/theme.js"/g)||[]).length,1,page);
+    assert.equal((html.match(/href="\/theme.css"/g)||[]).length,1,page);
   }
 });
 
 test('same navigation labels, groups and order on every page', () => {
   const expected = groups.flatMap(group => group.items);
-  assert.equal(expected.length, 9);
+  assert.equal(expected.length, 7);
   for (const page of pages) {
     const html = markup('/'+page, '');
     const links = [...html.matchAll(/<a class="nav-item(?: active)?" href="([^"]+)"[^>]*>([^<]+)<\/a>/g)].map(match => [match[1],match[2]]);
     assert.deepEqual(links, expected, page);
-    assert.equal((html.match(/aria-current="page"/g)||[]).length, 1, page);
+    assert.equal((html.match(/aria-current="page"/g)||[]).length, expected.some(([href])=>href===current('/'+page,''))?1:0, page);
     assert.match(html, /aria-label="보안 관제"/);
     assert.match(html, /aria-label="에이전트"/);
   }
@@ -45,4 +47,24 @@ test('one collapsible mobile navigation retains complete links and keyboard affo
   const script = fs.readFileSync(path.join(__dirname, '../shell.js'),'utf8');
   assert.match(script, /event.key === "Escape"/);
   assert.match(script, /toggle.focus\(\)/);
+});
+
+test('customer navigation has no duplicate operations or developer diagnostics',()=>{
+ assert.deepEqual(groups[0].items.map(v=>v[0]),['index.html','dashboard.html','logs.html','cases.html']);
+ assert.equal(groups[1].title,'에이전트');
+ const html=markup('/logs.html','');
+ assert.doesNotMatch(html,/operations.html|collection-health.html|detection-history.html|reprocessing-history.html/);
+});
+test('global customer state cannot show observed coverage when upstream fails or is unknown',()=>{
+ for(const state of ['failed','stale','unavailable','not_started']){
+  const view=coverageView({state,detector:{state:'success'}});assert.notEqual(view.state,'observed');
+ }
+ assert.match(coverageView({state:'failed',detector:{state:'success'}}).description,/경보 0건/);
+ assert.equal(coverageView({state:'success',detector:{state:'success'}}).state,'observed');
+ assert.equal(coverageView({coverage:{state:'catching_up'}}).state,'catching_up');
+});
+
+test('theme button follows current workspace name and no dashboard selector remains',()=>{
+ assert.match(markup('/index.html',''),/workspace-label">홈 대시보드<\/span><button[^>]+id="portal-theme-toggle"/);
+ for(const page of ['index.html','dashboard.html'])assert.doesNotMatch(fs.readFileSync(path.join(__dirname,'..',page),'utf8'),/id="dashboard-theme"/);
 });
