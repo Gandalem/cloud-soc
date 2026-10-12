@@ -1,10 +1,13 @@
 <!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>탐지 실행·제외 이력 | Cloud SOC</title><link rel="icon" href="assets/mark.svg" type="image/svg+xml"><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css"><link rel="stylesheet" href="shell.css"><link rel="stylesheet" href="operations.css"><script src="auth-client.js"></script>
-  <script src="shell.js" defer></script></head>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>분석 진단 | Cloud SOC</title><link rel="icon" href="assets/mark.svg" type="image/svg+xml"><script src="/theme.js"></script>
+<link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css"><link rel="stylesheet" href="shell.css"><link rel="stylesheet" href="operations.css"><script src="auth-client.js"></script>
+  <script src="shell.js" defer></script><link rel="stylesheet" href="/theme.css">
+</head>
 <body class="agents-page"><a class="skip-link" href="#main">본문으로 이동</a><div id="app-shell"></div><main id="main" class="main-content agents-main operations-main">
-<div class="page-heading"><h1>탐지 실행·제외 이력</h1></div>
-<form id="history-filter" class="panel ops-toolbar"><label>기록 종류 <select id="history-kind"><option value="runs">규칙 실행</option><option value="exclusions">제외 이벤트</option></select></label>
-<label>규칙 ID <input id="history-rule" maxlength="64" placeholder="전체 규칙"></label><button type="submit" class="primary-button">최근 24시간 조회</button></form>
+<div class="page-heading"><div><h1>분석 진단</h1><p class="subheading">분석 중단·지연과 평가하지 못한 로그를 확인합니다.</p></div></div>
+<section class="panel analysis-stages"><h2>현재 분석 상태</h2><div id="history-pipeline" role="status">상태 확인 중</div></section>
+<form id="history-filter" class="panel ops-toolbar"><label>기록 종류 <select id="history-kind"><option value="runs">실행 결과</option><option value="exclusions">평가하지 못한 로그</option></select></label>
+<label>조회 기간 <select id="history-period"><option value="60">최근 1시간</option><option value="1440" selected>최근 24시간</option><option value="10080">최근 7일</option></select></label><details class="history-rule-filter"><summary>특정 규칙 조회</summary><label>규칙 ID <input id="history-rule" maxlength="64" placeholder="예: AUTH-001"></label></details><button type="submit" class="primary-button">조회</button></form>
 <p id="history-state" role="status" aria-live="polite">조회 준비 중</p><div id="history-rows"></div><button id="history-next" type="button" hidden>다음 페이지</button>
-<details class="usage-details"><summary>이력 기준</summary><p>규칙별 실행 결과와 평가에서 제외한 이벤트를 표시합니다. 이벤트 본문은 제공하지 않습니다. ‘평가 종료’는 처리 위치가 아직 저장되지 않은 상태입니다.</p></details>
+<details class="usage-details"><summary>이력 기준</summary><p>같은 실행은 최종 결과 한 건으로 표시합니다. 새 입력 없는 완료 실행은 접어 보여주며 개별 시각은 펼쳐 확인할 수 있습니다. 평가만 끝난 기록은 최종 저장이 확인되지 않은 상태입니다. 평가 제외는 안전하다는 판정이 아니며 본문은 제공하지 않습니다. 기존 단계별 기록은 그대로 보존합니다.</p></details>
 </main><script src="detection-history.js"></script></body></html>

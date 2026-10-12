@@ -10,6 +10,7 @@ from cloud_soc.portal.log_contract import INDICES, SOURCE_FIELDS, document_refer
 from cloud_soc.portal.security_detail import DETAIL_FIELDS
 from cloud_soc.processing.contract import normalize, NORMALIZED, RECORDS, STATUS
 from cloud_soc.elastic.index_scope import index_batches
+from cloud_soc.processing import continuation
 
 READ_FIELDS = list(SOURCE_FIELDS + DETAIL_FIELDS) + ["message", "event.timezone", "event.created",
     "log.syslog.appname", "process.name", "journald.syslog.identifier"]
@@ -107,10 +108,10 @@ def create_batch(client, documents):
         raise RuntimeError("normalization_bulk_failed")
 
 
-def run_once(client, state_path, initial_start, *, now=None, scanner=scan):
+def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_pages=1000):
     now = now or datetime.now(timezone.utc)
     initial = parse_time(initial_start)
-    if initial is None or initial > now:
+    if initial is None or initial > now or type(max_pages) is not int or not 1 <= max_pages <= 10000:
         raise ValueError("A past aware initial start is required")
     client = client.options(request_timeout=15, max_retries=0)
     with closing(sqlite3.connect(state_path, timeout=0)) as db:
@@ -132,30 +133,59 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=scan):
         status = {"@timestamp": iso(now), "state": "running", "detection": "separate_worker",
                   "checkpoint": iso(checkpoint), "last_success": row[1] if row else None,
                   "range": {"start": iso(start), "end": iso(end)}, "counts": counts, "error": None}
+        meta = None
         try:
             client.index(index=STATUS, id="normalizer", document=status)
             if end > checkpoint:
-                batch = []
-                for hit in scanner(client, iso(start), iso(end)):
-                    identifier, record, event = normalize(hit, iso(now))
-                    if event:
-                        batch.append((NORMALIZED, identifier, event))
-                    batch.append((RECORDS, identifier, record))
-                    counts[record["status"]] += 1
-                    if len(batch) >= 200:
-                        create_batch(client, batch)
-                        batch.clear()
-                create_batch(client, batch)
+                def consume(hits, counters):
+                    batch = []
+                    for hit in hits:
+                        identifier, record, event = normalize(hit, iso(now))
+                        if event:
+                            batch.append((NORMALIZED, identifier, event))
+                        batch.append((RECORDS, identifier, record))
+                        counters[record["status"]] += 1
+                        if len(batch) >= 200:
+                            create_batch(client, batch)
+                            batch.clear()
+                    create_batch(client, batch)
+
+                if scanner is not None:
+                    consume(scanner(client, iso(start), iso(end)), counts)
+                else:
+                    meta = continuation.prepare(db, client, iso(checkpoint), iso(start), iso(end),
+                        resolve=lambda c: resolve(c, INDICES), batches=index_batches, checked=checked)
+                    status["range"] = {"start": meta["start"], "end": meta["end"]}
+                    counts = meta["counts"]
+                    complete = continuation.read(client, db, meta, budget=max_pages,
+                        fields=READ_FIELDS, checked=checked, consume=consume)
+                    status["counts"] = counts
+                    if not complete:
+                        status.update(state="running", error=None,
+                            progress={"state": "catching_up", "processed": sum(counts.values()),
+                                      "range_complete": False})
+                        client.index(index=STATUS, id="normalizer", document=status)
+                        continuation.remember(db, meta)
+                        db.commit()
+                        return status
+                    end = parse_time(meta["end"])
                 checkpoint = end
             completed = end > (parse_time(row[0]) if row else initial)
             status.update(state="success" if completed else "waiting", checkpoint=iso(checkpoint),
                           last_success=iso(now) if completed else (row[1] if row else None))
             client.index(index=STATUS, id="normalizer", document=status)
             db.execute("INSERT OR REPLACE INTO state VALUES (1,?,?)", (iso(checkpoint), status["last_success"]))
+            if meta is not None:
+                continuation.clear(db)
             db.commit()
             return status
         except Exception:
             db.rollback()
+            if meta and meta.get("pit"):
+                try:
+                    client.close_point_in_time(id=meta["pit"])
+                except Exception:
+                    pass
             status.update(state="failed", error="processing_failed", checkpoint=row[0] if row else iso(initial),
                           last_success=row[1] if row else None)
             try:

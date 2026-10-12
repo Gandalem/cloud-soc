@@ -6,6 +6,8 @@ import pytest
 from cloud_soc.portal.reprocessing_history import history, INDEX
 from cloud_soc.portal.log_query import LogQueryError
 from cloud_soc.portal.auth import permitted
+from elasticsearch import NotFoundError, AuthorizationException
+from elastic_transport import ApiResponseMeta, HttpHeaders, NodeConfig
 
 
 def fake():
@@ -89,4 +91,32 @@ def test_invalid_filters_fail_before_search(pairs):
     with pytest.raises(LogQueryError) as error:
         history(client, pairs)
     assert error.value.status == 400
+    client.search.assert_not_called()
+
+
+@pytest.mark.parametrize('pairs', [[], [('page', '2'), ('limit', '10')]])
+def test_missing_history_is_explicit_without_creating_or_searching(pairs):
+    client = fake()
+    meta = ApiResponseMeta(404, '1.1', HttpHeaders(), 0, NodeConfig('https', 'example.test', 9200))
+    client.indices.get_mapping.side_effect = NotFoundError('missing', meta,
+        {'error': {'type': 'index_not_found_exception', 'index': INDEX}})
+    result = json.loads(history(client, pairs))
+    assert result['state'] == 'no_index' and result['total'] == 0 and result['rows'] == []
+    if pairs:
+        assert (result['page'], result['limit'], result['pages'], result['filtered_total']) == (2, 10, 1, 0)
+    client.search.assert_not_called()
+    client.indices.create.assert_not_called()
+
+
+@pytest.mark.parametrize('status,error_type,index', [(403, 'security_exception', INDEX),
+    (404, 'index_not_found_exception', 'other-index'), (404, 'resource_not_found_exception', INDEX)])
+def test_history_permission_and_unrelated_missing_errors_remain_unavailable(status, error_type, index):
+    client = fake()
+    meta = ApiResponseMeta(status, '1.1', HttpHeaders(), 0, NodeConfig('https', 'example.test', 9200))
+    error = AuthorizationException if status == 403 else NotFoundError
+    client.indices.get_mapping.side_effect = error('private failure', meta,
+        {'error': {'type': error_type, 'index': index}})
+    with pytest.raises(LogQueryError) as failed:
+        history(client, [])
+    assert failed.value.status == 503
     client.search.assert_not_called()

@@ -52,7 +52,8 @@
       if (!response.ok) throw new Error(result.error || "이력 조회 실패");
       if (!Array.isArray(result.rows)) throw new Error("이력 목록 응답 형식이 올바르지 않습니다. 포털 업데이트를 확인하세요.");
       state.rows = result.rows;
-      $("summary").textContent = `전체 ${result.total}건 · 지원 형식 일치 ${result.recognized}건 · 부분 정규화 ${result.partial}건 · 시간대 보완 ${result.timezone_corrected}건`;
+      $("summary").textContent = result.state === 'no_index' ? '이 서버에는 저장된 과거 분석 이력이 없습니다.'
+        : `전체 ${result.total}건 · 지원 형식 일치 ${result.recognized}건 · 부분 정규화 ${result.partial}건 · 시간대 보완 ${result.timezone_corrected}건`;
       render();
     } catch (error) {
       $("summary").textContent = "조회 실패"; $("error").textContent = error.message; $("error").hidden = false;

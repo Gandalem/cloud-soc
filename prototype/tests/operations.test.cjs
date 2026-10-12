@@ -21,13 +21,21 @@ function browser(responses) {
 }
 function allText(element){return element.textContent+element.children.map(allText).join(' ');}
 test('real page loads no demo scripts',()=>{
-  const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+  const html=fs.readFileSync(path.join(__dirname,'../operations.html'),'utf8');
   assert.ok(!html.includes('demo-data.js')); assert.ok(html.includes('operations.js')); assert.ok(html.includes('처리 상태'));
 });
 
 test('detector state is displayed separately from normalization',async()=>{
   const ui=browser([ok({...data,sections:{...data.sections,pipeline:{state:'success',detector:{state:'failed'}}}})]);await settle();
   assert.match(ui.get('ops-pipeline').textContent,/SSH 탐지기: 탐지 실패/);
+});
+
+test('zero stored alerts remain limited when raw intake continues but normalization failed',async()=>{
+ const ui=browser([ok({...data,sections:{...data.sections,intake:{...section,count:120,buckets:[{time:data.start,count:120}]},
+  pipeline:{state:'failed',detector:{state:'success'},coverage:{state:'blocked'}}}})]);await settle();
+ assert.match(allText(ui.get('ops-metrics').children[0]),/저장된 경보.*0.*분석 미완료/);
+ assert.match(ui.get('ops-alert-state').textContent,/위험 없음으로 해석할 수 없습니다/);
+ assert.match(ui.get('ops-pipeline').textContent,/새 로그 분석 중단/);
 });
 test('cloud profile is identified in the operations view',async()=>{
   const ui=browser([ok({...data,sections:{...data.sections,pipeline:{state:'success',detector:{state:'success',detection:'AUTH-001,AWS-IAM-001'}}}})]);await settle();
@@ -91,7 +99,7 @@ test('detector health alarms and excluded counts are visible',async()=>{
 test('successful zero, missing index and failed queries stay distinct',async()=>{
   const ui=browser([ok({...data,sections:{...data.sections,processing:{state:'no_index'},quality:{state:'unavailable'}}})]);await settle();
   const cards=ui.get('ops-metrics').children;
-  assert.match(allText(cards[0]),/0.*조회 성공/);assert.match(allText(cards[1]),/미확인.*인덱스 없음/);assert.match(allText(cards[3]),/조회 실패/);
+ assert.match(allText(cards[0]),/0.*조회 성공/);assert.match(allText(cards[2]),/미확인.*인덱스 없음/);assert.match(allText(cards[3]),/조회 실패/);
   assert.match(ui.get('ops-pipeline').textContent,/실행 기록 없음/);
 });
 test('failed refresh clears old totals and does not echo server body',async()=>{
@@ -118,7 +126,7 @@ test('alert IDs are encoded and untrusted titles are text nodes',async()=>{
   assert.equal(cells[3].textContent,'<img src=x>');cells[5].children[0].listeners.click();await settle();
   assert.equal(new URL(ui.calls[1].url,'https://example.test').searchParams.get('id'),row.id);
   const investigation = new URL(ui.get('ops-detail-content').children[0].href,'https://example.test');
-  assert.equal(investigation.searchParams.get('return_page'),'index.html');
+  assert.equal(investigation.searchParams.get('return_page'),'operations.html');
   assert.match(ui.get('ops-detail-state').textContent,/주변 로그로 대체하지/);
 });
 

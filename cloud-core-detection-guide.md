@@ -31,7 +31,7 @@ PYTHONPATH=src python -m cloud_soc.detection --include-cloud
 
 위 명령은 오프라인 규칙 검증이며 ES 연결/쓰기/서비스 기동이 없다.
 
-증분 실행에는 기존 실행 옵션에 `--include-cloud`를 추가한다. 규칙 집합은 상태 identity에 포함되므로 기존 SSH 상태 파일에 옵션만 추가하면 명시적으로 거부한다. 운영 재개 시 [기존 데이터 전환 절차](detection_deployment_runbook.md)에 따라 시작점/과거 평가 범위를 결정하고 별도 상태를 준비한다. Compose 기본은 SSH만이며 클라우드 활성화 시 command override를 명시한다.
+증분 실행에는 기존 실행 옵션에 `--include-cloud`를 추가한다. 규칙 집합은 상태 identity에 포함되므로 기존 SSH 상태 파일에 옵션만 추가하면 명시적으로 거부한다. 운영 재개 시 [기존 데이터 전환 절차](docs/detection_deployment_runbook.md)에 따라 시작점/과거 평가 범위를 결정하고 별도 상태를 준비한다. Compose 기본은 SSH만이며 클라우드 활성화 시 command override를 명시한다.
 
 `--snapshot --include-cloud`도 지원하나 기존 전체 조회 상한이 적용된다. 이 옵션은 과거 자료의 일회성 검증 경로이며 대용량 이행 완료를 뜻하지 않는다.
 

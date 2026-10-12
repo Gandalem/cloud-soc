@@ -8,6 +8,45 @@ from cloud_soc.portal.agent_status import parse_time, iso
 from cloud_soc.portal.log_query import LogQueryError, bounded_json
 from cloud_soc.portal.privacy import display
 
+FIELDS = ['@timestamp', 'record_id', 'run_id', 'rule', 'state', 'range_start', 'range_end',
+          'counts', 'error', 'reason', 'missing_fields', 'normalized', 'raw', 'event_time', 'event_hash']
+
+
+def latest_runs(client, sources):
+    """Resolve final phases even when the paired records straddle a seek page."""
+    groups, legacy = {}, []
+    for source in sources:
+        run, rule = source.get('run_id'), source.get('rule', {}).get('id')
+        if (not isinstance(run, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', run)
+                or not isinstance(rule, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', rule)):
+            legacy.append(project(source)); continue
+        groups.setdefault((run, rule), []).append(source)
+    ids = [run + ':' + rule + ':' + phase for run, rule in groups
+           for phase in ('committed', 'failed', 'evaluated', 'waiting')]
+    if ids:
+        response = client.mget(index=RUNS, ids=ids, source_includes=FIELDS)
+        docs = response.get('docs')
+        if not isinstance(docs, list) or len(docs) != len(ids):
+            raise RuntimeError('incomplete_run_phases')
+        for expected, doc in zip(ids, docs):
+            if doc.get('_id') != expected or doc.get('_index') != RUNS or doc.get('error'):
+                raise RuntimeError('incomplete_run_phases')
+            if not doc.get('found'):
+                continue
+            source = doc.get('_source', {})
+            key = (source.get('run_id'), source.get('rule', {}).get('id'))
+            if key not in groups or source.get('record_id') != expected or source.get('state') != expected.rsplit(':', 1)[1]:
+                raise RuntimeError('run_phase_mismatch')
+            groups[key].append(source)
+    rank = {'committed': 4, 'failed': 3, 'evaluated': 2, 'waiting': 1}
+    rows = []
+    for phases in groups.values():
+        best = max(phases, key=lambda s: rank.get(s.get('state'), 0))
+        row = project(best)
+        row['phases'] = list(dict.fromkeys(p.get('state') for p in phases if p.get('state') in rank))
+        rows.append(row)
+    return rows + legacy
+
 
 def project(source):
     result = {key: display(source.get(key)) for key in ('@timestamp', 'record_id', 'run_id', 'state',
@@ -19,7 +58,7 @@ def project(source):
     counts = source.get('counts')
     if isinstance(counts, dict):
         result['counts'] = {k: v for k, v in counts.items() if k in ('input_events', 'matched', 'not_matched', 'unknown',
-            'excluded', 'late', 'alerts_created', 'alerts_existing', 'evaluated_events', 'detection_matches') and type(v) is int and v >= 0}
+            'excluded', 'late', 'policy_excluded', 'alerts_created', 'alerts_existing', 'evaluated_events', 'detection_matches') and type(v) is int and v >= 0}
     if isinstance(source.get('missing_fields'), list):
         result['missing_fields'] = [display(value) for value in source['missing_fields'][:50] if isinstance(value, str)]
     return result
@@ -29,9 +68,12 @@ def history(operations, pairs):
     pairs = list(pairs)
     args = dict(pairs)
     try:
-        if len(args) != len(pairs) or set(args) - {'kind', 'rule', 'start', 'end', 'after', 'limit'}:
+        if len(args) != len(pairs) or set(args) - {'kind', 'rule', 'start', 'end', 'after', 'limit', 'view'}:
             raise ValueError()
         kind = args.get('kind', 'runs')
+        view = args.get('view', 'records')
+        if view not in ('records', 'summary') or view == 'summary' and kind != 'runs':
+            raise ValueError()
         index = {'runs': RUNS, 'exclusions': EXCLUSIONS}[kind]
         limit_text = args.get('limit', '25')
         if not re.fullmatch(r'[0-9]{1,3}', limit_text):
@@ -65,13 +107,12 @@ def history(operations, pairs):
         result = operations.client.search(index=index, size=limit + 1, search_after=after,
             query={'bool': {'filter': filters}}, sort=[{'@timestamp': 'desc'}, {'record_id': 'asc'}],
             allow_partial_search_results=False, timeout='5s', track_total_hits=False,
-            source=['@timestamp', 'record_id', 'run_id', 'rule', 'state', 'range_start', 'range_end',
-                    'counts', 'error', 'reason', 'missing_fields', 'normalized', 'raw', 'event_time', 'event_hash'])
+            source=FIELDS)
         if result.get('timed_out') or result.get('_shards', {}).get('failed', 0):
             raise RuntimeError('partial_history')
         hits = result['hits']['hits']
         selected = hits[:limit]
-        rows = [project(hit['_source']) for hit in selected]
+        rows = latest_runs(operations.client, [hit['_source'] for hit in selected]) if view == 'summary' else [project(hit['_source']) for hit in selected]
         cursor = None
         if len(hits) > limit:
             seek = selected[-1].get('sort')

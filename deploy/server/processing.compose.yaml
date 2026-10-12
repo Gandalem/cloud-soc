@@ -4,7 +4,7 @@ services:
     build:
       context: ../..
       dockerfile: deploy/server/Dockerfile
-    command: ["python", "-m", "cloud_soc.processing", "--run", "--start", "${SOC_PROCESSING_START:?Set approved initial UTC start}", "--state", "/data/checkpoint.sqlite", "--es-url", "https://elasticsearch:9200", "--ca-file", "/run/certs/ca.crt", "--api-key-file", "/run/keys/normalizer.key"]
+    command: ["python", "-m", "cloud_soc.processing", "--run", "--start", "${SOC_PROCESSING_START:?Set approved initial UTC start}", "--state", "/data/checkpoint.sqlite", "--es-url", "https://elasticsearch:9200", "--ca-file", "/run/certs/ca.crt", "--api-key-file", "/run/keys/normalizer.key", "--max-pages", "${SOC_PROCESSING_MAX_PAGES:-1000}"]
     restart: unless-stopped
     depends_on:
       bootstrap: {condition: service_completed_successfully}

@@ -2,7 +2,7 @@
 
 기준일: 2026-09-10. 이 문서는 전체 구현 계획이다. 최초 설계 단계에서는 문서만 작성했으며, 후속 진행은 아래에 구분한다.
 
-후속 진행: 사용자의 화면 우선 요청에 따라 Phase 1의 읽기 전용 `SOC Operations`와 설정 export만 먼저 구현했다. [사용 및 검증 결과](kibana_setup.md)를 참고한다. 조회 코드 개선/자동 테스트와 나머지 Phase는 미구현이며, Phase 1 전체 완료를 의미하지 않는다.
+후속 진행: 사용자의 화면 우선 요청에 따라 Phase 1의 읽기 전용 `SOC Operations`와 설정 export만 먼저 구현했다. [사용 및 검증 결과](../../kibana_setup.md)를 참고한다. 조회 코드 개선/자동 테스트와 나머지 Phase는 미구현이며, Phase 1 전체 완료를 의미하지 않는다.
 
 선행 문서: [화면 요구사항](dashboard_requirements.md), [데이터 요구사항 및 Gap Analysis](dashboard_data_requirements.md).
 

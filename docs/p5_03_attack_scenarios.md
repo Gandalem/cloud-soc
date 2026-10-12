@@ -219,4 +219,4 @@ event-time `[start,end)` 구간은 시간대가 필요하고 최대 24시간이�
 - [AWS Event History](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/view-cloudtrail-events.html): 관리 이벤트의 지역·조회 범위와 실제 이벤트 기록 확인 필요.
 - [Linux-PAM 세션 로그 형식](https://github.com/linux-pam/linux-pam/blob/master/modules/pam_unix/pam_unix_sess.c): 공개 로그 형식·주체/대상 UID 의미만 참고했다. 외부 코드 복사 없음.
 
-세부 실행 결과 및 미검증 사항: [검증 기록](p5_03_attack_detection_validation.md).
+세부 실행 결과 및 미검증 사항: [검증 기록](archive/validation/p5_03_attack_detection_validation.md).

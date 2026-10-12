@@ -2,19 +2,21 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>수집 품질 | Cloud SOC</title>
+  <title>수집 상태 | Cloud SOC</title>
   <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css"><link rel="stylesheet" href="agent-status.css">
+  <script src="/theme.js"></script>
+<link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css"><link rel="stylesheet" href="agent-status.css">
   <link rel="stylesheet" href="shell.css">
   <script src="auth-client.js"></script>
   <script src="shell.js" defer></script>
   <script src="collection-health.js" defer></script>
+<link rel="stylesheet" href="/theme.css">
 </head>
 <body class="agents-page status-page collection-quality">
   <a class="skip-link" href="#main">본문으로 이동</a>
   <div id="app-shell"></div>
   <main id="main" class="main-content agents-main">
-    <div class="page-heading"><div><h1>수집 품질</h1><p class="subheading">로그 탐색 · 전송 대기 · 전송 오류</p></div><button id="refresh" class="primary-button">새로고침</button></div>
+    <div class="page-heading"><div><h1>수집 상태</h1><p class="subheading">로그 탐색 · 전송 대기 · 전송 오류</p></div><button id="refresh" class="primary-button">새로고침</button></div>
     <p class="inline-note">소스 선택은 수신 성공과 다릅니다. 미측정 항목은 0건이 아닙니다.</p>
     <p id="query-state" role="status">조회 준비</p>
     <section class="package-panel panel"><div class="package-table-scroll"><table class="package-table activity-table"><thead><tr><th>호스트 / 조직</th><th>보고 상태</th><th>선택 / 제외 / 오류</th><th>생성 / 서버 수신</th><th>지연 / 정책 버전</th><th>호스트 로그 큐</th><th>호스트 로그 전송</th><th>네트워크 큐</th><th>네트워크 전송</th><th>소스별 결과</th></tr></thead><tbody id="health-rows"></tbody></table></div>

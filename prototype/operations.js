@@ -3,7 +3,7 @@
   const $ = (id) => document.getElementById(id);
   const labels = {ok: "조회 성공", no_index: "인덱스 없음", unavailable: "조회 실패", not_started: "실행 기록 없음", stale: "상태 갱신 지연 / 중단 여부 확인 필요", success: "최근 정규화 성공", running: "정규화 실행 중", failed: "정규화 실패", waiting: "다음 수신 구간 대기"};
   const evidenceLabels = {exact_reference: "정확한 문서 참조 확인", normalized_hash_mismatch: "정규화 근거 내용 변경 감지", invalid_evidence_hash: "저장된 근거 해시 형식 오류", normalized_missing_or_expired: "정규화 근거 없음 / 만료", raw_missing_or_expired: "원본 근거 없음 / 만료", provenance_mismatch: "근거 참조 불일치", unsupported_or_invalid_reference: "지원하지 않거나 잘못된 근거 참조", invalid_reference: "잘못된 근거 참조"};
-  const fmt = (value) => value ? new Date(value).toLocaleString("ko-KR", {timeZone: "Asia/Seoul", hour12: false}) : "미확인";
+  const fmt = (value) => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString("ko-KR", {timeZone: "Asia/Seoul", hour12: false}) : "미확인";
   let generation = 0, detailGeneration = 0;
   function node(tag, value, className) {
     const element = document.createElement(tag);
@@ -43,17 +43,20 @@
            !Array.isArray(s.buckets) || s.buckets.length > 1000 || s.buckets.some(b => !Number.isFinite(Date.parse(b.time)) || !Number.isSafeInteger(b.count) || b.count < 0)))) throw new Error("관제 응답 형식을 확인하세요.");
     }
     if (!sections.pipeline || !Object.hasOwn(labels, sections.pipeline.state)) throw new Error("처리기 응답 형식을 확인하세요.");
+    const pipeline = sections.pipeline, detector = pipeline.detector || {state: 'not_started'};
+    const limited = pipeline.coverage ? pipeline.coverage.state !== 'observed' :
+      [pipeline, detector].some(stage => !['success', 'running', 'waiting'].includes(stage.state) || ['failed', 'stale', 'delayed', 'warning'].includes(stage.health));
     $("ops-range").textContent = fmt(data.start) + " ~ " + fmt(data.end) + " (KST)";
     const metrics = $("ops-metrics"); metrics.replaceChildren();
-    for (const [key, title] of [["intake", "수신 로그"], ["processing", "처리 결과 기록"], ["alerts", "저장된 경보"], ["quality", "수집 품질 보고"]]) {
+    for (const [key, title] of [["alerts", "저장된 경보"], ["intake", "수신 로그"], ["processing", "로그 해석 결과"], ["quality", "수집 상태 보고"]]) {
       const section = sections[key], card = node("article", undefined, "panel");
       card.append(node("h2", title), node("strong", section.state === "ok" ? section.count.toLocaleString("ko-KR") : "미확인", "ops-value"), node("p", labels[section.state] || "미확인"));
-      if (key === "processing" && section.state === "ok") card.append(node("p", section.statuses.map((s) => ({normalized: "정규화", unsupported: "미지원", invalid: "검증 실패"}[s.key] || "기타") + " " + s.doc_count).join(" · ") || "처리 기록 없음"));
+      if (key === 'alerts' && limited) card.append(node('p', '분석 미완료·확인 필요 구간이 있습니다. 이 숫자로 위험 없음을 판단할 수 없습니다.', 'ops-warning'));
+      if (key === 'quality') card.append(node('p', '보고 건수이며 정상 호스트 수를 뜻하지 않습니다.'));
+      if (key === "processing" && section.state === "ok") card.append(node("p", section.statuses.map((s) => ({normalized: "위험 평가용", unsupported: "지원 범위 밖", invalid: "필수 정보 누락"}[s.key] || "기타") + " " + s.doc_count).join(" · ") || "해석 결과 없음"));
       metrics.append(card);
     }
-    const pipeline = sections.pipeline;
     $("ops-pipeline").textContent = "정규화 처리기: " + (labels[pipeline.state] || "미확인");
-    const detector = pipeline.detector || { state: "not_started" };
     const detectorLabels = { ...labels, success: "최근 탐지 성공", running: "탐지 실행 중", failed: "탐지 실패" };
     const detectorName = detector.detection?.includes("ATTACK-") ? "공격 행위 탐지기 (시험 프로필)" : detector.detection && detector.detection.includes(",") ? "SSH·클라우드 탐지기" : "SSH 탐지기";
     $("ops-pipeline").textContent += " · " + detectorName + ": " + (detectorLabels[detector.state] || "미확인");
@@ -65,11 +68,14 @@
     if (detector.legacy_excluded > 0) $("ops-pipeline").textContent += " · 과거 형식 제외 " + detector.legacy_excluded + "건";
     if (detector.history_pending > 0) $("ops-pipeline").textContent += " · 실행 이력 전송 대기 " + detector.history_pending + "건";
     if (detector.excluded_total > 0) $("ops-pipeline").textContent += " · 규칙 평가 제외 누적 " + detector.excluded_total + "건";
+    if (pipeline.state === 'failed') $("ops-pipeline").textContent += ' · 새 로그 분석 중단: 탐지기의 실행 완료는 전체 분석 완료를 뜻하지 않습니다.';
+    if (pipeline.progress?.state === 'catching_up') $("ops-pipeline").textContent += ' · 현재 구간 ' + pipeline.progress.processed.toLocaleString('ko-KR') + '건 처리 중 · 구간 완료 전';
     $("ops-pipeline").setAttribute("role", "status");
     $("ops-pipeline").setAttribute("aria-live", "polite");
     chart($("ops-intake-chart"), sections.intake); chart($("ops-alert-chart"), sections.alerts);
     const alerts = sections.alerts; $("ops-alert-rows").replaceChildren();
-    $("ops-alert-state").textContent = alerts.state === "ok" ? "총 " + alerts.count + "건 · 최신 50건까지 표시" : labels[alerts.state];
+    $("ops-alert-state").textContent = alerts.state === "ok" ? (alerts.count ? "총 " + alerts.count + "건 · 최신 50건까지 표시" :
+      limited ? '저장된 경보가 없습니다. 분석 상태가 불완전해 위험 없음으로 해석할 수 없습니다.' : '조회 기간에 저장된 경보가 없습니다. 지원 규칙과 수집 범위를 함께 확인하세요.') : labels[alerts.state];
     for (const row of alerts.rows || []) {
       const tr = node("tr");
       const severity = {critical: "긴급", high: "높음", medium: "중간", low: "낮음"}[row.severity] || row.severity || "미확인";
@@ -88,7 +94,7 @@
       $("ops-detail-state").textContent = data.evidence_count ? "근거 로그 " + data.evidence_count + "건" : "근거 로그가 없습니다. 주변 로그로 대체하지 않습니다.";
       const condition = data.condition;
       const investigate = node("a", "사건 조사 / 등록");
-      investigate.href = "workbench.html?" + new URLSearchParams({alert: id, return: (window.location?.search || "").slice(1), return_page: "index.html"});
+      investigate.href = "workbench.html?" + new URLSearchParams({alert: id, return: (window.location?.search || "").slice(1), return_page: "operations.html"});
       $("ops-detail-content").append(investigate);
       $("ops-detail-content").append(node("p", data.alert.title || data.alert.rule || "경보"), node("p", "관측 로그 " + (condition.event_count ?? "미기록") + "건"));
       if (data.assessment && typeof data.assessment === "object") {

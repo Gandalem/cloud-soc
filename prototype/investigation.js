@@ -10,9 +10,9 @@
   const back=new URLSearchParams(query.get("return")||"");
   const safeBack=new URLSearchParams();
   for(const [key,value]of back)if(["case_status","case_owner","case_priority","case_days","case_sort","case_page"].includes(key)&&value.length<40)safeBack.set(key,value);
-  const returnPage=query.get("return_page")==="index.html"?"index.html":"cases.html";
-  $("case-back").href=returnPage+"?"+safeBack+"#case-queue";
-  $("case-back").textContent=returnPage==="index.html"?"관제 현황으로":"사건 목록으로";
+  const returnPage=['index.html','dashboard.html','operations.html'].includes(query.get('return_page'))?query.get('return_page'):'cases.html';
+  $("case-back").href=returnPage+"?"+safeBack+(['index.html','dashboard.html'].includes(returnPage)?'#dashboard-grid':'#case-queue');
+  $("case-back").textContent=returnPage==='index.html'?'홈 대시보드로':returnPage==='dashboard.html'?'내 대시보드로':returnPage==='operations.html'?'관제 상세로':'사건 목록으로';
   function node(tag,text){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;}
   function error(message){$("investigation-error").hidden=false;$("investigation-error").textContent=message;}
   async function request(url,options={}){

@@ -121,4 +121,4 @@ UX 평가 제안: 동일한 공개/승인된 실습 로그로 과거 집계 화�
 - 법적 증거보전 인증, 규제 준수 인증, 실시간 전체 클라우드 보호, SOC 인력 대체를 주장하지 않는다.
 - 구현 일정/팀 역량/비용을 아직 모르므로 날짜를 확정하지 않는다. 두 소스만으로도 수직 workflow를 완성하는 것이 우선이다.
 
-관련 문서: [Architecture](siem_architecture.md), [Telemetry](data_source_matrix.md), [Detection](detection_coverage.md), [Roadmap 및 미결정 사항](implementation_roadmap_v2.md).
+관련 문서: [Architecture](siem_architecture.md), [Telemetry](../../data_source_matrix.md), [Detection](../../detection_coverage.md), [Roadmap 및 미결정 사항](implementation_roadmap_v2.md).

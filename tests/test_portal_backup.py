@@ -87,6 +87,24 @@ class PortalBackupTests(unittest.TestCase):
         self.assertFalse((self.copy / "cases.sqlite-wal").exists())
         recovery.verify(self.copy)
 
+    def test_dashboard_preferences_backed_up_and_restored_without_rewriting_source(self):
+        from cloud_soc.portal.dashboards import DashboardStore, DEFAULT
+        store = DashboardStore(self.source / 'dashboards.sqlite')
+        layout = {**DEFAULT, 'name': '보안팀 화면', 'theme': 'dark'}
+        expected = store.save('admin', {'revision': 0, 'layout': layout})
+        report = recovery.backup(self.source, self.copy)
+        self.assertEqual(report['format'], 3)
+        self.assertEqual(report['missing'], ['log-access.sqlite'])
+        self.assertEqual(recovery.verify(self.copy), report)
+        recovery.restore(self.copy, self.restored)
+        self.assertEqual(DashboardStore(self.restored / 'dashboards.sqlite').get('admin'), expected)
+        self.assertEqual(store.get('admin'), expected)
+        # An old format cannot silently claim to cover the new database.
+        manifest = self.copy / recovery.MANIFEST
+        manifest.write_text(json.dumps({**report, 'format': 2}), encoding='utf-8')
+        with self.assertRaises(recovery.BackupError):
+            recovery.verify(self.copy)
+
     def test_pre_p6_backup_explicitly_reports_missing_case_database(self):
         (self.source / "cases.sqlite").unlink()
         report = recovery.backup(self.source, self.copy)

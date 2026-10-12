@@ -2,7 +2,7 @@
 
 2026-09-10 / 외부 조사 기반 제품 설계 제안. **이번 산출물은 새 설계 문서뿐이며 아래 개발 작업을 실행하지 않았다.** 사용자 승인 전 기존 문서를 대체하지 않는다.
 
-선행 기준: [제품 요구사항](siem_product_requirements.md), [조사](siem_reference_research.md), [Architecture](siem_architecture.md), [Workflow](analyst_workflow.md), [Wireframes](dashboard_wireframes.md), [Telemetry](data_source_matrix.md), [Detection](detection_coverage.md).
+선행 기준: [제품 요구사항](siem_product_requirements.md), [조사](siem_reference_research.md), [Architecture](siem_architecture.md), [Workflow](analyst_workflow.md), [Wireframes](dashboard_wireframes.md), [Telemetry](../../data_source_matrix.md), [Detection](../../detection_coverage.md).
 
 ## 1. 조사 순서와 현재 상태의 범위
 
@@ -62,45 +62,45 @@ P1=핵심 업무 신뢰성과 MUST 구현을 막는 선행 과제, P2=기본 흐
 | Response/workflow | 승인/인계/결과/감사 | 미지원 | 조치 기록 및 권한 없음 | P1 | 인증된 수동 업무 변경과 감사; 자동 차단 제외 |
 | Security/retention | 최소 권한/보존/복구/감사 | localhost 바인딩, ES 인증 off, 볼륨 | 운영 인증/TLS/보존/백업 검증 미완 | P1 | 업무 쓰기/외부 공개 전 권한 경계와 백업 시험 |
 
-패널별 세부 가능 여부는 [Wireframes §8](dashboard_wireframes.md), 엔진 유형별 판정은 [Detection §7](detection_coverage.md)에 있다.
+패널별 세부 가능 여부는 [Wireframes §8](dashboard_wireframes.md), 엔진 유형별 판정은 [Detection §7](../../detection_coverage.md)에 있다.
 
 ## 4. 코드에서 확인한 우선 보완점
 
 ### G01: 10,000건 조회 제한과 재실행
 
-[repository.py](../src/cloud_soc/elastic/repository.py) 417~454행과 [engine.py](../src/cloud_soc/detection/engine.py) 465~502행은 `match_all`, `size=10000`, `@timestamp asc`로 한 페이지만 읽는다. 앞선 문서가 유지되고 한도를 넘으면 이후 문서를 계속 놓칠 수 있다. 단순히 size를 늘리거나 desc로 바꾸는 것은 완전 처리 보장이 아니다. `--watch`는 전체 경로 반복이지 증분 수집 완료의 증거가 아니다.
+[repository.py](../../../src/cloud_soc/elastic/repository.py) 417~454행과 [engine.py](../../../src/cloud_soc/detection/engine.py) 465~502행은 `match_all`, `size=10000`, `@timestamp asc`로 한 페이지만 읽는다. 앞선 문서가 유지되고 한도를 넘으면 이후 문서를 계속 놓칠 수 있다. 단순히 size를 늘리거나 desc로 바꾸는 것은 완전 처리 보장이 아니다. `--watch`는 전체 경로 반복이지 증분 수집 완료의 증거가 아니다.
 
 향후 완전 페이지 조회와 진행 상태를 도입하되 페이지마다 window를 초기화하지 않는다. 영속 checkpoint와 PIT 안의 페이지 cursor를 혼동하지 않고, 동일 시각/지연 도착/실패 복구를 시험한다. 기능 추가 전에 필요한 신뢰성 게이트다.
 
 ### G02: 탐지 근거가 결과에서 사라짐
 
-[engine.py](../src/cloud_soc/detection/engine.py) 512행에는 N 문서 ID를 `_cloud_soc_meta`에 넣지만 389~426행의 Detection에는 전달하지 않는다. [main.py](../src/cloud_soc/main.py) 69행의 Alert builder도 정확한 evidence/Host/User/규칙 버전을 저장하지 않는다. N의 원문 문자열 보존은 장점이지만 원래 Raw의 index/ID 및 수집 metadata를 추적하는 것과 다르다.
+[engine.py](../../../src/cloud_soc/detection/engine.py) 512행에는 N 문서 ID를 `_cloud_soc_meta`에 넣지만 389~426행의 Detection에는 전달하지 않는다. [main.py](../../../src/cloud_soc/main.py) 69행의 Alert builder도 정확한 evidence/Host/User/규칙 버전을 저장하지 않는다. N의 원문 문자열 보존은 장점이지만 원래 Raw의 index/ID 및 수집 metadata를 추적하는 것과 다르다.
 
 같은 IP/기간 재검색은 related activity다. 이를 당시 일치 근거라고 표시하면 늦게 들어온 로그/규칙 수정 후 결론이 달라질 수 있다. 과거 경보는 `legacy incomplete`로 남기고, 검증된 복원만 `reconstructed`로 별도 표시한다.
 
 ### G03: scope/ID/업무 상태 분리
 
-[authentication.yml](../rules/authentication.yml) 56행은 Source IP만 그룹화하고 [main.py](../src/cloud_soc/main.py) 118행은 Alert 조직을 고정한다. 여러 조직을 넣으면 같은 IP의 이벤트를 합산하고 잘못된 조직에 표시할 수 있다. 현재 단일 실습 환경의 성공을 다중 조직 격리로 확대 해석하지 않는다.
+[authentication.yml](../../../rules/authentication.yml) 56행은 Source IP만 그룹화하고 [main.py](../../../src/cloud_soc/main.py) 118행은 Alert 조직을 고정한다. 여러 조직을 넣으면 같은 IP의 이벤트를 합산하고 잘못된 조직에 표시할 수 있다. 현재 단일 실습 환경의 성공을 다중 조직 격리로 확대 해석하지 않는다.
 
-main 269행의 raw index/ID hash는 동일 Raw 재처리 중복 방지 기반이므로 유지하되 parser/schema 버전과 과거 참조 정책을 추가해야 한다. 323행의 Alert ID에는 rule version이 없고 창 시작/끝이 바뀌면 ID가 바뀐다. [repository.py](../src/cloud_soc/elastic/repository.py) 192행의 `client.index` 재저장은 불변 증거/최초 생성 보장과 다르다. Incident/메모를 그 문서에 섞으면 재탐지가 업무를 덮어쓸 위험이 있다.
+main 269행의 raw index/ID hash는 동일 Raw 재처리 중복 방지 기반이므로 유지하되 parser/schema 버전과 과거 참조 정책을 추가해야 한다. 323행의 Alert ID에는 rule version이 없고 창 시작/끝이 바뀌면 ID가 바뀐다. [repository.py](../../../src/cloud_soc/elastic/repository.py) 192행의 `client.index` 재저장은 불변 증거/최초 생성 보장과 다르다. Incident/메모를 그 문서에 섞으면 재탐지가 업무를 덮어쓸 위험이 있다.
 
 ### G04: 시간/로그 수의 의미
 
-[ecs.py](../src/cloud_soc/normalizers/ecs.py) 16행은 수집 기준 시각이 전달되지 않으면 실행 시점 연도로 classic syslog를 해석한다. [main.py](../src/cloud_soc/main.py) 255행은 Raw 수집 기준/소스 TZ를 전달하지 않는다. 장기 보존 로그 재처리와 비 UTC 소스에서 조사 시간축을 잘못 만들 수 있다. 수신 당시 기준과 불확실성을 보존해야 한다.
+[ecs.py](../../../src/cloud_soc/normalizers/ecs.py) 16행은 수집 기준 시각이 전달되지 않으면 실행 시점 연도로 classic syslog를 해석한다. [main.py](../../../src/cloud_soc/main.py) 255행은 Raw 수집 기준/소스 TZ를 전달하지 않는다. 장기 보존 로그 재처리와 비 UTC 소스에서 조사 시간축을 잘못 만들 수 있다. 수신 당시 기준과 불확실성을 보존해야 한다.
 
-[linux_auth.py](../src/cloud_soc/parsers/linux_auth.py)에는 Invalid user와 Failed password가 모두 failure로 정규화되는 경로가 있다. 한 인증 시도에 여러 줄이 생길 수 있으므로 AUTH-001의 10은 **일치 로그 10건**이며 사용자 로그인 시도 10회라고 확정하면 안 된다. ISO timestamp/PAM/sudo 등은 현 파서 전체 지원 대상이 아니다.
+[linux_auth.py](../../../src/cloud_soc/parsers/linux_auth.py)에는 Invalid user와 Failed password가 모두 failure로 정규화되는 경로가 있다. 한 인증 시도에 여러 줄이 생길 수 있으므로 AUTH-001의 10은 **일치 로그 10건**이며 사용자 로그인 시도 10회라고 확정하면 안 된다. ISO timestamp/PAM/sudo 등은 현 파서 전체 지원 대상이 아니다.
 
 ### G05: 건강도와 실패 신호
 
-[main.py](../src/cloud_soc/main.py) 496행은 처리 예외를 출력하고 재발생/명시적인 실패 종료를 하지 않는다. 따라서 이 처리 구간에서 발생해 잡힌 오류는 정상 종료 코드로 끝날 수 있다. [client.py](../src/cloud_soc/elastic/client.py)의 직접 연결 시험은 이미 성공/실패에 따라 0/1로 종료하므로 두 문제를 혼동하지 않는다.
+[main.py](../../../src/cloud_soc/main.py) 496행은 처리 예외를 출력하고 재발생/명시적인 실패 종료를 하지 않는다. 따라서 이 처리 구간에서 발생해 잡힌 오류는 정상 종료 코드로 끝날 수 있다. [client.py](../../../src/cloud_soc/elastic/client.py)의 직접 연결 시험은 이미 성공/실패에 따라 0/1로 종료하므로 두 문제를 혼동하지 않는다.
 
 skipped_count는 비지원 소스/메시지/파싱 불가를 섞는다. Raw/N 누적 건수 차이를 파싱 실패 수로 계산할 수 없다. Docker ES healthcheck도 Collector/터널/Parser/Detector 생존을 보증하지 않는다. 새 계측 전 건강도는 UNKNOWN이다.
 
 ### G06: 확장 전 검증과 설정
 
-[rule_loader.py](../src/cloud_soc/detection/rule_loader.py)는 safe_load/필수 값/연산자/중복 ID를 검증한다. 다만 cooldown, severity, group 값 타입 등 계약을 보강해야 하며 새 single/sequence를 현재 threshold 형식에 억지로 넣지 않는다. [engine.py](../src/cloud_soc/detection/engine.py) 74행 `not_equals`는 필드가 없을 때도 참일 수 있으므로 새 규칙의 결측 정책을 명시하고 시험해야 한다.
+[rule_loader.py](../../../src/cloud_soc/detection/rule_loader.py)는 safe_load/필수 값/연산자/중복 ID를 검증한다. 다만 cooldown, severity, group 값 타입 등 계약을 보강해야 하며 새 single/sequence를 현재 threshold 형식에 억지로 넣지 않는다. [engine.py](../../../src/cloud_soc/detection/engine.py) 74행 `not_equals`는 필드가 없을 때도 참일 수 있으므로 새 규칙의 결측 정책을 명시하고 시험해야 한다.
 
-[config/app.yml](../config/app.yml)은 실행 코드에서 읽지 않으며 raw_index도 실제 main 패턴과 다르다. [requirements.txt](../requirements.txt)는 버전 미고정이고 독립 `tests/`/assertion 기반 회귀 suite는 확인되지 않았다. 모듈의 출력 예제를 회귀 시험 통과로 간주하지 않는다. 기존 인덱스에는 ensure 함수가 mapping을 갱신하지 않으므로 향후 명시적 migration/legacy read adapter/복구 계획이 필요하다.
+[config/app.yml](../../../config/app.yml)은 실행 코드에서 읽지 않으며 raw_index도 실제 main 패턴과 다르다. [requirements.txt](../../../requirements.txt)는 버전 미고정이고 독립 `tests/`/assertion 기반 회귀 suite는 확인되지 않았다. 모듈의 출력 예제를 회귀 시험 통과로 간주하지 않는다. 기존 인덱스에는 ensure 함수가 mapping을 갱신하지 않으므로 향후 명시적 migration/legacy read adapter/복구 계획이 필요하다.
 
 ## 5. 기존 세 문서 처리 제안
 

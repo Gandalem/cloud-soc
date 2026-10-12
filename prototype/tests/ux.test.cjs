@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const read = name => fs.readFileSync(path.join(__dirname, '..', name), 'utf8');
-const pages = ['index.html', 'logs.html', 'cases.html', 'workbench.html', 'agents.html',
+const pages = ['index.html', 'dashboard.html', 'operations.html', 'logs.html', 'cases.html', 'workbench.html', 'agents.html',
   'agent-status.html', 'collection-health.html', 'detection-history.html', 'reprocessing-history.html'];
 
 test('all workspaces retain one heading, an accessible main and concise secondary help', () => {
@@ -18,7 +18,7 @@ test('all workspaces retain one heading, an accessible main and concise secondar
 });
 
 test('operations shows metrics and alerts before the case queue without duplicate targets', () => {
-  const html = read('index.html');
+  const html = read('operations.html');
   assert.ok(html.indexOf('id="ops-metrics"') < html.indexOf('id="case-queue"'));
   assert.ok(html.indexOf('id="ops-alerts"') < html.indexOf('id="case-queue"'));
   for (const id of ['ops-metrics', 'ops-intake-chart', 'ops-alert-chart', 'ops-alert-rows'])

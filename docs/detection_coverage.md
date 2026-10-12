@@ -1,6 +1,6 @@
 # Cloud SOC Detection Capability and Coverage
 
-2026-10-12 추가 대조: 아래 날짜가 붙은 과거 현황은 유지한다. 현재 single/threshold/인증 sequence에 선택적 ordered/diversity 로컬 탐지를 추가했다. [P5-03 명세](p5_03_attack_scenarios.md)와 [검증 기록](p5_03_attack_detection_validation.md)을 참고한다. 웹 SQLi/웹 실행 연계·정상 활동 기준선·완전한 SSH 세션 연결은 미지원이며 운영 coverage 완료를 주장하지 않는다.
+2026-10-12 추가 대조: 아래 날짜가 붙은 과거 현황은 유지한다. 현재 single/threshold/인증 sequence에 선택적 ordered/diversity 로컬 탐지를 추가했다. [P5-03 명세](p5_03_attack_scenarios.md)와 [검증 기록](archive/validation/p5_03_attack_detection_validation.md)을 참고한다. 웹 SQLi/웹 실행 연계·정상 활동 기준선·완전한 SSH 세션 연결은 미지원이며 운영 coverage 완료를 주장하지 않는다.
 
 2026-09-10 / 제품 설계 제안. 순서: 분석가 질문 -> 필요한 탐지 기능 -> Telemetry/필드 -> 로컬 규칙 -> 검증 -> 조사 화면. 새 Rule을 작성/배포하지 않았다.
 
@@ -21,7 +21,7 @@
 | Risk-based Correlation | 약한 여러 신호를 자산 중요도와 합쳐 우선화 | calibrated weights, decay, Entity resolution, 근거 추적, 정답 평가 | OUT OF SCOPE for first MVP |
 | Indicator Match | 유효한 CTI 지표와 관측 연결 | indicator source/validity/TLP, observed time, normalized value | COULD, match가 악성 확정은 아님 |
 
-상용 제품의 다양한 rule type은 기능 분리의 근거이며 구현 우선순위 자체는 프로젝트 제안이다. [Elastic Rule type guides](https://www.elastic.co/docs/solutions/security/detect-and-alert/rule-types), [연구/제품 비교](siem_reference_research.md).
+상용 제품의 다양한 rule type은 기능 분리의 근거이며 구현 우선순위 자체는 프로젝트 제안이다. [Elastic Rule type guides](https://www.elastic.co/docs/solutions/security/detect-and-alert/rule-types), [연구/제품 비교](archive/design/siem_reference_research.md).
 
 ## 2. Alert 품질 계약
 
@@ -104,11 +104,11 @@ T1685.002는 현행 `Disable or Modify Cloud Log`다. 과거 T1562.008을 그대
 | Suppression/cooldown | 적용 사유/범위/개수 가시성, 새로운 독립 활동 누락 검토 |
 | 자동 correlation 후보 | 사람이 검토한 묶기/분리 정답과 비교, 오연결률 확인 |
 
-MVP에서 고급 ML/risk-based correlation보다 single/threshold의 설명 가능성, 범위 정확성, 재시작 안정성을 먼저 확보한다. 연구(P2/P6/P8)의 해석 가능성/원래 신호 보존 원칙을 적용한 우선순위다. [연구 검토](siem_reference_research.md).
+MVP에서 고급 ML/risk-based correlation보다 single/threshold의 설명 가능성, 범위 정확성, 재시작 안정성을 먼저 확보한다. 연구(P2/P6/P8)의 해석 가능성/원래 신호 보존 원칙을 적용한 우선순위다. [연구 검토](archive/design/siem_reference_research.md).
 
 ## 7. 현재 구현 대조
 
-외부 조사/목표 설계 후 2026-09-10 작업 트리를 읽기 전용으로 확인했다. 실행 시험이나 새 Rule 배포는 하지 않았다. `지원`은 코드 존재이며 운영 검증 완료를 뜻하지 않는다. 상세 코드 근거와 신뢰성 Gap은 [로드맵 §3~4](implementation_roadmap_v2.md)에 있다.
+외부 조사/목표 설계 후 2026-09-10 작업 트리를 읽기 전용으로 확인했다. 실행 시험이나 새 Rule 배포는 하지 않았다. `지원`은 코드 존재이며 운영 검증 완료를 뜻하지 않는다. 상세 코드 근거와 신뢰성 Gap은 [로드맵 §3~4](archive/design/implementation_roadmap_v2.md)에 있다.
 
 | Capability | 현재 지원 여부 / 코드 근거 | 부족한 계약 | MVP 도입 순서 |
 | --- | --- | --- | --- |

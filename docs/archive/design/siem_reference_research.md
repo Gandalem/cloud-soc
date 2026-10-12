@@ -134,7 +134,7 @@ Data Sources는 v18에서 **deprecated**되었으며 역사 자료로 남는다.
 
 예를 들어 T1110.001에는 DET0551/AN1522와 DC0002 인증 데이터가 연결된다. 클라우드 권한 추가는 T1098.003/DET0277/AN0771을 참고할 수 있지만 AWS 등의 구체 API를 OCI에 그대로 적용할 수 없다. OCI 매핑은 자체 검증이 필요한 **로컬 해석**이다. [A6], [A7]
 
-`Rule에 Technique 태그가 있음`은 `Technique 전체 탐지가 검증됨`이 아니다. [Coverage 설계](detection_coverage.md)에서 매핑·Telemetry·구현·시험·현재 건강도를 각각 표시한다.
+`Rule에 Technique 태그가 있음`은 `Technique 전체 탐지가 검증됨`이 아니다. [Coverage 설계](../../detection_coverage.md)에서 매핑·Telemetry·구현·시험·현재 건강도를 각각 표시한다.
 
 ## 7. 학술 자료 검토
 

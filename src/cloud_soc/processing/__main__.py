@@ -10,6 +10,16 @@ from cloud_soc.portal.agent_status import parse_time
 from cloud_soc.processing.worker import run_once
 
 
+def page_limit(value):
+    try:
+        limit = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("Page limit must be an integer") from None
+    if not 1 <= limit <= 10000:
+        raise argparse.ArgumentTypeError("Page limit must be between 1 and 10000")
+    return limit
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Metadata normalizer; detection runs in a separate worker")
     parser.add_argument("--start", required=True, help="Initial receipt-time floor, ISO8601 with zone")
@@ -19,6 +29,9 @@ def main(argv=None):
     parser.add_argument("--es-url")
     parser.add_argument("--ca-file")
     parser.add_argument("--api-key-file")
+    parser.add_argument("--max-pages", type=page_limit, default=1000,
+                        help="Input page budget per cycle (200 documents/page); default 1000. "
+                             "Larger receipt windows resume on the next cycle without skipping documents.")
     args = parser.parse_args(argv)
     try:
         start = parse_time(args.start)
@@ -37,7 +50,7 @@ def main(argv=None):
         with Elasticsearch(url, api_key=key, ca_certs=str(ca), request_timeout=15, max_retries=0) as client:
             while True:
                 try:
-                    result = run_once(client, state, args.start)
+                    result = run_once(client, state, args.start, max_pages=args.max_pages)
                     print("normalization_" + result["state"] + " checkpoint=" + result["checkpoint"], flush=True)
                 except Exception:
                     print("normalization_failed; checkpoint retained; inspect permissions and service status", flush=True)

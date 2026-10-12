@@ -1,0 +1,45 @@
+/* Shared palette, loaded after page styles. */
+:root { --ui-bg:#f3f6fb; --ui-panel:#fff; --ui-soft:#edf3fc; --ui-hover:#e1ecfc; --ui-active:#e4eeff; --ui-border:#d6e0ed; --ui-text:#18304d; --ui-muted:#586d85; --ui-link:#245fbe; color-scheme:light; }
+:root[data-theme="dark"] { --ui-bg:#0d1623; --ui-panel:#172334; --ui-soft:#22334c; --ui-hover:#29425e; --ui-active:#254568; --ui-border:#34485f; --ui-text:#e6effb; --ui-muted:#b0c0d4; --ui-link:#91baff; color-scheme:dark; }
+:root .agents-page { --bg:var(--ui-bg); --panel:var(--ui-panel); --panel-raised:var(--ui-soft); --border:var(--ui-border); --text:var(--ui-text); --muted:var(--ui-muted); --blue:var(--ui-link); --light-bg:var(--ui-bg); --ink:var(--ui-text); --light-border:var(--ui-border); color:var(--ui-text); background:var(--ui-bg); }
+:root #app-shell .sidebar { background:var(--ui-panel); color:var(--ui-text); border-color:var(--ui-border); }
+:root #app-shell :is(.nav-group,.sidebar-footer,.sidebar-footer strong) { color:var(--ui-muted); border-color:var(--ui-border); }
+:root #app-shell .nav-item { color:var(--ui-text); background:transparent; }
+:root #app-shell .nav-item:is(:hover,:focus-visible) { background:var(--ui-hover); color:var(--ui-text); }
+:root #app-shell .nav-item.active { background:var(--ui-active); color:var(--ui-text); border-color:var(--ui-border); box-shadow:inset 3px 0 var(--ui-link); }
+:root #app-shell .nav-item.active:is(:hover,:focus-visible) { background:var(--ui-hover); color:var(--ui-text); }
+:root #app-shell .app-header button { color:#eff6ff; background:#20364d; border:1px solid #526c88; min-height:34px; padding:6px 10px; white-space:nowrap; }
+:root #app-shell .app-header button:hover { background:#304c6b; color:#fff; }
+:root #app-shell .shell-theme-toggle { margin-left:12px; font-size:12px; }
+:root .agents-page :is(input:not([type="checkbox"]):not([type="radio"]),select,textarea) { background:var(--ui-panel); color:var(--ui-text); border-color:var(--ui-border); }
+:root .agents-page :is(input,textarea)::placeholder { color:var(--ui-muted); }
+:root .agents-page :is(.log-detail-dialog,.agent-dialog,.usage-details,#ops-detail,#source-json,.light-card,.workbench-surface,.analysis-stages,.history-idle,.ops-evidence) { background:var(--ui-panel); color:var(--ui-text); border-color:var(--ui-border); }
+:root .agents-page :is(.log-query-summary,.log-sheet th,.package-table th,.case-panel th,.reason-table th,.agent-dialog footer) { background:var(--ui-soft); color:var(--ui-muted); border-color:var(--ui-border); }
+:root .agents-page :is(.log-sheet td,.package-table td,.case-panel td,.history-idle-table td,.case-history li,.reason-table td,#log-detail-fields dt,#log-detail-fields dd) { border-color:var(--ui-border); }
+:root .agents-page :is(.log-sheet tbody tr:nth-child(even),.server-strip,.status-explainer,.log-scope-note) { background:var(--ui-soft); }
+:root .agents-page :is(.log-sheet tbody tr:hover,.log-sheet tbody tr:focus-within) { background:var(--ui-hover); }
+:root .agents-page .package-table tr:hover td { background:var(--ui-hover); }
+:root .agents-page :is(.log-detail-dialog button,.case-panel button,.ops-alerts button,#ops-detail button) { background:var(--ui-soft); color:var(--ui-text); border-color:var(--ui-border); }
+:root .agents-page :is(.log-detail-dialog button,.case-panel button,.ops-alerts button,#ops-detail button):hover { background:var(--ui-hover); color:var(--ui-text); }
+:root .agents-page :is(.subheading,.inline-note,.scope-note,.field-note,.description-label,.breadcrumbs,.breadcrumbs strong,.empty-state,.empty-state p,.log-detail-footnote,#log-detail-fields dt,.source-panel p,.light-card p,.analysis-stages p,.history-row small,#history-count,.status-explainer p,.activity-stats small,.status-card p,.status-card dl dt) { color:var(--ui-muted); }
+:root .agents-page :is(.log-row-open,.package-table .file-name,.basis-label,#log-detail-state,.source-panel a,#ops-detail summary,.reason-value) { color:var(--ui-link); }
+:root .agents-page :is(.light-card h2,.reason-table td,.login-brand) { color:var(--ui-text); }
+:root[data-theme="dark"] .agents-page button:not(.primary-button):not(.danger-button):not(.dash-primary) { background:var(--ui-soft); color:var(--ui-text); border-color:var(--ui-border); }
+:root[data-theme="dark"] .agents-page button:not(.primary-button):not(.danger-button):not(.dash-primary):hover { background:var(--ui-hover); color:var(--ui-text); }
+:root[data-theme="dark"] .agents-page :is(.system-status,.key-confirm,#page-message,#history-message,#log-error) { background:#2c3040; color:#f0d49d; border-color:#78603c; }
+:root[data-theme="dark"] .agents-page .system-status[data-state="blocked"] { background:#442732; color:#ffc1c3; border-color:#98505b; }
+:root[data-theme="dark"] .agents-page :is(.error-text,.status-error,#case-error,#investigation-error,#ops-error,#log-error,#dashboard-error) { color:#ffa5b4; }
+:root[data-theme="dark"] .agents-page input[readonly] { background:var(--ui-soft) !important; color:var(--ui-muted) !important; }
+:root[data-theme="dark"] .agents-page :is(.os-tag,.key-state,.state-tag) { background:var(--ui-soft); color:var(--ui-text); }
+:root[data-theme="dark"] .agents-page :is(.key-state.active,.status-ok,.activity-state.recent) { color:#8fe0b1; }
+:root[data-theme="dark"] .agents-page :is(.key-state.revoked,.key-state.expired,.key-state.unavailable,.dash-severity.high,.dash-severity.critical) { background:#492a36; color:#ffb6c7; }
+:root[data-theme="dark"] .agents-page :is(.agent-dialog header,.agent-dialog footer,.case-evidence,.source-panel,.log-detail-footnote) { border-color:var(--ui-border); }
+@media(max-width:700px) {
+  :root #app-shell .shell-theme-toggle { margin-left:6px; padding:6px 8px; font-size:11px; }
+  :root #app-shell .workspace-label { font-size:12px; }
+}
+@media(max-width:520px) {
+  :root #app-shell .brand { width:44px; padding:0 8px; gap:0; font-size:0; }
+  :root #app-shell .brand img { width:27px; height:27px; }
+  :root #app-shell .shell-toggle { margin-right:8px; padding:6px 8px; }
+}

@@ -26,6 +26,8 @@ def client_for_scope():
     client.field_caps.return_value = {'fields': {'event.ingested': {'date': {}}}}
     client.open_point_in_time.return_value = {'id': 'pit'}
     client.search.return_value = {'hits': {'hits': []}}
+    client.bulk.side_effect = lambda **kw: {'items': [
+        {'create': {'status': 201}} for _ in range(len(kw['operations']) // 2)]}
     return client
 
 

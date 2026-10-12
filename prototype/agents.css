@@ -107,4 +107,8 @@ fieldset.form-row legend { float:left; width:130px; flex-shrink:0; padding:0; }
 .login-card input { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; background: white; color: var(--text); }
 .login-card button { min-height: 44px; }
 .login-card .error-text:empty { display: none; }
+.login-card [hidden] { display: none; }
+#login-mode { margin-bottom: 18px; color: #526377; font-size: 13px; }
+#login-basic p { margin: 0 0 18px; line-height: 1.65; }
+#login-basic .button-link { display: block; text-align: center; padding: 10px 16px; }
 @media (max-width: 480px) { .login-page { padding: 16px; } .login-card { padding: 24px; } }

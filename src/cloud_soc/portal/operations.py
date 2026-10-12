@@ -63,10 +63,53 @@ def exact_count(value):
     return value
 
 
+def display_summary(value):
+    """Preserve bounded numeric charts while filtering every other metadata field."""
+    prepared = dict(value)
+    prepared['sections'] = {name: dict(section) for name, section in value['sections'].items()}
+    charts = {}
+    for name in ('intake', 'processing', 'alerts', 'quality'):
+        section = prepared['sections'].get(name)
+        if not section or section.get('state') != 'ok':
+            continue
+        buckets = section.pop('buckets', None)
+        if not isinstance(buckets, list) or len(buckets) > 1000:
+            raise ValueError('Invalid chart series')
+        projected = []
+        for bucket in buckets:
+            if not isinstance(bucket, dict) or parse_time(bucket.get('time')) is None:
+                raise ValueError('Invalid chart series')
+            projected.append({'time': iso(parse_time(bucket['time'])), 'count': exact_count(bucket.get('count'))})
+        charts[name] = projected
+    result = redact_metadata(prepared)
+    for name, buckets in charts.items():
+        result['sections'][name]['buckets'] = buckets
+    return result
+
+
 def identifier(value):
     if not isinstance(value, str) or not value or len(value) > 512 or text(value) != value:
         raise ValueError("Invalid document ID")
     return value
+
+
+def analysis_coverage(normalizer, detector):
+    """A detector poll is not proof that newly received logs were analyzed."""
+    for name, status in (("normalizer", normalizer), ("detector", detector)):
+        state, health = status.get("state"), status.get("health")
+        if state == "failed" or health == "failed":
+            return {"state": "blocked", "reason": name + "_failed"}
+        if state in ("unavailable", "stale", None) or health == "stale":
+            return {"state": "unknown", "reason": name + "_unconfirmed"}
+        if state == "not_started":
+            return {"state": "not_started", "reason": name + "_not_started"}
+        if health == "delayed":
+            return {"state": "delayed", "reason": name + "_delayed"}
+    if normalizer.get("progress", {}).get("state") == "catching_up":
+        return {"state": "catching_up", "reason": "receipt_backlog"}
+    if detector.get("health") == "warning":
+        return {"state": "warning", "reason": "evaluation_exclusions"}
+    return {"state": "observed", "reason": "recent_worker_reports"}
 
 
 def alert_row(hit):
@@ -169,7 +212,7 @@ class Operations:
     def worker_status(self, worker):
         if self.organizations is not None:
             return {"state": "unavailable"}
-        value = self.get(STATUS, worker, ["@timestamp", "state", "last_success", "checkpoint", "error", "detection", "health", "lag_seconds", "late_total", "legacy_excluded", "excluded_total", "history_pending"])
+        value = self.get(STATUS, worker, ["@timestamp", "state", "last_success", "checkpoint", "error", "detection", "health", "lag_seconds", "late_total", "legacy_excluded", "excluded_total", "history_pending", "progress", "counts"])
         if value is None:
             return {"state": "not_started"}
         stamp = parse_time(value.get("@timestamp"))
@@ -187,10 +230,19 @@ class Operations:
         pending = value.get('history_pending')
         pending = pending if type(pending) is int and pending >= 0 else 0
         health = 'failed' if state == 'failed' else 'stale' if state == 'stale' else 'delayed' if lag is not None and lag > 1200 else 'warning' if late or legacy or excluded or pending else 'healthy'
-        return {"state": state, "health": health, "lag_seconds": lag, "late_total": late, "legacy_excluded": legacy, "excluded_total": excluded, "history_pending": pending,
+        result = {"state": state, "health": health, "lag_seconds": lag, "late_total": late, "legacy_excluded": legacy, "excluded_total": excluded, "history_pending": pending,
                 "detection": text(value.get('detection')),
                 "last_success": text(value.get("last_success")), "checkpoint": text(value.get("checkpoint")),
                 "error": text(value.get('error'))}
+        progress = value.get("progress")
+        if isinstance(progress, dict) and progress.get("state") == "catching_up":
+            processed = progress.get("processed")
+            if type(processed) is int and processed >= 0:
+                result["progress"] = {"state": "catching_up", "processed": processed, "range_complete": False}
+        counts = value.get("counts")
+        if worker == "detector" and isinstance(counts, dict) and type(counts.get("events")) is int:
+            result["latest_input_count"] = counts["events"] if counts["events"] >= 0 else None
+        return result
 
     def pipeline(self):
         try:
@@ -202,6 +254,7 @@ class Operations:
         except Exception:
             result["detector"] = {"state": "unavailable"}
         result["detection"] = result["detector"]["state"]
+        result["coverage"] = analysis_coverage(result, result["detector"])
         return result
 
     def summary(self, pairs):
