@@ -262,8 +262,7 @@ class LogReader:
             clauses.append({"terms": {"organization.id": list(self.organizations)}})
         runtime = {}
         if filters.source_kind == 'web':
-            runtime['soc_query_source']={'type':'keyword','script':{'source':FIELD_HELPER+"def v=value(params._source,'labels.log_source'); if(v instanceof String) emit(v);"}}
-            clauses.append({'terms':{'soc_query_source':['generic_web_access','web_access_metadata']}})
+            clauses.append({'terms':{'labels.log_source':['generic_web_access','web_access_metadata']}})
         for value, path in ((filters.host, "host.name"), (filters.collector, "agent.type")):
             if value is not None:
                 clauses.append({"term": {path: value}})
@@ -296,6 +295,9 @@ class LogReader:
             required["host.name"] = {"keyword"}
         if filters.collector is not None:
             required["agent.type"] = {"keyword"}
+        if filters.source_kind == 'web':
+            fields.append('labels.log_source')
+            required['labels.log_source']={'keyword'}
         caps = self.client.field_caps(index=INDICES, fields=fields, include_unmapped=True)["fields"]
         for name, allowed in required.items():
             for kind, info in caps.get(name, {}).items():
