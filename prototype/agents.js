@@ -61,7 +61,7 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
     state.page = Math.min(state.page, pages);
     const page = rows.slice((state.page - 1) * state.size, state.page * state.size);
     $('#package-total').textContent = `전체 ${state.packages.length}개 · 검색 ${rows.length}개`;
-    $('#package-rows').innerHTML = page.map(item => `<tr><td><input type="checkbox" data-select="${item.id}" aria-label="${escape(item.filename)} 선택" ${state.selected.has(item.id) ? 'checked' : ''}></td><td><span class="os-tag ${item.os === 'ubuntu' ? 'ubuntu' : ''}">${item.os === 'ubuntu' ? 'UBUNTU' : 'WINDOWS'}</span></td><td><button class="file-name" data-info="${item.id}">${escape(item.filename)}</button></td><td title="${escape(item.endpoint)}">${escape(item.endpoint)}</td><td>${escape(item.organization)}</td><td>${item.network ? '로그 + 네트워크' : '로그'}</td><td>${escape(item.version)}</td><td>${escape(date(item.created_at))}</td><td><div class="package-actions"><a href="/api/packages/${item.id}/download" download>다운로드</a><button data-command="${item.id}">설치 명령</button>${state.enrollmentEnabled && item.enrollment_protocol === 1 ? `<button data-enrollment="${item.id}">설치 토큰</button>` : ''}<button data-keys="${item.id}">수동 키 발급</button><button data-delete="${item.id}" aria-label="${escape(item.filename)} 삭제">삭제</button></div></td></tr>`).join('');
+    $('#package-rows').innerHTML = page.map(item => `<tr><td><input type="checkbox" data-select="${item.id}" aria-label="${escape(item.filename)} 선택" ${state.selected.has(item.id) ? 'checked' : ''}></td><td><span class="os-tag ${item.os !== 'windows' ? 'ubuntu' : ''}">${item.os === 'windows' ? 'WINDOWS' : item.os === 'amazon_linux_2023' ? 'AMAZON LINUX' : 'UBUNTU'}</span></td><td><button class="file-name" data-info="${item.id}">${escape(item.filename)}</button></td><td title="${escape(item.endpoint)}">${escape(item.endpoint)}</td><td>${escape(item.organization)}</td><td>${[item.system !== false ? '시스템' : '', item.sites?.length ? '웹' : '', item.network ? '네트워크' : ''].filter(Boolean).join(' + ')}</td><td>${escape(item.version)}</td><td>${escape(date(item.created_at))}</td><td><div class="package-actions"><a href="/api/packages/${item.id}/download" download>다운로드</a><button data-command="${item.id}">설치 명령</button>${state.enrollmentEnabled && item.enrollment_protocol === 1 ? `<button data-enrollment="${item.id}">설치 토큰</button>` : ''}<button data-keys="${item.id}">수동 키 발급</button><button data-delete="${item.id}" aria-label="${escape(item.filename)} 삭제">삭제</button></div></td></tr>`).join('');
     $('#empty-state').hidden = rows.length !== 0;
     $('#empty-state strong').textContent = state.packages.length ? '검색 결과가 없습니다.' : '등록된 설치 파일이 없습니다.';
     $('#page-number').textContent = `${state.page} / ${pages}`;
@@ -112,7 +112,7 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
     if (!item) return;
     state.detail = item;
     $('#detail-title').textContent = item.filename;
-    const fields = [['운영체제', item.os === 'ubuntu' ? 'Ubuntu 22.04 · x86_64 / ARM64' : 'Windows x86_64'], ['수신 서버', item.endpoint], ['조직', item.organization], ['생성 시각', date(item.created_at)], ['SHA-256', item.sha256], ['설명', item.description || '없음']];
+    const fields = [['운영체제', item.os === 'windows' ? 'Windows x86_64' : item.os === 'amazon_linux_2023' ? 'Amazon Linux 2023 · x86_64 / ARM64' : 'Ubuntu 22.04 / 24.04 · x86_64 / ARM64'], ['수신 서버', item.endpoint], ['조직', item.organization], ['생성 시각', date(item.created_at)], ['SHA-256', item.sha256], ['설명', item.description || '없음']];
     $('#package-info').innerHTML = fields.map(([name, value]) => `<dt>${escape(name)}</dt><dd>${escape(value)}</dd>`).join('');
     $('#install-command').textContent = commands(item);
     $('#detail-download').href = `/api/packages/${item.id}/download`;
@@ -122,6 +122,15 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
     const windows = $('#package-form input[name=os]:checked').value === 'windows';
     $('#filename-suffix').textContent = windows ? '-setup.zip' : '-setup.tar.gz';
     const network = $('#package-form input[name=network]').checked;
+    const web = $('#package-form input[name=web]').checked;
+    $('#site-fields').hidden = !web; $('#site-fields').disabled = !web;
+    const custom = web && $('#package-form select[name=web_range]').value === 'custom';
+    $('#web-start-row').hidden = !custom;
+    $('#package-form input[name=web_start]').disabled = !custom;
+    $('#package-form input[name=web_start]').required = custom;
+    $('#package-form input[name=log_path]').placeholder = windows ? '예: C:\\Apache\\logs\\access.log' : '예: /var/log/apache2/access.log';
+    const system = $('#package-form input[name=system]').checked;
+    $('#collection-count').textContent = `선택한 수집 항목 ${Number(system)+Number(web)+Number(network)}개`;
     $('#install-path').textContent = windows ? `%ProgramFiles%\\Cloud-SOC-Agent${network ? ' (+ Cloud-SOC-Network)' : ''}` : `/opt/cloud-soc-agent${network ? ' (+ /opt/cloud-soc-network)' : ''}`;
   }
   function confirmDelete(ids) {
@@ -191,7 +200,7 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
     $('#enrollment-target').value = '';
     $('#enrollment-message').textContent = '설치할 서버마다 토큰을 발급하세요. 정상 설치의 갱신·일반 복구에는 사용하지 마세요.';
     $('#mint-enrollment').disabled = false;
-    $('#enrollment-command').textContent = item.os === 'ubuntu'
+    $('#enrollment-command').textContent = item.os !== 'windows'
       ? `sudo bash install.sh --enroll --package-sha256 '${item.sha256}'${item.network ? ' --interface <수집할-NIC>' : ''}`
       : `.\\install.ps1 -Enroll -PackageSha256 '${item.sha256}'`;
     $('#enrollment-dialog').showModal();
@@ -237,11 +246,23 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
   $('#add-package').addEventListener('click', () => { $('#package-form').reset(); setFormOS(); $('#form-error').hidden = true; $('#add-dialog').showModal(); });
   document.querySelectorAll('input[name=os]').forEach(input => input.addEventListener('change', setFormOS));
   $('#package-form input[name=network]').addEventListener('change', setFormOS);
+  $('#package-form input[name=system]').addEventListener('change', setFormOS);
+  $('#package-form input[name=web]').addEventListener('change', setFormOS);
+  $('#package-form select[name=web_range]').addEventListener('change', setFormOS);
   $('#package-form').addEventListener('submit', async event => {
     event.preventDefault(); const form = new FormData(event.target);
     $('#create-submit').disabled = true; $('#form-error').hidden = true;
     try {
-      const item = await api('/api/packages', { method: 'POST', data: { name: form.get('name'), os: form.get('os'), organization: form.get('organization'), description: form.get('description'), network: form.get('network') === 'on' } });
+      const sites = [];
+      if (form.get('web') === 'on') {
+        const range = form.get('web_range');
+        const start = range === 'custom' ? new Date(form.get('web_start')) : new Date(Date.now() - ({'24h':86400000,'7d':604800000}[range] || 0));
+        if (!Number.isFinite(start.getTime())) throw new Error('웹 수집 시작 시각을 선택하세요.');
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(form.get('site_name')));
+        const id = 'site-' + Array.from(new Uint8Array(digest)).map(n => n.toString(16).padStart(2,'0')).join('').slice(0,24);
+        sites.push({id,name:form.get('site_name'),server_type:form.get('server_type'),log_path:form.get('log_path'),start_at:start.toISOString()});
+      }
+      const item = await api('/api/packages', { method: 'POST', data: { name: form.get('name'), os: form.get('os'), organization: form.get('organization'), description: form.get('description'), network: form.get('network') === 'on', system:form.get('system') === 'on', sites } });
       $('#add-dialog').close(); await load(); detail(item.id);
     } catch (error) { $('#form-error').textContent = error.message; $('#form-error').hidden = false; }
     finally { $('#create-submit').disabled = false; }

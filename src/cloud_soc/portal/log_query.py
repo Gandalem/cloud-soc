@@ -28,6 +28,7 @@ def project_list_hit(hit):
         "status": "unsupported", "adapter": None, "fields": {}}
     adapters = {"windows_event": {"windows_security_v1", "sysmon_v1"},
                 "web_access_metadata": {"web_access_metadata_v1"},
+                "generic_web_access": {"web_access_agent_v1"},
                 "network_packetbeat": {"packetbeat_metadata_v1"},
                 "aws_cloudtrail": {"aws_cloudtrail_metadata_v1"}, "oci_audit": {"oci_audit_metadata_v1"}}
     if detail["adapter"] not in adapters.get(row["source_kind"], set()):
@@ -260,6 +261,15 @@ class LogReader:
         if self.organizations is not None:
             clauses.append({"terms": {"organization.id": list(self.organizations)}})
         runtime = {}
+        if filters.source_kind == 'web':
+            # Existing host indices have dynamic text+keyword labels while the
+            # protected DVWA index uses keyword. Narrow with indexed terms first,
+            # then confirm the exact source value on that small candidate set.
+            sources=['generic_web_access','web_access_metadata']
+            clauses.append({'bool':{'minimum_should_match':1,'should':[
+                {'terms':{'labels.log_source':sources}}, {'terms':{'labels.log_source.keyword':sources}}]}})
+            runtime['soc_query_source']={'type':'keyword','script':{'source':FIELD_HELPER+"def v=value(params._source,'labels.log_source'); if(v instanceof String) emit(v);"}}
+            clauses.append({'terms':{'soc_query_source':sources}})
         for value, path in ((filters.host, "host.name"), (filters.collector, "agent.type")):
             if value is not None:
                 clauses.append({"term": {path: value}})
@@ -292,6 +302,9 @@ class LogReader:
             required["host.name"] = {"keyword"}
         if filters.collector is not None:
             required["agent.type"] = {"keyword"}
+        if filters.source_kind == 'web':
+            fields.append('labels.log_source')
+            required['labels.log_source']={'keyword','text'}
         caps = self.client.field_caps(index=INDICES, fields=fields, include_unmapped=True)["fields"]
         for name, allowed in required.items():
             for kind, info in caps.get(name, {}).items():

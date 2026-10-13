@@ -25,7 +25,7 @@
     const sources=new Set(['status']);
     for(const w of layout.widgets){const meta=catalog.find(m=>m.type===w.type);if(!meta?.enabled)continue;
       const period=w.config.period||layout.period;
-      if(['operations','logs','notices'].includes(meta.source))sources.add(meta.source+':'+period);
+      if(['operations','logs','notices','web'].includes(meta.source))sources.add(meta.source+':'+period);
       else sources.add(meta.source);
       if(w.type==='overview')sources.add('cases');
     }
@@ -38,11 +38,12 @@
   }
   function pathFor(key,end) {
     const [source,raw]=key.split(':');
-    if(!['operations','logs','notices'].includes(source))return {cases:'/api/cases?status=open&sort=priority&page=1',agents:'/api/agents/status',status:'/api/operations/status'}[source];
+    if(!['operations','logs','notices','web'].includes(source))return {cases:'/api/cases?status=open&sort=priority&page=1',agents:'/api/agents/status',collection:'/api/agents/components',status:'/api/operations/status'}[source];
     const period=Number(raw),params=new URLSearchParams({start:new Date(end-period*60000).toISOString(),end:new Date(end).toISOString()});
     if(source==='operations')return '/api/operations?'+params;
     if(source==='notices')return '/api/alerts/notices?'+params;
-    if(source==='logs'){params.set('page_size','50');params.set('time_basis','ingested');return '/api/logs?'+params;}
+    if(source==='web')params.set('source_kind','web');
+    if(source==='logs'||source==='web'){params.set('page_size','50');params.set('time_basis','ingested');return '/api/logs?'+params;}
   }
   async function load(keys,signal,end=Date.now()) {
     const results={},queue=[...keys];
@@ -87,7 +88,7 @@
   function filteredAlerts(rows,w){let result=rows.filter(r=>w.config.severity==='all'||r.severity===w.config.severity);if(w.type==='high-alerts')result=result.filter(r=>['critical','high'].includes(r.severity));if(w.type==='cloud-alerts')result=result.filter(r=>/^(AWS|OCI)[-_]/.test(r.rule||''));result=[...result].sort((a,b)=>(Date.parse(a.timestamp)||0)-(Date.parse(b.timestamp)||0));if(w.config.sort!=='oldest')result.reverse();return result;}
   const iam=new Set(['AttachUserPolicy','AttachRolePolicy','PutUserPolicy','PutRolePolicy','CreatePolicy','CreatePolicyVersion','SetDefaultPolicyVersion','DetachUserPolicy','DetachRolePolicy','DeleteUserPolicy','DeleteRolePolicy']);
   const audit=new Set(['StopLogging','StartLogging','DeleteTrail','UpdateTrail','CreateTrail','PutEventSelectors']);
-  function filteredLogs(rows,type){if(type.startsWith('cloud-')){rows=rows.filter(r=>['aws_cloudtrail','oci_audit'].includes(r.source_kind)&&['aws','oci'].includes(r.cloud_provider));if(type==='cloud-iam')rows=rows.filter(r=>iam.has(r.action));if(type==='cloud-audit')rows=rows.filter(r=>audit.has(r.action));}return rows;}
+  function filteredLogs(rows,type){if(type==='web-events')return rows.filter(r=>['web_access_metadata','generic_web_access'].includes(r.source_kind));if(type.startsWith('cloud-')){rows=rows.filter(r=>['aws_cloudtrail','oci_audit'].includes(r.source_kind)&&['aws','oci'].includes(r.cloud_provider));if(type==='cloud-iam')rows=rows.filter(r=>iam.has(r.action));if(type==='cloud-audit')rows=rows.filter(r=>audit.has(r.action));}return rows;}
   function render(box,w,meta,result,extras={}) {
     if(!meta?.enabled){empty(box,meta?.reason||'미지원 위젯입니다.');return;}
     if(meta.renderer==='notices'){
@@ -104,8 +105,9 @@
     if(meta.renderer==='series'){series(box,s[w.type==='intake'?'intake':w.type==='processing'?'processing':'alerts'],config.chart);return;}
     if(meta.renderer==='status'){const state=s.pipeline?.coverage?.state||'unknown';box.append(node('p',({observed:'최근 분석 보고 확인',blocked:'분석 중단',delayed:'분석 지연',catching_up:'대기 로그 처리 중',warning:'일부 위험 평가 미완료',not_started:'분석 미실행'}[state]||'상태 미확인'),'dash-status'));table(box,['서비스','상태','마지막 성공'],['normalizer','detector'].map(k=>{const row=k==='normalizer'?s.pipeline:s.pipeline?.detector;return [k==='normalizer'?'정규화':'탐지',row?.state||'미확인',time(row?.last_success)];}));return;}
     if(meta.source==='agents'){if(!Array.isArray(data.agents)){failure(box);return;}table(box,['호스트','수집기','마지막 수신 (KST)','수신 활동'],data.agents.slice(0,limit).map(r=>[r.host_name,r.agent_type,time(r.last_received),({recent:'최근 수신',delayed:'수신 지연',silent:'최근 미수신',unknown:'미확인'}[r.status]||'미확인')]));box.append(link('수신 현황','agent-status.html'));return;}
+    if(meta.source==='collection'){if(!Array.isArray(data.rows)){failure(box);return;}const labels={normal:'정상 수신',unconfigured:'미설정',error:'오류',delayed:'지연',no_data:'데이터 없음',unknown:'상태 미확인'};table(box,['호스트','수집 항목','상태','마지막 수신 (KST)'],data.rows.slice(0,10).flatMap(r=>['system','web','network'].map(k=>[r.host_name,{system:'시스템·보안',web:'웹',network:'네트워크'}[k],labels[r[k]?.state]||'상태 미확인',time(r[k]?.last_received)])));box.append(node('p','최근 보고한 설치 표본입니다. 데이터 없음은 오프라인이나 안전 판정이 아닙니다.','builder-scope'));return;}
     if(meta.source==='cases'){if(!Array.isArray(data.rows)||!number(data.counts?.total)){failure(box);return;}if(w.type==='case-status'){const n=data.counts.investigating;if(!number(n)||n>data.counts.total){failure(box);return;}parts(box,[{title:'조사 중',count:n},{title:'기타 미종결',count:data.counts.total-n}],config.chart);}else table(box,['우선순위','사건','상태','상세'],data.rows.slice(0,limit).map(r=>[severity[r.priority]||'미기록',r.title,({new:'신규',triage:'초기 분류',investigating:'조사 중',escalated:'이관'}[r.status]||r.status),link('사건 보기','workbench.html?'+new URLSearchParams({case:r.id}))]));box.append(link('사건 목록','cases.html'));return;}
-    if(meta.source==='logs'){
+    if(meta.source==='logs'||meta.source==='web'){
       if(!Array.isArray(data.rows)||data.rows.length>50){failure(box);return;}
       if(data.data_state==='no_index'){empty(box,'데이터 미수집 · 조회할 로그 인덱스가 없습니다.');return;}
       if(!data.rows.length&&!data.data_state){empty(box,'조회 기간에 반환된 로그가 없습니다. 미수집 여부는 수신 추이에서 확인하세요.');return;}

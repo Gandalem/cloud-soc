@@ -20,6 +20,7 @@ from cloud_soc.portal.packages import PackageStore, validate_endpoint
 from cloud_soc.portal.agent_status import decode_cursor, snapshot
 from cloud_soc.portal.log_query import LogReader, LogQueryError
 from cloud_soc.portal.collection_health import snapshot as health_snapshot
+from cloud_soc.portal.collection_components import snapshot as component_snapshot
 from cloud_soc.portal.operations import Operations
 from cloud_soc.portal.cases import CaseStore, CaseError
 from cloud_soc.portal.auth import COOKIE, PUBLIC, Sessions, load_users, permitted
@@ -426,6 +427,15 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                        enrollment_enabled=bool(settings.get("ENROLLMENT_ENABLED")),
                        ca_sha256=hashlib.sha256(settings["CA_BYTES"]).hexdigest(),
                        packages=store.list(), max_packages=200)
+
+    @app.get('/api/agents/components')
+    def collection_components():
+        if request.args: return jsonify(error='지원하지 않는 조회 조건입니다.'),400
+        if monitor is None: return jsonify(error='수집 상태 조회 계정이 준비되지 않았습니다.'),503
+        try:
+            return jsonify(component_snapshot(monitor))
+        except Exception:
+            return jsonify(error='항목별 수신을 조회하지 못했습니다. 연결·권한·보고 상태를 확인하세요.'),503
 
     @app.get("/api/agents/status")
     def agent_status():

@@ -33,12 +33,26 @@
   <dialog id="add-dialog" class="agent-dialog" aria-labelledby="add-title">
     <form id="package-form"><header><h2 id="add-title">설치 파일 추가</h2><button type="button" data-close="add-dialog" aria-label="닫기">×</button></header>
       <div class="dialog-body">
-        <fieldset class="form-row"><legend>운영체제</legend><div class="radio-group"><label><input type="radio" name="os" value="windows" checked>Windows x86_64</label><label><input type="radio" name="os" value="ubuntu">Ubuntu 22.04</label></div></fieldset>
+        <fieldset class="form-row"><legend>운영체제</legend><div class="radio-group"><label><input type="radio" name="os" value="windows" checked>Windows x86_64</label><label><input type="radio" name="os" value="ubuntu">Ubuntu 22.04 / 24.04</label><label><input type="radio" name="os" value="amazon_linux_2023">Amazon Linux 2023</label></div></fieldset>
         <label class="form-row"><span>파일 이름</span><span class="filename-input"><input name="name" required pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,63}" maxlength="64" placeholder="예: school-web"><span id="filename-suffix">-setup.zip</span></span></label>
         <label class="form-row"><span>조직 ID</span><input name="organization" required pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,63}" maxlength="64" placeholder="예: school"></label>
         <p class="field-note">이름과 조직 ID는 영문·숫자·하이픈·밑줄, 최대 64자입니다.</p>
         <label class="form-row"><span>관리 서버</span><input id="form-endpoint" readonly aria-describedby="endpoint-note"></label><p id="endpoint-note" class="field-note">중앙 서버 설정에서 지정한 주소입니다.</p>
-        <label class="form-row"><span>네트워크 수집</span><span><input name="network" type="checkbox" checked>통신 흐름·DNS·TLS 정보</span></label>
+        <fieldset class="form-row"><legend>수집할 항목 선택</legend>
+          <label><input name="system" type="checkbox" checked>시스템·보안 로그 — SSH·계정·인증·서비스</label>
+          <label><input name="web" type="checkbox">웹 로그 — 접속 IP·요청 방식·응답 상태</label>
+          <label><input name="network" type="checkbox">네트워크 메타데이터 — 통신 IP·포트·프로토콜·전송량</label>
+        </fieldset>
+        <fieldset id="site-fields" class="form-row" hidden disabled><legend>웹 사이트 설정</legend>
+          <label class="form-row"><span>사이트 이름</span><input name="site_name" maxlength="64" placeholder="예: DVWA" required></label>
+          <label class="form-row"><span>웹 서버 종류</span><select name="server_type"><option value="apache">Apache — 서버 직접 설치</option><option value="docker">Apache/Nginx — Docker JSON 로그</option><option value="nginx">Nginx — 표준 access 로그</option></select></label>
+          <label class="form-row"><span>로그 파일 경로</span><input name="log_path" maxlength="500" placeholder="예: /var/log/apache2/access.log" required></label>
+          <label class="form-row"><span>수집 범위</span><select name="web_range"><option value="now">패키지 생성 시각 이후</option><option value="24h">최근 24시간부터</option><option value="7d">최근 7일부터</option><option value="custom">시작 시각 직접 선택</option></select></label>
+          <label id="web-start-row" class="form-row" hidden><span>시작 시각 (현재 PC 시간대)</span><input name="web_start" type="datetime-local" disabled></label>
+          <p class="field-note">Apache/Nginx 표준 common/combined 형식, Docker JSON의 log 안에 같은 형식이 있어야 합니다. Docker의 파일 전용 로그는 호스트에 연결한 access 로그를 Apache/Nginx로 선택하세요. IIS·사용자 정의 형식은 지원하지 않습니다.</p>
+          <p class="field-note">선택한 파일의 디렉터리는 일반 로그 탐색에서 제외해 중복과 원문 전송을 막습니다. 과거 범위는 현재 파일에 남은 기록에 한하며, URL·쿼리·쿠키·헤더·본문·로그인 이름은 전송하지 않습니다.</p>
+        </fieldset>
+        <p id="collection-count" class="field-note" aria-live="polite">선택한 수집 항목 1개</p>
         <p id="network-note" class="field-note">Windows는 Npcap이 필요합니다. 원본 패킷·HTTP 본문·쿠키는 저장하지 않습니다.</p>
         <label class="description-label">설명 (선택)<textarea name="description" rows="2" maxlength="500" placeholder="대상 서버와 용도"></textarea></label>
         <details class="usage-details"><summary>설치 정보</summary><p>OS 로그는 Filebeat가 자동 탐색합니다. 네트워크 수집은 Packetbeat를 함께 설치하며 수집할 NIC를 선택합니다. 관리자 권한이 필요합니다. 기존 설치는 자동으로 덮어쓰지 않습니다.</p><code id="install-path">%ProgramFiles%\Cloud-SOC-Agent</code></details>

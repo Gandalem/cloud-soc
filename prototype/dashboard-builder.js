@@ -82,7 +82,7 @@
     $('dashboard-title').textContent=layout.name;$('dashboard-description').textContent=editing?'변경사항을 미리 보는 중입니다. 저장하면 다시 로그인해도 유지됩니다.':selected==='legacy'?'기존 개인 설정을 보존한 화면입니다. 편집은 복사본에서 시작합니다.':'이 계정의 개인 관제 화면 · 위젯별 기간과 데이터 범위를 확인하세요.';
     controls();renderList();library();const grid=$('platform-grid');grid.replaceChildren();grid.classList.toggle('editing',editing);
     layout.widgets.forEach((w,index)=>{const meta=catalog.find(m=>m.type===w.type),box=node('section',undefined,'dash-widget builder-widget span-'+w.w+' column-'+w.x+' row-'+w.y+' height-'+w.h+' accent-'+w.config.color);box.dataset.instance=w.id;box.dataset.type=w.type;box.tabIndex=0;box.append(node('h2',w.config.title));
-      const content=node('div',undefined,'builder-widget-content'),key=meta?.source+(meta&&['operations','logs','notices'].includes(meta.source)?':'+(w.config.period||layout.period):'');
+      const content=node('div',undefined,'builder-widget-content'),key=meta?.source+(meta&&['operations','logs','notices','web'].includes(meta.source)?':'+(w.config.period||layout.period):'');
       W.render(content,w,meta,results[key]||{loading:true},{cases:results.cases,period:layout.period});box.append(content);if(editing)widgetTools(box,w,index);grid.append(box);
     });
     if(!layout.widgets.length){const blank=node('div',undefined,'builder-blank');blank.append(node('h2','나만의 관제 화면을 구성하세요'),node('p','위젯 찾기에서 필요한 정보를 추가하거나 기본 템플릿으로 시작할 수 있습니다.'));const b=node('button','위젯 찾기','dash-primary');b.type='button';b.addEventListener('click',()=>setPanel('library'));blank.append(b);grid.append(blank);}

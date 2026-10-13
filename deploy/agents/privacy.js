@@ -1,10 +1,20 @@
 // Beats ECMAScript 5.1. Run before publishing/queueing; never log field values.
 var secretText = /-----BEGIN [^-]*(PRIVATE KEY|CERTIFICATE)-----|(password|passwd|pwd|secret|token|api[_-]?key|authorization|cookie)\s*["']?\s*[:=]|(--?|\/)(password|passwd|pwd|secret|token|api[_-]?key)\b(\s+|=|:)|\b(Bearer|Basic)\s+\S+|\b[a-z][a-z0-9+.-]*:\/\/[^\s/]+@|\b[a-z][a-z0-9+.-]*:\/\/[^\s]*[?#]|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2060-\u206f]|\b(AKIA|ASIA)[A-Z0-9]{16}\b|\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/i;
 var secretKey = /password|passwd|pwd|secret|token|authorization|cookie|private[_-]?key|command[_-]?line|task[_-]?content|script[_-]?(block[_-]?text|contents?)|(^|[._-])(api[_-]?key|args|original|xml|body|content)($|[._-])/i;
+var accessLine = /^\S+\s+\S+\s+\S+\s+\[[^\]\r\n]+\]\s+"[A-Z]+\s+[^"\r\n]+\s+HTTP\/[0-9.]+"\s+[0-9]{3}\s+/;
 
 function process(event) {
     try {
         var source = event.Get();
+        // Web selection must not be bypassed through generic file discovery or
+        // a journald/stdout duplicate. Dedicated web inputs remove message first.
+        if (source.labels && /^(linux_file|linux_journald|windows_file)$/.test(source.labels.log_source || '') && typeof source.message === 'string') {
+            var rawAccess = source.message;
+            if (rawAccess.length <= 8192 && /^\s*\{/.test(rawAccess)) {
+                try { var wrapper=JSON.parse(rawAccess); if (wrapper && typeof wrapper.log==='string') { rawAccess=wrapper.log; } } catch (_) {}
+            }
+            if (accessLine.test(rawAccess)) { event.Cancel(); return event; }
+        }
         // Native audit argument records can carry hex-encoded secrets. They are
         // not required for the selected SYSCALL/PATH metadata and are withheld.
         if (source.labels && /^linux_/.test(source.labels.log_source || '') &&

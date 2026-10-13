@@ -52,6 +52,16 @@ test('privacy removes duplicate raw, arguments and structured credentials', () =
   assert.equal(event.source.labels.privacy_policy, 'v3');
 });
 
+test('generic discovery and journal cannot bypass optional protected web collection', () => {
+  const access='192.0.2.1 - PRIVATE_CANARY [14/Oct/2026:09:00:00 +0900] "GET /?unknown=PRIVATE_CANARY HTTP/1.1" 200 22';
+  for(const kind of ['linux_file','linux_journald','windows_file']) {
+    assert.equal(run({labels:{log_source:kind},message:access}).cancelled,true);
+    assert.equal(run({labels:{log_source:kind},message:JSON.stringify({log:access})}).cancelled,true);
+  }
+  const protectedEvent=run({labels:{log_source:'generic_web_access'},web:{schema:'web-access-agent-v1'},http:{request:{method:'GET'},response:{status_code:200}}});
+  assert.equal(protectedEvent.cancelled,false);
+});
+
 test('whole suspicious strings and oversized fields are withheld before queueing', () => {
   for (const message of ['password=CANARY', 'Bearer CANARY', 'https://user:CANARY@host/',
     'https://host/path?unknown=CANARY', '-----BEGIN PRIVATE KEY-----\nCANARY', 'x'.repeat(8193)]) {
