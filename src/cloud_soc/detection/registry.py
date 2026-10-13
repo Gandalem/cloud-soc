@@ -30,9 +30,16 @@ class BehaviorDetector:
         return detect_behavior(events, rule, runtime)
 
 
+class PatternDetector:
+    def detect(self, events, rule, runtime):
+        from cloud_soc.detection.patterns import detect_pattern
+        return detect_pattern(events, rule, runtime)
+
+
 DETECTORS: dict[str, Detector] = {
     "threshold": ThresholdDetector(), "single": SingleDetector(), "sequence": SequenceDetector(),
     "ordered": BehaviorDetector(), "diversity": BehaviorDetector(),
+    "cardinality": PatternDetector(),
 }
 
 

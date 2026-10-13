@@ -5,7 +5,7 @@
 	default_sni {$SOC_PUBLIC_HOST}
 }
 
-https://{$SOC_PUBLIC_HOST} {
+https://{$SOC_PUBLIC_HOST} {$SOC_PORTAL_LAN_ORIGIN:} {
 	tls /certs/server.crt /certs/server.key
 	header Strict-Transport-Security "max-age=31536000"
 	# Explicit peer allowlist; default preserves existing LAN/VPN connectivity.

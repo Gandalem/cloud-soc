@@ -56,6 +56,7 @@ services:
     environment: &portal-environment
       SOC_LOG_FORMAT: json
       SOC_PUBLIC_URL: https://${SOC_PUBLIC_HOST:?Run prepare.py first}
+      SOC_PORTAL_LAN_ORIGIN: ${SOC_PORTAL_LAN_ORIGIN:-}
       SOC_ENROLLMENT_ENABLED: ${SOC_ENROLLMENT_ENABLED:-0}
       SOC_ELASTIC_ENDPOINT: https://${SOC_PUBLIC_HOST}:9200
       SOC_AGENT_ENDPOINT: ${SOC_AGENT_ENDPOINT:-}
@@ -110,6 +111,7 @@ services:
     depends_on: [portal, kibana]
     environment:
       SOC_PUBLIC_HOST: ${SOC_PUBLIC_HOST}
+      SOC_PORTAL_LAN_ORIGIN: ${SOC_PORTAL_LAN_ORIGIN:-}
       SOC_ADMIN_ALLOWED_CIDRS: ${SOC_ADMIN_ALLOWED_CIDRS:-0.0.0.0/0 ::/0}
     ports:
       - "${SOC_BIND_IP:-127.0.0.1}:443:443"

@@ -12,6 +12,7 @@ from uuid import uuid4
 from cloud_soc.detection.engine import detect_rule, event_fingerprint, parse_event_timestamp, event_evidence, build_group_key, get_field_value, rule_revision
 from cloud_soc.detection.worker import approved_rules, ALERTS
 from cloud_soc.detection import staging
+from cloud_soc.detection import early
 from cloud_soc.elastic.repository import ensure_provenance_mapping, save_security_alert
 from cloud_soc.main import make_alert_id, build_security_alert
 from cloud_soc.processing.contract import NORMALIZED, STATUS
@@ -26,7 +27,7 @@ def utc(value):
 
 
 def run_incremental(client, *, state_path, start, now=None, max_documents=20000, max_active_events=20000,
-                    lateness_seconds=900, scanner=None, source_id='local', accept_legacy_exclusion=False, include_cloud=False, include_sequence=False, include_attacks=False):
+                    lateness_seconds=900, scanner=None, source_id='local', accept_legacy_exclusion=False, include_cloud=False, include_sequence=False, include_attacks=False, include_patterns=False, early_auth=False):
     """Late events beyond the finalized frontier are counted, never silently replayed.
 
     A 15-minute normalization receipt overlap handles bounded refresh/write delays.
@@ -47,7 +48,7 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
     except FileExistsError:
         if not path.is_file() or (os.name != 'nt' and stat.S_IMODE(path.stat().st_mode) & 0o077):
             raise ValueError('state_file_must_be_private_and_regular')
-    rules = approved_rules(include_cloud=include_cloud, include_sequence=include_sequence, include_attacks=include_attacks)
+    rules = approved_rules(include_cloud=include_cloud, include_sequence=include_sequence, include_attacks=include_attacks, include_patterns=include_patterns)
     identity = event_fingerprint({'rules': rules, 'start': start.isoformat(), 'lateness': lateness_seconds,
                                   'index': NORMALIZED, 'source': source_id, 'legacy_exclusion': accept_legacy_exclusion,
                                   'runtime_contract': 2, 'rule_versions': [rule_revision(rule) for rule in rules]})
@@ -74,10 +75,26 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
         counts = {'events': 0, 'created': 0, 'existing': 0, 'late': 0}
         rule_stats = stats_for(rules)
         run_id = str(uuid4())
+        early_path = early.location(path)
+        if early_auth:
+            try:
+                counts.update(early.run(client, path=early_path, rule=rules[0], identity=identity,
+                    start=start, now=now, frontier=state['frontier'], budget=max_documents,
+                    capacity=max_active_events, scanner=scanner))
+                # Retry final links from an earlier committed cycle before reading new input.
+                if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='early_final_outbox'").fetchone():
+                    counts.update(early.finalize(client, final_db=db, path=early_path, commit_final=False))
+            except Exception:
+                # Provisional delivery must not disable the existing final detector.
+                counts['early_failed'] = 1
+                try:
+                    early.delayed(client, early_path)
+                except Exception:
+                    pass
 
         def publish(kind, error=None):
             history_pending = db.execute('SELECT count(*) FROM telemetry_outbox').fetchone()[0]
-            health = 'failed' if kind == 'failed' else 'delayed' if (now - utc(state['checkpoint'])).total_seconds() > 1200 else 'warning' if history_pending or state.get('excluded_total') or state['late_total'] or state.get('legacy_excluded') else 'healthy'
+            health = 'failed' if kind == 'failed' else 'delayed' if (now - utc(state['checkpoint'])).total_seconds() > 1200 else 'warning' if history_pending or state.get('excluded_total') or state['late_total'] or state.get('legacy_excluded') or counts.get('early_failed') or counts.get('early_final_reconcile_required') else 'healthy'
             client.index(index=STATUS, id='detector', document={'@timestamp': now.isoformat(),
                 'state': kind, 'detection': ','.join(rule['id'] for rule in rules), 'checkpoint': state['checkpoint'],
                 'last_success': state['last_success'], 'error': error,
@@ -172,7 +189,7 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
             # Stateful engine preserves the same event ordering and cooldown as batch detection.
             extra_groups = state.setdefault('rule_groups', {})
             runtimes = {rule['id']: state['groups'] if i == 0 else extra_groups.setdefault(rule['id'], {})
-                        for i, rule in enumerate(rules) if rule.get('type', 'threshold') in ('threshold', 'sequence', 'ordered', 'diversity')}
+                        for i, rule in enumerate(rules) if rule.get('type', 'threshold') in ('threshold', 'sequence', 'ordered', 'diversity', 'cardinality')}
             detections = []
             for rule in rules:
                 eligible_ready = [e for e in ready if evaluate(e, rule)[0] == 'matched' and
@@ -183,6 +200,7 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                 found = detect_rule(eligible_ready, rule, runtime=runtimes.get(rule['id']))
                 rule_stats[rule['id']]['detection_matches'] = len(found)
                 detections.extend(found)
+            final_links = []
             for detection in detections:
                 result = save_security_alert(client, build_security_alert(detection), index_name=ALERTS,
                     document_id=make_alert_id(detection), refresh=False, index_prepared=True)
@@ -190,6 +208,7 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                     raise RuntimeError('unexpected_alert_write')
                 counts[result['result']] += 1
                 rule_stats[detection['rule_id']]['alerts_' + result['result']] += 1
+                final_links.append((detection, make_alert_id(detection)))
             state['pending'] = {k: e for k, e in state['pending'].items() if parse_event_timestamp(e) >= final}
             for rule in rules:
                 groups = runtimes.get(rule['id'], {})
@@ -212,8 +231,20 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
             db.execute('INSERT OR REPLACE INTO runtime VALUES(1,?)', (json.dumps(state),))
             queue_committed_runs(db, rules, rule_stats, run_id=run_id, stamp=now.isoformat(),
                                  start=lower.isoformat(), end=end.isoformat())
+            if early_auth:
+                if not early.queue_final(db, final_links, final.isoformat()):
+                    counts['early_final_reconcile_required'] = 1
             staging.clear(db)
             db.commit()
+            if early_auth:
+                try:
+                    counts.update(early.finalize(client, final_db=db, path=early_path))
+                except Exception:
+                    counts['early_final_link_pending'] = 1
+                    try:
+                        early.delayed(client, early_path)
+                    except Exception:
+                        pass
             # Checkpoint and delivery intent are now committed together. A later ES
             # failure must not rewind them or label this completed run as failed.
             try:
@@ -231,6 +262,11 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
             code = str(error) if isinstance(error, ValueError) and str(error) in {
                 'active_state_limit', 'input_spool_limit', 'input_document_size_limit'} else 'incremental_cycle_failed'
             db.rollback()
+            if early_auth:
+                try:
+                    early.delayed(client, early_path)
+                except Exception:
+                    pass
             if scan_state.get('pit'):
                 try:
                     client.close_point_in_time(id=scan_state['pit'])

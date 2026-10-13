@@ -14,7 +14,7 @@ from cloud_soc.portal.log_contract import document_reference
 ALERTS = "security-alerts"
 
 
-def approved_rules(*, include_cloud=False, include_sequence=False, include_attacks=False):
+def approved_rules(*, include_cloud=False, include_sequence=False, include_attacks=False, include_patterns=False):
     rules = [rule for rule in load_rules() if rule["id"] == "AUTH-001"]
     if len(rules) != 1:
         raise ValueError("Existing AUTH-001 must be enabled")
@@ -24,6 +24,8 @@ def approved_rules(*, include_cloud=False, include_sequence=False, include_attac
         rules += load_rules(PROJECT_ROOT / 'rules' / 'authentication_sequence.yml')
     if include_attacks:
         rules += load_rules(PROJECT_ROOT / 'rules' / 'attacks.yml')
+    if include_patterns:
+        rules += load_rules(PROJECT_ROOT / 'rules' / 'metadata_patterns.yml')
     if len({rule['id'] for rule in rules}) != len(rules):
         raise ValueError('Duplicate rule IDs across profiles')
     return rules
@@ -52,7 +54,7 @@ def normalized_snapshot(client, max_documents):
     return events
 
 
-def run_once(client, *, max_documents=20000, include_cloud=False, include_sequence=False, include_attacks=False):
+def run_once(client, *, max_documents=20000, include_cloud=False, include_sequence=False, include_attacks=False, include_patterns=False):
     """Read completely, detect completely, then create immutable alerts.
 
     No time cursor: a threshold window may cross any two normalizer batches.
@@ -64,14 +66,14 @@ def run_once(client, *, max_documents=20000, include_cloud=False, include_sequen
 
     def status(state, **extra):
         stamp = datetime.now(timezone.utc).isoformat()
-        document = {"@timestamp": stamp, "state": state, "detection": ','.join(rule['id'] for rule in approved_rules(include_cloud=include_cloud, include_sequence=include_sequence, include_attacks=include_attacks)), **extra}
+        document = {"@timestamp": stamp, "state": state, "detection": ','.join(rule['id'] for rule in approved_rules(include_cloud=include_cloud, include_sequence=include_sequence, include_attacks=include_attacks, include_patterns=include_patterns)), **extra}
         if state == "success":
             document["last_success"] = stamp
         client.index(index=STATUS, id="detector", document=document, refresh=False)
 
     try:
         status("running")
-        rules = approved_rules(include_cloud=include_cloud, include_sequence=include_sequence, include_attacks=include_attacks)
+        rules = approved_rules(include_cloud=include_cloud, include_sequence=include_sequence, include_attacks=include_attacks, include_patterns=include_patterns)
         if set(client.indices.get_mapping(index=ALERTS)) != {ALERTS}:
             raise ValueError("Expected concrete alert index")
         ensure_provenance_mapping(client, ALERTS)

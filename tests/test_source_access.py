@@ -104,8 +104,12 @@ class SourceAccessTests(unittest.TestCase):
   self.assertEqual(self.post().status_code,200)
   extra=tempfile.TemporaryDirectory();self.addCleanup(extra.cleanup)
   root=Path(self.tmp.name)
-  for version in (3,2):
+  for version in (4,3,2):
    with self.subTest(format=version):
+    if version==3:
+     # Prior single-dashboard backups have no collection table.
+     with closing(sqlite3.connect(root/'dashboards.sqlite')) as db:
+      db.execute('DROP TABLE dashboard_collections')
     if version==2:
      # A pre-dashboard portal has the audit database but no preference database.
      (root/'dashboards.sqlite').unlink()
@@ -113,7 +117,7 @@ class SourceAccessTests(unittest.TestCase):
     self.assertEqual(report['format'],version)
     names=[f['name']for f in report['files']]
     self.assertIn('log-access.sqlite',names)
-    self.assertEqual('dashboards.sqlite'in names,version==3)
+    self.assertEqual('dashboards.sqlite'in names,version>=3)
     self.assertEqual(backup.verify(out),report)
     restored=Path(extra.name)/f'restored-v{version}';backup.restore(out,restored)
     with closing(sqlite3.connect(restored/'log-access.sqlite'))as db:self.assertEqual(db.execute('SELECT outcome FROM source_access').fetchall(),[('granted',)])

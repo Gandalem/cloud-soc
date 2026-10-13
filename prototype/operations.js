@@ -61,8 +61,10 @@
     const detectorName = detector.detection?.includes("ATTACK-") ? "공격 행위 탐지기 (시험 프로필)" : detector.detection && detector.detection.includes(",") ? "SSH·클라우드 탐지기" : "SSH 탐지기";
     $("ops-pipeline").textContent += " · " + detectorName + ": " + (detectorLabels[detector.state] || "미확인");
     if ($("ops-pipeline-times")) $("ops-pipeline-times").textContent = "정규화 마지막 성공: " + fmt(pipeline.last_success) + " · 처리 위치: " + fmt(pipeline.checkpoint) + " · 탐지 마지막 성공: " + fmt(detector.last_success);
-    const healthLabels = { failed: "탐지 장애: 처리 실패", stale: "탐지 장애: 상태 갱신 중단", delayed: "탐지 지연: 처리 위치 확인 필요", warning: "탐지 경고: 탐지 제외 이벤트 확인 필요" };
+    const healthLabels = { failed: "탐지 장애: 처리 실패", stale: "탐지 장애: 상태 갱신 중단", delayed: "탐지 지연: 처리 위치 확인 필요", warning: "탐지 경고: 평가 범위·초기 통지 확인 필요" };
     if (healthLabels[detector.health]) $("ops-pipeline").textContent += " · " + healthLabels[detector.health];
+    const earlyLabels = {failed:'초기 통지 처리 실패',reconcile_required:'초기 통지·최종 근거 재확인 필요',pending:'초기 통지 처리·전달 대기',unknown:'초기 통지 상태 미확인'};
+    if(Object.hasOwn(earlyLabels,detector.early?.state)) $("ops-pipeline").textContent += ' · '+earlyLabels[detector.early.state];
     if (Number.isSafeInteger(detector.lag_seconds)) $("ops-pipeline").textContent += " · 처리 지연 " + detector.lag_seconds + "초";
     if (detector.late_total > 0) $("ops-pipeline").textContent += " · 지연 제외 누적 " + detector.late_total + "건";
     if (detector.legacy_excluded > 0) $("ops-pipeline").textContent += " · 과거 형식 제외 " + detector.legacy_excluded + "건";

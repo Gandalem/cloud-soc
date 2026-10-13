@@ -93,7 +93,7 @@ class PortalBackupTests(unittest.TestCase):
         layout = {**DEFAULT, 'name': '보안팀 화면', 'theme': 'dark'}
         expected = store.save('admin', {'revision': 0, 'layout': layout})
         report = recovery.backup(self.source, self.copy)
-        self.assertEqual(report['format'], 3)
+        self.assertEqual(report['format'], 4)
         self.assertEqual(report['missing'], ['log-access.sqlite'])
         self.assertEqual(recovery.verify(self.copy), report)
         recovery.restore(self.copy, self.restored)

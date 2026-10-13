@@ -1,0 +1,29 @@
+[Unit]
+Description=Cloud SOC pinned SSH web metadata pull and strict TLS publisher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/python3 -I /opt/cloud-soc-web/deploy/web/relay-entry.py --config /etc/cloud-soc-web/relay.json
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/cloud-soc-web
+MemoryMax=128M
+TasksMax=8
+
+[Install]
+WantedBy=multi-user.target

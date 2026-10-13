@@ -32,8 +32,8 @@
         <label id="log-end-label" hidden>종료 (KST, 미포함)<input id="log-end" type="datetime-local" step="1"></label>
         <label>호스트<input id="log-host" maxlength="253" placeholder="호스트명 완전 일치" autocomplete="off"></label>
         <label>IP 주소<input id="log-ip" maxlength="45" placeholder="IPv4 / IPv6 단일 주소" autocomplete="off"></label>
-        <label>운영체제 / 영역<select id="log-os"><option value="">전체</option><option value="windows">Windows</option><option value="linux">Linux</option><option value="cloud">클라우드 API</option><option value="unknown">미확인</option></select></label>
-        <label>수집기<select id="log-collector"><option value="">전체</option><option value="filebeat">Filebeat</option><option value="packetbeat">Packetbeat</option><option value="cloudtrail">CloudTrail</option><option value="oci-audit">OCI Audit</option></select></label>
+        <label>운영체제<select id="log-os"><option value="">전체</option><option value="windows">Windows</option><option value="linux">Linux</option><option value="cloud">해당 없음 (클라우드 API)</option><option value="unknown">미확인</option></select></label>
+        <label>수집기<select id="log-collector"><option value="">전체</option><option value="web-collector">DVWA 웹 수집기</option><option value="filebeat">Filebeat</option><option value="packetbeat">Packetbeat</option><option value="cloudtrail">CloudTrail</option><option value="oci-audit">OCI Audit</option></select></label>
         <label>페이지당<select id="log-page-size"><option value="10">10행</option><option value="25" selected>25행</option><option value="50">50행</option></select></label>
         <button class="primary-button" type="submit" id="log-apply">조회</button><button type="button" id="log-reset">초기화</button>
       </form>

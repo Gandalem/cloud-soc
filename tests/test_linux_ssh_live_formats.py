@@ -1,6 +1,7 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import json
 import tempfile
 from unittest.mock import Mock
 
@@ -47,6 +48,38 @@ def test_modern_formats_real_time_lineage_and_no_message():
     assert b['@timestamp'] == '2026-10-12T12:00:00.123456Z'
     assert 'message' not in a and 'message' not in b
     assert {'journald.process.name', 'journald.pid'} <= set(READ_FIELDS)
+
+
+@pytest.mark.parametrize('origin', ['journald', 'rfc3339'])
+@pytest.mark.parametrize('algorithm', ['ED25519', 'RSA', 'ECDSA'])
+def test_publickey_success_with_fingerprint_is_normalized_without_key_metadata(origin, algorithm):
+    hit = raw(origin=origin, outcome='success')
+    hit['_source']['message'] = hit['_source']['message'].replace('Accepted password', 'Accepted publickey')
+    fingerprint = 'A' * 43
+    hit['_source']['message'] += f': {algorithm} SHA256:{fingerprint}'
+    before = deepcopy(hit)
+    body = event(hit)
+    assert body['event']['outcome'] == 'success'
+    assert body['network']['protocol'] == 'ssh'
+    assert body['cloud_soc']['detail']['fields']['auth_method'] == 'publickey'
+    assert 'SHA256:' not in json.dumps(body) and fingerprint not in json.dumps(body)
+    assert hit == before
+    assert detect_rule([body] * 10, RULE) == []
+
+
+@pytest.mark.parametrize('outcome,method,suffix', [
+    ('failure', 'password', ': ED25519 SHA256:' + 'A' * 43),
+    ('success', 'password', ': ED25519 SHA256:' + 'A' * 43),
+    ('success', 'publickey', ': UNKNOWN SHA256:' + 'A' * 43),
+    ('success', 'publickey', ': ED25519 SHA256:' + 'A' * 42),
+    ('success', 'publickey', ': ED25519 SHA256:' + 'A' * 44),
+    ('success', 'publickey', ': ED25519 SHA256:' + 'A' * 43 + ' extra'),
+])
+def test_fingerprint_suffix_does_not_accept_failure_or_ambiguous_extensions(outcome, method, suffix):
+    hit = raw(outcome=outcome)
+    hit['_source']['message'] = hit['_source']['message'].replace('Accepted password', 'Accepted ' + method)
+    hit['_source']['message'] += suffix
+    assert parse_linux_ssh_source(hit['_source']) is None
 
 
 def test_nine_double_collected_failures_do_not_alert_and_tenth_does():

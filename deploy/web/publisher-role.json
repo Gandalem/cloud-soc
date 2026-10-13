@@ -1,0 +1,6 @@
+{
+  "cluster": [],
+  "indices": [{"names": ["soc-host-raw-web-dvwa-v1"], "privileges": ["create_doc"]}],
+  "applications": [],
+  "run_as": []
+}

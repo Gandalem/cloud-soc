@@ -1,0 +1,17 @@
+async (page) => {
+ const base='http://127.0.0.1:8773',errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.setViewportSize({width:1440,height:1000});await page.goto(base+'/dashboard.html');await page.waitForLoadState('networkidle');
+ await page.locator('#dashboard-create').click();await page.locator('#dialog-template').selectOption('empty');await page.locator('#dialog-name').fill('경계 상태 검증');await page.locator('#dialog-submit').click();await page.locator('#dashboard-dialog').waitFor({state:'hidden'});await page.waitForLoadState('networkidle');
+ await page.locator('#dashboard-edit').click();await page.locator('#widget-search').fill('경보와 관측');await page.getByRole('button',{name:'경보와 관측 출발지 추가',exact:true}).click();await page.waitForLoadState('networkidle');
+ await page.route('**/api/operations?*',async route=>{const response=await route.fetch();const body=await response.json();body.sections.alerts.rows[0].source_ip='192.0.2.42';await route.fulfill({json:body});});
+ await page.locator('#dashboard-refresh').click();await page.waitForLoadState('networkidle');await page.locator('.builder-entity-graph').waitFor();
+ if(await page.locator('.builder-entity-graph').first().getAttribute('aria-label')!=='출발지 192.0.2.42가 이 경보 문서에 기록됨')throw new Error('Explicit relation graph failed');
+ await page.screenshot({path:'output/playwright/dashboard-platform/entity-graph.png',fullPage:true});await page.unroute('**/api/operations?*');
+ await page.locator('#widget-search').fill('최근 호스트');await page.getByRole('button',{name:'최근 호스트 수신 로그 추가',exact:true}).click();await page.waitForLoadState('networkidle');
+ await page.route('**/api/logs?*',route=>route.fulfill({json:{data_state:'no_index',rows:[]}}));await page.locator('#dashboard-refresh').click();await page.waitForLoadState('networkidle');await page.getByText('데이터 미수집 · 조회할 로그 인덱스가 없습니다.',{exact:true}).waitFor();
+ await page.unroute('**/api/logs?*');await page.route('**/api/logs?*',route=>route.fulfill({json:{data_state:'ok',rows:[]}}));await page.locator('#dashboard-refresh').click();await page.waitForLoadState('networkidle');await page.locator('[data-type=host-events]').getByText('조회 범위에 표시할 기록이 0건입니다.',{exact:true}).waitFor();await page.unroute('**/api/logs?*');
+ await page.locator('[data-type=entities]').getByRole('button',{name:'경보와 관측 출발지 설정',exact:true}).click();await page.locator('#widget-height').selectOption('5');await page.locator('#widget-form button[type=submit]').click();await page.waitForLoadState('networkidle');
+ await page.locator('#dashboard-save').click();await page.locator('#dashboard-editor').waitFor({state:'hidden'});await page.waitForLoadState('networkidle');
+ await page.locator('#dashboard-edit').click();await page.locator('[data-type=entities]').getByRole('button',{name:'경보와 관측 출발지 설정',exact:true}).click();if(await page.locator('#widget-height').inputValue()!=='5')throw new Error('Allowed height lost in settings');await page.locator('#widget-height').selectOption('7');await page.locator('#widget-cancel').click();await page.locator('#widget-search').fill('위치');if(!await page.getByRole('button',{name:'접속 위치 지도 추가',exact:true}).isDisabled())throw new Error('Unavailable widget enabled after save');await page.locator('#dashboard-cancel').click();
+ if(errors.length)throw new Error(JSON.stringify(errors));return {synthetic:true,checks:['explicit-entity-edge','missing-index','successful-zero','disabled-after-save','all-height-presets'],javascriptErrors:0};
+}

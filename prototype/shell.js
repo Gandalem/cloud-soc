@@ -41,7 +41,14 @@
       warning: ['분석 누락 확인 필요', '일부 로그의 위험 평가가 완료되지 않았습니다. 운영 담당자의 확인이 필요합니다.'],
       observed: ['최근 분석 실행 확인', '최근 처리 상태가 보고됐습니다. 개별 수집 오류와 규칙의 지원 범위는 별도로 확인하세요.']
     };
-    const view = views[state] || views.unknown;
+    const initialViews = {
+      initial_notice_failed: ['초기 통지 처리 확인 필요', '초기 탐지 통지 처리에 실패했습니다. 최종 탐지의 성공과 별도로 확인이 필요합니다.'],
+      initial_notice_reconciliation_required: ['초기 통지 재확인 필요', '초기 통지와 최종 근거의 연결을 다시 확인해야 합니다.'],
+      initial_notice_pending: ['초기 통지 처리 대기', '초기 통지의 입력 조회·전달 또는 최종 연결이 아직 완료되지 않았습니다.'],
+      initial_notice_unconfirmed: ['초기 통지 상태 미확인', '초기 통지의 상태 보고를 확인하지 못했습니다. 정상 처리로 판단할 수 없습니다.']
+    };
+    const reason = normalizer.coverage?.reason;
+    const view = state === 'warning' && Object.hasOwn(initialViews, reason) ? initialViews[reason] : views[state] || views.unknown;
     return {state: views[state] ? state : 'unknown', title: view[0], description: view[1]};
   }
   if (typeof module !== "undefined" && module.exports) module.exports = { groups, current, markup, coverageView };

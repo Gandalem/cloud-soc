@@ -107,9 +107,28 @@ def analysis_coverage(normalizer, detector):
             return {"state": "delayed", "reason": name + "_delayed"}
     if normalizer.get("progress", {}).get("state") == "catching_up":
         return {"state": "catching_up", "reason": "receipt_backlog"}
+    early_reason = {"failed": "initial_notice_failed", "reconcile_required": "initial_notice_reconciliation_required",
+                    "pending": "initial_notice_pending", "unknown": "initial_notice_unconfirmed"}.get(detector.get("early", {}).get("state"))
+    if early_reason:
+        return {"state": "warning", "reason": early_reason}
     if detector.get("health") == "warning":
         return {"state": "warning", "reason": "evaluation_exclusions"}
     return {"state": "observed", "reason": "recent_worker_reports"}
+
+
+def early_status(counts):
+    """Only observed, typed provisional counters; absent legacy metadata stays absent."""
+    fields = ("early_failed", "early_final_reconcile_required", "early_final_link_pending",
+              "early_delivery_pending", "early_scan_pending")
+    if not isinstance(counts, dict) or not any(key in counts for key in fields):
+        return None
+    values = {key: counts[key] if type(counts[key]) is int and 0 <= counts[key] <= 2**53 - 1 else None
+              for key in fields if key in counts}
+    state = ("unknown" if any(value is None for value in values.values()) else
+             "failed" if values.get("early_failed") else
+             "reconcile_required" if values.get("early_final_reconcile_required") else
+             "pending" if any(values.values()) else "observed")
+    return {"state": state, "counts": values}
 
 
 def alert_row(hit):
@@ -229,11 +248,14 @@ class Operations:
         excluded = excluded if type(excluded) is int and excluded >= 0 else 0
         pending = value.get('history_pending')
         pending = pending if type(pending) is int and pending >= 0 else 0
-        health = 'failed' if state == 'failed' else 'stale' if state == 'stale' else 'delayed' if lag is not None and lag > 1200 else 'warning' if late or legacy or excluded or pending else 'healthy'
+        early = early_status(value.get("counts")) if worker == "detector" else None
+        health = 'failed' if state == 'failed' else 'stale' if state == 'stale' else 'delayed' if lag is not None and lag > 1200 else 'warning' if late or legacy or excluded or pending or (early and early["state"] != "observed") else 'healthy'
         result = {"state": state, "health": health, "lag_seconds": lag, "late_total": late, "legacy_excluded": legacy, "excluded_total": excluded, "history_pending": pending,
                 "detection": text(value.get('detection')),
                 "last_success": text(value.get("last_success")), "checkpoint": text(value.get("checkpoint")),
                 "error": text(value.get('error'))}
+        if early is not None:
+            result["early"] = early
         progress = value.get("progress")
         if isinstance(progress, dict) and progress.get("state") == "catching_up":
             processed = progress.get("processed")

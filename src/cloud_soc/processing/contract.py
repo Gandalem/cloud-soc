@@ -11,6 +11,7 @@ from cloud_soc.parsers.linux_security import parse_linux_ssh, parse_linux_ssh_so
 from cloud_soc.parsers.linux_operational import parse_linux_operational, VERSION as LINUX_OPERATIONAL_VERSION, SUDO_SESSION_VERSION
 from cloud_soc.normalizers.ecs import parse_syslog_timestamp
 from cloud_soc.normalizers.time_context import raw_time_context, parse_utc_offset
+from cloud_soc.web.metadata import VERSION as WEB_VERSION
 
 VERSION = "intake-v1"
 NORMALIZED = "soc-normalized-v1"
@@ -36,6 +37,10 @@ def normalize(hit, processed_at, *, ssh_v2_start=None):
         return identifier, record, None
     detail = security_detail(source)
     time_metadata = {"basis": "source_timestamp"}
+    if detail['adapter'] == 'web_access_metadata_v1':
+        identifier = hashlib.sha256(json.dumps([WEB_VERSION, reference], sort_keys=True).encode()).hexdigest()
+        record['version'] = WEB_VERSION
+        time_metadata = {'basis':'apache_access_timestamp','year_inferred':False,'raw_is_protected_metadata':True}
     modern_ssh = (parse_linux_ssh_source(source) if detail["status"] == "unsupported"
                   and (ssh_v2_start is None or received >= ssh_v2_start) else None)
     if modern_ssh:
@@ -100,7 +105,7 @@ def normalize(hit, processed_at, *, ssh_v2_start=None):
     if detail["status"] == "unsupported":
         record.update(status="unsupported", reason="adapter_not_supported")
         return identifier, record, None
-    expected = {"windows_security_v1": "soc-host-raw-", "sysmon_v1": "soc-host-raw-", "linux_ssh_v1": "soc-host-raw-", "linux_ssh_v2": "soc-host-raw-",
+    expected = {"web_access_metadata_v1":"soc-host-raw-web-", "windows_security_v1": "soc-host-raw-", "sysmon_v1": "soc-host-raw-", "linux_ssh_v1": "soc-host-raw-", "linux_ssh_v2": "soc-host-raw-",
                 "linux_operational_v1": "soc-host-raw-", "linux_sudo_session_v1": "soc-host-raw-", "linux_unclassified_v1": "soc-host-raw-", "packetbeat_metadata_v1": "soc-network-", "aws_cloudtrail_metadata_v1": "soc-cloud-aws-", "oci_audit_metadata_v1": "soc-cloud-oci-"}
     if not reference["index"].startswith(expected[detail["adapter"]]):
         record.update(status="invalid", reason="source_scope_mismatch")

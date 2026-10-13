@@ -1,7 +1,7 @@
 name: Cloud SOC quality
 on:
   push:
-    branches: [main, JEONGRIM-SEO, 'integration/**']
+    branches: [main, JEONGRIM-SEO, 'integration/**', 'codex/dashboard-platform-20261013']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -47,7 +47,7 @@ jobs:
           python tools/coverage_badge.py
       - name: Windows detection and agent configuration regression
         if: runner.os == 'Windows'
-        run: python -m pytest -q tests/test_portfolio.py tests/test_cloud_detection.py tests/test_sequence_detection.py tests/test_attack_detection.py tests/test_processing.py tests/test_worker_index_batches.py tests/test_detection_resume.py tests/test_incremental_detection.py tests/test_basic_auth_guard.py tests/test_agent_endpoint.py tests/test_agent_policy.py tests/test_linux_operational.py tests/test_cases.py tests/test_case_scope.py tests/test_integration_security.py tests/test_improvements.py tests/test_source_access.py tests/test_capacity_p2.py tests/test_backup_readiness_p2.py tests/test_collector_metrics_p2.py
+        run: python -m pytest -q tests/test_portfolio.py tests/test_cloud_detection.py tests/test_sequence_detection.py tests/test_attack_detection.py tests/test_processing.py tests/test_worker_index_batches.py tests/test_detection_resume.py tests/test_incremental_detection.py tests/test_basic_auth_guard.py tests/test_portal_lan_origin.py tests/test_agent_endpoint.py tests/test_agent_policy.py tests/test_linux_operational.py tests/test_cases.py tests/test_case_scope.py tests/test_integration_security.py tests/test_improvements.py tests/test_source_access.py tests/test_capacity_p2.py tests/test_backup_readiness_p2.py tests/test_collector_metrics_p2.py tests/test_early_notices.py tests/test_metadata_patterns.py tests/test_dashboards.py tests/test_dashboard_collection.py tests/test_portal_backup.py tests/test_agent_status.py tests/test_early_status_visibility.py tests/test_reader_maintenance.py tests/test_reprocessing_scope.py tests/test_runtime_audit.py tests/test_web_collection.py
       - name: Windows PowerShell parser and offline agent tests
         if: runner.os == 'Windows'
         shell: pwsh
@@ -85,7 +85,7 @@ jobs:
       - name: Offline rule profiles
         env:
           PYTHONPATH: src
-        run: python -m cloud_soc.detection --include-cloud --include-sequence --include-attacks
+        run: python -m cloud_soc.detection --include-cloud --include-sequence --include-attacks --include-patterns --early-auth
       - name: UI regressions and authentication syntax
         run: |
           node --test prototype/tests/*.test.cjs

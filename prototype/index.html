@@ -6,7 +6,8 @@
 <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
 <script src="/theme.js"></script>
 <link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css"><link rel="stylesheet" href="shell.css"><link rel="stylesheet" href="dashboard.css">
-<script src="auth-client.js"></script><script src="shell.js" defer></script><script src="dashboard.js" defer></script>
+<script src="auth-client.js"></script><script src="shell.js" defer></script><script src="dashboard.js" defer></script><script src="alert-notices.js" defer></script>
+<link rel="stylesheet" href="alert-notices.css">
 <link rel="stylesheet" href="/theme.css">
 </head>
 <body class="agents-page dashboard-page" data-dashboard="home" data-theme="light">
@@ -16,6 +17,7 @@
 <div class="dash-toolbar"><label>조회 기간<select id="dashboard-period"><option value="60">최근 1시간</option><option value="1440" selected>최근 24시간</option><option value="10080">최근 7일</option></select></label><button id="dashboard-refresh" type="button">새로고침</button><span id="dashboard-updated" role="status">조회 중</span></div>
 <p id="dashboard-error" role="alert" hidden></p>
 <p id="dashboard-coverage" class="dash-warning" role="status" hidden></p>
+<section class="notice-panel" aria-labelledby="notice-title"><h2 id="notice-title">초기 탐지 통지</h2><div id="early-alert-panel" role="status"></div></section>
 <section id="dashboard-editor" class="dash-editor" hidden aria-labelledby="editor-title"><h2 id="editor-title">내 화면 구성</h2><div class="dash-editor-head"><label>대시보드 이름<input id="dashboard-name" maxlength="48" autocomplete="off"></label><p>위젯을 선택하고 순서와 크기를 조정하세요. 이 계정에만 저장됩니다.</p></div><ol id="dashboard-widget-options" class="dash-editor-list"></ol><div class="dash-actions"><button id="dashboard-save" type="button" class="dash-primary">구성 저장</button><button id="dashboard-cancel" type="button">취소</button><button id="dashboard-reset" type="button">기본 구성으로</button><span id="dashboard-save-state" role="status"></span></div></section>
 <div id="dashboard-grid" class="dashboard-grid" aria-label="대시보드 위젯"></div>
 <p class="dash-footnote">로그는 서버 수신 시각, 경보는 저장 시각 기준입니다. 경보 0건이 안전을 의미하지 않습니다. 미측정·조회 실패·조직별 제한은 확인 불가로 표시합니다. <a href="logs.html">통합 로그 보기</a></p>

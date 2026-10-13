@@ -1,5 +1,7 @@
 # SSH 탐지 파이프라인 우선 보완
 
+2026-10-13 현재 중앙은 checkpoint/성공 시각이 전진하며 과거20만건 정체와 구분합니다. 기본 AUTH/early와 고정 start/floor를 유지하고 포털의 초기 통지 실패/대기 상태 표시만 보완했습니다. [현재 실행·실수신·재처리 권한·사건/재시작·잔여](cloud_soc_issue_audit_20261013.md). 아래는 최초 구현 당시 범위/이력입니다.
+
 ## 적용 범위
 
 기존 `raw-logs-* → normalized-events → security-alerts` 경로의 조회 완전성, 실패 처리, 조직별 집계, 시간 재현성과 근거 추적을 보완했습니다. 정적 대시보드, 에이전트 설치기, 서버 보안 설정은 변경하지 않습니다. `soc-host-raw-linux-*`·`soc-host-raw-windows-*`를 SSH 파서로 연결하지도 않습니다.

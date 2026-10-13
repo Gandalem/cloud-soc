@@ -68,3 +68,13 @@ test('theme button follows current workspace name and no dashboard selector rema
  assert.match(markup('/index.html',''),/workspace-label">홈 대시보드<\/span><button[^>]+id="portal-theme-toggle"/);
  for(const page of ['index.html','dashboard.html'])assert.doesNotMatch(fs.readFileSync(path.join(__dirname,'..',page),'utf8'),/id="dashboard-theme"/);
 });
+
+test('initial notice failures and unfinished delivery are distinct from rule exclusions',()=>{
+ for(const [reason,text] of [['initial_notice_failed',/처리에 실패/],['initial_notice_reconciliation_required',/연결/],['initial_notice_pending',/완료되지/],['initial_notice_unconfirmed',/정상 처리로 판단할 수 없/]]){
+  const view=coverageView({state:'success',detector:{state:'success'},coverage:{state:'warning',reason}});
+  assert.equal(view.state,'warning');assert.match(view.description,text);
+  assert.doesNotMatch(view.description,/일부 로그의 위험 평가/);
+ }
+ assert.match(coverageView({coverage:{state:'warning',reason:'evaluation_exclusions'}}).description,/일부 로그/);
+ assert.doesNotMatch(coverageView({coverage:{state:'warning',reason:'<script>PRIVATE_CANARY'}}).description,/PRIVATE_CANARY|<script>/);
+});

@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import io
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -54,6 +55,7 @@ def settings_from_environment():
         "AGENT_SOURCE": PROJECT / "deploy" / "agents",
         "CA_BYTES": ca,
         "PUBLIC_URL": public_url,
+        "LAN_URL": os.environ.get("SOC_PORTAL_LAN_ORIGIN"),
         "USERS_FILE": os.environ.get("SOC_USERS_FILE"),
         "ENROLLMENT_ENABLED": os.environ.get("SOC_ENROLLMENT_ENABLED") == "1",
         "ENDPOINT": validate_endpoint(os.environ.get("SOC_AGENT_ENDPOINT") or os.environ["SOC_ELASTIC_ENDPOINT"]),
@@ -70,8 +72,20 @@ def settings_from_environment():
 def create_app(settings=None, *, issuer=None, monitor=None):
     configure_logging()
     settings = settings if settings is not None else settings_from_environment()
+    origins = {urlsplit(settings["PUBLIC_URL"]).netloc.lower(): settings["PUBLIC_URL"]}
+    if settings.get("LAN_URL"):
+        lan = urlsplit(settings["LAN_URL"])
+        try:
+            address = ipaddress.ip_address(lan.hostname)
+        except ValueError as error:
+            raise ValueError("SOC_PORTAL_LAN_ORIGIN must be a private HTTPS IP origin") from error
+        if (lan.scheme != "https" or lan.username or lan.password or lan.path or lan.query or lan.fragment
+                or lan.port not in (None, 443) or not address.is_private or address.is_unspecified or address.is_multicast):
+            raise ValueError("SOC_PORTAL_LAN_ORIGIN must be a private HTTPS IP origin")
+        host = f"[{address}]" if address.version == 6 else str(address)
+        origins[host] = f"https://{host}"
     app = Flask(__name__, static_folder=None)
-    app.config.update(MAX_CONTENT_LENGTH=8192, TRUSTED_HOSTS=[urlsplit(settings["PUBLIC_URL"]).hostname])
+    app.config.update(MAX_CONTENT_LENGTH=8192, TRUSTED_HOSTS=[urlsplit(origin).hostname for origin in origins.values()])
     store = PackageStore(Path(settings["STATE_DIR"]), Path(settings["AGENT_SOURCE"]), settings["CA_BYTES"], settings["ENDPOINT"],
                          portal_url=settings["PUBLIC_URL"] if settings["PUBLIC_URL"].startswith("https://") else None)
     app.extensions["packages"] = store
@@ -125,6 +139,26 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             return jsonify(dashboards.save(g.principal, request.get_json()))
         except sqlite3.Error:
             return jsonify(error='구성을 저장하지 못했습니다. 편집 내용은 유지됩니다. 다시 시도하세요.'), 503
+
+    @app.get('/api/dashboards')
+    def dashboards_get():
+        from cloud_soc.portal.dashboard_widgets import catalog, TEMPLATES, template
+        if request.args:
+            abort(400)
+        try:
+            return jsonify(**dashboards.collection(g.principal, g.role), catalog=catalog(g.role),
+                           templates=[{'id': key, 'name': value[0], 'layout': template(key, g.role)} for key, value in TEMPLATES.items()])
+        except sqlite3.Error:
+            return jsonify(error='대시보드 목록을 불러오지 못했습니다.'), 503
+
+    @app.post('/api/dashboards')
+    def dashboards_write():
+        if request.args:
+            abort(400)
+        try:
+            return jsonify(dashboards.mutate(g.principal, g.role, request.get_json()))
+        except sqlite3.Error:
+            return jsonify(error='저장하지 못했습니다. 편집 내용은 유지됩니다.'), 503
     log_readers = {}
     log_reader_lock = threading.Lock()
     def reader_for(principal):
@@ -197,7 +231,8 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     @app.before_request
     def protect():
         # Exact authority check also blocks DNS rebinding and unexpected ports.
-        if request.host.lower() != urlsplit(settings["PUBLIC_URL"]).netloc.lower():
+        request_origin = origins.get(request.host.lower())
+        if request_origin is None:
             abort(400)
         # Only these machine endpoints use token authentication. Admin routes
         # retain Basic authentication and their existing CSRF/Origin checks.
@@ -238,7 +273,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         if request.headers.get("Sec-Fetch-Site") == "cross-site":
             abort(403)
         origin = request.headers.get("Origin")
-        if origin and origin != settings["PUBLIC_URL"]:
+        if origin and origin != request_origin:
             abort(403)
         if request.method not in ("GET", "HEAD", "OPTIONS"):
             if request.headers.get("X-Cloud-SOC") != "portal" or not request.is_json:
@@ -275,10 +310,10 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             log_assets = {"logs.html", "logs.js", "logs.css", "source-view.js", "auth-client.js", "styles.css", "agents.css", "shell.js", "shell.css", "assets/mark.svg"}
             if sessions:
                 # Session RBAC permits case writes only for analysts; all case data is tenant-scoped.
-                log_routes |= {"index", "case_list", "case_link", "case_detail", "case_create", "case_update", "dashboard_get", "dashboard_save"}
-                log_assets |= {"index.html", "dashboard.html", "dashboard.js", "dashboard.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "workbench.html", "investigation.js"}
+                log_routes |= {"index", "case_list", "case_link", "case_detail", "case_create", "case_update", "dashboard_get", "dashboard_save", "dashboards_get", "dashboards_write"}
+                log_assets |= {"index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "workbench.html", "investigation.js"}
                 if principal.organizations:
-                    log_routes |= {"operations_summary", "operations_status", "alert_detail"}
+                    log_routes |= {"operations_summary", "operations_status", "alert_detail", "notice_list", "notice_detail"}
             if request.endpoint not in log_routes and not (request.endpoint == "static_file" and (request.view_args or {}).get("filename") in log_assets):
                 abort(403)
 
@@ -488,6 +523,22 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def alert_detail():
         return log_response(operations_for(g.log_principal).detail)
 
+    @app.get('/api/alerts/notices')
+    def notice_list():
+        from cloud_soc.portal.notices import NoticeReader
+        try:
+            return jsonify(NoticeReader(operations_for(g.log_principal)).listing(request.args.items(multi=True)))
+        except LogQueryError as error:
+            return jsonify(code=error.code, error=str(error)), error.status
+
+    @app.get('/api/alerts/notices/detail')
+    def notice_detail():
+        from cloud_soc.portal.notices import NoticeReader
+        try:
+            return jsonify(NoticeReader(operations_for(g.log_principal)).detail(request.args.items(multi=True)))
+        except LogQueryError as error:
+            return jsonify(code=error.code, error=str(error)), error.status
+
     @app.get('/api/detection/history')
     def detection_history():
         from cloud_soc.portal.detection_history import history
@@ -661,7 +712,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                    "detection-history.html", "detection-history.js",
                    "agent-status.html", "agent-status.js", "agent-status.css",
                    "collection-health.html", "collection-health.js",
-                   "index.html", "dashboard.html", "dashboard.js", "dashboard.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css", "source-view.js"}
+                   "index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css", "source-view.js"}
         if filename not in allowed:
             abort(404)
         return send_from_directory(PROJECT / "prototype", filename)

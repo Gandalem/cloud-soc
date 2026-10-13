@@ -1,0 +1,200 @@
+{
+  "index_patterns": [
+    "soc-host-raw-web-dvwa-v1"
+  ],
+  "priority": 300,
+  "_meta": {
+    "contract": "web-access-metadata-v1",
+    "raw_is_protected_metadata": true
+  },
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "index.final_pipeline": "cloud-soc-web-received-at-v1"
+    },
+    "mappings": {
+      "dynamic": "strict",
+      "_meta": {
+        "contract": "web-access-metadata-v1"
+      },
+      "properties": {
+        "@timestamp": {
+          "type": "date"
+        },
+        "organization": {
+          "properties": {
+            "id": {
+              "type": "keyword"
+            }
+          }
+        },
+        "host": {
+          "properties": {
+            "id": {
+              "type": "keyword"
+            },
+            "name": {
+              "type": "keyword"
+            },
+            "os": {
+              "properties": {
+                "type": {
+                  "type": "keyword"
+                }
+              }
+            }
+          }
+        },
+        "cloud": {
+          "properties": {
+            "provider": {
+              "type": "keyword"
+            },
+            "region": {
+              "type": "keyword"
+            }
+          }
+        },
+        "container": {
+          "properties": {
+            "id": {
+              "type": "keyword"
+            }
+          }
+        },
+        "service": {
+          "properties": {
+            "id": {
+              "type": "keyword"
+            },
+            "name": {
+              "type": "keyword"
+            }
+          }
+        },
+        "agent": {
+          "properties": {
+            "id": {
+              "type": "keyword"
+            },
+            "type": {
+              "type": "keyword"
+            },
+            "version": {
+              "type": "keyword"
+            }
+          }
+        },
+        "labels": {
+          "properties": {
+            "log_source": {
+              "type": "keyword"
+            },
+            "privacy_policy": {
+              "type": "keyword"
+            }
+          }
+        },
+        "event": {
+          "properties": {
+            "id": {
+              "type": "keyword"
+            },
+            "action": {
+              "type": "keyword"
+            },
+            "outcome": {
+              "type": "keyword"
+            },
+            "dataset": {
+              "type": "keyword"
+            },
+            "category": {
+              "type": "keyword"
+            },
+            "created": {
+              "type": "date"
+            },
+            "ingested": {
+              "type": "date"
+            }
+          }
+        },
+        "source": {
+          "properties": {
+            "ip": {
+              "type": "ip"
+            }
+          }
+        },
+        "http": {
+          "properties": {
+            "request": {
+              "properties": {
+                "method": {
+                  "type": "keyword"
+                }
+              }
+            },
+            "response": {
+              "properties": {
+                "status_code": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "web": {
+          "properties": {
+            "parser_version": {
+              "type": "keyword"
+            },
+            "path_class": {
+              "type": "keyword"
+            },
+            "ip_basis": {
+              "type": "keyword"
+            },
+            "source_kind": {
+              "type": "keyword"
+            },
+            "schema": {
+              "type": "integer"
+            },
+            "position": {
+              "properties": {
+                "generation": {
+                  "type": "long"
+                },
+                "file_id": {
+                  "type": "keyword"
+                },
+                "offset": {
+                  "type": "long"
+                }
+              }
+            }
+          }
+        },
+        "cloud_soc_enrollment": {
+          "properties": {
+            "id": {
+              "type": "keyword"
+            },
+            "key_id": {
+              "type": "keyword"
+            },
+            "scope": {
+              "type": "keyword"
+            },
+            "package_id": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+  }
+}

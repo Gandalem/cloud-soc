@@ -11,6 +11,8 @@ from cloud_soc.processing.contract import NORMALIZED, STATUS
 from cloud_soc.processing.setup import ROLE as NORMALIZER_ROLE
 from cloud_soc.processing.setup import prepare as prepare_processing
 from cloud_soc.detection.telemetry import RUNS, EXCLUSIONS
+from cloud_soc.detection.early import NOTICES, MAPPING
+from copy import deepcopy
 
 ROLE = {"cluster": [], "indices": [
     {"names": [NORMALIZED], "privileges": ["read", "view_index_metadata"]},
@@ -32,6 +34,22 @@ def prepare(client):
     ensure_provenance_mapping(client, "security-alerts", apply=True)
 
 
+def prepare_early(client):
+    if not client.indices.exists(index=NOTICES):
+        client.indices.create(index=NOTICES, settings={'number_of_shards': 1, 'number_of_replicas': 0}, mappings=MAPPING)
+    else:
+        found = client.indices.get_mapping(index=NOTICES)
+        if set(found) != {NOTICES} or found[NOTICES]['mappings'] != MAPPING:
+            raise ValueError('Notice mapping conflict; explicit review required')
+
+
+def detector_role(*, early=False):
+    role = deepcopy(ROLE)
+    if early:
+        role['indices'].append({'names': [NOTICES], 'privileges': ['create_doc', 'read', 'view_index_metadata']})
+    return role
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Prepare alert mapping and issue a dedicated detector key")
     parser.add_argument("--es-url", required=True)
@@ -42,6 +60,7 @@ def main(argv=None):
     parser.add_argument("--worker", choices=("detector", "normalizer"), default="detector")
     parser.add_argument("--prepare-processing", action="store_true",
                         help="Explicitly prepare missing processing indices and the normalizer role")
+    parser.add_argument('--prepare-early', action='store_true', help='Explicitly prepare immutable AUTH notice revisions and a notice-enabled detector key')
     args = parser.parse_args(argv)
     key_path = Path(args.key_file)
     key_id = None
@@ -59,9 +78,13 @@ def main(argv=None):
                     if args.prepare_processing:
                         prepare_processing(client)
                     prepare(client)
+                    if args.prepare_early:
+                        if args.worker != 'detector':
+                            raise ValueError('Early mode requires a detector key')
+                        prepare_early(client)
                     result = client.security.create_api_key(name="cloud-soc-intake-" + args.worker,
                         expiration="30d", role_descriptors={"intake_" + args.worker:
-                            ROLE if args.worker == "detector" else NORMALIZER_ROLE})
+                            detector_role(early=args.prepare_early) if args.worker == "detector" else NORMALIZER_ROLE})
                     key_id = result["id"]
                     output.write(result["encoded"] + "\n")
                     output.flush()

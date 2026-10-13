@@ -1,5 +1,80 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-13 AWS DVWA 웹 수집 최우선 요청
+
+새 명시 요청으로 ISSUE-04의 실제 DVWA 접근 로그 수집·정규화·포털 조회를 최우선으로 바꾼다. Windows 키 만료 확인/교체·인증 실패·CloudTrail 구축·공격 시험·새 탐지 규칙 활성화는 후순위로 두며 이번 범위에서 실행하지 않는다. 기존 기능 브랜치/개인 파일·SSH AUTH/early·900초 유예·체크포인트·대시보드를 보존한다. 지정 AWS/중앙의 기존 승인 접속과 웹 전용 코드/서비스·최소 권한 구성·보호된 변경 서비스 적용·기능 브랜치 일반 commit/push는 요청 범위다. 새 과금/IAM/공개 포트/VPN·개인 SSH 키 중앙 복사·공개 관리자 인증·TLS 우회는 금지한다.
+
+- [x] WEB-LIVE-01 완료(2026-10-13 지정 AWS/중앙 실제 수신 범위): regular/combined Apache·Docker 중복·회전/개인정보·직접443/9200 timeout·기존 중앙→AWS22를 읽고 목적 전용/제한 SSH pull을 선택했다. 메타데이터 큐→실제 중앙5건→정규화5건→포털 참조/해시를 대조했다. 원래 Apache/DVWA와 기존 서비스/키를 보존했다.
+- [x] WEB-LIVE-02 완료(2026-10-13 실제 정상 GET 범위): 정상 GET4회가 redirect 포함5개 실제 Apache 이벤트로 수신됐다. 실제 시각/peer IP·ID·중복/정확 참조를 대조했으며 합성 이벤트/공격/과거 재수집을 하지 않았다.
+- [x] WEB-LIVE-03 완료(2026-10-13 격리 privacy/허용 목록 회귀 범위): 웹32개 격리 시험에서 query/cookie/Authorization/token/body의 큐/export 미포함·잘못된 형식/시각/허용 외 필드·위조 scope/ID를 거부하고 IP 미관측을 추정하지 않았다. 실제5건도 동일 스키마 검증 통과. 실서버 민감 canary는 실행하지 않았다.
+- [x] WEB-LIVE-04 완료(2026-10-13 격리 회전·실제 재시작 범위): 격리 rename/copytruncate/누락/상한/실패 재개를 검증했다. 실제 producer 재시작 stream/4건 유지, relay 정지 중 GET1건 보관→기존cursor4에서5로 재개·409무중복을 확인했다. 실제 Apache 강제회전은 미실행, 손실 가능성을 보고서에 남겼다.
+- [x] WEB-LIVE-05 완료(2026-10-13 코드·보호 적용·실제 관리자 읽기 범위): 실제5건의 web 어댑터/raw/normalized/시간/HTTP/조직/해시·목록/상세와 OS Linux를 인수했다. 전체852 Python/19skip/257subtests·145 UI/Ruff/Bandit/diff·소스Windows/Ubuntu CI 통과. 초기portal/normalizer·OS후속portal만 보호 적용하고 다른서비스/사건/dashboard2/revision13을 보존했다. [웹 수집 보고서](aws_dvwa_web_collection_20261013.md)에 파일/이미지/근거/실제 viewer 범위·장기운영 제한을 기록했다.
+
+2026-10-13 추가 요청/진행: 사용자 화면에서 AWS web 수집기의 OS가 '정보 없음'으로 표시되는 결함을 WEB-LIVE-05에 포함한다. 실제 raw의 host.os.type=linux와 수신 현황의 name-only 투영 차이를 수정한다. OS 이름이 없으면 명시된 OS 유형/센서 태그만 사용하고 AWS/IP로 OS를 추정하지 않는다. 통합 로그의 cloud 분류는 '해당 없음 (클라우드 API)'으로 표시한다. 서비스 수신 상태를 heartbeat로 바꾸거나 Windows 접근/키 작업을 재개하지 않는다.
+
+2026-10-13 WEB-LIVE 작업 기록: src/cloud_soc/web·deploy/web·portal security_detail/log_contract/log_query/agent_status·processing contract·통합로그 UI/회귀/CI를 반영했다. 웹 소스8626b57, 새 web-only receipt8a8b5bd, OS후속fe61a65를 기능 브랜치에 일반 push했다. 최초8개DB/이미지2개·OS후속8개DB/당시portal이미지와 실제override/키/CA를 보호하고 개별 SQLite 무결성/격리restore·실제 이미지 파일 해시를 대조했다. 마지막 portal image97a31880…/normalizer a41dafd7…이며 source/assets의 범위를 보고서에 구분한다. 실제 LAN CA/IP 검증 API·읽기전용 localhost viewer에서5행/상세·Linux·1440/768/390 두테마/JS0·document넘침0을 확인하고 임시 viewer/browser를 닫았다. 평상시 첫 source→receipt9.07초는 단일 관측이며 지속SLO가 아니다. 개인Word2개/JSON의 원래SHA·main b67eefa·기존AUTH1/early/900초/사건/dashboard2/revision13을 보존했다.
+
+WEB-LIVE 남은 운영 범위: PC CA 경고(추가 신뢰 거부 유지)·직접AWS→중앙 경로·source IP/목적키 만료 관리·큐 상한/회전 손실 가능·ES 장기보존/독립DR/다실계정/지속SLO는 미인수다. 기존 위험 평가 누락·미지원 경고를 숨기지 않았다. Windows 키/실패·CloudTrail·공격/새규칙활성화/ngrok 인증을 실행하지 않았다. 이번5개 체크 완료는 지정 정상 웹 수집 인수이며 기존 P0~P7의11/24·전체 운영 기준을 변경하지 않는다.
+
+## 2026-10-13 전체 장애 이력·운영 안정화 요청
+
+새 명시 요청에 따라 기존 수정의 재구현보다 FIX-01~14/HIST-01~07의 현황 대조와 ISSUE-02 실제 사건 업무를 우선한다. 최신 기준은 main b67eefa·기능 브랜치7968915이며 Windows/Ubuntu CI 성공을 공식 API로 확인했다. 개인 Word/JSON·비밀/상태·원래 완료 이력을 보존한다. 코드 검토·읽기 점검·격리 회귀·기능 브랜치 commit/일반 push를 수행한다. 사용자 기존 서버 접속/포털 시험 범위의 사건 기록/보호 재시작을 사용하며 ES 설정/복원·AWS 리소스/새 에이전트·CA 신뢰·공개 인증 전송·신규 규칙 활성화·main/PR는 제외한다.
+
+- [x] AUDIT-01 완료(2026-10-13 이력/읽기 대조·보고 범위): 제품 편집 전 관리표를 작성하고 FIX14/ISSUE15/HIST7의 최초 참조/증상/원인/기존 수정/코드·현재 지정 서버·재현/회귀·잔여·우선순위를 대조했다. 4상태 분류와 실제 관측 제한은 [통합 보고서](cloud_soc_issue_audit_20261013.md)에 보존한다. 전체 운영 완료를 뜻하지 않는다.
+- [x] ISSUE-02 완료(2026-10-13 실제 HTTPS API·Basic/admin 범위): 실제 AUTH-001 근거10개를 대조해 시험 사건 d868e3a5291543adbacdb286e74bae00을 생성·배정·메모·사용자 선택 benign/closed 판정·종결했다. 목록/동일 요청 재시도/재인증·두 포털 보호 갱신 후 전체 사건/이력5개/근거10개·원래 경보 해시/사용자 dashboard2개 revision13 동일을 확인했다. 시험 사건은 남긴다. 이번 직접 browser는 CA 신뢰 제한·화면은 합성이며 추가 실제 세션/조직·전체 장애 복구는 상위 기준에 남긴다.
+- [ ] ISSUE-12 부분 완료(2026-10-13 도구·현재 읽기/복구 기록): runtime_audit.py/runtime-audit.py의9개 회귀·실제6서비스/active override CLI·복사7파일 해시/이미지·start/floor/프로필/DB·키/CA·타5서비스 불변을 대조했다. runbook을 실제517178d 포털/3b9 worker/92d13c0 checkout으로 보완했다. 전체 source tree 동일화·다른 서버/VM 재부팅·독립복구는 미인수로 남긴다.
+- [x] ISSUE-13 완료(2026-10-13 코드·격리/화면·포털 적용 범위): 초기 실패/재대조/전달·입력 미완료가 있어도 final 성공만으로 healthy가 되던 결함을 신규9 실패/1 통과로 격리 재현한 뒤 숫자·누락·오류/명시 이유를 보완했다. 전체818 Python/144 UI·4화면×3폭×2테마/JS0·현재 portal early observed 투영을 확인했다. 실제 초기 장애 주입·지속 SLO는 미실행이며 실제 제외warning은 유지한다. e301783/517178d·portal image04daf08f…이며 worker는 바꾸지 않았다.
+- [x] ISSUE-08 이번 격리 회귀 완료(2026-10-13·전체 실계정 인수는 미완료): 기존 before_request의 admin 전역 조회·분석가/조회자/타조직403·ES미조회를 유지하고4개 세션 회귀를 강화했다(history와23 passed). 권한 코드를 재구현하거나 실제 계정/조직을 만들지 않았다. 상위 추가 실계정 인수는 미완료 상태를 유지한다.
+
+
+2026-10-13 작업 기록: 사용자 승인 후 cloud_soc_agent_monitor에 두 정확한 history index의 read/view_index_metadata만 추가해 실제503→200/no_index를 복원했다. reader_maintenance.py/reader-history.py의6개 회귀·stale review/DLS-FLS 거부·기존 grant/user/password/key/문서 불변을 대조했다. 포털 적용 전 새 사건을 포함한 DB5개/이미지/override/키/CA를 새 보호 경로에 보관했고 최초8 SQLite 개별 online backup/격리restore도 통과했다. 전체818 passed/19 skipped/257 subtests(99.05초), UI144 passed, Ruff/Bandit/diff, e301783/517178d Windows/Ubuntu CI 성공이다. 원격 main b67eefa·개인 Word2개/JSON·기존11/24·P2-02 보류를 유지했다.
+
+현재 제한/다음 순서: ES snapshot repository/path.repo 없음으로 전체 ES/독립DR은 미실행(primary미할당0/replica3의yellow). AWS SSH/DVWA GET200·ap-northeast-3·수집 경로 부재/중앙 AWS·HTTP0, Windows SSH/두 수집 서비스/발견 task 정상·4625 최근7일0, Flow 필드9/정확 정규화9를 읽었다. 신규 후보는 비활성이다. Windows 관련 유효 키2개가10/14 15:50 KST 만료하지만 현재 collector 연결은 미확정이므로 **실제 설치와 키 연결의 읽기 확인을 먼저** 준비한다. 키 발급/교체/폐기는 승인하지 않았고 실행하지 않았다. 이어 독립 백업·실제 Windows/AWS/웹 수집·선택 규칙·SLO/다계정/수명주기 인수 순서다. CA 추가/SSL 우회/공개 인증·ES/수집기/worker/gateway 재시작·새 AWS 자원·main/PR는 수행하지 않았다.
+
+## 2026-10-13 직접 LAN IP 빈 화면 진단
+
+사용자의 실제 브라우저 화면 지적으로 직접 `https://192.168.32.60/` 접근 문제를 우선 검토했다. CA/IP 검증을 유지한 무인증 실제 요청에서 IP Host는 HTTP200·본문0 bytes·인증 challenge 없음, 동일 LAN 주소/기존 도메인 Host는 HTTP401·JSON88 bytes·Basic challenge였다. 현재 Caddy의 공개 Host 전용 라우팅과 일치한다. 이전 실제 포털 인수는 기존 Host를 지정한 LAN 프록시 경로였으며 직접 IP 주소창 접근의 인수가 아니었다. 그 검증 범위 차이를 이전 요약에서 충분히 설명하지 못했다. 원래 기능/실수신 인수 이력을 취소하거나 직접 IP 인수 완료로 바꾸지 않는다.
+
+- [x] FIX-LAN-01 완료(2026-10-13 코드·지정 중앙 보호 적용·직접 접속 인수): 명시 HTTPS 사설 IP alias·정확한 Host별 Origin과 기존 인증/CSRF/공개 주소/수집 endpoint를 보존하는 포털/Caddy/Compose를 수정했다. 실제 Caddy 두 구성·이미지/설정/SQLite 보호·격리 restore 후 포털/게이트웨이에만 적용하고 직접 IP의401 로그인 요구·인증200/HTML·API200·타 Host Origin403·실제 브라우저 홈1440/390/개인·동일 구성 저장/재조회·확정 통지1/JS 예외0을 인수했다. 관련91 passed/4 subtests·전체789 passed/19 skipped/257 subtests(94.83초)·Ruff/Bandit/diff 통과. ES/Kibana/정규화/탐지 실행·비밀/CA/TLS를 유지했다. 사용자는 CA 신뢰 추가를 원하지 않아 신뢰 저장소를 바꾸지 않았고 일반 브라우저 인증서 경고는 남는다. [파일·실제 이미지/patch·보호/복구·검증 제한](lan_portal_fix_20261013.md).
+
+## 2026-10-13 시험 서버 보호 적용·검증·Git 반영 요청
+
+새 명시 요청으로 FAST-LIVE-01 사전 점검·보호 배포·통제된 SSH 인수와 검증 소스의 현재 기능 브랜치 commit/push를 허용한다. main 직접 push·강제 push·PR 생성/병합·원본/상태 초기화·AWS 자원 변경은 허용하지 않는다. 기존 대시보드 완성 코드/개인 Word·JSON·상태/접속 자료와 이력을 보존한다. 현재 실제 중앙 서버·권한·백업이 확인되지 않으면 배포를 중단하고 로컬 검증/Git 반영은 계속한다.
+
+- [x] DEPLOY-EARLY-01 완료(2026-10-13 지정 시험 중앙·기본 AUTH·관리자 인수): 보호 확인 후 승인된 정규화 추가·초기 AUTH/포털만 적용하고 정상SSH·실제9/10·검색 관측→화면25.894초·최종 frontier/같은 notice·proof10·탐지/포털 재시작·원래 행/키/CA·수집 유지·관리자 두 크기/테마를 검증했다. snapshot은 미지원으로 미실행이며 사용자 승인 범위에서 기존 ES 원본을 수정·삭제하지 않았다. 전체 ES 재해 복구·추가 역할/신규 후보/Windows·AWS 위험 인수는 완료하지 않는다. [결과·소스·이미지·시각·복구·제한](early_deployment_validation_20261013.md).
+- [x] GIT-FAST-01 완료(2026-10-13 기능 브랜치 commit/일반 push): 초기 탐지18dabf7·대시보드/연동000659f·정상 키 보완3b9aff9·검증 문서d718ec9를 명시 stage/review하고 codex/dashboard-platform-20261013의 원격 SHA/파일·Windows/Ubuntu CI 통과를 확인했다. main=b67eefa를 유지했고 개인 Word/JSON 해시·비밀/state/output 제외·문서 링크/비밀번호 미포함·diff를 검사했다. 마지막 Windows 후속 결과/완료 기록도 같은 브랜치 일반 push로 보존한다. [결과](early_deployment_validation_20261013.md).
+
+2026-10-13 진행 기록: 사용자가 현재 중앙 서버 192.168.32.60과 관리자 권한을 확인하고, 기존 해시 백업 후 포털 admin 비밀번호만 변경 및 누락된 정규화 서비스 추가를 별도 승인했다. 기존 원본 문서/매핑·수집 endpoint·기존 키와 ES/Kibana/수집기 실행은 보존한다. ES snapshot repository/path.repo가 없어 snapshot은 미실행이며 기존 문서 수정·삭제 없이 새 수신 시점부터 처리한다. 포털 이미지·설정·키/CA, SQLite 온라인 백업과 격리 복원은 통과했다. 소스 000659f 기반 후보 이미지의 누락 의존성을 기존 서비스 교체 전에 발견·고정 requirements로 보완했다. 포털/정규화/기본 AUTH 탐지+early만 적용했고 start=2026-10-13T02:35:47.839670+00:00, lateness=900초를 유지한다. 실제 SSH journal 9/10회, 정규화 미러 18/20건→고유 실패 9/10건·초기 통지 0/1건·proof10개 참조/해시 일치를 확인했다. 실제 검색 관측 02:53:24.451157 UTC→Chrome 표시 02:53:50.345 UTC(약25.894초)이며 최종 frontier·재시작 인수는 아직 진행 중이다. 두 기능 커밋 18dabf7/000659f를 현재 기능 브랜치에 일반 push하고 원격 SHA 일치를 확인했다. Ubuntu CI는 통과, Windows CI는 확인 중이다. 자격·원문·개인 파일은 기록/Git에서 제외했다.
+
+- [x] MULTI-HOST-01 완료(2026-10-13 지정 서버 점검·수신 범위): Ubuntu 인수 후 AWS 정상 SSH/DVWA GET200·중앙 수신0/경로 부재를 확인하고 사용자 선택에 따라 현재 점검 결과만 기록했다. Windows는 기존 동일 키의 보호 복원 후 HP SSH·두 수집 서비스·새 OpenSSH 성공1/HP4624 2→정규화 정확 참조2/성공/LogonType3→LAN 포털API200·실제 화면/JS 예외0을 검증했다. Windows 유효 source IP0과 비활성 후보는 유지하고 Windows 실패 공격·AWS 센서/감사 구성·신규 탐지 위험 인수는 미완료로 분리했다. 공개 인증 전송 대신 CA 검증 LAN을 사용했고 임시 프록시/브라우저를 종료했다. [범위·시각·제한](early_deployment_validation_20261013.md).
+
+2026-10-13 MULTI-HOST-01 기록: AWS의 정상 SSH·DVWA GET 최종200 및 중앙 감사 수신0/기존 수집 경로 부재를 확인했다. 사용자는 현재 점검 결과 기록을 선택했으므로 AWS 설치/자원 변경은 하지 않았다. Windows의 실제 HP·관리자 그룹·기본 Match·파일 owner/ACL·인코딩은 정상이나 현재 관리자 키 파일에는 지정 공개키가 없었다(등록 여부 False). 같은 승인 키만 현재 지정 VM에서 보호 백업 후 추가하는 콘솔 절차 실행을 기다리며 Windows 직접 SSH 시험은 미검증으로 남긴다. 중앙 Windows 최근 수신·필드 표본은 별도로 확인했고 비활성 Windows/AWS 규칙의 실제 탐지 완료로 간주하지 않는다.
+
+2026-10-13 MULTI-HOST-01 후속 완료 기록: 사용자가13:08 KST 기존 관리자 키/ACL 백업 후 동일 승인 키 추가를 완료했다. 이후 실제 정상 SSH·서비스·새 보안 이벤트→중앙/정규화 직접 ID/provenance→포털 API/화면을 인수했다. HP4624 2건의 LogonType3은 보존되지만 source IP는 없는 실제 관측이며 OpenSSH 본문의 출발지를 Security 이벤트에 대입하지 않았다. 미실행 Windows 실패·미구성 AWS 감사·비활성 신규 프로필의 인수는 DET-EXT-LIVE-01/P3-01/P4-01에 남긴다. 개인 파일을 보존하고 `state/deploy-early-20261013/windows-live-report.json`·Git 제외 화면을 검증 증거로 보관한다.
+
+2026-10-13 신규 후보 실제 필드 후속: 최근15분 네트워크 receipt7,297건과 처리 시간을 둔 표본100건에서 종료Flow6·필수 필드 충족5→정규화 정확 ID/provenance5를 대조했다. 최근 정규화 http_access0·AWS 감사0은 미수집/경로 인수 제한으로 기록했다. [5개 후보별 실제 데이터/잔여](early_deployment_validation_20261013.md)를 추가하며 신규 프로필을 활성화하거나 DET-EXT-LIVE-01을 완료로 바꾸지 않는다.
+
+- [x] FIX-AUTH-KEY-01 완료(2026-10-13 코드·실제 보완 적용): 정상 publickey 성공의 제한된 ED25519/RSA/ECDSA SHA256 suffix를 인식하고 지문은 결과에 남기지 않는다. 실제 형식 대조·12개 추가 경계/개인정보/실패 회귀, 관련92 passed/7 subtests·전체774 passed/19 skipped/257 subtests(89.34초)·Ruff/Bandit 중간/높음0을 통과했다. 3b9aff9를 일반 push하고 Windows/Ubuntu CI 통과 및 동일 소스 이미지 적용 후 새 정상 성공6문서·출발지 경보0·기존 final 전체문서SHA/proof/identity와 원래 행/키/CA 보존을 확인했다. 원래15분 겹침 구간에서는 이전 unclassified와 별도 성공 해석이 추가될 수 있으며 원본/이전 해석을 삭제하지 않고 start/체크포인트를 되감거나 전체 과거 재처리하지 않았다.
+
+## 2026-10-13 빠른 초기 경보·탐지 확장 우선 요청
+
+새 명시 요청에 따라 FAST-01/DET-EXT-01을 우선 구현한다. main 기준 b67eefa와 codex/dashboard-platform-20261013의 미커밋 대시보드·개인 Word/JSON을 보존한다. 기존 900초 지연·AUTH 9/10건·create-only 경보·상태 identity·권한·마스킹을 유지한다. 이후 사용자가 지정 서버/키로 테스트를 허용해 TCP/SSH·기존 서비스 및 DVWA 정상 GET 준비 확인을 추가했다. 신규 기능 운영 배포·프로필 활성화·키 발급·실제 공격/AWS 자원 변경·commit/push/merge는 실행하지 않는다.
+
+- [x] FAST-01 완료(2026-10-13 코드·로컬/합성 인수): 명시 early-auth의 독립 sidecar/불변 notice revision·최종 링크 outbox와 5상태, 논리 ID별 최신 조회/기간·홈/개인 widget/정확한 초기 proof·시각을 구현했다. 9/10·원본/정규화 버전/미러·조직/IP/창·900초/final checkpoint 독립·부분 spool·전송/409/최종 장애·링크 큐 overflow·새 worker process 재시작·권한/0/미설정/503·1440/768/390 두 테마 인수를 통과했다. 합성 ES/실제 Flask·Chrome 3회에서 생성10~13ms/화면최대10.529초다. 운영 60초는 미측정이며 FAST-LIVE-01로 분리한다. [보고서](realtime_detection_20261013.md).
+- [x] DET-EXT-01 완료(2026-10-13 코드·명세·합성 인수): 기존 AUTH/sequence/ATTACK01~03/cloud single을 재사용하고 metadata-cardinality-v1·5패턴 실행 코드를 추가했다. default AUTH만 유지, 명시 include-patterns는 SSH 다수 계정 후보만 추가하며 Windows/웹404/종료flow포트/AWS콘솔4개는 비활성이다. DET01~11의 필드/정상·오탐/한계와 WEB01~05 미지원 gate를 기록했다. 임계값·누락/식별자/시각·raw/flow/event ID·조직·정상/성공/HTTP오류·대량 중복·cooldown/순서·identity 거부·회귀를 통과했다. 실제 운영 활성화/인수는 DET-EXT-LIVE-01로 분리한다.
+- [x] FAST-LIVE-01 완료(2026-10-13 지정 중앙·기본 AUTH·관리자): 실제 명령/이미지·명시 start/SSH receipt floor/lateness900·전용 키/notice exact mapping·최소 read/create_doc·두 탐지 DB 일관 backup/격리 restore를 확인했다. 실제 고유9/10→초기0/1·25.894초 Chrome 표시·실제 최종 frontier/근거10/같은 notice·재시작 불변 경보SHA/설정/proof·수집 유지가 통과했다. 합성 수치를 대신 쓰지 않았으며 1회 LAN 관측/초기000659f 측정과 후속 정상 키 보완3b9aff9의 범위를 [보호 인수](early_deployment_validation_20261013.md)에 구분했다. sustained SLO·다른 역할/프로필·ES 독립복구는 별도다.
+- [ ] DET-EXT-LIVE-01: Windows 현재 SSH 인증·Ubuntu 중앙 읽기/실수신·AWS 기존 메타데이터 수신 경로를 확인하고 신규 후보의 실제 필수 field gate·정상/경계/오탐을 인수한다. 현재 네 후보 비활성과 기존 P0~P7 완료 수/기준은 유지한다.
+
+2026-10-13 FAST-01/DET-EXT-01 기록: src/cloud_soc/detection/{early,patterns}.py·portal/notices.py·metadata_patterns.yml·alert-notices.js/css 및 detector CLI/registry/telemetry/최종 링크·setup/monitor read-only 권한·portal API/세션·홈/개인 provider를 추가했다. 최종 전체 Python762 passed/19 skipped/257 subtests(86.94초), UI142 passed, Ruff·Bandit 중간/높음·diff 통과. 브라우저 JS 예외0·가로/modal 넘침 없음, 의도한503은 기대된 실패다. 초기 전체 role 기대 누락·fixture options 공유/종결 역전 기대를 수정했으며 동일 원본의 정규화 버전 중복과 malformed UI를 보완 후 전체 회귀를 다시 통과했다. Git 제외 output/playwright/early-notices에 화면/실측 JSON을 보존한다. 사용자 제공 AWS 키의 기존 ACL 메타데이터를 보호 보관하고 일반 그룹 상속 읽기를 제거해 ec2-user 접속을 확인했다(키 내용/발급·서버 변경 없음). AWS DVWA HTTP80/기본GET302와 SOC 수집기 not-found, Ubuntu 두 수집기/timer active(중앙은권한미확보), Windows TCP22/현재키인증거부를 확인했다. 접속/Running을 중앙 저장·배포·위험 탐지 성공으로 간주하지 않는다. 제공 키/비밀/원문은 tracker에 기록하지 않았다. 운영 배포/활성화·실제 공격·AWS 자원 변경·commit/push/merge는 미실행이고 개인 Word/JSON·기존 대시보드 이력을 보존한다.
+
+## 2026-10-13 사용자 맞춤 대시보드 확장 우선 요청
+
+사용자의 새 명시 요청에 따라 이번 구현은 발표 사건 시연보다 대시보드 확장을 우선한다. 기준은 main b67eefa이며 codex/dashboard-platform-20261013에서 개인 Word·검증 JSON과 기존 이력을 보존한다. 운영 배포·실수신·커밋/푸시/병합은 이번 요청에 포함하지 않는다.
+
+- [x] DASH-02 완료(2026-10-13 코드·로컬/합성 인수): 계정별 다중 대시보드 생성/빈 화면/4개 목적 템플릿/이름 변경/복제/삭제 확인/기본 지정/즐겨찾기, 독립 위젯·포인터/키보드 그리드·설정·검색 라이브러리·저장/취소/Undo/복원과 기존 실제 API 연결을 구현했다. 기존 /api/dashboard·설정 행 보존, 31개 후보(관리자 26개·일반 역할 23개 활성), 서버 허용 목록·revision·사용자/조직/역할·CSRF·XSS·형식 4/3/2 및 기존 백업 호환, 1440/768/390px 두 테마 브라우저·회귀를 통과했다. [결과·파일·명령·한계](dashboard_platform_validation_20261013.md). 운영 배포·실제 데이터/계정 인수는 미실행이며 DASH-01/P6/P7 전체 기준은 유지한다.
+
+2026-10-13 DASH-02 작업 기록: main b67eefa에서 개인 Word/검증 JSON을 보존해 codex/dashboard-platform-20261013을 생성했다. 새 dashboard_collections 테이블·/api/dashboards·역할별 카탈로그, 개인 편집 UI 3개 자산과 기존 HTML 연결, 백업 형식4/이전 복원·로그 data_state를 추가했다. 기존 홈·탐지/수집/사건/원문 권한과 P2-02 보류는 유지한다. 최종 전체 Python 726 passed/19 skipped/257 subtests(78.51초), 전체 UI136 passed, Ruff·Bandit 중간/높음·diff 검사 통과. 전체 검사 이후 추가한 독립 앱 프로세스 재로그인 시험을 포함해 신규 파일31 passed를 별도 확인했으며 수치는 중복 합산하지 않는다. 브라우저 CRUD/취소/409/재로그인·드래그/리사이즈/키보드/복원·24개 위젯2요청/오래된 응답/0·미수집·403/503·중단·그래프·허용 높이5/7·4템플릿×3크기×2테마에서 최종 JS예외0·가로 넘침/주요 경계 넘침 없음이다. 의도한 403/409/503 HTTP 콘솔 오류는 기대된 실패다. 초기 상태 API 기간 생성/좁은 요약 카드/저장 후 비활성 버튼과 시험의 비동기 대기/백업 목적지/Windows DB 연결/이전 형식 기대를 수정·재검증했다. 증거는 Git 제외 output/playwright/dashboard-platform에 보존한다. 운영 서버·실제 ES/수집기/키·큐·새 규칙·커밋/푸시/PR/병합은 하지 않았다. 실제 역할·위젯 데이터·보호 배포/포털 재시작·운영 복구는 후속이다.
+
 ## 현재 상태 — 2026-10-12
 
 목표: **위험 징후 수집 → 이해 가능한 경보 → 정확한 근거 → 사건/메모 저장 → 재시작 후 보존**.

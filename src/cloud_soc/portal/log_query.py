@@ -27,13 +27,14 @@ def project_list_hit(hit):
     detail = security_detail(hit.get("_source")) if row["source_kind"] != "unknown" else {
         "status": "unsupported", "adapter": None, "fields": {}}
     adapters = {"windows_event": {"windows_security_v1", "sysmon_v1"},
+                "web_access_metadata": {"web_access_metadata_v1"},
                 "network_packetbeat": {"packetbeat_metadata_v1"},
                 "aws_cloudtrail": {"aws_cloudtrail_metadata_v1"}, "oci_audit": {"oci_audit_metadata_v1"}}
     if detail["adapter"] not in adapters.get(row["source_kind"], set()):
         detail = {"status": "unsupported", "adapter": None, "fields": {}}
     fields = detail["fields"]
     row["interpretation"] = {"status": detail["status"], "adapter": detail["adapter"],
-        "fields": {key: fields[key] for key in ("action", "outcome", "actor", "target_user", "source_ip", "destination_ip")
+        "fields": {key: fields[key] for key in ("action", "outcome", "actor", "target_user", "source_ip", "destination_ip", "http_method", "http_status")
                    if key in fields}}
     row["parse_status"] = detail["status"]
     return row
@@ -318,7 +319,7 @@ class LogReader:
             if state is None:
                 names = self.indices(INDICES)
                 if not names:
-                    return bounded_json(self.result(filters, [], None))
+                    return bounded_json(self.result(filters, [], None, data_state='no_index'))
                 self.check_mappings(names, filters)
                 opened = self.client.open_point_in_time(index=INDICES, keep_alive=PIT_TTL,
                                                         allow_partial_search_results=False)
@@ -366,10 +367,10 @@ class LogReader:
             raise unavailable() from None
 
     @staticmethod
-    def result(filters, rows, token):
+    def result(filters, rows, token, *, data_state='ok'):
         return {"contract_version": CONTRACT_VERSION, "filters": asdict(filters), "rows": rows,
                 "next_cursor": token, "raw_access": "restricted", "total": None,
-                "snapshot_idle_seconds": 90}
+                "snapshot_idle_seconds": 90, "data_state": data_state}
 
     def detail(self, pairs):
         pairs = list(pairs)
