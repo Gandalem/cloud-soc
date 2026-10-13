@@ -4,13 +4,17 @@
 
 새 명시 요청으로 ISSUE-04의 실제 DVWA 접근 로그 수집·정규화·포털 조회를 최우선으로 바꾼다. Windows 키 만료 확인/교체·인증 실패·CloudTrail 구축·공격 시험·새 탐지 규칙 활성화는 후순위로 두며 이번 범위에서 실행하지 않는다. 기존 기능 브랜치/개인 파일·SSH AUTH/early·900초 유예·체크포인트·대시보드를 보존한다. 지정 AWS/중앙의 기존 승인 접속과 웹 전용 코드/서비스·최소 권한 구성·보호된 변경 서비스 적용·기능 브랜치 일반 commit/push는 요청 범위다. 새 과금/IAM/공개 포트/VPN·개인 SSH 키 중앙 복사·공개 관리자 인증·TLS 우회는 금지한다.
 
-- [ ] WEB-LIVE-01 진행 중(ISSUE-04): 실제 DVWA Apache/Docker 로그 형식·경로·회전/개인정보·네트워크/CA를 읽고 안전한 전송 방식을 선택한다. 보호된 메타데이터만 큐/전송하고 정상 GET 새 기록→중앙 문서→정규화→포털·정확 참조를 실제 대조한다. 경로가 없으면 중앙 수집 완료로 표시하지 않는다.
-- [ ] WEB-LIVE-02 진행 중: 몇 차례 정상 GET의 시각/관측 IP·안정 identity/중복과 수신을 대조한다. 실제 공격/원본 변경은 하지 않는다.
-- [ ] WEB-LIVE-03 진행 중: 격리 canary의 query/cookie/token/body·허용 외 필드가 큐/전송 전 제거되고 malformed·불명확 시간/IP가 평가 제외되는지 회귀한다.
-- [ ] WEB-LIVE-04 진행 중: 격리 회전/재시작/전송 실패·cursor/중복/큐 상한·누락 표시를 검증하고 실제 서비스 재시작/원래 로그·기존 서비스 보존을 구분한다.
-- [ ] WEB-LIVE-05 진행 중: 실제 web 어댑터·raw/normalized ID·org/host/time/method/status·보호된 원본 참조/해시·포털 목록/상세를 인수한다. 전체 Python/UI·Ruff/Bandit/diff·Git/CI 결과와 배포/외부 제한을 [웹 수집 보고서](aws_dvwa_web_collection_20261013.md)에 기록한다.
+- [x] WEB-LIVE-01 완료(2026-10-13 지정 AWS/중앙 실제 수신 범위): regular/combined Apache·Docker 중복·회전/개인정보·직접443/9200 timeout·기존 중앙→AWS22를 읽고 목적 전용/제한 SSH pull을 선택했다. 메타데이터 큐→실제 중앙5건→정규화5건→포털 참조/해시를 대조했다. 원래 Apache/DVWA와 기존 서비스/키를 보존했다.
+- [x] WEB-LIVE-02 완료(2026-10-13 실제 정상 GET 범위): 정상 GET4회가 redirect 포함5개 실제 Apache 이벤트로 수신됐다. 실제 시각/peer IP·ID·중복/정확 참조를 대조했으며 합성 이벤트/공격/과거 재수집을 하지 않았다.
+- [x] WEB-LIVE-03 완료(2026-10-13 격리 privacy/허용 목록 회귀 범위): 웹32개 격리 시험에서 query/cookie/Authorization/token/body의 큐/export 미포함·잘못된 형식/시각/허용 외 필드·위조 scope/ID를 거부하고 IP 미관측을 추정하지 않았다. 실제5건도 동일 스키마 검증 통과. 실서버 민감 canary는 실행하지 않았다.
+- [x] WEB-LIVE-04 완료(2026-10-13 격리 회전·실제 재시작 범위): 격리 rename/copytruncate/누락/상한/실패 재개를 검증했다. 실제 producer 재시작 stream/4건 유지, relay 정지 중 GET1건 보관→기존cursor4에서5로 재개·409무중복을 확인했다. 실제 Apache 강제회전은 미실행, 손실 가능성을 보고서에 남겼다.
+- [x] WEB-LIVE-05 완료(2026-10-13 코드·보호 적용·실제 관리자 읽기 범위): 실제5건의 web 어댑터/raw/normalized/시간/HTTP/조직/해시·목록/상세와 OS Linux를 인수했다. 전체852 Python/19skip/257subtests·145 UI/Ruff/Bandit/diff·소스Windows/Ubuntu CI 통과. 초기portal/normalizer·OS후속portal만 보호 적용하고 다른서비스/사건/dashboard2/revision13을 보존했다. [웹 수집 보고서](aws_dvwa_web_collection_20261013.md)에 파일/이미지/근거/실제 viewer 범위·장기운영 제한을 기록했다.
 
 2026-10-13 추가 요청/진행: 사용자 화면에서 AWS web 수집기의 OS가 '정보 없음'으로 표시되는 결함을 WEB-LIVE-05에 포함한다. 실제 raw의 host.os.type=linux와 수신 현황의 name-only 투영 차이를 수정한다. OS 이름이 없으면 명시된 OS 유형/센서 태그만 사용하고 AWS/IP로 OS를 추정하지 않는다. 통합 로그의 cloud 분류는 '해당 없음 (클라우드 API)'으로 표시한다. 서비스 수신 상태를 heartbeat로 바꾸거나 Windows 접근/키 작업을 재개하지 않는다.
+
+2026-10-13 WEB-LIVE 작업 기록: src/cloud_soc/web·deploy/web·portal security_detail/log_contract/log_query/agent_status·processing contract·통합로그 UI/회귀/CI를 반영했다. 웹 소스8626b57, 새 web-only receipt8a8b5bd, OS후속fe61a65를 기능 브랜치에 일반 push했다. 최초8개DB/이미지2개·OS후속8개DB/당시portal이미지와 실제override/키/CA를 보호하고 개별 SQLite 무결성/격리restore·실제 이미지 파일 해시를 대조했다. 마지막 portal image97a31880…/normalizer a41dafd7…이며 source/assets의 범위를 보고서에 구분한다. 실제 LAN CA/IP 검증 API·읽기전용 localhost viewer에서5행/상세·Linux·1440/768/390 두테마/JS0·document넘침0을 확인하고 임시 viewer/browser를 닫았다. 평상시 첫 source→receipt9.07초는 단일 관측이며 지속SLO가 아니다. 개인Word2개/JSON의 원래SHA·main b67eefa·기존AUTH1/early/900초/사건/dashboard2/revision13을 보존했다.
+
+WEB-LIVE 남은 운영 범위: PC CA 경고(추가 신뢰 거부 유지)·직접AWS→중앙 경로·source IP/목적키 만료 관리·큐 상한/회전 손실 가능·ES 장기보존/독립DR/다실계정/지속SLO는 미인수다. 기존 위험 평가 누락·미지원 경고를 숨기지 않았다. Windows 키/실패·CloudTrail·공격/새규칙활성화/ngrok 인증을 실행하지 않았다. 이번5개 체크 완료는 지정 정상 웹 수집 인수이며 기존 P0~P7의11/24·전체 운영 기준을 변경하지 않는다.
 
 ## 2026-10-13 전체 장애 이력·운영 안정화 요청
 
