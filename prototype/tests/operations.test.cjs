@@ -90,10 +90,17 @@ test('attack detail keeps versions and evidence lists collapsed without hiding l
   assert.match(allText(rule),/version-canary.*임계값 5.*900초/);
 });
 test('detector health alarms and excluded counts are visible',async()=>{
-  for (const [health,label] of [['failed','탐지 장애: 처리 실패'],['stale','상태 갱신 중단'],['delayed','탐지 지연'],['warning','탐지 제외 이벤트']]) {
+  for (const [health,label] of [['failed','탐지 장애: 처리 실패'],['stale','상태 갱신 중단'],['delayed','탐지 지연'],['warning','탐지 경고: 평가 범위·초기 통지 확인 필요']]) {
     const ui=browser([ok({...data,sections:{...data.sections,pipeline:{state:'success',detector:{state:'success',health,lag_seconds:1300,late_total:3,legacy_excluded:12}}}})]);await settle();
     assert.ok(ui.get('ops-pipeline').textContent.includes(label));
     assert.match(ui.get('ops-pipeline').textContent,/처리 지연 1300초.*지연 제외 누적 3건.*과거 형식 제외 12건/);
+  }
+});
+test('initial notice failures, pending delivery and reconciliation are distinct from exclusions',async()=>{
+  for (const [state,label] of [['failed','초기 통지 처리 실패'],['pending','초기 통지 처리·전달 대기'],['reconcile_required','초기 통지·최종 근거 재확인 필요'],['unknown','초기 통지 상태 미확인']]) {
+    const ui=browser([ok({...data,sections:{...data.sections,pipeline:{state:'success',detector:{state:'success',health:'warning',early:{state},excluded_total:0}}}})]);await settle();
+    assert.ok(ui.get('ops-pipeline').textContent.includes(label));
+    assert.ok(!ui.get('ops-pipeline').textContent.includes('탐지 제외 이벤트'));
   }
 });
 test('successful zero, missing index and failed queries stay distinct',async()=>{
