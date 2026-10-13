@@ -28,3 +28,7 @@ state/
 coverage.xml
 coverage.json
 htmlcov/
+
+# Local browser verification artifacts (may contain authenticated fixture metadata)
+.playwright-cli/
+output/playwright/

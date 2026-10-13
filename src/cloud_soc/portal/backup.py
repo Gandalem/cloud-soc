@@ -31,6 +31,8 @@ SCHEMAS = {
 }
 LEGACY_DATABASES = set(SCHEMAS) - {"log-access.sqlite", "dashboards.sqlite"}
 FORMAT_DATABASES = {1: LEGACY_DATABASES, 2: set(SCHEMAS) - {"dashboards.sqlite"}, 3: set(SCHEMAS)}
+FORMAT_DATABASES[4] = set(SCHEMAS)
+COLLECTION_COLUMNS = 'actor revision body'.split()
 MAX_BYTES = 1024 ** 3
 MANIFEST = "manifest.json"
 KEY_HISTORY_COLUMNS = SCHEMAS["packages.sqlite3"]["issued_keys"] + "scope expiration target_label package_name package_os organization revoked_at checked_at server_state".split()
@@ -103,6 +105,8 @@ def inspect_database(path, name, budget):
             raise BackupError("Unexpected database schema objects.")
         tables = {table for kind, table in objects if kind == "table"}
         schema = dict(SCHEMAS[name])
+        if name == 'dashboards.sqlite' and 'dashboard_collections' in tables:
+            schema['dashboard_collections'] = COLLECTION_COLUMNS
         if name == "packages.sqlite3" and "enrollments" in tables:
             schema["enrollments"] = ENROLLMENT_COLUMNS
         if tables != set(schema):
@@ -191,6 +195,10 @@ def backup(source, target, *, seconds=60, max_bytes=MAX_BYTES):
         sizes.append(size)
     target = destination(target, source, sum(sizes) * 2)
     format_version = 3 if "dashboards.sqlite" in names else 2 if "log-access.sqlite" in names else 1
+    if 'dashboards.sqlite' in names:
+        with read_db(source / 'dashboards.sqlite', budget) as db:
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='dashboard_collections'").fetchone():
+                format_version = 4
     schema_names = FORMAT_DATABASES[format_version]
     report = {"format": format_version, "kind": "portal-sqlite-backup", "created_at": datetime.now(timezone.utc).isoformat(),
               "consistency": "per_database", "missing": sorted(schema_names - set(names)), "files": []}
@@ -245,7 +253,8 @@ def verify(source, *, seconds=60, max_bytes=MAX_BYTES):
             if (set(entry) != {"name", "bytes", "sha256", "counts"} or type(entry["bytes"]) is not int
                     or not 4096 <= entry["bytes"] <= max_bytes or not re.fullmatch("[0-9a-f]{64}", entry["sha256"])
                     or set(entry["counts"]) not in (set(SCHEMAS[entry["name"]]),
-                        set(SCHEMAS[entry["name"]]) | ({"enrollments"} if entry["name"] == "packages.sqlite3" else set()))
+                        set(SCHEMAS[entry["name"]]) | ({"enrollments"} if entry["name"] == "packages.sqlite3" else set()),
+                        {'dashboards', 'dashboard_collections'} if entry['name'] == 'dashboards.sqlite' and report['format'] == 4 else set())
                     or any(type(n) is not int or n < 0 for n in entry["counts"].values())):
                 raise ValueError
     except (ValueError, TypeError, KeyError, AttributeError):

@@ -121,6 +121,7 @@ class ReaderTests(unittest.TestCase):
     def test_no_indices_is_empty_without_pit_and_aliases_fail_closed(self):
         self.client.indices.resolve_index.return_value = {"indices": [], "aliases": [], "data_streams": []}
         self.assertEqual(json.loads(self.reader.page([]))["rows"], [])
+        self.assertEqual(json.loads(self.reader.page([]))["data_state"], 'no_index')
         self.client.open_point_in_time.assert_not_called()
         for resolved in [{"indices": [{"name": ".security"}]}, {"indices": [], "aliases": [{"name": "soc-host-raw-alias"}]}]:
             self.client.indices.resolve_index.return_value = resolved

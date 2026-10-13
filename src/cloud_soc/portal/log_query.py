@@ -318,7 +318,7 @@ class LogReader:
             if state is None:
                 names = self.indices(INDICES)
                 if not names:
-                    return bounded_json(self.result(filters, [], None))
+                    return bounded_json(self.result(filters, [], None, data_state='no_index'))
                 self.check_mappings(names, filters)
                 opened = self.client.open_point_in_time(index=INDICES, keep_alive=PIT_TTL,
                                                         allow_partial_search_results=False)
@@ -366,10 +366,10 @@ class LogReader:
             raise unavailable() from None
 
     @staticmethod
-    def result(filters, rows, token):
+    def result(filters, rows, token, *, data_state='ok'):
         return {"contract_version": CONTRACT_VERSION, "filters": asdict(filters), "rows": rows,
                 "next_cursor": token, "raw_access": "restricted", "total": None,
-                "snapshot_idle_seconds": 90}
+                "snapshot_idle_seconds": 90, "data_state": data_state}
 
     def detail(self, pairs):
         pairs = list(pairs)
