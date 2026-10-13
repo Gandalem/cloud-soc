@@ -78,6 +78,16 @@ Windows 192.168.1.138의 실제 컴퓨터명 DESKTOP-LESEHNO·사용자 HP를 �
 
 중앙에서는 해당 Windows IP의 최근15분 raw64건과 4624 등을 확인했다. 표본에서 LogonType4/TargetUserName6문서는 있었지만 유효한 IpAddress는 0개였다. OpenSSH/Operational6건에서도 현재 출발지192.168.1.1을 확인했으나 키 거부 원인 메시지는 확정하지 못했다. 실제 위험 규칙의 필수 필드/프로토콜을 추정하지 않는다. Windows/AWS/HTTP404/종료flow 신규 후보는 비활성, SSH 다수 계정 후보도 실행 프로필에 추가하지 않았다.
 
+추가 신규 후보 데이터 대조(04:21 UTC)는 최근15분 네트워크 receipt7,297건을 확인했다. 정규화 처리 시간을 둔 표본은 receipt04:06:10.676588~04:19:10.676613 UTC의 최신100건이다. source/destination IP70·목적지 포트66·transport66·flow ID98건이 있었고 종료Flow6건 중 필수 필드/조직/전송 조건을 만족한5건은 결정적 ID 직접 조회로 정규화 provenance·packetbeat_metadata_v1·flow_final=True까지 일치했다. 이 표본은 15종 포트 공격·오탐·cooldown 인수가 아니다. 같은 최근15분 정규화 http_access는0건으로 실제 웹 접근 채널/필드 인수는 충족하지 못했다. 원문·URL·HTTP 본문·패킷 내용은 출력하거나 Git에 기록하지 않았다.
+
+| 신규 후보 | 이번 실제 데이터 대조 | 잔여/활성 상태 |
+| --- | --- | --- |
+| AUTH-SPRAY-001 | Linux SSH 조직/출발지/계정·실패·중복 보존 확인 | 다수 계정 임계/오탐 실제 인수 미실행, 실행 프로필 미추가 |
+| WIN-AUTH-001 | 새 HP4624 2→정규화 정확 참조·LogonType3 확인 | 유효 source IP0, 새4625 실패 인수 미실행, 비활성 |
+| AWS-CONSOLE-001 | 중앙 AWS 감사0·기존 전송 경로 없음 | ConsoleLogin 필드 미수집, 비활성 |
+| WEB-404-001 | 최근15분 정규화 HTTP 접근0 | 실제 웹 수집 경로/필드·404 인수 미검증, 비활성 |
+| NET-PORT-001 | 필수 조건 종료Flow5→정규화 정확 참조5 확인 | 15종 포트/정상 검색·중복/오탐 실제 위험 인수 미실행, 비활성 |
+
 ## 로컬·Git·잔여
 
 최종 Python774 passed/19 skipped/257 subtests(89.34초), 관련92 passed/7 subtests, UI142 passed, Ruff·diff 통과, Bandit 중간/높음0. 000659f와 3b9aff9의 Windows/Ubuntu GitHub Actions가 모두 통과했다. [기능 CI](https://github.com/Gandalem/cloud-soc/actions/runs/38338941741), [정상 키 보완 CI](https://github.com/Gandalem/cloud-soc/actions/runs/38341068781).

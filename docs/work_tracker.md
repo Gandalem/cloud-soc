@@ -15,6 +15,8 @@
 
 2026-10-13 MULTI-HOST-01 후속 완료 기록: 사용자가13:08 KST 기존 관리자 키/ACL 백업 후 동일 승인 키 추가를 완료했다. 이후 실제 정상 SSH·서비스·새 보안 이벤트→중앙/정규화 직접 ID/provenance→포털 API/화면을 인수했다. HP4624 2건의 LogonType3은 보존되지만 source IP는 없는 실제 관측이며 OpenSSH 본문의 출발지를 Security 이벤트에 대입하지 않았다. 미실행 Windows 실패·미구성 AWS 감사·비활성 신규 프로필의 인수는 DET-EXT-LIVE-01/P3-01/P4-01에 남긴다. 개인 파일을 보존하고 `state/deploy-early-20261013/windows-live-report.json`·Git 제외 화면을 검증 증거로 보관한다.
 
+2026-10-13 신규 후보 실제 필드 후속: 최근15분 네트워크 receipt7,297건과 처리 시간을 둔 표본100건에서 종료Flow6·필수 필드 충족5→정규화 정확 ID/provenance5를 대조했다. 최근 정규화 http_access0·AWS 감사0은 미수집/경로 인수 제한으로 기록했다. [5개 후보별 실제 데이터/잔여](early_deployment_validation_20261013.md)를 추가하며 신규 프로필을 활성화하거나 DET-EXT-LIVE-01을 완료로 바꾸지 않는다.
+
 - [x] FIX-AUTH-KEY-01 완료(2026-10-13 코드·실제 보완 적용): 정상 publickey 성공의 제한된 ED25519/RSA/ECDSA SHA256 suffix를 인식하고 지문은 결과에 남기지 않는다. 실제 형식 대조·12개 추가 경계/개인정보/실패 회귀, 관련92 passed/7 subtests·전체774 passed/19 skipped/257 subtests(89.34초)·Ruff/Bandit 중간/높음0을 통과했다. 3b9aff9를 일반 push하고 Windows/Ubuntu CI 통과 및 동일 소스 이미지 적용 후 새 정상 성공6문서·출발지 경보0·기존 final 전체문서SHA/proof/identity와 원래 행/키/CA 보존을 확인했다. 원래15분 겹침 구간에서는 이전 unclassified와 별도 성공 해석이 추가될 수 있으며 원본/이전 해석을 삭제하지 않고 start/체크포인트를 되감거나 전체 과거 재처리하지 않았다.
 
 ## 2026-10-13 빠른 초기 경보·탐지 확장 우선 요청
