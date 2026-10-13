@@ -37,6 +37,11 @@ def normalize(hit, processed_at, *, ssh_v2_start=None):
         return identifier, record, None
     detail = security_detail(source)
     time_metadata = {"basis": "source_timestamp"}
+    if detail['adapter'] == 'web_access_agent_v1':
+        version = 'web-access-agent-v1'
+        identifier = hashlib.sha256(json.dumps([version, reference], sort_keys=True).encode()).hexdigest()
+        record['version'] = version
+        time_metadata = {'basis':'access_timestamp','year_inferred':False,'raw_is_protected_metadata':True}
     if detail['adapter'] == 'web_access_metadata_v1':
         identifier = hashlib.sha256(json.dumps([WEB_VERSION, reference], sort_keys=True).encode()).hexdigest()
         record['version'] = WEB_VERSION
@@ -105,7 +110,7 @@ def normalize(hit, processed_at, *, ssh_v2_start=None):
     if detail["status"] == "unsupported":
         record.update(status="unsupported", reason="adapter_not_supported")
         return identifier, record, None
-    expected = {"web_access_metadata_v1":"soc-host-raw-web-", "windows_security_v1": "soc-host-raw-", "sysmon_v1": "soc-host-raw-", "linux_ssh_v1": "soc-host-raw-", "linux_ssh_v2": "soc-host-raw-",
+    expected = {"web_access_agent_v1":"soc-host-raw-", "web_access_metadata_v1":"soc-host-raw-web-", "windows_security_v1": "soc-host-raw-", "sysmon_v1": "soc-host-raw-", "linux_ssh_v1": "soc-host-raw-", "linux_ssh_v2": "soc-host-raw-",
                 "linux_operational_v1": "soc-host-raw-", "linux_sudo_session_v1": "soc-host-raw-", "linux_unclassified_v1": "soc-host-raw-", "packetbeat_metadata_v1": "soc-network-", "aws_cloudtrail_metadata_v1": "soc-cloud-aws-", "oci_audit_metadata_v1": "soc-cloud-oci-"}
     if not reference["index"].startswith(expected[detail["adapter"]]):
         record.update(status="invalid", reason="source_scope_mismatch")

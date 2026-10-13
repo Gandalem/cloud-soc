@@ -199,6 +199,9 @@ def stable(spec, owner):
             path = root / relative
             private(path)
             files[str(path)] = sha(path)
+        if scope == 'host' and ('system' in spec or 'sites' in spec):
+            for relative in ['collection-profile.json','site-privacy.js','profile-reader.py']:
+                path=root/relative; private(path); files[str(path)]=sha(path)
     for name in units(spec):
         path = UNIT_ROOT / name
         private(path)
@@ -295,7 +298,7 @@ def execute(source, spec, digest, interface, recovery, dry_run):
         raise RuntimeError('Administrator root is required')
     if not re.fullmatch(r'[a-f0-9]{64}', digest):
         raise RuntimeError('Supply the verified public archive SHA-256; never a token argument')
-    if spec.get('os') != 'ubuntu' or spec.get('enrollment_protocol') != 1 or type(spec.get('network')) is not bool:
+    if spec.get('os') not in ('ubuntu', 'amazon_linux_2023') or spec.get('enrollment_protocol') != 1 or type(spec.get('network')) is not bool:
         raise RuntimeError('Fresh compatible Ubuntu package required')
     if spec['network'] and not re.fullmatch(r'[A-Za-z][A-Za-z0-9_.-]{0,14}', interface or ''):
         raise RuntimeError('Explicit capture interface required')

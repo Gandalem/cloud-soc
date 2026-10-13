@@ -28,6 +28,7 @@ def project_list_hit(hit):
         "status": "unsupported", "adapter": None, "fields": {}}
     adapters = {"windows_event": {"windows_security_v1", "sysmon_v1"},
                 "web_access_metadata": {"web_access_metadata_v1"},
+                "generic_web_access": {"web_access_agent_v1"},
                 "network_packetbeat": {"packetbeat_metadata_v1"},
                 "aws_cloudtrail": {"aws_cloudtrail_metadata_v1"}, "oci_audit": {"oci_audit_metadata_v1"}}
     if detail["adapter"] not in adapters.get(row["source_kind"], set()):
@@ -260,6 +261,9 @@ class LogReader:
         if self.organizations is not None:
             clauses.append({"terms": {"organization.id": list(self.organizations)}})
         runtime = {}
+        if filters.source_kind == 'web':
+            runtime['soc_query_source']={'type':'keyword','script':{'source':FIELD_HELPER+"def v=value(params._source,'labels.log_source'); if(v instanceof String) emit(v);"}}
+            clauses.append({'terms':{'soc_query_source':['generic_web_access','web_access_metadata']}})
         for value, path in ((filters.host, "host.name"), (filters.collector, "agent.type")):
             if value is not None:
                 clauses.append({"term": {path: value}})

@@ -204,6 +204,10 @@ try {
     foreach ($path in @($DataPath, $LogsPath, (Join-Path $Root 'inputs'))) { New-Item -ItemType Directory -Path $path | Out-Null }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'discover-windows.ps1') -Destination $Root
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'privacy.js') -Destination $Root
+    if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'collection-profile.json')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'collection-profile.json') -Destination $Root
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'site-privacy.js') -Destination $Root
+    }
     $settings = @{ log_roots = @($LogRoots); required_channels = @($Channels) } | ConvertTo-Json -Depth 8
     Write-DiscoveryFile (Join-Path $Root 'discovery-settings.json') $settings
     Build-SocNativeDiscovery -Root $Root -Source $PSScriptRoot

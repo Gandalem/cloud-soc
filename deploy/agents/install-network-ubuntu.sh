@@ -99,7 +99,7 @@ install_agent() {
     [[ $EUID == 0 ]] || fail 'Run with sudo (not required for --dry-run).'
     [[ -f /etc/os-release ]] || fail 'Ubuntu 22.04 or 24.04 is required.'
     . /etc/os-release
-    [[ $ID == ubuntu && ( $VERSION_ID == 22.04 || $VERSION_ID == 24.04 ) && -d /run/systemd/system ]] || fail 'Only Ubuntu 22.04 or 24.04 with systemd is supported.'
+    [[ ( $ID == ubuntu && ( $VERSION_ID == 22.04 || $VERSION_ID == 24.04 ) || $ID == amzn && $VERSION_ID == 2023 ) && -d /run/systemd/system ]] || fail 'Ubuntu 22.04/24.04 or Amazon Linux 2023 with systemd is required.'
     local tool arch hash package member
     for tool in curl tar sha512sum systemctl pgrep timeout sed; do
         command -v "$tool" >/dev/null || fail "Missing prerequisite: $tool"

@@ -90,7 +90,7 @@ discover_linux_logs() {
 }
 
 publish_health_report() {
-    local root=$1 version=0 entry separator= total metrics
+    local root=$1 version=0 entry separator= total metrics collection=
     version=${POLICY_VERSION:-0}
     [[ $version =~ ^[0-9]{1,9}$ ]] || return 1
     [[ ! -L $root/health.ndjson && ! -L $root/health-previous.ndjson ]] || return 1
@@ -109,7 +109,19 @@ publish_health_report() {
     {
         printf '{"schema":1,"generated_at":"%s","policy_version":%s,"selected":%s,"excluded":%s,"errors":%s,"total":%s,"sources":[' "$(date -u +%FT%TZ)" "$version" "$HEALTH_SELECTED" "$HEALTH_EXCLUDED" "$HEALTH_ERRORS" "$total"
         for entry in "${HEALTH_SOURCES[@]}"; do printf '%s%s' "$separator" "$entry"; separator=,; done
-        printf '],"queue_state":"unknown","transport_state":"unknown",%s}\n' "$metrics"
+        if [[ -f $root/collection-profile.json ]]; then
+            collection=$(python3 - "$root/collection-profile.json" <<'PY'
+import json, os, sys, importlib.util
+from pathlib import Path
+spec=importlib.util.spec_from_file_location('profile_reader',Path(sys.argv[1]).with_name('profile-reader.py'))
+module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);p=module.read(sys.argv[1])
+active=[x for x in p['web_inputs'] if x.get('enabled',True)]
+errors=sum(not os.path.isfile(x['paths'][0]) or not os.access(x['paths'][0],os.R_OK) or os.path.realpath(x['paths'][0])!=x['paths'][0] for x in active)
+print(',"collection":'+json.dumps({'schema':1,'system':p['system'],'web':bool(active),'network':p['network'],'web_errors':errors}))
+PY
+)
+        fi
+        printf '],"queue_state":"unknown","transport_state":"unknown",%s%s}\n' "$metrics" "$collection"
     } >> "$root/health.ndjson"
     local candidate
     candidate=$(mktemp "$root/inputs/.health.XXXXXX")
@@ -167,12 +179,32 @@ refresh_linux_inputs() {
         mapfile -t roots < "$root/discovery-roots.txt"
     fi
     ((${#roots[@]} > 0)) || return 1
+    local unified=false system_enabled=true
+    if [[ -f $root/collection-profile.json ]]; then
+        [[ ! -L $root/collection-profile.json ]] || return 1
+        unified=true
+        system_enabled=$(python3 "$root/profile-reader.py" "$root/collection-profile.json" | python3 -c 'import json,sys;print(str(json.load(sys.stdin)["system"]).lower())') || return 1
+        while IFS= read -r path; do valid_log_root "$path" || return 1; POLICY_EXCLUSIONS+=("$path"); done < <(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))["web_exclusions"]))' "$root/collection-profile.json")
+    fi
     local path
     for path in "${roots[@]}"; do valid_log_root "$path" || return 1; done
-    discover_linux_logs "${roots[@]}"
+    if $system_enabled; then discover_linux_logs "${roots[@]}"; else discover_linux_logs; fi
     local candidate report
     candidate=$(mktemp "$root/inputs/.candidate.XXXXXX")
     render_discovered_inputs > "$candidate"
+    if $unified; then
+        python3 - "$root/collection-profile.json" "$candidate" <<'PY'
+import json, sys, importlib.util
+from pathlib import Path
+spec=importlib.util.spec_from_file_location('profile_reader',Path(sys.argv[1]).with_name('profile-reader.py'))
+module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);p=module.read(sys.argv[1])
+inputs = json.loads(Path(sys.argv[2]).read_text())
+if p['system']:
+    inputs.append({'type':'journald','id':'cloud-soc-journal-v2','seek':'head','fields_under_root':True,'fields':{'labels':{'log_source':'linux_journald','collection_mode':'auto_discovery'}},'processors':[{'drop_event':{'when':{'equals':{'systemd.unit':'cloud-soc-filebeat.service'}}}}]})
+inputs.extend(p['web_inputs'])
+Path(sys.argv[2]).write_text(json.dumps(inputs))
+PY
+    fi
     report=$(mktemp "$root/.inventory.XXXXXX")
     render_discovery_report > "$report"
     publish_discovery_file "$candidate" "$root/inputs/discovered.yml"

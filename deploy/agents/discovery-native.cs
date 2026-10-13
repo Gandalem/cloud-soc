@@ -104,6 +104,35 @@ internal static class Discovery {
             Stage = "settings";
             var settings = Json.Deserialize<Dictionary<string, object>>(ReadBounded(Path.Combine(root, "discovery-settings.json"), 131072));
             string[] roots = Strings(settings["log_roots"]), required = Strings(settings["required_channels"]), exclusions = new string[0];
+            bool systemEnabled = true; object[] webInputs = new object[0]; Dictionary<string, object> collectionProfile = null;
+            string profilePath = Path.Combine(root, "collection-profile.json");
+            if (File.Exists(profilePath)) {
+                var profile = Json.Deserialize<Dictionary<string, object>>(ReadBounded(profilePath, 131072));
+                collectionProfile = profile;
+                if (Convert.ToInt32(profile["schema"]) != 1 || !(profile["system"] is bool)) throw new InvalidDataException("invalid_collection_profile");
+                systemEnabled = (bool)profile["system"];
+                webInputs = ((IEnumerable)profile["web_inputs"]).Cast<object>().ToArray();
+                exclusions = Strings(profile["web_exclusions"]);
+                string switchesPath = Path.Combine(root, "collection-switches.json");
+                if (File.Exists(switchesPath)) {
+                    var switches = Json.Deserialize<Dictionary<string, object>>(ReadBounded(switchesPath, 8192));
+                    if (switches.Keys.Any(k => k != "system" && k != "network" && k != "web")) throw new InvalidDataException("invalid_collection_switches");
+                    foreach (string key in new[] { "system", "network" }) if (switches.ContainsKey(key)) {
+                        if (!(switches[key] is bool)) throw new InvalidDataException("invalid_collection_switch");
+                        profile[key] = switches[key];
+                    }
+                    systemEnabled = (bool)profile["system"];
+                    if (switches.ContainsKey("web")) {
+                        var webSwitches = switches["web"] as Dictionary<string, object>;
+                        if (webSwitches == null || webSwitches.Count > 8) throw new InvalidDataException("invalid_web_switches");
+                        var byId = webInputs.Cast<Dictionary<string, object>>().ToDictionary(w => ((string)w["id"]).Substring("cloud-soc-site-".Length));
+                        foreach (var pair in webSwitches) {
+                            if (!byId.ContainsKey(pair.Key) || !(pair.Value is bool)) throw new InvalidDataException("unknown_web_switch");
+                            byId[pair.Key]["enabled"] = pair.Value;
+                        }
+                    }
+                }
+            }
             int version = 0;
             string policy = Path.Combine(root, "collection-policy.txt");
             if (File.Exists(policy)) {
@@ -118,20 +147,20 @@ internal static class Discovery {
                     else throw new InvalidDataException("invalid_policy_record");
                 }
                 if (selectedRoots.Count == 0) throw new InvalidDataException("empty_policy_roots");
-                roots = selectedRoots.ToArray(); exclusions = excludedRoots.ToArray();
+                roots = selectedRoots.ToArray(); exclusions = exclusions.Concat(excludedRoots).ToArray();
             }
             Stage = "channels";
             var entries = channels.ToList(); var inputs = new List<object>();
             var selected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var channel in entries.Where(c => (string)c["status"] == "selected")) {
+            foreach (var channel in entries.Where(c => systemEnabled && (string)c["status"] == "selected")) {
                 string name = (string)channel["name"]; if (!selected.Add(name)) continue;
                 inputs.Add(Map("type", "winlog", "id", "cloud-soc-event-" + Id(name), "name", name, "include_xml", false, "ignore_missing_channel", true, "fields_under_root", true, "fields", Map("labels", Map("log_source", "windows_event", "collection_mode", "auto_discovery"))));
             }
-            if (selected.Count == 0 || required.Any(name => !selected.Contains(name))) throw new InvalidDataException("required_channel_missing");
+            if (systemEnabled && (selected.Count == 0 || required.Any(name => !selected.Contains(name)))) throw new InvalidDataException("required_channel_missing");
             Stage = "files";
             var files = new SortedDictionary<string, List<string>>(StringComparer.Ordinal);
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string value in roots.Distinct(StringComparer.OrdinalIgnoreCase)) {
+            foreach (string value in roots.Where(r => systemEnabled).Distinct(StringComparer.OrdinalIgnoreCase)) {
                 string directory = LogRoot(value, root);
                 if (Linked(directory) || !Directory.Exists(directory)) { entries.Add(Map("kind", "directory", "name", directory, "status", Linked(directory) ? "reparse_point" : "missing")); continue; }
                 var pending = new Stack<string>(); pending.Push(directory);
@@ -163,12 +192,18 @@ internal static class Discovery {
             }
             foreach (var pair in files) inputs.Add(Map("type", "filestream", "id", "cloud-soc-windows-files-" + pair.Key + "-v2", "paths", pair.Value.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray(), "encoding", pair.Key, "prospector.scanner.symlinks", false, "file_identity.fingerprint", Map("growing", true), "fields_under_root", true, "fields", Map("labels", Map("log_source", "windows_file", "collection_mode", "auto_discovery"))));
             Stage = "publish";
+            inputs.AddRange(webInputs);
             string generated = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
             var report = Map("generated_at", generated, "entries", entries, "selected_channels", selected.Count, "worker", "native-v1");
             Write(Path.Combine(root, "inputs", "discovered.yml"), Json.Serialize(inputs));
             int good = entries.Count(e => (string)e["status"] == "selected"), errors = entries.Count(e => (string)e["status"] == "unreadable" || (string)e["status"] == "enumeration_error");
             var summary = Map("schema", 1, "generated_at", generated, "policy_version", version, "selected", good, "excluded", entries.Count - good - errors, "errors", errors, "total", entries.Count, "sources", entries.Take(200).Select(e => Map("id", Id((string)e["name"]), "status", e["status"])).ToArray(), "queue_state", "unknown", "transport_state", "unknown");
             summary["collector_metrics"] = CollectorMetrics.Read(root, DateTimeOffset.UtcNow);
+            if (collectionProfile != null) {
+                var activeWeb = webInputs.Cast<Dictionary<string, object>>().Where(w => !w.ContainsKey("enabled") || Object.Equals(w["enabled"], true)).ToArray();
+                int webErrors = activeWeb.Count(w => Strings(w["paths"]).Any(p => !File.Exists(p) || Linked(p)));
+                summary["collection"] = Map("schema", 1, "system", systemEnabled, "web", activeWeb.Length > 0, "network", collectionProfile["network"], "web_errors", webErrors);
+            }
             summary["network_collector_metrics"] = CollectorMetrics.ReadNetwork(root,
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Cloud-SOC-Network"), DateTimeOffset.UtcNow);
             summary["rejection_evidence"] = RejectionEvidence.Run(root, DateTimeOffset.UtcNow);

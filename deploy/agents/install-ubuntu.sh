@@ -74,7 +74,11 @@ validate_args() {
 
 render_config() {
     # JSON is a YAML-compatible representation; all interpolated values are validated.
-    printf '%s' '{"filebeat.inputs":[{"type":"journald","id":"cloud-soc-journal-v2","seek":"head","fields_under_root":true,"fields":{"labels":{"log_source":"linux_journald","collection_mode":"auto_discovery"}},"processors":[{"drop_event":{"when":{"equals":{"systemd.unit":"cloud-soc-filebeat.service"}}}}]}],'
+    if [[ -f $SCRIPT_DIR/collection-profile.json ]]; then
+        printf '%s' '{"filebeat.inputs":[],'
+    else
+        printf '%s' '{"filebeat.inputs":[{"type":"journald","id":"cloud-soc-journal-v2","seek":"head","fields_under_root":true,"fields":{"labels":{"log_source":"linux_journald","collection_mode":"auto_discovery"}},"processors":[{"drop_event":{"when":{"equals":{"systemd.unit":"cloud-soc-filebeat.service"}}}}]}],'
+    fi
     printf '"filebeat.config.inputs":{"enabled":true,"path":"%s/inputs/*.yml","reload.enabled":true,"reload.period":"10s"},' "$ROOT"
     printf '"processors":[{"add_host_metadata":{}},{"add_fields":{"target":"organization","fields":{"id":"%s"}}},{"script":{"lang":"javascript","file":"privacy.js","timeout":"50ms","tag_on_exception":"_privacy_error"}},{"drop_event":{"when":{"contains":{"tags":"_privacy_error"}}}}' "$ORGANIZATION"
     if [[ -n $INSTALLATION_PROBE ]]; then printf ',{"add_fields":{"target":"labels","fields":{"installation_probe":"%s"}}}' "$INSTALLATION_PROBE"; fi
@@ -111,7 +115,7 @@ install_agent() {
     [[ $EUID == 0 ]] || fail 'Run with sudo (not required for --dry-run).'
     [[ -f /etc/os-release ]] || fail 'Ubuntu 22.04 or 24.04 is required.'
     . /etc/os-release
-    [[ $ID == ubuntu && ( $VERSION_ID == 22.04 || $VERSION_ID == 24.04 ) && -d /run/systemd/system ]] || fail 'Only Ubuntu 22.04 or 24.04 with systemd is supported.'
+    [[ ( $ID == ubuntu && ( $VERSION_ID == 22.04 || $VERSION_ID == 24.04 ) || $ID == amzn && $VERSION_ID == 2023 ) && -d /run/systemd/system ]] || fail 'Ubuntu 22.04/24.04 or Amazon Linux 2023 with systemd is required.'
     local tool path arch hash package member
     for tool in curl tar sha512sum sha256sum systemctl pgrep timeout realpath find file flock sort cmp journalctl python3; do
         command -v "$tool" >/dev/null || fail "Missing prerequisite: $tool"
@@ -138,6 +142,12 @@ install_agent() {
     cp -- "$SCRIPT_DIR/discover-linux.sh" "$ROOT/discover-linux.sh"
     cp -- "$SCRIPT_DIR/collector-metrics.py" "$ROOT/collector-metrics.py"
     cp -- "$SCRIPT_DIR/privacy.js" "$ROOT/privacy.js"
+    if [[ -f $SCRIPT_DIR/collection-profile.json ]]; then
+        [[ ! -L $SCRIPT_DIR/collection-profile.json && -f $SCRIPT_DIR/site-privacy.js && ! -L $SCRIPT_DIR/site-privacy.js ]] || fail 'Unpack the complete reviewed site bundle.'
+        cp -- "$SCRIPT_DIR/collection-profile.json" "$ROOT/collection-profile.json"
+        cp -- "$SCRIPT_DIR/site-privacy.js" "$ROOT/site-privacy.js"
+        cp -- "$SCRIPT_DIR/profile-reader.py" "$ROOT/profile-reader.py"
+    fi
     printf '%s\n' "${LOG_ROOTS[@]}" > "$ROOT/discovery-roots.txt"
     refresh_linux_inputs "$ROOT" "${LOG_ROOTS[@]}"
     curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \

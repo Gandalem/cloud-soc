@@ -1,7 +1,7 @@
 /* Read-only live intake metadata. No fixture fallback or browser persistence. */
 (() => {
   "use strict";
-  const sources = { web_access_metadata:"AWS DVWA 웹 접근 기록", windows_event: "Windows 이벤트", windows_file: "Windows 파일", linux_file: "Linux 파일", linux_journald: "Linux 저널", network_packetbeat: "네트워크", aws_cloudtrail: "AWS 관리 이벤트", oci_audit: "OCI 감사 이벤트", unknown: "미분류" };
+  const sources = { generic_web_access:"웹 사이트 접근 기록", web_access_metadata:"AWS DVWA 웹 접근 기록", windows_event: "Windows 이벤트", windows_file: "Windows 파일", linux_file: "Linux 파일", linux_journald: "Linux 저널", network_packetbeat: "네트워크", aws_cloudtrail: "AWS 관리 이벤트", oci_audit: "OCI 감사 이벤트", unknown: "미분류" };
   const osNames = { windows: "Windows", linux: "Linux", cloud: "해당 없음 (클라우드 API)", unknown: "미확인" };
   const outcomes = { success: "성공", failure: "실패", unknown: "미확인" };
   const label = (map, value, fallback = "미확인") => Object.hasOwn(map, value) ? map[value] : fallback;
@@ -14,7 +14,7 @@
     const supported = ["recognized", "partial"].includes(interpreted.status);
     const fields = supported ? interpreted.fields || {} : {};
     const rawAction = typeof row.action === "string" && !/^(none|null|-)$/i.test(row.action.trim()) ? row.action : null;
-    const actionText = row.source_kind==='web_access_metadata'&&supported ? `웹 접근 · ${fields.http_method||'메서드 미관측'} · HTTP ${fields.http_status??'상태 미관측'}` : row.stream === "cloud" && rawAction ? rawAction : fields.action ? label(securityTerms, fields.action, fields.action) : rawAction || "행위 정보 없음";
+    const actionText = ['generic_web_access','web_access_metadata'].includes(row.source_kind)&&supported ? `웹 접근 · ${fields.http_method||'메서드 미관측'} · HTTP ${fields.http_status??'상태 미관측'}` : row.stream === "cloud" && rawAction ? rawAction : fields.action ? label(securityTerms, fields.action, fields.action) : rawAction || "행위 정보 없음";
     const outcome = row.outcome && row.outcome !== "unknown" ? row.outcome : fields.outcome || "unknown";
     const outcomeText = outcome === "unknown" ? "결과 정보 없음" : label(outcomes, outcome, "결과 정보 없음");
     const actor = row.user || row.actor_id || fields.actor || (fields.target_user ? `대상 계정: ${fields.target_user}` : null);

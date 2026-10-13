@@ -18,7 +18,7 @@ MAX_RESPONSE_BYTES = 256 * 1024
 MAX_DETAIL_BYTES = 64 * 1024
 MAX_CURSOR_LENGTH = 8192
 TIME_FIELDS = {"ingested": "event.ingested", "event": "@timestamp"}
-HOST_SOURCES = {"windows_event", "windows_file", "linux_file", "linux_journald", "web_access_metadata"}
+HOST_SOURCES = {"windows_event", "windows_file", "linux_file", "linux_journald", "web_access_metadata", "generic_web_access"}
 SOURCE_FIELDS = (
     "@timestamp", "event.ingested", "organization.id", "agent.id", "agent.type", "labels.privacy_policy",
     "host.name", "host.ip", "host.os.type", "host.os.name", "labels.log_source",
@@ -40,6 +40,7 @@ class LogFilters:
     os: str | None = None
     collector: str | None = None
     ip: str | None = None
+    source_kind: str | None = None
 
     @property
     def time_field(self):
@@ -48,7 +49,7 @@ class LogFilters:
 
 def parse_filters(pairs, *, now=None):
     """Accept request.args.items(multi=True), rejecting duplicates before any I/O."""
-    allowed = {"start", "end", "time_basis", "page_size", "host", "os", "collector", "ip"}
+    allowed = {"start", "end", "time_basis", "page_size", "host", "os", "collector", "ip", "source_kind"}
     values = {}
     for key, value in pairs:
         if key not in allowed or key in values:
@@ -90,7 +91,9 @@ def parse_filters(pairs, *, now=None):
             address = str(ipaddress.ip_address(address))
         except ValueError:
             raise ValueError("Use a single IPv4 or IPv6 address, not a subnet") from None
-    return LogFilters(iso(start), iso(end), basis, int(size), host, os_type, collector, address)
+    source_kind=values.get('source_kind')
+    if source_kind not in (None,'web'): raise ValueError('Unsupported source kind')
+    return LogFilters(iso(start), iso(end), basis, int(size), host, os_type, collector, address, source_kind)
 
 
 def document_reference(index, identifier):

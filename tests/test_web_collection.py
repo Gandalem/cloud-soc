@@ -9,7 +9,7 @@ import pytest
 
 from cloud_soc.web.metadata import INDEX, VERSION, project, validate
 from cloud_soc.web.spool import collect, export
-from cloud_soc.web.relay import check_export, create_publisher, run_once
+from cloud_soc.web.relay import check_export, create_publisher, run_once, ssh_export
 from cloud_soc.processing.contract import normalize
 from cloud_soc.portal.security_detail import security_detail
 from cloud_soc.portal.log_query import project_list_hit, LogReader, LogQueryError
@@ -171,6 +171,28 @@ def test_export_is_read_only_and_refuses_arbitrary_requests(tmp_path):
 
 def relay_config(tmp_path):
     return {**CONFIG,'state':str(tmp_path/'relay.sqlite'),'es_url':'https://soc.example.test:9200','api_key_file':str(tmp_path/'publisher.key'),'ca_file':str(tmp_path/'ca.crt'),'ssh_key':str(tmp_path/'ssh.key'),'known_hosts':str(tmp_path/'known_hosts')}
+
+
+@pytest.mark.parametrize('host', [None, '56.155.117.55'])
+def test_export_uses_configured_address_without_weakening_pinned_ssh(tmp_path, host):
+    config = relay_config(tmp_path)
+    if host is not None:
+        config['ssh_host'] = host
+    with patch('cloud_soc.web.relay.protected', side_effect=Path), patch('cloud_soc.web.relay.subprocess.run') as run:
+        run.return_value = Mock(returncode=0, stdout=b'{"schema":1}')
+        assert ssh_export(config, 7) == {'schema': 1}
+    args = run.call_args.args[0]
+    assert args[-2:] == ['ec2-user@' + (host or '13.208.175.237'), 'cloud-soc-web-export']
+    assert 'StrictHostKeyChecking=yes' in args and 'ForwardAgent=no' in args and 'IdentitiesOnly=yes' in args
+    assert json.loads(run.call_args.kwargs['input']) == {'schema': 1, 'after': 7, 'limit': 100}
+
+
+@pytest.mark.parametrize('host', ['', None, 123, '-oProxyCommand=bad', 'host;command', 'https://56.155.117.55', '127.0.0.1', '0.0.0.0', '224.0.0.1'])
+def test_invalid_export_address_never_starts_ssh(tmp_path, host):
+    with patch('cloud_soc.web.relay.subprocess.run') as run:
+        with pytest.raises(ValueError, match='invalid_ssh_host'):
+            ssh_export({**relay_config(tmp_path), 'ssh_host': host}, 0)
+    run.assert_not_called()
 
 
 def test_delivery_failure_retry_restart_and_gap_do_not_advance_unwritten_events(tmp_path):

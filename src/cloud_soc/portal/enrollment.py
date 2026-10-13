@@ -66,7 +66,7 @@ class Enrollments:
         if not isinstance(label, str) or len(label) > 100 or any(ord(c) < 32 or ord(c) == 127 for c in label):
             raise ValueError("대상 별칭은 줄바꿈 없이 100자 이내로 입력하세요.")
         package = self.store.get(identifier)
-        if package.get("enrollment_protocol") != 1 or package["os"] not in ("windows", "ubuntu"):
+        if package.get("enrollment_protocol") != 1 or package["os"] not in ("windows", "ubuntu", "amazon_linux_2023"):
             raise EnrollmentError("enrollment_package_required", 409, "단일 설치 토큰을 지원하는 새 패키지를 생성하세요.")
         self.check_pipeline()
         sid = uuid.uuid4().hex

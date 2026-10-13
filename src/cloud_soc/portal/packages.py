@@ -12,6 +12,7 @@ import tarfile
 from urllib.parse import urlsplit
 import uuid
 import zipfile
+from cloud_soc.portal.site_agents import validate_sites, profile
 
 VERSION = "9.5.2"
 FILES = {
@@ -22,6 +23,8 @@ NETWORK_FILES = {
     "windows": ["install-network-windows.ps1", "packetbeat.base.json"],
     "ubuntu": ["install-network-ubuntu.sh", "packetbeat.base.json"],
 }
+FILES['amazon_linux_2023'] = FILES['ubuntu']
+NETWORK_FILES['amazon_linux_2023'] = NETWORK_FILES['ubuntu']
 
 
 def validate_endpoint(value):
@@ -34,7 +37,7 @@ def validate_endpoint(value):
 
 
 def validate_spec(data, endpoint):
-    if not isinstance(data, dict) or set(data) - {"name", "os", "organization", "network", "description"}:
+    if not isinstance(data, dict) or set(data) - {"name", "os", "organization", "network", "description", "system", "sites"}:
         raise ValueError("지원하지 않는 패키지 설정입니다.")
     for field in ("name", "organization"):
         if not isinstance(data.get(field), str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", data[field]):
@@ -44,12 +47,19 @@ def validate_spec(data, endpoint):
     description = data.get("description", "")
     if not isinstance(description, str) or len(description) > 500 or "\x00" in description:
         raise ValueError("설명은 500자 이내로 입력하세요.")
-    return {**data, "description": description, "endpoint": validate_endpoint(endpoint), "version": VERSION}
+    extra = {}
+    if 'system' in data or 'sites' in data:
+        if type(data.get('system', True)) is not bool:
+            raise ValueError('시스템 수집 여부를 선택하세요.')
+        extra = {'system':data.get('system', True), 'sites':validate_sites(data.get('sites', []), data['os'])}
+        if not extra['system'] and not extra['sites'] and not data['network']:
+            raise ValueError('수집할 항목을 하나 이상 선택하세요.')
+    return {**data, **extra, "description": description, "endpoint": validate_endpoint(endpoint), "version": VERSION}
 
 
 def launch_script(spec):
     endpoint, org = spec["endpoint"], spec["organization"]
-    if spec["os"] == "ubuntu":
+    if spec["os"] != "windows":
         text = f'''#!/usr/bin/env bash
 set -euo pipefail
 HERE=$(cd -- "$(dirname -- "${{BASH_SOURCE[0]}}")" && pwd)
@@ -125,6 +135,13 @@ def build_bundle(spec, source, ca):
     for name in names:
         data = (source / name).read_bytes()
         members[name] = data.replace(b"\r\n", b"\n") if name.endswith(".sh") else data
+    if 'system' in spec or 'sites' in spec:
+        members['collection-profile.json'] = json.dumps(profile(spec), ensure_ascii=False).encode('utf-8')
+        members['site-privacy.js'] = (source / 'site-privacy.js').read_bytes()
+        control = 'collection-controls.ps1' if spec['os'] == 'windows' else 'collection-controls.py'
+        members[control] = (source / control).read_bytes()
+        if spec['os'] != 'windows':
+            members['profile-reader.py'] = (source / 'profile-reader.py').read_bytes()
     members["ca.crt"] = ca
     launcher, text = launch_script(spec)
     members[launcher] = text.encode("utf-8")

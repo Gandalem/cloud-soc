@@ -1,6 +1,7 @@
 """Central pull: pinned SSH metadata export -> strict-TLS immutable ES creates."""
 from contextlib import closing
 from datetime import datetime, timezone
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -22,11 +23,20 @@ def protected(path):
 
 
 def ssh_export(config,after):
+    # Keep existing installations compatible; new deployments pin their current
+    # IPv4 destination in the protected configuration, independently of the key.
+    host = config.get('ssh_host', '13.208.175.237')
+    try:
+        address = ipaddress.IPv4Address(host) if isinstance(host, str) else None
+    except ipaddress.AddressValueError:
+        address = None
+    if address is None or address.is_unspecified or address.is_multicast or address.is_loopback:
+        raise ValueError('invalid_ssh_host')
     args=['ssh','-F','/dev/null','-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','IdentitiesOnly=yes',
         '-o','IdentityAgent=none','-o','ForwardAgent=no','-o','ClearAllForwardings=yes','-o','RequestTTY=no',
         '-o','GlobalKnownHostsFile=/dev/null','-o','UserKnownHostsFile='+str(protected(config['known_hosts'])),
         '-o','ConnectTimeout=5','-o','ServerAliveInterval=5','-o','ServerAliveCountMax=1',
-        '-i',str(protected(config['ssh_key'])),'ec2-user@13.208.175.237','cloud-soc-web-export']
+        '-i',str(protected(config['ssh_key'])),'ec2-user@'+str(address),'cloud-soc-web-export']
     request=json.dumps({'schema':1,'after':after,'limit':100}).encode()
     result=subprocess.run(args,input=request,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=20)
     if result.returncode or len(result.stdout)>512*1024:raise ValueError('web_export_unavailable')
