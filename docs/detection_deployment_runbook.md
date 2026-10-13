@@ -1,5 +1,9 @@
 # 증분 탐지 운영 배포 인수
 
+2026-10-13 기본 AUTH/early는 현재 중앙192.168.32.60에 사용자 승인으로 보호 적용하고 실제9/10·최종 frontier/연결·재시작·관리자 화면을 인수했습니다. [현재 실행 소스/이미지·start/DB·복구·한계](early_deployment_validation_20261013.md)를 먼저 대조하세요. 활성 override는 state/early-release-000659f/early.override.json이며 최신 세 서비스 이미지의 소스는3b9aff9입니다. 서버 Git HEAD나 과거 기본 Compose만으로 현재 구성을 추정하지 않습니다. 아래 과거 이력은 보존합니다.
+
+선택 통지/메타데이터 후보의 [구조·필드 gate·전환 조건](realtime_detection_20261013.md)을 참고합니다. 기존 start/source/profile/lateness/main state를 유지하고 notice mapping·별도 create_doc/read 권한·쌍 DB backup 후 명시 --early-auth로 켭니다. --include-patterns는 identity 변경이며 승인된 새 state/start와 인수가 필요합니다. Windows/웹/flow/AWS 후보와 SSH 다수 계정 프로필은 이번 시험에서 활성화하지 않았습니다. ES snapshot은 현재 repository/path.repo 미설정으로 미실행이며 원본을 변경하지 않는 승인 범위와 독립 복구 잔여를 구분합니다.
+
 2026-10-12 최신 지정 VMware 결과: Ubuntu 192.168.235.128의 실제 SSH 실패 10회→AUTH-001 경보 1건·근거 10건·홈/개인 대시보드 표시와 실패 9회→경보 0건을 검증했습니다. [결과·제한](archive/validation/live_auth_validation_20261012.md). 아래 학교 환경과 2026-10-04 준비 기록은 당시 이력입니다.
 
 현재 VMware의 활성 처리 구성은 서버 `state/live-auth-20261012/drift/compose.active.json`에 보존합니다. 원래 시작점·상태 파일·키·900초 유예 및 새 SSH 형식의 수신 시작 시각을 유지해야 합니다. 과거 Compose 명령으로 일괄 `up`하면 시험 서버의 최신 이미지/고정 옵션을 되돌릴 수 있으므로 먼저 실행 이미지·명령을 대조합니다. 후보 소스는 미커밋 패치이며 Git HEAD만으로 현재 실행 코드 전체를 나타내지 않습니다. 같은 VM 보호 백업은 P2-02의 독립 복구 저장소 완료를 뜻하지 않습니다.

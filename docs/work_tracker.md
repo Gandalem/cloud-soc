@@ -1,5 +1,39 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-13 시험 서버 보호 적용·검증·Git 반영 요청
+
+새 명시 요청으로 FAST-LIVE-01 사전 점검·보호 배포·통제된 SSH 인수와 검증 소스의 현재 기능 브랜치 commit/push를 허용한다. main 직접 push·강제 push·PR 생성/병합·원본/상태 초기화·AWS 자원 변경은 허용하지 않는다. 기존 대시보드 완성 코드/개인 Word·JSON·상태/접속 자료와 이력을 보존한다. 현재 실제 중앙 서버·권한·백업이 확인되지 않으면 배포를 중단하고 로컬 검증/Git 반영은 계속한다.
+
+- [x] DEPLOY-EARLY-01 완료(2026-10-13 지정 시험 중앙·기본 AUTH·관리자 인수): 보호 확인 후 승인된 정규화 추가·초기 AUTH/포털만 적용하고 정상SSH·실제9/10·검색 관측→화면25.894초·최종 frontier/같은 notice·proof10·탐지/포털 재시작·원래 행/키/CA·수집 유지·관리자 두 크기/테마를 검증했다. snapshot은 미지원으로 미실행이며 사용자 승인 범위에서 기존 ES 원본을 수정·삭제하지 않았다. 전체 ES 재해 복구·추가 역할/신규 후보/Windows·AWS 위험 인수는 완료하지 않는다. [결과·소스·이미지·시각·복구·제한](early_deployment_validation_20261013.md).
+- [ ] GIT-FAST-01 진행 중: 검증된 초기 탐지·완성 대시보드·관련 시험/문서만 명시 stage/review 후 현재 codex 기능 브랜치에 commit/일반 push, 원격 SHA/파일·CI를 확인한다. 개인/비밀/상태/출력 자료는 제외한다.
+
+2026-10-13 진행 기록: 사용자가 현재 중앙 서버 192.168.32.60과 관리자 권한을 확인하고, 기존 해시 백업 후 포털 admin 비밀번호만 변경 및 누락된 정규화 서비스 추가를 별도 승인했다. 기존 원본 문서/매핑·수집 endpoint·기존 키와 ES/Kibana/수집기 실행은 보존한다. ES snapshot repository/path.repo가 없어 snapshot은 미실행이며 기존 문서 수정·삭제 없이 새 수신 시점부터 처리한다. 포털 이미지·설정·키/CA, SQLite 온라인 백업과 격리 복원은 통과했다. 소스 000659f 기반 후보 이미지의 누락 의존성을 기존 서비스 교체 전에 발견·고정 requirements로 보완했다. 포털/정규화/기본 AUTH 탐지+early만 적용했고 start=2026-10-13T02:35:47.839670+00:00, lateness=900초를 유지한다. 실제 SSH journal 9/10회, 정규화 미러 18/20건→고유 실패 9/10건·초기 통지 0/1건·proof10개 참조/해시 일치를 확인했다. 실제 검색 관측 02:53:24.451157 UTC→Chrome 표시 02:53:50.345 UTC(약25.894초)이며 최종 frontier·재시작 인수는 아직 진행 중이다. 두 기능 커밋 18dabf7/000659f를 현재 기능 브랜치에 일반 push하고 원격 SHA 일치를 확인했다. Ubuntu CI는 통과, Windows CI는 확인 중이다. 자격·원문·개인 파일은 기록/Git에서 제외했다.
+
+- [ ] MULTI-HOST-01 진행 중(2026-10-13 사용자 추가 요청): Ubuntu 시험을 마친 뒤 지정 AWS·Windows를 실제 접속/중앙 수신/필드·가능한 통제 시험으로 확인한다. AWS 리소스 변경·비활성 규칙 활성화·Windows 인증 수단 변경은 별도 승인 없이 수행하지 않는다. 사용자는 공개 ngrok에 admin 인증 전송 대신 CA 검증 LAN 경로로 화면 검증을 계속하도록 선택했다.
+
+2026-10-13 MULTI-HOST-01 기록: AWS의 정상 SSH·DVWA GET 최종200 및 중앙 감사 수신0/기존 수집 경로 부재를 확인했다. 사용자는 현재 점검 결과 기록을 선택했으므로 AWS 설치/자원 변경은 하지 않았다. Windows의 실제 HP·관리자 그룹·기본 Match·파일 owner/ACL·인코딩은 정상이나 현재 관리자 키 파일에는 지정 공개키가 없었다(등록 여부 False). 같은 승인 키만 현재 지정 VM에서 보호 백업 후 추가하는 콘솔 절차 실행을 기다리며 Windows 직접 SSH 시험은 미검증으로 남긴다. 중앙 Windows 최근 수신·필드 표본은 별도로 확인했고 비활성 Windows/AWS 규칙의 실제 탐지 완료로 간주하지 않는다.
+
+- [x] FIX-AUTH-KEY-01 완료(2026-10-13 코드·실제 보완 적용): 정상 publickey 성공의 제한된 ED25519/RSA/ECDSA SHA256 suffix를 인식하고 지문은 결과에 남기지 않는다. 실제 형식 대조·12개 추가 경계/개인정보/실패 회귀, 관련92 passed/7 subtests·전체774 passed/19 skipped/257 subtests(89.34초)·Ruff/Bandit 중간/높음0을 통과했다. 3b9aff9를 일반 push하고 Windows/Ubuntu CI 통과 및 동일 소스 이미지 적용 후 새 정상 성공6문서·출발지 경보0·기존 final 전체문서SHA/proof/identity와 원래 행/키/CA 보존을 확인했다. 원래15분 겹침 구간에서는 이전 unclassified와 별도 성공 해석이 추가될 수 있으며 원본/이전 해석을 삭제하지 않고 start/체크포인트를 되감거나 전체 과거 재처리하지 않았다.
+
+## 2026-10-13 빠른 초기 경보·탐지 확장 우선 요청
+
+새 명시 요청에 따라 FAST-01/DET-EXT-01을 우선 구현한다. main 기준 b67eefa와 codex/dashboard-platform-20261013의 미커밋 대시보드·개인 Word/JSON을 보존한다. 기존 900초 지연·AUTH 9/10건·create-only 경보·상태 identity·권한·마스킹을 유지한다. 이후 사용자가 지정 서버/키로 테스트를 허용해 TCP/SSH·기존 서비스 및 DVWA 정상 GET 준비 확인을 추가했다. 신규 기능 운영 배포·프로필 활성화·키 발급·실제 공격/AWS 자원 변경·commit/push/merge는 실행하지 않는다.
+
+- [x] FAST-01 완료(2026-10-13 코드·로컬/합성 인수): 명시 early-auth의 독립 sidecar/불변 notice revision·최종 링크 outbox와 5상태, 논리 ID별 최신 조회/기간·홈/개인 widget/정확한 초기 proof·시각을 구현했다. 9/10·원본/정규화 버전/미러·조직/IP/창·900초/final checkpoint 독립·부분 spool·전송/409/최종 장애·링크 큐 overflow·새 worker process 재시작·권한/0/미설정/503·1440/768/390 두 테마 인수를 통과했다. 합성 ES/실제 Flask·Chrome 3회에서 생성10~13ms/화면최대10.529초다. 운영 60초는 미측정이며 FAST-LIVE-01로 분리한다. [보고서](realtime_detection_20261013.md).
+- [x] DET-EXT-01 완료(2026-10-13 코드·명세·합성 인수): 기존 AUTH/sequence/ATTACK01~03/cloud single을 재사용하고 metadata-cardinality-v1·5패턴 실행 코드를 추가했다. default AUTH만 유지, 명시 include-patterns는 SSH 다수 계정 후보만 추가하며 Windows/웹404/종료flow포트/AWS콘솔4개는 비활성이다. DET01~11의 필드/정상·오탐/한계와 WEB01~05 미지원 gate를 기록했다. 임계값·누락/식별자/시각·raw/flow/event ID·조직·정상/성공/HTTP오류·대량 중복·cooldown/순서·identity 거부·회귀를 통과했다. 실제 운영 활성화/인수는 DET-EXT-LIVE-01로 분리한다.
+- [x] FAST-LIVE-01 완료(2026-10-13 지정 중앙·기본 AUTH·관리자): 실제 명령/이미지·명시 start/SSH receipt floor/lateness900·전용 키/notice exact mapping·최소 read/create_doc·두 탐지 DB 일관 backup/격리 restore를 확인했다. 실제 고유9/10→초기0/1·25.894초 Chrome 표시·실제 최종 frontier/근거10/같은 notice·재시작 불변 경보SHA/설정/proof·수집 유지가 통과했다. 합성 수치를 대신 쓰지 않았으며 1회 LAN 관측/초기000659f 측정과 후속 정상 키 보완3b9aff9의 범위를 [보호 인수](early_deployment_validation_20261013.md)에 구분했다. sustained SLO·다른 역할/프로필·ES 독립복구는 별도다.
+- [ ] DET-EXT-LIVE-01: Windows 현재 SSH 인증·Ubuntu 중앙 읽기/실수신·AWS 기존 메타데이터 수신 경로를 확인하고 신규 후보의 실제 필수 field gate·정상/경계/오탐을 인수한다. 현재 네 후보 비활성과 기존 P0~P7 완료 수/기준은 유지한다.
+
+2026-10-13 FAST-01/DET-EXT-01 기록: src/cloud_soc/detection/{early,patterns}.py·portal/notices.py·metadata_patterns.yml·alert-notices.js/css 및 detector CLI/registry/telemetry/최종 링크·setup/monitor read-only 권한·portal API/세션·홈/개인 provider를 추가했다. 최종 전체 Python762 passed/19 skipped/257 subtests(86.94초), UI142 passed, Ruff·Bandit 중간/높음·diff 통과. 브라우저 JS 예외0·가로/modal 넘침 없음, 의도한503은 기대된 실패다. 초기 전체 role 기대 누락·fixture options 공유/종결 역전 기대를 수정했으며 동일 원본의 정규화 버전 중복과 malformed UI를 보완 후 전체 회귀를 다시 통과했다. Git 제외 output/playwright/early-notices에 화면/실측 JSON을 보존한다. 사용자 제공 AWS 키의 기존 ACL 메타데이터를 보호 보관하고 일반 그룹 상속 읽기를 제거해 ec2-user 접속을 확인했다(키 내용/발급·서버 변경 없음). AWS DVWA HTTP80/기본GET302와 SOC 수집기 not-found, Ubuntu 두 수집기/timer active(중앙은권한미확보), Windows TCP22/현재키인증거부를 확인했다. 접속/Running을 중앙 저장·배포·위험 탐지 성공으로 간주하지 않는다. 제공 키/비밀/원문은 tracker에 기록하지 않았다. 운영 배포/활성화·실제 공격·AWS 자원 변경·commit/push/merge는 미실행이고 개인 Word/JSON·기존 대시보드 이력을 보존한다.
+
+## 2026-10-13 사용자 맞춤 대시보드 확장 우선 요청
+
+사용자의 새 명시 요청에 따라 이번 구현은 발표 사건 시연보다 대시보드 확장을 우선한다. 기준은 main b67eefa이며 codex/dashboard-platform-20261013에서 개인 Word·검증 JSON과 기존 이력을 보존한다. 운영 배포·실수신·커밋/푸시/병합은 이번 요청에 포함하지 않는다.
+
+- [x] DASH-02 완료(2026-10-13 코드·로컬/합성 인수): 계정별 다중 대시보드 생성/빈 화면/4개 목적 템플릿/이름 변경/복제/삭제 확인/기본 지정/즐겨찾기, 독립 위젯·포인터/키보드 그리드·설정·검색 라이브러리·저장/취소/Undo/복원과 기존 실제 API 연결을 구현했다. 기존 /api/dashboard·설정 행 보존, 31개 후보(관리자 26개·일반 역할 23개 활성), 서버 허용 목록·revision·사용자/조직/역할·CSRF·XSS·형식 4/3/2 및 기존 백업 호환, 1440/768/390px 두 테마 브라우저·회귀를 통과했다. [결과·파일·명령·한계](dashboard_platform_validation_20261013.md). 운영 배포·실제 데이터/계정 인수는 미실행이며 DASH-01/P6/P7 전체 기준은 유지한다.
+
+2026-10-13 DASH-02 작업 기록: main b67eefa에서 개인 Word/검증 JSON을 보존해 codex/dashboard-platform-20261013을 생성했다. 새 dashboard_collections 테이블·/api/dashboards·역할별 카탈로그, 개인 편집 UI 3개 자산과 기존 HTML 연결, 백업 형식4/이전 복원·로그 data_state를 추가했다. 기존 홈·탐지/수집/사건/원문 권한과 P2-02 보류는 유지한다. 최종 전체 Python 726 passed/19 skipped/257 subtests(78.51초), 전체 UI136 passed, Ruff·Bandit 중간/높음·diff 검사 통과. 전체 검사 이후 추가한 독립 앱 프로세스 재로그인 시험을 포함해 신규 파일31 passed를 별도 확인했으며 수치는 중복 합산하지 않는다. 브라우저 CRUD/취소/409/재로그인·드래그/리사이즈/키보드/복원·24개 위젯2요청/오래된 응답/0·미수집·403/503·중단·그래프·허용 높이5/7·4템플릿×3크기×2테마에서 최종 JS예외0·가로 넘침/주요 경계 넘침 없음이다. 의도한 403/409/503 HTTP 콘솔 오류는 기대된 실패다. 초기 상태 API 기간 생성/좁은 요약 카드/저장 후 비활성 버튼과 시험의 비동기 대기/백업 목적지/Windows DB 연결/이전 형식 기대를 수정·재검증했다. 증거는 Git 제외 output/playwright/dashboard-platform에 보존한다. 운영 서버·실제 ES/수집기/키·큐·새 규칙·커밋/푸시/PR/병합은 하지 않았다. 실제 역할·위젯 데이터·보호 배포/포털 재시작·운영 복구는 후속이다.
+
 ## 현재 상태 — 2026-10-12
 
 목표: **위험 징후 수집 → 이해 가능한 경보 → 정확한 근거 → 사건/메모 저장 → 재시작 후 보존**.
