@@ -9,6 +9,9 @@ EXCLUSIONS = 'soc-detection-exclusions-v1'
 
 
 def evaluate(event, rule):
+    if rule.get('type') == 'cardinality':
+        from cloud_soc.detection.patterns import evaluate_pattern
+        return evaluate_pattern(event, rule)
     if rule.get('type') in ('ordered', 'diversity'):
         from cloud_soc.detection.behavior import evaluate_behavior
         return evaluate_behavior(event, rule)

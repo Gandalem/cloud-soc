@@ -131,7 +131,7 @@ def validate_rule(
         )
 
     kind = rule.get('type', 'threshold')
-    if kind not in ('single', 'threshold', 'sequence', 'ordered', 'diversity'):
+    if kind not in ('single', 'threshold', 'sequence', 'ordered', 'diversity', 'cardinality'):
         raise ValueError('Unsupported rule type')
     if kind in ('ordered', 'diversity') and any(not isinstance(rule.get(key), dict)
                                               for key in ('threshold', 'time_window')):
@@ -257,6 +257,9 @@ def validate_rule(
             "1 이상의 정수여야 합니다."
         )
 
+    if kind == 'cardinality':
+        from cloud_soc.detection.patterns import validate_pattern
+        validate_pattern(rule)
     if kind in ('ordered', 'diversity'):
         from cloud_soc.detection.behavior import validate_behavior
 

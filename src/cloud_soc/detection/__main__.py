@@ -15,7 +15,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Existing SSH rule on soc-normalized-v1")
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--once", action="store_true")
-    parser.add_argument("--interval", type=int, default=60)
+    parser.add_argument("--interval", type=int, default=None, help="Default 60s; explicit early AUTH mode defaults to 10s")
     parser.add_argument("--max-documents", type=int, default=20000, help="Incremental new-input budget per cycle; snapshot total limit")
     parser.add_argument("--max-active-events", type=int, default=20000, help="Explicit incremental pending/window state capacity")
     parser.add_argument("--state", default="state/detection/runtime.sqlite")
@@ -26,15 +26,20 @@ def main(argv=None):
     parser.add_argument("--include-cloud", action="store_true", help="Opt in to the reviewed AWS/OCI cloud rule profile")
     parser.add_argument("--include-sequence", action="store_true", help="Opt in to SSH repeated-failure then success detection")
     parser.add_argument("--include-attacks", action="store_true", help="Opt in to experimental metadata attack correlations; thresholds require real-data validation")
+    parser.add_argument("--include-patterns", action="store_true", help="Opt in to enabled experimental metadata patterns; unverified candidates remain disabled")
+    parser.add_argument("--early-auth", action="store_true", help="Opt in to separate AUTH-001 provisional notices; needs explicit notice setup/permissions")
     parser.add_argument("--es-url")
     parser.add_argument("--ca-file")
     parser.add_argument("--api-key-file")
     args = parser.parse_args(argv)
+    if args.interval is None:
+        args.interval = 10 if args.early_auth else 60
     try:
         if (not 10 <= args.interval <= 3600 or not 1 <= args.max_documents <= 100000
-                or not 1 <= args.max_active_events <= 1_000_000 or args.once and not args.run):
+                or not 1 <= args.max_active_events <= 1_000_000 or args.once and not args.run
+                or args.early_auth and args.snapshot):
             raise ValueError("Invalid options")
-        selected_rules = approved_rules(include_cloud=args.include_cloud, include_sequence=args.include_sequence, include_attacks=args.include_attacks)
+        selected_rules = approved_rules(include_cloud=args.include_cloud, include_sequence=args.include_sequence, include_attacks=args.include_attacks, include_patterns=args.include_patterns)
         if args.run and not args.snapshot:
             utc(args.start)
             if not 60 <= args.lateness_seconds <= 86400:
@@ -52,11 +57,11 @@ def main(argv=None):
             while True:
                 failed = False
                 try:
-                    result = (run_once(client, max_documents=args.max_documents, include_cloud=args.include_cloud, include_sequence=args.include_sequence, include_attacks=args.include_attacks) if args.snapshot else
+                    result = (run_once(client, max_documents=args.max_documents, include_cloud=args.include_cloud, include_sequence=args.include_sequence, include_attacks=args.include_attacks, include_patterns=args.include_patterns) if args.snapshot else
                               run_incremental(client, state_path=args.state, start=args.start,
                                               max_documents=args.max_documents, max_active_events=args.max_active_events,
                                               lateness_seconds=args.lateness_seconds, source_id=url,
-                                              accept_legacy_exclusion=args.accept_legacy_exclusion, include_cloud=args.include_cloud, include_sequence=args.include_sequence, include_attacks=args.include_attacks))
+                                              accept_legacy_exclusion=args.accept_legacy_exclusion, include_cloud=args.include_cloud, include_sequence=args.include_sequence, include_attacks=args.include_attacks, include_patterns=args.include_patterns, early_auth=args.early_auth))
                     print(json.dumps(result), flush=True)
                 except Exception:
                     failed = True

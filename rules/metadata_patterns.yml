@@ -1,0 +1,122 @@
+# Administrator opt-in: --include-patterns. Never part of the default profile.
+# Only SSH has a verified received source with the required fields. Other rules
+# are executable offline candidates, disabled until their live field gate is approved.
+rules:
+  - id: AUTH-SPRAY-001
+    name: Multiple SSH account authentication failures
+    type: cardinality
+    enabled: true
+    severity: high
+    conditions:
+      - {field: event.category, operator: contains, value: authentication}
+      - {field: event.outcome, operator: equals, value: failure}
+      - {field: network.protocol, operator: equals, value: ssh}
+      - {field: cloud_soc.detail.adapter, operator: in, value: [linux_ssh_v1, linux_ssh_v2]}
+    group_by: [organization.id, source.ip]
+    threshold: {count: 10}
+    distinct: {field: user.name, count: 4}
+    time_window: {seconds: 300}
+    cooldown: {seconds: 300}
+    required_fields: [organization.id, source.ip, user.name]
+    dedup_fields: []
+    limitations: [password_value_not_observed, nat_and_admin_tools_can_match, candidate_threshold_not_live_validated]
+    alert:
+      title: 여러 계정 대상 SSH 인증 공격 의심
+      message: 같은 조직·출발지에서 5분 이내 고유 실패 관측 10건과 계정 4개 이상이 확인되었습니다. 비밀번호는 관측하지 않으며 같은 비밀번호 사용이나 계정 탈취를 확정하지 않습니다. NAT·공유 게이트웨이·관리 자동화를 조사하세요.
+      category: authentication
+      tags: [experimental, ssh, multiple-accounts]
+
+  - id: WIN-AUTH-001
+    name: Windows repeated failed network authentication
+    type: cardinality
+    enabled: false
+    severity: high
+    conditions:
+      - {field: cloud_soc.detail.adapter, operator: equals, value: windows_security_v1}
+      - {field: event.category, operator: contains, value: authentication}
+      - {field: event.action, operator: equals, value: login}
+      - {field: event.outcome, operator: equals, value: failure}
+    group_by: [organization.id, host.id, source.ip, cloud_soc.detail.fields.logon_type]
+    threshold: {count: 10}
+    distinct: {field: user.name, count: 1}
+    time_window: {seconds: 300}
+    cooldown: {seconds: 300}
+    required_fields: [organization.id, host.id, source.ip, user.name, cloud_soc.detail.fields.logon_type]
+    dedup_fields: []
+    limitations: [live_source_ip_and_logon_type_gate_pending, logon_type_is_observed_not_assumed_protocol, password_retries_and_saved_credentials_can_match]
+    alert:
+      title: Windows 로그인 무차별 대입 의심
+      message: 같은 조직·호스트·출발지·로그온 유형에서 5분 이내 실패 이벤트 10건 이상이 관측되었습니다. 실제 로그온 유형을 확인하고 정상 재시도·저장 자격 증명 오류를 조사하세요. 4625만으로 RDP나 침해 성공을 판정하지 않습니다.
+      category: authentication
+      tags: [experimental, windows, authentication]
+
+  - id: WEB-404-001
+    name: Repeated HTTP not-found responses
+    type: cardinality
+    enabled: false
+    severity: low
+    conditions:
+      - {field: cloud_soc.detail.adapter, operator: equals, value: linux_operational_v1}
+      - {field: cloud_soc.detail.fields.http_status, operator: equals, value: 404}
+    group_by: [organization.id, host.id, source.ip]
+    threshold: {count: 20}
+    distinct: {field: source.ip, count: 1}
+    time_window: {seconds: 300}
+    cooldown: {seconds: 300}
+    required_fields: [organization.id, host.id, source.ip]
+    dedup_fields: []
+    limitations: [live_web_ip_host_gate_pending, no_request_path_payload_or_vulnerability_signature, crawler_bad_links_healthchecks_can_match]
+    alert:
+      title: 웹 서버에 반복적인 미존재 페이지 요청 관측
+      message: 같은 조직·웹 호스트·출발지에서 5분 이내 HTTP 404 기록 20건 이상이 관측되었습니다. URL·본문은 저장하지 않으며 취약점 종류·SQLi·XSS·명령 실행을 판정하지 않습니다. 정상 크롤러·잘못된 링크·프록시를 조사하세요.
+      category: web
+      tags: [experimental, web, low-confidence]
+
+  - id: NET-PORT-001
+    name: Multiple destination ports in finalized flows
+    type: cardinality
+    enabled: false
+    severity: medium
+    conditions:
+      - {field: cloud_soc.detail.adapter, operator: equals, value: packetbeat_metadata_v1}
+      - {field: event.category, operator: contains, value: network}
+      - {field: cloud_soc.detail.fields.flow_final, operator: equals, value: true}
+      - {field: network.transport, operator: in, value: [tcp, udp]}
+    group_by: [organization.id, source.ip, destination.ip]
+    threshold: {count: 15}
+    distinct: {field: destination.port, count: 15}
+    time_window: {seconds: 300}
+    cooldown: {seconds: 300}
+    required_fields: [organization.id, source.ip, destination.ip, destination.port, network.transport, cloud_soc.detail.fields.flow_id]
+    dedup_fields: [organization.id, source.ip, destination.ip, destination.port, network.transport, cloud_soc.detail.fields.flow_id]
+    limitations: [live_final_flow_ports_gate_pending, finalized_flow_timing_not_connection_attempt_time, no_nmap_or_syn_tool_attribution, service_discovery_monitoring_can_match]
+    alert:
+      title: 다수 목적지 포트 접근에 따른 포트 탐색 의심
+      message: 같은 조직·출발지·목적지의 5분 구간에서 종료 Flow의 목적지 포트 15종 이상이 관측되었습니다. 같은 Flow 관측은 한 번 셉니다. 연결 시도 횟수·Nmap·SYN 스캔이나 실제 서비스 접근 성공은 확정하지 않습니다. 정상 검색·모니터링을 조사하세요.
+      category: network
+      tags: [experimental, network, discovery]
+
+  - id: AWS-CONSOLE-001
+    name: Repeated identified AWS console login failures
+    type: cardinality
+    enabled: false
+    severity: high
+    conditions:
+      - {field: event.dataset, operator: equals, value: aws.cloudtrail}
+      - {field: cloud.provider, operator: equals, value: aws}
+      - {field: event.action, operator: equals, value: ConsoleLogin}
+      - {field: event.outcome, operator: equals, value: failure}
+      - {field: cloud_soc.detail.fields.identity_type, operator: in, value: [IAMUser, Root, FederatedUser, AssumedRole]}
+    group_by: [organization.id, cloud.account.id, user.id, cloud_soc.detail.fields.identity_arn]
+    threshold: {count: 5}
+    distinct: {field: event.action, count: 1}
+    time_window: {seconds: 600}
+    cooldown: {seconds: 600}
+    required_fields: [organization.id, cloud.account.id, user.id, cloud_soc.detail.fields.identity_arn, event.action, cloud_soc.detail.fields.event_id]
+    dedup_fields: [organization.id, cloud.account.id, cloud_soc.detail.fields.event_id]
+    limitations: [live_aws_console_gate_pending, anonymous_identity_not_inferred_from_username_or_ip, password_mfa_lockout_can_match]
+    alert:
+      title: AWS 콘솔 로그인 공격 의심
+      message: 같은 조직·AWS 계정·명시 principal ID·ARN에서 10분 내 고유 ConsoleLogin 실패 5건 이상이 관측되었습니다. 익명 사용자를 이름/IP만으로 연결하지 않습니다. 정상 비밀번호·MFA·잠금 문제와 승인된 활동을 조사하세요.
+      category: authentication
+      tags: [experimental, aws, authentication]
