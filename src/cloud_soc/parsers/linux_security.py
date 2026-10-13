@@ -75,7 +75,16 @@ def parse_linux_ssh_source(source):
     outcome = 'failure'
     if not match:
         match, outcome = ACCEPTED_PATTERN.match(body), 'success'
-    if not match or not re.fullmatch(r'(?: ssh2)?', body[match.end():]):
+    if not match:
+        return None
+    suffix = body[match.end():]
+    # OpenSSH can append a public-key fingerprint to an accepted login.
+    # Validate that bounded format without returning or storing the fingerprint.
+    valid_suffix = re.fullmatch(r'(?: ssh2)?', suffix)
+    if outcome == 'success' and match['method'] == 'publickey':
+        valid_suffix = valid_suffix or re.fullmatch(
+            r' ssh2: (?:ED25519|RSA|ECDSA) SHA256:[A-Za-z0-9+/]{43}', suffix)
+    if not valid_suffix:
         return None
     from ipaddress import ip_address
     try:
