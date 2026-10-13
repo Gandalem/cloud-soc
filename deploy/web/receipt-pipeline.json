@@ -1,0 +1,7 @@
+{
+  "description": "DVWA protected metadata only: server receipt time and fixed index organization",
+  "processors": [
+    {"set": {"field": "event.ingested", "value": "{{{_ingest.timestamp}}}", "override": true}},
+    {"set": {"field": "organization.id", "value": "aws-dvwa-lab", "override": true}}
+  ]
+}

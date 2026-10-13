@@ -11,7 +11,7 @@
     "settings": {
       "number_of_shards": 1,
       "number_of_replicas": 0,
-      "index.final_pipeline": "cloud-soc-received-at-v1"
+      "index.final_pipeline": "cloud-soc-web-received-at-v1"
     },
     "mappings": {
       "dynamic": "strict",

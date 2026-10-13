@@ -1,6 +1,7 @@
 """Isolated web collection: no real servers, credentials, requests, or log rotation."""
 from copy import deepcopy
 import json
+from pathlib import Path
 import sqlite3
 from unittest.mock import Mock, patch
 
@@ -17,6 +18,18 @@ from cloud_soc.portal.log_contract import parse_filters
 NOW='2026-10-13T07:45:00Z'
 CONFIG={'organization':'aws-dvwa-lab','host':'i-0123456789abcdef0','container':'a'*64,'region':'ap-northeast-3'}
 CANARY='CANARY_WEB_NEVER_TRANSMIT'
+
+
+def test_exact_web_mapping_forbids_raw_messages_and_final_receipt_cannot_be_spoofed():
+    root=Path(__file__).resolve().parents[1]/'deploy/web'
+    template=json.loads((root/'index-template.json').read_text());pipeline=json.loads((root/'receipt-pipeline.json').read_text());role=json.loads((root/'publisher-role.json').read_text())
+    assert template['index_patterns']==[INDEX] and template['template']['mappings']['dynamic']=='strict'
+    assert 'message' not in template['template']['mappings']['properties']
+    assert template['template']['settings']['index.final_pipeline']=='cloud-soc-web-received-at-v1'
+    setters={p['set']['field']:p['set'] for p in pipeline['processors']}
+    assert setters['event.ingested']=={'field':'event.ingested','value':'{{{_ingest.timestamp}}}','override':True}
+    assert setters['organization.id']=={'field':'organization.id','value':CONFIG['organization'],'override':True}
+    assert role['indices']==[{'names':[INDEX],'privileges':['create_doc']}] and role['cluster']==[]
 
 
 def line(target='/login.php', *, ip='192.0.2.10', status=200, method='GET', seconds=1):
