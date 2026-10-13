@@ -1,6 +1,18 @@
 # 증분 탐지 운영 배포 인수
 
-2026-10-13 기본 AUTH/early는 현재 중앙192.168.32.60에 사용자 승인으로 보호 적용하고 실제9/10·최종 frontier/연결·재시작·관리자 화면을 인수했습니다. [현재 실행 소스/이미지·start/DB·복구·한계](early_deployment_validation_20261013.md)를 먼저 대조하세요. 활성 override는 state/early-release-000659f/early.override.json이며 최신 세 서비스 이미지의 소스는3b9aff9입니다. 서버 Git HEAD나 과거 기본 Compose만으로 현재 구성을 추정하지 않습니다. 아래 과거 이력은 보존합니다.
+2026-10-13 현재 중앙192.168.32.60의 정규화/기본 AUTH·early worker는3b9aff9/40ed90fb…를 유지합니다. 포털은 LAN 보완 뒤 상태 안내/개인 대시보드 후속517178d를 적용한04daf08f…입니다. [최신 통합 점검·사건 저장/재시작·실제 이미지·보호/복구·제한](cloud_soc_issue_audit_20261013.md)을 먼저 대조하세요. 활성 override는 state/early-release-000659f/early.override.json입니다. 서버 Git HEAD92d13c0·포털 patch·worker 소스를 동일 버전으로 가정하지 않습니다. [기존 AUTH 인수](early_deployment_validation_20261013.md)와 아래 날짜별 이력은 보존합니다.
+
+## 현재 읽기 점검과 최소 권한 유지
+
+검증한 새 `deploy/server/runtime-audit.py`는 정확한 workspace/project의 기존6개 컨테이너와 활성 Compose 파일 해시·시작/프로필을 읽습니다. 비밀 환경·전체 argv는 출력하지 않으며 label을 전체 소스 일치로 해석하지 않습니다. 현재 서버에는 새 코드가 checkout에 자동 반영되지 않았으므로 보호한 `state/audit-stability-20261013/release-ui` 안의 도구 또는 별도 검증된 소스/환경을 사용합니다.
+
+```sh
+sudo python3 /home/kopo/cloud-soc/state/audit-stability-20261013/release-ui/deploy/server/runtime-audit.py --workspace /home/kopo/cloud-soc
+```
+
+`deploy/server/reader-history.py`는 기본값이 **읽기 계획 출력**입니다. 검증된 Python/Elasticsearch 환경에서 현재 보호 CA·승인된 관리자 password 파일을 인수로 지정합니다. `--apply`는 별도 승인한 계획의 `--expected-before-sha256`이 현재 역할과 같을 때만 exact 두 history의 read/view_index_metadata를 덧붙입니다. 다른 사용자/비밀번호/키는 변경하지 않습니다. DLS/FLS와 미지원 정책은 수동 검토 대상으로 거부합니다. 적용 전 보호 백업·다른 관리자와 동시 역할 수정이 없음을 확인하고 결과를 읽기 대조합니다. 서비스 정상화만을 목적으로 기존 setup 전체 역할 쓰기를 재실행하지 않습니다.
+
+현재 포털 보호 rollback은 최신 `portal-before-ui-followup`의 설정·이미지와 대조한 뒤 **portal image만** 기존 `cloud-soc:audit-e301783769b6`으로 되돌리고 동일 base/env/override의 `up -d --no-deps --no-build portal`을 사용합니다. 사용자 새 사건/메모·대시보드·DB/WAL/queue는 현재 값을 유지합니다. 최초 cases0 백업을 덮어써 새 사건을 잃지 않도록 합니다. 전체 Compose·ES/Kibana·worker 재시작이나 기존 start/floor/900초 유예/키/CA 변경은 이 포털 rollback에 포함하지 않습니다.
 
 선택 통지/메타데이터 후보의 [구조·필드 gate·전환 조건](realtime_detection_20261013.md)을 참고합니다. 기존 start/source/profile/lateness/main state를 유지하고 notice mapping·별도 create_doc/read 권한·쌍 DB backup 후 명시 --early-auth로 켭니다. --include-patterns는 identity 변경이며 승인된 새 state/start와 인수가 필요합니다. Windows/웹/flow/AWS 후보와 SSH 다수 계정 프로필은 이번 시험에서 활성화하지 않았습니다. ES snapshot은 현재 repository/path.repo 미설정으로 미실행이며 원본을 변경하지 않는 승인 범위와 독립 복구 잔여를 구분합니다.
 
