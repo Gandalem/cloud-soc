@@ -57,7 +57,8 @@ def validate_sites(sites, platform):
 
 
 def profile(spec):
-    inputs, exclusions = [], []
+    inputs = []
+    exclusions = [r'C:\inetpub\logs'] if spec['os']=='windows' else ['/var/log/apache2','/var/log/httpd','/var/log/nginx']
     for site in spec.get('sites', []):
         path_type = PureWindowsPath if spec['os'] == 'windows' else PurePosixPath
         parent = str(path_type(site['log_path']).parent)

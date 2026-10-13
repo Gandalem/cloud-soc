@@ -290,3 +290,5 @@ CA·주소 검증 HTTPS를 거치는 루프백 중계/Chrome으로 실제 사용
 2026-10-14 SITE-LIVE-01 실제 AWS 진행: 사용자 확정한 AWS56.155.117.55의 amzn/2023·기존 DVWA/producer를 확인하고 정상 GET200에서 새 실제 Apache2건을 발생시켰다. 기존 출발지 제한/고정 지문/목적 SSH pull을 유지해 중앙 soc-host-raw-web-dvwa-v1→실제 정규화2건의 정확 index/ID/불변 참조를 대조했다. producer/DVWA/relay 재시작·원본/SQLite/키 변경·공개 포트/IAM/새 자원·Windows 키 검사는 없었다. 신규 범용 Filebeat 배포·AWS 시스템/네트워크 및 실제 신규 브라우저 인수·커밋/push/원격 CI는 아직 확인 전이며 기존 DVWA 수신 성공으로 대신하지 않는다.
 
 2026-10-14 후속 격리: 별도 switch/고정 경로 설정 후 관련124 Python/67 subtests·추가16 사이트 검사·Windows 실제 native6/UI145/웹6(총157), 문서 링크575와 Ruff/diff를 확인했다. 실제 Filebeat 격리의 초기 지연/시험 전송 파일 kopo 소유권 차단을 기록하고 설치와 같은 root 소유권·독립 시험 registry·정확 script config 경로로 보정했다. 운영 registry/큐를 지우거나 파일 소유권 검사를 완화하지 않았다.
+
+2026-10-14 추가 검증/보완: 실제 Filebeat9.5.2 독립 실행의1건·native access 시각·민감 canary 부재·운영 서비스 불변을 확인했다(콘솔 시험, 중앙 게시 아님). 실제 monitor 최소 읽기 권한으로 신규 항목 상태6개 표본/부족한 이전 web 보고 unknown을 확인했다. 8ba91d8 일반 push·수동 CI38430324552의 Windows/Ubuntu 모두 success. 마지막 검토에서 웹 미선택/중지에도 일반 탐색 또는 journald 중복으로 access 원문이 전송될 수 있는 우회를 보완했다. 기본 웹 디렉터리 제외와 표준/Docker access 줄 차단의 관련59 Python·14 JS 회귀를 통과했으며 기존 SSH/DVWA 경로를 유지한다. 최초 후보 이미지는 아직 적용하지 않았고 후속 보완의 새 후보/CI를 준비한다.

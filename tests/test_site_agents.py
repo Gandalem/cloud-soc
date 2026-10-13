@@ -53,7 +53,8 @@ def test_independent_scope_and_legacy_package_contract():
     with pytest.raises(ValueError):spec(sites=[{**SITE,'start_at':'2026-10-14T00:00:00'}])
     legacy=validate_spec({'name':'old','os':'ubuntu','organization':'lab','network':False},'https://soc.example.invalid')
     assert 'sites' not in legacy and 'system' not in legacy
-    assert profile(spec())['web_exclusions']==['/var/log/apache2']
+    assert set(profile(spec())['web_exclusions'])=={'/var/log/apache2','/var/log/httpd','/var/log/nginx'}
+    assert set(profile(spec(sites=[]))['web_exclusions'])=={'/var/log/apache2','/var/log/httpd','/var/log/nginx'}
 
 
 def web_hit():
@@ -109,6 +110,6 @@ def test_local_switches_preserve_immutable_profile_and_reserved_web_directory(tm
     (tmp_path/'collection-switches.json').write_text(json.dumps({'system':False,'web':{'dvwa':False}}))
     result=module.read(p)
     assert result['system'] is False and result['web_inputs'][0]['enabled'] is False
-    assert result['web_exclusions']==['/var/log/apache2'] and p.read_bytes()==original
+    assert '/var/log/apache2' in result['web_exclusions'] and p.read_bytes()==original
     (tmp_path/'collection-switches.json').write_text(json.dumps({'web':{'unknown-site':False}}))
     with pytest.raises(ValueError):module.read(p)
