@@ -262,7 +262,14 @@ class LogReader:
             clauses.append({"terms": {"organization.id": list(self.organizations)}})
         runtime = {}
         if filters.source_kind == 'web':
-            clauses.append({'terms':{'labels.log_source':['generic_web_access','web_access_metadata']}})
+            # Existing host indices have dynamic text+keyword labels while the
+            # protected DVWA index uses keyword. Narrow with indexed terms first,
+            # then confirm the exact source value on that small candidate set.
+            sources=['generic_web_access','web_access_metadata']
+            clauses.append({'bool':{'minimum_should_match':1,'should':[
+                {'terms':{'labels.log_source':sources}}, {'terms':{'labels.log_source.keyword':sources}}]}})
+            runtime['soc_query_source']={'type':'keyword','script':{'source':FIELD_HELPER+"def v=value(params._source,'labels.log_source'); if(v instanceof String) emit(v);"}}
+            clauses.append({'terms':{'soc_query_source':sources}})
         for value, path in ((filters.host, "host.name"), (filters.collector, "agent.type")):
             if value is not None:
                 clauses.append({"term": {path: value}})
@@ -297,7 +304,7 @@ class LogReader:
             required["agent.type"] = {"keyword"}
         if filters.source_kind == 'web':
             fields.append('labels.log_source')
-            required['labels.log_source']={'keyword'}
+            required['labels.log_source']={'keyword','text'}
         caps = self.client.field_caps(index=INDICES, fields=fields, include_unmapped=True)["fields"]
         for name, allowed in required.items():
             for kind, info in caps.get(name, {}).items():
