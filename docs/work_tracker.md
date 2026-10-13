@@ -10,6 +10,8 @@
 - [ ] WEB-LIVE-04 진행 중: 격리 회전/재시작/전송 실패·cursor/중복/큐 상한·누락 표시를 검증하고 실제 서비스 재시작/원래 로그·기존 서비스 보존을 구분한다.
 - [ ] WEB-LIVE-05 진행 중: 실제 web 어댑터·raw/normalized ID·org/host/time/method/status·보호된 원본 참조/해시·포털 목록/상세를 인수한다. 전체 Python/UI·Ruff/Bandit/diff·Git/CI 결과와 배포/외부 제한을 [웹 수집 보고서](aws_dvwa_web_collection_20261013.md)에 기록한다.
 
+2026-10-13 추가 요청/진행: 사용자 화면에서 AWS web 수집기의 OS가 '정보 없음'으로 표시되는 결함을 WEB-LIVE-05에 포함한다. 실제 raw의 host.os.type=linux와 수신 현황의 name-only 투영 차이를 수정한다. OS 이름이 없으면 명시된 OS 유형/센서 태그만 사용하고 AWS/IP로 OS를 추정하지 않는다. 통합 로그의 cloud 분류는 '해당 없음 (클라우드 API)'으로 표시한다. 서비스 수신 상태를 heartbeat로 바꾸거나 Windows 접근/키 작업을 재개하지 않는다.
+
 ## 2026-10-13 전체 장애 이력·운영 안정화 요청
 
 새 명시 요청에 따라 기존 수정의 재구현보다 FIX-01~14/HIST-01~07의 현황 대조와 ISSUE-02 실제 사건 업무를 우선한다. 최신 기준은 main b67eefa·기능 브랜치7968915이며 Windows/Ubuntu CI 성공을 공식 API로 확인했다. 개인 Word/JSON·비밀/상태·원래 완료 이력을 보존한다. 코드 검토·읽기 점검·격리 회귀·기능 브랜치 commit/일반 push를 수행한다. 사용자 기존 서버 접속/포털 시험 범위의 사건 기록/보호 재시작을 사용하며 ES 설정/복원·AWS 리소스/새 에이전트·CA 신뢰·공개 인증 전송·신규 규칙 활성화·main/PR는 제외한다.

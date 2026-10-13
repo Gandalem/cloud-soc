@@ -2,7 +2,7 @@
 (() => {
   "use strict";
   const sources = { web_access_metadata:"AWS DVWA 웹 접근 기록", windows_event: "Windows 이벤트", windows_file: "Windows 파일", linux_file: "Linux 파일", linux_journald: "Linux 저널", network_packetbeat: "네트워크", aws_cloudtrail: "AWS 관리 이벤트", oci_audit: "OCI 감사 이벤트", unknown: "미분류" };
-  const osNames = { windows: "Windows", linux: "Linux", cloud: "클라우드 API", unknown: "미확인" };
+  const osNames = { windows: "Windows", linux: "Linux", cloud: "해당 없음 (클라우드 API)", unknown: "미확인" };
   const outcomes = { success: "성공", failure: "실패", unknown: "미확인" };
   const label = (map, value, fallback = "미확인") => Object.hasOwn(map, value) ? map[value] : fallback;
   const escape = value => String(value ?? "미관측").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);

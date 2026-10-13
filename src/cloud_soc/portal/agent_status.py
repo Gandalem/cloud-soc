@@ -12,7 +12,8 @@ PAGE_SIZE = 50
 WINDOW_DAYS = 30
 RECENT_SECONDS = 300
 DELAYED_SECONDS = 900
-SOURCE_FIELDS = ["host.name", "host.ip", "host.os.name", "host.os.platform",
+SOURCE_FIELDS = ["host.name", "host.ip", "host.os.name", "host.os.platform", "host.os.type",
+                 "labels.sensor_platform",
                  "agent.version", "event.ingested", "@timestamp"]
 CURSOR_KEYS = {"organization", "agent_id", "agent_type"}
 
@@ -79,6 +80,20 @@ def object_field(value, name):
     return item if isinstance(item, dict) else {}
 
 
+def operating_system_name(source):
+    os = object_field(object_field(source, "host"), "os")
+    name = text(os.get("name"))
+    if name:
+        return name
+    # An observed family is useful even when the distribution name is absent.
+    families = {"windows": "Windows", "linux": "Linux"}
+    value = os.get("type")
+    if isinstance(value, str) and value in families:
+        return families[value]
+    value = object_field(source, "labels").get("sensor_platform")
+    return families.get(value) if isinstance(value, str) else None
+
+
 def row_from_bucket(bucket, now):
     key = bucket["key"]
     hits = bucket["latest"]["hits"]["hits"]
@@ -99,7 +114,7 @@ def row_from_bucket(bucket, now):
     return {
         "agent_id": text(key["agent_id"]), "agent_type": text(key.get("agent_type")),
         "organization": text(key.get("organization")), "host_name": text(host.get("name")),
-        "host_ips": valid_ips, "os": text(object_field(host, "os").get("name")),
+        "host_ips": valid_ips, "os": operating_system_name(source),
         "version": text(object_field(source, "agent").get("version")),
         "last_received": iso(received) if received else None,
         "last_event": iso(value) if (value := parse_time(source.get("@timestamp"))) else None,

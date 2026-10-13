@@ -67,6 +67,28 @@ class ActivityTests(unittest.TestCase):
         data["latest"]["hits"]["hits"][0]["_source"]["@timestamp"] = iso(NOW)
         self.assertEqual(row_from_bucket(data, NOW)["status"], "unknown")
 
+    def test_observed_os_family_when_distribution_name_is_missing(self):
+        data = bucket()
+        source = data["latest"]["hits"]["hits"][0]["_source"]
+        for family, expected in (("linux", "Linux"), ("windows", "Windows")):
+            source["host"]["os"] = {"type": family}
+            self.assertEqual(row_from_bucket(data, NOW)["os"], expected)
+        source["host"]["os"] = {"name": "Ubuntu", "type": "linux"}
+        self.assertEqual(row_from_bucket(data, NOW)["os"], "Ubuntu")
+        self.assertIn("host.os.type", SOURCE_FIELDS)
+
+    def test_network_sensor_platform_and_unknown_os_are_distinct(self):
+        data = bucket()
+        source = data["latest"]["hits"]["hits"][0]["_source"]
+        source["host"]["os"] = {}
+        source["labels"] = {"sensor_platform": "linux"}
+        self.assertEqual(row_from_bucket(data, NOW)["os"], "Linux")
+        source["labels"] = {}
+        source["cloud"] = {"provider": "aws"}
+        source["host"]["os"] = {"type": ["linux"]}
+        self.assertIsNone(row_from_bucket(data, NOW)["os"])
+        self.assertIn("labels.sensor_platform", SOURCE_FIELDS)
+
     def test_sparse_or_malformed_metadata_is_not_an_error(self):
         data = bucket()
         data["latest"]["hits"]["hits"][0]["_source"] = {"host": [], "agent": "bad", "event": None}
