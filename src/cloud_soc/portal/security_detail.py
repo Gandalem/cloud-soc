@@ -9,6 +9,7 @@ import re
 
 from cloud_soc.portal.log_contract import field
 from cloud_soc.portal.privacy import display, REDACTED
+from cloud_soc.web.metadata import validate as validate_web
 
 WINDOWS_FIELDS = (
     "SubjectUserName", "TargetUserName", "TargetDomainName", "MemberSid",
@@ -20,6 +21,10 @@ WINDOWS_FIELDS = (
     "DestinationIp", "DestinationPort", "Protocol",
 )
 DETAIL_FIELDS = (
+    "event.category", "event.created", "agent.version", "service.id", "service.name", "container.id",
+    "web.schema", "web.parser_version", "web.path_class", "web.ip_basis", "web.source_kind",
+    "web.position.generation", "web.position.file_id", "web.position.offset",
+    "http.request.method", "http.response.status_code",
     "winlog.event_id", "winlog.provider_name", "host.id",
     *("winlog.event_data." + name for name in WINDOWS_FIELDS),
     "source.port", "destination.port", "network.bytes", "network.packets",
@@ -105,6 +110,19 @@ def security_detail(source):
     if not isinstance(source, dict):
         return result
     get = lambda path: field(source, path)
+    if get("labels.log_source") == "web_access_metadata":
+        try:
+            validate_web(source, received=True)
+        except ValueError:
+            return result
+        missing=[] if get('source.ip') else ['source_ip']
+        result.update(adapter='web_access_metadata_v1',status='partial' if missing else 'recognized',missing=missing,
+            fields={'category':'web','action':'http_access','outcome':get('event.outcome'),'source_ip':get('source.ip'),
+                'http_method':get('http.request.method'),'http_status':get('http.response.status_code'),
+                'request_id':get('event.id'),'host_id':get('host.id'),'container_id':get('container.id'),
+                'service_id':get('service.id'),'path_class':get('web.path_class')},
+            limitations=['protected_web_metadata_reference_not_apache_original','url_headers_and_body_excluded','not_a_detection'])
+        return result
     if get("labels.log_source") == "oci_audit" and get("cloud.provider") == "oci":
         if get("oci.audit.schema") != 1:
             return result

@@ -18,9 +18,9 @@ MAX_RESPONSE_BYTES = 256 * 1024
 MAX_DETAIL_BYTES = 64 * 1024
 MAX_CURSOR_LENGTH = 8192
 TIME_FIELDS = {"ingested": "event.ingested", "event": "@timestamp"}
-HOST_SOURCES = {"windows_event", "windows_file", "linux_file", "linux_journald"}
+HOST_SOURCES = {"windows_event", "windows_file", "linux_file", "linux_journald", "web_access_metadata"}
 SOURCE_FIELDS = (
-    "@timestamp", "event.ingested", "organization.id", "agent.id", "agent.type",
+    "@timestamp", "event.ingested", "organization.id", "agent.id", "agent.type", "labels.privacy_policy",
     "host.name", "host.ip", "host.os.type", "host.os.name", "labels.log_source",
     "labels.sensor_platform", "winlog.channel", "log.file.path", "event.dataset",
     "event.code", "event.id", "event.action", "event.outcome", "event.provider", "user.name", "source.ip",
@@ -77,7 +77,7 @@ def parse_filters(pairs, *, now=None):
     if os_type not in (None, "windows", "linux", "cloud", "unknown"):
         raise ValueError("Unsupported operating system")
     collector = values.get("collector")
-    if collector not in (None, "filebeat", "packetbeat", "cloudtrail", "oci-audit"):
+    if collector not in (None, "filebeat", "packetbeat", "cloudtrail", "oci-audit", "web-collector"):
         raise ValueError("Unsupported collector")
     host = values.get("host")
     if host is not None and (len(host) > 253 or host != host.strip()):

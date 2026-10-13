@@ -1,7 +1,7 @@
 /* Read-only live intake metadata. No fixture fallback or browser persistence. */
 (() => {
   "use strict";
-  const sources = { windows_event: "Windows 이벤트", windows_file: "Windows 파일", linux_file: "Linux 파일", linux_journald: "Linux 저널", network_packetbeat: "네트워크", aws_cloudtrail: "AWS 관리 이벤트", oci_audit: "OCI 감사 이벤트", unknown: "미분류" };
+  const sources = { web_access_metadata:"AWS DVWA 웹 접근 기록", windows_event: "Windows 이벤트", windows_file: "Windows 파일", linux_file: "Linux 파일", linux_journald: "Linux 저널", network_packetbeat: "네트워크", aws_cloudtrail: "AWS 관리 이벤트", oci_audit: "OCI 감사 이벤트", unknown: "미분류" };
   const osNames = { windows: "Windows", linux: "Linux", cloud: "클라우드 API", unknown: "미확인" };
   const outcomes = { success: "성공", failure: "실패", unknown: "미확인" };
   const label = (map, value, fallback = "미확인") => Object.hasOwn(map, value) ? map[value] : fallback;
@@ -14,7 +14,7 @@
     const supported = ["recognized", "partial"].includes(interpreted.status);
     const fields = supported ? interpreted.fields || {} : {};
     const rawAction = typeof row.action === "string" && !/^(none|null|-)$/i.test(row.action.trim()) ? row.action : null;
-    const actionText = row.stream === "cloud" && rawAction ? rawAction : fields.action ? label(securityTerms, fields.action, fields.action) : rawAction || "행위 정보 없음";
+    const actionText = row.source_kind==='web_access_metadata'&&supported ? `웹 접근 · ${fields.http_method||'메서드 미관측'} · HTTP ${fields.http_status??'상태 미관측'}` : row.stream === "cloud" && rawAction ? rawAction : fields.action ? label(securityTerms, fields.action, fields.action) : rawAction || "행위 정보 없음";
     const outcome = row.outcome && row.outcome !== "unknown" ? row.outcome : fields.outcome || "unknown";
     const outcomeText = outcome === "unknown" ? "결과 정보 없음" : label(outcomes, outcome, "결과 정보 없음");
     const actor = row.user || row.actor_id || fields.actor || (fields.target_user ? `대상 계정: ${fields.target_user}` : null);
@@ -59,7 +59,7 @@
     api: "클라우드 API", event_id: "클라우드 이벤트 ID", provider: "클라우드 서비스", cloud_account: "수집 계정 / 테넌시", cloud_region: "수집 리전",
     compartment_id: "OCI 구획 OCID", compartment_name: "OCI 구획 이름", resource_id: "대상 자원 ID", resource_name: "대상 자원 이름",
     identity_tenancy: "주체 테넌시", principal_id: "행위 주체 OCID", auth_type: "OCI 인증 유형", caller_id: "대리 호출자 OCID", caller_name: "대리 호출자 이름",
-    request_id: "요청 ID", http_method: "HTTP 메서드", http_status: "HTTP 응답 코드", event_type: "OCI 이벤트 유형", grouping_id: "OCI 이벤트 그룹 ID",
+    request_id: "요청 ID", http_method: "HTTP 메서드", http_status: "HTTP 응답 코드", host_id:"호스트 ID", container_id:"컨테이너 ID", service_id:"웹 서비스 ID", path_class:"보호된 경로 분류", event_type: "OCI 이벤트 유형", grouping_id: "OCI 이벤트 그룹 ID",
     identity_type: "AWS 주체 유형", identity_arn: "행위 주체 ARN", identity_account: "행위 주체 계정", session_issuer_arn: "세션 발급 역할 ARN",
     identity_invoked_by: "호출 AWS 서비스", target_policy_arn: "대상 정책 ARN",
     source_address: "출발지 주소 / 서비스", target_role: "대상 역할", target_group_id: "대상 보안그룹", resource_arns: "관측된 자원 ARN", error_code: "AWS 오류 코드", outcome_basis: "결과 판정 근거"
@@ -90,7 +90,7 @@
       entries.push([title, item]);
     }
     entries.push(["미관측 / 보호된 필수 필드", Array.isArray(value.missing) ? value.missing.slice(0, 16).map(v => label(securityLabels, v)) : []]);
-    entries.push(["해석 제한", Array.isArray(value.limitations) ? value.limitations.slice(0, 8).map(v => label({ ...securityLimits, management_events_not_object_access: "관리 이벤트만 조회하며 S3 객체 접근 등 데이터 이벤트는 포함하지 않습니다.", api_result_not_resource_effect: "API 결과는 이후 자원 상태나 공격 여부의 확정 판정이 아닙니다.", resource_list_truncated: "자원 목록은 최대 20개로 제한되었습니다.", oci_audit_not_object_or_identity_domain_access: "OCI 객체 접근과 Identity Domains 로그인 감사는 별도 수집이 필요합니다.", region_from_collection_scope: "리전은 자원의 위치를 추측한 값이 아니라 Audit 조회 리전입니다." }, v, "추가 제한 사항 있음")) : []]);
+    entries.push(["해석 제한", Array.isArray(value.limitations) ? value.limitations.slice(0, 8).map(v => label({ ...securityLimits, protected_web_metadata_reference_not_apache_original:"근거는 보호된 웹 메타데이터이며 EC2의 Apache 원문과 다릅니다.", url_headers_and_body_excluded:"URL·쿼리·헤더·요청 본문은 저장하지 않습니다.", management_events_not_object_access: "관리 이벤트만 조회하며 S3 객체 접근 등 데이터 이벤트는 포함하지 않습니다.", api_result_not_resource_effect: "API 결과는 이후 자원 상태나 공격 여부의 확정 판정이 아닙니다.", resource_list_truncated: "자원 목록은 최대 20개로 제한되었습니다.", oci_audit_not_object_or_identity_domain_access: "OCI 객체 접근과 Identity Domains 로그인 감사는 별도 수집이 필요합니다.", region_from_collection_scope: "리전은 자원의 위치를 추측한 값이 아니라 Audit 조회 리전입니다." }, v, "추가 제한 사항 있음")) : []]);
     return entries;
   }
   if (typeof module !== "undefined") module.exports = { rowMarkup, query, validPage, time, securityEntries };

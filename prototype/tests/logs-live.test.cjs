@@ -11,6 +11,14 @@ const row = { reference: { index: 'soc-host-raw-test', id: 'fixture-id' }, host_
 const result = { contract_version: 1, rows: [row], next_cursor: null, raw_access: 'restricted', total: null,
   filters: { start: '2026-09-22T01:00:00Z', end: '2026-09-22T02:00:00Z', time_basis: 'ingested' } };
 const defaults = { period: '60', timeBasis: 'ingested', pageSize: '25', host: '', ip: '', os: '', collector: '' };
+
+test('protected DVWA rows show actual HTTP metadata without exposing a request target',()=>{
+  const value={...row,source_kind:'web_access_metadata',collector:'web-collector',os:'linux',host_name:'aws-dvwa-fixture',
+    interpretation:{status:'recognized',adapter:'web_access_metadata_v1',fields:{action:'http_access',outcome:'success',http_method:'GET',http_status:200}},outcome:'success'};
+  const html=rowMarkup(value,0);
+  assert.match(html,/AWS DVWA 웹 접근 기록/);assert.match(html,/GET.*HTTP 200/);
+  assert.ok(!html.includes('undefined'));assert.ok(!html.includes('http_access'));
+});
 const ok = data => () => ({ ok: true, json: async () => data });
 const settle = () => new Promise(resolve => setImmediate(resolve));
 

@@ -1,0 +1,28 @@
+[Unit]
+Description=Cloud SOC DVWA allowlisted web metadata producer
+After=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/python3 -I /opt/cloud-soc-web/deploy/web/aws-entry.py --config /etc/cloud-soc-web/producer.json
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+ReadWritePaths=/var/lib/cloud-soc-web
+MemoryMax=128M
+TasksMax=8
+
+[Install]
+WantedBy=multi-user.target
