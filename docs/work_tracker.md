@@ -1,5 +1,11 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-13 직접 LAN IP 빈 화면 진단
+
+사용자의 실제 브라우저 화면 지적으로 직접 `https://192.168.32.60/` 접근 문제를 우선 검토했다. CA/IP 검증을 유지한 무인증 실제 요청에서 IP Host는 HTTP200·본문0 bytes·인증 challenge 없음, 동일 LAN 주소/기존 도메인 Host는 HTTP401·JSON88 bytes·Basic challenge였다. 현재 Caddy의 공개 Host 전용 라우팅과 일치한다. 이전 실제 포털 인수는 기존 Host를 지정한 LAN 프록시 경로였으며 직접 IP 주소창 접근의 인수가 아니었다. 그 검증 범위 차이를 이전 요약에서 충분히 설명하지 못했다. 원래 기능/실수신 인수 이력을 취소하거나 직접 IP 인수 완료로 바꾸지 않는다.
+
+- [x] FIX-LAN-01 완료(2026-10-13 코드·지정 중앙 보호 적용·직접 접속 인수): 명시 HTTPS 사설 IP alias·정확한 Host별 Origin과 기존 인증/CSRF/공개 주소/수집 endpoint를 보존하는 포털/Caddy/Compose를 수정했다. 실제 Caddy 두 구성·이미지/설정/SQLite 보호·격리 restore 후 포털/게이트웨이에만 적용하고 직접 IP의401 로그인 요구·인증200/HTML·API200·타 Host Origin403·실제 브라우저 홈1440/390/개인·동일 구성 저장/재조회·확정 통지1/JS 예외0을 인수했다. 관련91 passed/4 subtests·전체789 passed/19 skipped/257 subtests(94.83초)·Ruff/Bandit/diff 통과. ES/Kibana/정규화/탐지 실행·비밀/CA/TLS를 유지했다. 사용자는 CA 신뢰 추가를 원하지 않아 신뢰 저장소를 바꾸지 않았고 일반 브라우저 인증서 경고는 남는다. [파일·실제 이미지/patch·보호/복구·검증 제한](lan_portal_fix_20261013.md).
+
 ## 2026-10-13 시험 서버 보호 적용·검증·Git 반영 요청
 
 새 명시 요청으로 FAST-LIVE-01 사전 점검·보호 배포·통제된 SSH 인수와 검증 소스의 현재 기능 브랜치 commit/push를 허용한다. main 직접 push·강제 push·PR 생성/병합·원본/상태 초기화·AWS 자원 변경은 허용하지 않는다. 기존 대시보드 완성 코드/개인 Word·JSON·상태/접속 자료와 이력을 보존한다. 현재 실제 중앙 서버·권한·백업이 확인되지 않으면 배포를 중단하고 로컬 검증/Git 반영은 계속한다.
