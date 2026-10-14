@@ -61,7 +61,7 @@ def feature_signature(contract):
 
 @pytest.mark.parametrize('legacy_names', [('normalizer','detector'),
     ('normalizer','normalizer-priority','detector','detector-additional','detector-retrospective')])
-def test_home_and_other_central_converge_to_same_fresh_features_without_reset(tmp_path, legacy_names):
+def test_home_and_other_central_converge_to_same_fresh_features_without_reset(tmp_path, legacy_names, ownership_calls):
     state = tmp_path / 'server';old = seed(state, legacy_names)
     before = {name: Path(obj['Mounts'][0]['Source']) / ('checkpoint.sqlite' if name.startswith('normalizer') else 'runtime.sqlite') for name,obj in old.items()}
     hashes = {name: p.read_bytes() for name,p in before.items()}
@@ -82,6 +82,8 @@ def test_home_and_other_central_converge_to_same_fresh_features_without_reset(tm
         assert argv(contract,name,POLICY)[1:3] == ['-m',contract['workers'][name]['module']]
     replay, second_adoption = build_contract(POLICY,old,state,now=NOW+timedelta(days=1),existing=contract)
     assert replay == contract and second_adoption == {}
+    ownership_calls.expect(*(runtime/'state'/name for name in WORKERS),
+                           *(runtime/'state'/name/contract['workers'][name]['state_file'] for name in legacy_names))
 
 
 def test_existing_identity_and_start_mismatch_are_refused_without_writes(tmp_path):
@@ -173,7 +175,7 @@ class FakeSetup:
 
 
 @pytest.mark.parametrize('existing', [False,True])
-def test_new_and_upgrade_migrations_prepare_same_scopes_without_changing_existing_keys(tmp_path,existing):
+def test_new_and_upgrade_migrations_prepare_same_scopes_without_changing_existing_keys(tmp_path,existing,ownership_calls):
     client=FakeSetup();c,_=build_contract(POLICY,{},tmp_path,now=NOW);keys={}
     if existing:
         for name in WORKERS:
@@ -191,9 +193,11 @@ def test_new_and_upgrade_migrations_prepare_same_scopes_without_changing_existin
         assert sum(e[0]=='key_create' for e in client.security.events)==1  # New read-only notifier key only.
         assert all((tmp_path/'keys'/(n+'.key')).read_text().strip()==v for n,v in keys.items())
     assert all(json.loads((tmp_path/'migrations.json').read_text())['migrations'][n]['state']=='applied' for n in POLICY['migrations'])
+    ownership_calls.expect(*(tmp_path/'keys'/(name+'.key') for name in ALL_WORKERS))
+    assert ownership_calls.chown.call_count == len(ALL_WORKERS)  # Reuse never rotates/re-owns keys.
 
 
-def test_migration_write_interruption_records_failure_and_resumes_without_reset(tmp_path):
+def test_migration_write_interruption_records_failure_and_resumes_without_reset(tmp_path,ownership_calls):
     client=FakeSetup();c,_=build_contract(POLICY,{},tmp_path,now=NOW)
     identifier='old';encoded=base64.b64encode(b'old:PRIVATE_ORIGINAL').decode()
     client.security.keys[identifier]={'id':identifier,'invalidated':False,'role_descriptors':{'original':{'cluster':[],'indices':[]}}}
@@ -204,6 +208,7 @@ def test_migration_write_interruption_records_failure_and_resumes_without_reset(
     client.security.fail=False
     prerequisites(client,POLICY,c,tmp_path,{'normalizer':encoded})
     assert (tmp_path/'keys/normalizer.key').read_text().strip()==encoded
+    ownership_calls.expect(*(tmp_path/'keys'/(name+'.key') for name in ALL_WORKERS))
 
 
 def test_future_ledger_and_expired_keys_are_never_reissued(tmp_path):
@@ -259,8 +264,8 @@ def test_no_input_or_partial_live_search_cannot_pass_runtime_acceptance():
     with pytest.raises(ValueError,match='Incomplete'):evidence(client,BASE.isoformat(),now=NOW)
 
 
-@pytest.mark.parametrize('fault', ['none','migration','activation','interrupt','receipt','stale','modified_site','disk'])
-def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_path,monkeypatch,fault):
+@pytest.mark.parametrize('fault', ['none','migration','activation','interrupt','receipt','stale','modified_site','disk','ownership'])
+def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_path,monkeypatch,fault,ownership_calls):
     from cloud_soc.deployment import host
     state=tmp_path/'server';old=seed(state,('normalizer','detector'))
     c,adopt=build_contract(POLICY,old,state,now=NOW)
@@ -284,6 +289,12 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
         actual_atomic(path,value,**kw)
         if fault=='receipt' and path.name=='current.json':raise RuntimeError('interrupted after receipt write')
     monkeypatch.setattr(host,'atomic_json',atomic)
+    if fault == 'ownership':
+        def deny_contract(path, uid, gid):
+            ownership_calls.record(path, uid, gid)
+            if Path(path).name.startswith('contract.json.'):
+                raise PermissionError('isolated ownership denial')
+        ownership_calls.chown.side_effect = deny_contract
     class Engine:
         phase='old'
         def __init__(self):self.calls=[]
@@ -314,7 +325,7 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
         assert result['runtime_ready'] and result['live_ingestion_acceptance']=='not_yet_verified'
         assert (runtime/'current.json').is_file()
     else:
-        with pytest.raises((ValueError,RuntimeError,KeyboardInterrupt)):host.apply(engine,plan)
+        with pytest.raises((ValueError,RuntimeError,KeyboardInterrupt,PermissionError)):host.apply(engine,plan)
         assert not (runtime/'current.json').exists()
         if fault in ('stale','modified_site','disk'):
             assert not engine.calls
@@ -326,6 +337,11 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
             assert list((runtime/'state/normalizer').glob('*.unactivated-*'))
     assert all(Path(adopt[n]['state_source']).read_bytes()==b for n,b in original.items())
     assert 'PRIVATE_PASSWORD' not in json.dumps(engine.calls)
+    if fault in ('stale','modified_site','disk'):
+        ownership_calls.chown.assert_not_called()
+    else:
+        ownership_calls.expect(*(runtime/'state'/name for name in WORKERS))
+        ownership_calls.expect_atomic_contract(runtime)
 
 
 def test_docker_coordinator_drops_inherited_endpoints_and_state(monkeypatch):
@@ -406,7 +422,7 @@ def test_manual_override_and_scaled_workers_cannot_duplicate_common_workers(vari
 
 
 @pytest.mark.parametrize('fresh',[False,True])
-def test_process_kill_journal_recovers_execution_without_restoring_any_database(tmp_path,monkeypatch,fresh):
+def test_process_kill_journal_recovers_execution_without_restoring_any_database(tmp_path,monkeypatch,fresh,ownership_calls):
     from cloud_soc.deployment import host
     state=tmp_path/'server';runtime=state/'runtime';run=runtime/'upgrades/interrupted';run.mkdir(parents=True)
     db=runtime/'operating.sqlite'
@@ -426,6 +442,10 @@ def test_process_kill_journal_recovers_execution_without_restoring_any_database(
     assert db.read_bytes()==original and not (runtime/'pending.json').exists()
     assert json.loads((runtime/'contract.json').read_text())==(previous if not fresh else {'version':1,'prepared':False,'pinned_start':'unchanged'})
     assert host.recover(engine,state)=={'recovery_required':False}
+    if fresh:
+        ownership_calls.chown.assert_not_called()
+    else:
+        ownership_calls.expect_atomic_contract(runtime)
 
 
 def test_site_snapshot_repository_and_compose_numeric_strings_are_supported():
@@ -471,7 +491,7 @@ def test_saved_case_dashboard_rows_are_guarded_using_online_snapshots(tmp_path):
 
 
 @pytest.mark.parametrize('fault',['none','bootstrap','migration','activation'])
-def test_fresh_common_install_and_retry_preserve_pinned_start_and_state(tmp_path,monkeypatch,fault):
+def test_fresh_common_install_and_retry_preserve_pinned_start_and_state(tmp_path,monkeypatch,fault,ownership_calls):
     from cloud_soc.deployment import host
     state=tmp_path/'fresh';(state/'secrets').mkdir(parents=True)
     (state/'compose.env').write_text('');(state/'secrets/elastic_password').write_text('PRIVATE')
@@ -517,3 +537,5 @@ def test_fresh_common_install_and_retry_preserve_pinned_start_and_state(tmp_path
     assert host.apply(engine,plan)['runtime_ready']
     with closing(sqlite3.connect(state/'runtime/state/detector/runtime.sqlite')) as db:
         assert db.execute('select value from preserved').fetchall()==[(73,)]
+    ownership_calls.expect(*(state/'runtime/state'/name for name in WORKERS))
+    ownership_calls.expect_atomic_contract(state/'runtime')

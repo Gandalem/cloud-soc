@@ -2,6 +2,17 @@
 
 ## 2026-10-15 검증 소스 GitHub 통합
 
+- [ ] GIT-CI-OWNERSHIP-20261015 진행 중: 사용자의 재개 승인으로 일반 CI 사용자와 실제 root 배포의 권한 모델을 분리한다. 실패18건(배포 parity15건·Slack migration3건)의 소유권 호출을 분석하고, 필요한 격리 단위 시험에만 UID/GID·대상 경로·보호 mode를 검증하는 대역을 주입한다. 실제 chown/0600/접근 거부·권한 부족 시 실패는 별도 Linux root 컨테이너에서 검사한다. 운영 코드/권한을 완화하거나 skip/xfail/CI 비활성화하지 않는다. 최종 HEAD의 양 플랫폼 CI·보안/보존 시험 성공 후 PR13을 병합하며 운영/학교 서버·Slack에는 접근하지 않는다.
+
+2026-10-15 권한 시험 보완 기록(커밋 전 로컬 기준):
+
+- 실패15건은 기존 상태 인수2·신규/업그레이드 키2·중단 재개1·coordinator5·계약 복구1·신규 설치4다. 나머지3건은 Slack 부분 migration 재개·암호화 키/설정 보존·기존 canonical 읽기 키 재사용이다. 공통 실제 호출 지점은 host의 DB/워커 디렉터리 chown, atomic_json의 임시 계약 파일 chown, migrations의 기존 워커/Slack 읽기 키와 알림 디렉터리/DB/암호화 키 chown이다.
+- `tests/deployment_ownership.py`와 opt-in `ownership_calls` fixture는 이9개 시험 함수의 POSIX 분기만 모듈별 OS 대역으로 실행한다. 전역 os.name/os.chown과 운영 코드는 변경하지 않으며 실제 경로 존재·시험 tmp 경계·UID/GID1000:1000·POSIX0700/0600을 검사한다. 각 시험은 필요한 대상/원자적 임시 계약 파일 호출과 키 재사용 시 추가 chown 부재도 단언한다. 독립 시험으로 fixture가 없는 코드가 실제 os를 사용하는지도 확인한다.
+- 소유권 거부 시 임시 계약 파일 정리/원본 보존·WAL 원본 보존·후속 워커 중단·실패 ledger·기존 알림 키/설정 보존을 검사했다. coordinator에도 ownership 실패/기존 실행 복귀 사례를 추가했다. 로컬 관련 Python120 passed/기존 Windows symlink 조건부 제외1, Ruff·Bandit 중간 이상0·diff 통과다. 새 skip/xfail/검사 비활성화는 없다. 실행 소스240개 hash `b6bafc954a026b6b175b8ff116e39b4254cf3e5840f8fddbd317c7e0ae787522`는 그대로다.
+- 실제 Linux 소유권은 CI 전용 Dockerfile/독립 실행 스크립트로 별도 검증한다. root 컨테이너는 네트워크/호스트 mount 없이 read-only rootfs·임시 tmpfs·512MiB/CPU1/PID64 제한에서 실제 os.chown으로 UID/GID·0600/0700·앱 UID1000 읽기 허용/다른 UID1001 거부·일반 UID의 chown 실패와 원자적 원본/임시 파일 정리·WAL/키/설정/발송 이력 보존을 검사한다. 이 PC에는 실행 가능한 Linux 컨테이너 엔진이 없어 해당 실제 실행은 Ubuntu CI에서 확인하며, 아직 통과로 기록하지 않는다. 기존 실패 실행의 Windows job은 최종 success였고 Ubuntu는 failure로 보존한다. 새 HEAD는 두 job을 모두 다시 확인한다.
+
+- [ ] GIT-INTEGRATE-20261015-CI 중단(실제 원격 CI 실패): 준비 커밋 `288be89237911d1ec092f387964d002a2f135e42`를 일반 push하고 [PR13](https://github.com/Gandalem/cloud-soc/pull/13)을 생성했다. [Actions38589987647](https://github.com/Gandalem/cloud-soc/actions/runs/38589987647)의 Ubuntu 전체 회귀는18 failed/1,269 passed/18 skipped/하위255로 실패했다. 배포/Slack migration 관련 시험에서 일반 runner가 `os.chown(..., 1000, 1000)`을 실행해 PermissionError가 발생했다. root 컨테이너의 기존 Linux202 통과와 일반 CI 계정의 권한 조건이 다름을 확인했으며 이전 결과로 이 실패를 대체하지 않는다. 사용자 지시에 따라 코드 수정·추가 commit/push·병합은 중단했다. Windows job은 이 기록 시점에 실행 중이다. 원격 main은 `7bb5fa0328c9611681d64d88e8faca3d1fc364d5` 그대로이며 병합 SHA는 없다. 제품 권한/시험 gate를 완화하거나 skip하지 않았다. 실패 로그는 Git 제외 보호 경로에 저장하고, 이 중단 기록은 추가 커밋하지 않은 로컬 작업 기록으로 남긴다. 다음 단계는 운영 권한 보존을 유지하는 일반 CI 시험 방식의 보완과 양 플랫폼 최종 HEAD 재검증이다.
+
 - [x] GIT-INTEGRATE-20261015-PREP 완료(로컬 통합 준비 범위): 사용자의 최신 명시 승인으로 기존 Git 금지 범위만 변경했다. 진행 중으로 먼저 등록한 통합 작업의 구현 체크리스트는 이 준비 범위로 구분하고, 원격 push/PR/최종 HEAD CI/병합 결과는 GitHub PR의 실행·병합 기록과 최종 보고에서 별도로 확인한다. 검증된 공통 런타임·6워커·Slack·상세 링크 및 관련 시험/문서51파일을 검토·명시적 stage하고 전체 staged 보안/경로·소스 대조·로컬 품질 검사를 통과했다. 실제 비밀 발견0, 실행 소스240개는 검증본의 CRLF→LF 정규화만 존재하며 Git 정규화 manifest는 `80be5525b5a7d13bb90191b2dd50fdc5b79716a2c2240ed8679310bd69b0488f`다. CI에 Windows/Ubuntu 공통 신규4회귀와 설치 JS를 포함했다. 이 완료가 원격 CI/병합 선행 성공을 뜻하지 않는다. 충돌/검사 실패 시 해당 단계에서 중단하며 운영/학교 서버·Slack 발송은 범위 밖이다.
 
 2026-10-15 GitHub 통합 전 검토:

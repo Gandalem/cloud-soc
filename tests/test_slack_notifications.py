@@ -196,7 +196,7 @@ def test_retry_budget_is_bounded_and_missing_encryption_key_is_not_rotated(tmp_p
     assert not (store.directory/'slack.key').exists() and store.status()['deliveries']=={'permanent':2}
 
 
-def test_partial_notification_migration_reuses_new_read_only_key_and_preserves_configuration(tmp_path):
+def test_partial_notification_migration_reuses_new_read_only_key_and_preserves_configuration(tmp_path,ownership_calls):
     from test_deployment_parity import FakeSetup
     from cloud_soc.deployment.migrations import notification_prerequisites
     from cloud_soc.notifications.worker import READ_ROLE
@@ -210,9 +210,11 @@ def test_partial_notification_migration_reuses_new_read_only_key_and_preserves_c
     assert sum(e[0]=='key_create' for e in client.security.events)==1
     assert list(client.security.keys.values())[0]['role_descriptors']=={'cloud_soc_notifications':READ_ROLE}
     assert not SlackStore(folder).status()['configured']
+    ownership_calls.expect(tmp_path/'keys/slack-notifier.key',folder,folder/'slack.sqlite')
+    assert sum(c.args[0] == tmp_path/'keys/slack-notifier.key' for c in ownership_calls.chown.call_args_list) == 1
 
 
-def test_webhook_encryption_key_and_config_survive_upgrade_restart_and_webhook_change(tmp_path):
+def test_webhook_encryption_key_and_config_survive_upgrade_restart_and_webhook_change(tmp_path,ownership_calls):
     from test_deployment_parity import FakeSetup
     from cloud_soc.deployment.migrations import notification_prerequisites
     store,clock=configured(tmp_path)
@@ -227,6 +229,7 @@ def test_webhook_encryption_key_and_config_survive_upgrade_restart_and_webhook_c
     assert (store.directory/'slack.key').read_bytes()==key
     notification_prerequisites(client,tmp_path,notification_directory=store.directory)
     assert (store.directory/'slack.key').read_bytes()==key and restarted.status()['configured']
+    ownership_calls.expect(tmp_path/'keys/slack-notifier.key',store.directory,store.directory/'slack.key',store.path)
 
 
 def canonical_notification_role():
@@ -237,7 +240,7 @@ def canonical_notification_role():
     return {'cloud_soc_notifications':role}
 
 
-def test_elasticsearch_canonical_read_only_key_is_reused_after_first_install(tmp_path):
+def test_elasticsearch_canonical_read_only_key_is_reused_after_first_install(tmp_path,ownership_calls):
     from test_deployment_parity import FakeSetup,POLICY,NOW
     from cloud_soc.deployment.contract import build_contract
     from cloud_soc.deployment.migrations import notification_prerequisites,validate_notification_role
@@ -252,6 +255,7 @@ def test_elasticsearch_canonical_read_only_key_is_reused_after_first_install(tmp
     assert sum(e[0]=='key_create' for e in client.security.events)==1
     contract,_=build_contract(POLICY,{},tmp_path,now=NOW)
     assert inspect(client,POLICY,contract,{}, {},saved.decode().strip())['notification_key']=='existing_read_only_key_verified'
+    ownership_calls.expect(tmp_path/'keys/slack-notifier.key',folder,folder/'slack.sqlite')
 
 
 @pytest.mark.parametrize('change',['cluster','applications','run_as','metadata','disabled','transient_extra','extra_role','remote',
