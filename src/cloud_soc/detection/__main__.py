@@ -30,6 +30,7 @@ def main(argv=None):
     parser.add_argument("--include-patterns", action="store_true", help="Opt in to enabled experimental metadata patterns; unverified candidates remain disabled")
     parser.add_argument("--isolated-all", action="store_true", help="All 14 rules for isolated validation; writes require an explicit loopback HTTPS ES and separate state")
     parser.add_argument("--rules", help="Explicit comma-separated enabled rule IDs; AUTH-001 is retained; disabled candidates are refused")
+    parser.add_argument("--additional-rules", help="Enabled rules excluding AUTH-001, in separate state/status; preserve existing AUTH worker")
     parser.add_argument("--early-auth", action="store_true", help="Opt in to separate AUTH-001 provisional notices; needs explicit notice setup/permissions")
     parser.add_argument("--es-url")
     parser.add_argument("--ca-file")
@@ -45,6 +46,11 @@ def main(argv=None):
         selection = dict(include_cloud=args.include_cloud, include_sequence=args.include_sequence,
                          include_attacks=args.include_attacks, include_patterns=args.include_patterns,
                          isolated_all=args.isolated_all, rule_ids=args.rules.split(',') if args.rules is not None else None)
+        if args.additional_rules is not None:
+            if (args.snapshot or args.early_auth
+                    or Path(args.state).resolve() == Path('state/detection/runtime.sqlite').resolve()):
+                raise ValueError('Additional profile requires separate explicit state and no AUTH early/snapshot mode')
+            selection['additional_rule_ids'] = args.additional_rules.split(',')
         selected_rules = approved_rules(**selection)
         if args.isolated_all and args.run:
             target = urlsplit(args.es_url or '')

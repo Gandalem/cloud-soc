@@ -6,6 +6,8 @@
 
 2026-10-14 후속 범위/검증: 사용자 명시로 OCI-IAM-001은 이번 실제 시험/활성화에서 제외한다(기존 코드/격리 검증은 보존). 화면의 AWS 계정897722691159를 확인했으나 EC2 IAM 역할 없음·PC default STS InvalidClientTokenId로 실제 API 인증이 불가하다. 접근키 본문을 출력/기록하지 않고 기존 자격 증명 갱신 경로를 요청했다. 정규화 5분 전진 대비15분 중복 읽기와 약3시간 지연을 확인해 명시적 window-minutes1..60/interval10..3600을 추가했다. 기본5/60·15분 overlap/30초 안정화·page 상한·원래 시작점/SSH floor·미완료 구간의 재개/불변 create를 유지한다. 관련214 passed/9subtests, 전체1053 passed/15skip/257subtests·147UI·Ruff/Bandit 통과. 실제 지연 해소·통합 탐지·추가 활성화 인수는 진행 중이다.
 
+2026-10-14 단계별 실제 결과: 60eedbd 일반push·Actions38509157919 Windows/Ubuntu success를 확인했다. 중앙 공개289파일/SHA·후보import/pipcheck·SQLite8개 online backup/격리restore 및 중지 후3개backup 뒤 portal/normalizer/detector만 de73b11b…로 적용했다. 기존AUTH/early/runtime 시작점·SSH floor·900초/비밀·ES/Kibana/gateway ID·사건/저장dashboard를 보존한다. 실제 Windows loopback SMB로 존재하지 않는 시험 계정의4625 9→10건/IP127.0.0.1/type3을 관측했으나 중앙 정규화/탐지 인수와 분리한다. 초기 잘못된 SMB 경로의 오류67을 기록·보정했고 권한/방화벽/계정을 바꾸지 않았다. 대량 기존 수신 때문에 과거 처리 지연이 남아 독립 priority 상태/지정수신floor와 별도status를 추가한다. 기존AUTH를 복제/초기화하지 않는 additional-rules 별도state/status·early소유 거부와 대시보드 추가 탐지 장애 표시를 보완해 관련69 passed/9subtests를 확인했다. 기본 프로필과 원래 체크포인트는 유지하며 실제 검증 전 후보 활성화는 보류한다.
+
 ## 2026-10-14 시험 서버 재시작·AWS 주소 변경
 
 사용자가 AWS 새 주소13.208.191.1/기존 osaka 키와 중앙192.168.32.60/Windows192.168.1.138을 제공했다. 이전 승인 호스트 키를 사용해 동일 AWS 인스턴스·세 SSH 접속/수집 서비스·중앙 수신을 읽었다. 주소 변경으로 기존 웹 릴레이가13.208.175.237에 연결해 실패하며 seq5를 유지하는 상태다.

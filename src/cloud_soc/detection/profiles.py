@@ -17,10 +17,10 @@ def catalog():
     return [found[key] for key in RULE_IDS]
 
 
-def select(*, isolated_all=False, rule_ids=None):
+def select(*, isolated_all=False, rule_ids=None, retain_auth=True):
     rows = catalog()
     if isolated_all:
-        if rule_ids is not None:
+        if rule_ids is not None or not retain_auth:
             raise ValueError('Conflicting rule selections')
         # A private copy records the actual isolated execution in alert snapshots.
         return [{**deepcopy(row), 'enabled': True} for row in rows]
@@ -28,7 +28,9 @@ def select(*, isolated_all=False, rule_ids=None):
             or any(not isinstance(key, str) for key in rule_ids) or len(set(rule_ids)) != len(rule_ids)
             or set(rule_ids) - set(RULE_IDS)):
         raise ValueError('Invalid explicit rule selection')
-    chosen = {'AUTH-001', *rule_ids}
+    if not retain_auth and 'AUTH-001' in rule_ids:
+        raise ValueError('Additional profile must not replace or duplicate AUTH-001')
+    chosen = {'AUTH-001', *rule_ids} if retain_auth else set(rule_ids)
     selected = [row for row in rows if row['id'] in chosen]
     if any(not row.get('enabled', True) for row in selected):
         raise ValueError('Unverified candidates require isolated_all; live defaults remain disabled')

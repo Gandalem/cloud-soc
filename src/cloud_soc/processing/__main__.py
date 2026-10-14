@@ -24,6 +24,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Metadata normalizer; detection runs in a separate worker")
     parser.add_argument("--start", required=True, help="Initial receipt-time floor, ISO8601 with zone")
     parser.add_argument("--state", default="state/processing/checkpoint.sqlite")
+    parser.add_argument("--priority", action="store_true",
+                        help="Separate explicit state/receipt floor/status for recent intake; original backlog remains visible")
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--es-url")
@@ -43,6 +45,8 @@ def main(argv=None):
         if (start is None or start >= datetime.now(timezone.utc) or (args.once and not args.run)
                 or not 10 <= args.interval <= 3600 or not 1 <= args.window_minutes <= 60):
             raise ValueError()
+        if args.priority and Path(args.state).resolve() == Path('state/processing/checkpoint.sqlite').resolve():
+            raise ValueError('Priority processing requires separate explicit state')
         if args.linux_ssh_v2_start is not None:
             ssh_start = parse_time(args.linux_ssh_v2_start)
             if ssh_start is None or not start <= ssh_start <= datetime.now(timezone.utc):
@@ -61,7 +65,8 @@ def main(argv=None):
             while True:
                 try:
                     result = run_once(client, state, args.start, max_pages=args.max_pages,
-                                      ssh_v2_start=args.linux_ssh_v2_start, window_minutes=args.window_minutes)
+                                      ssh_v2_start=args.linux_ssh_v2_start, window_minutes=args.window_minutes,
+                                      status_id='normalizer-priority' if args.priority else 'normalizer')
                     print("normalization_" + result["state"] + " checkpoint=" + result["checkpoint"], flush=True)
                 except Exception:
                     print("normalization_failed; checkpoint retained; inspect permissions and service status", flush=True)

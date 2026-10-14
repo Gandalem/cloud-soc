@@ -15,7 +15,12 @@ ALERTS = "security-alerts"
 
 
 def approved_rules(*, include_cloud=False, include_sequence=False, include_attacks=False, include_patterns=False,
-                   isolated_all=False, rule_ids=None):
+                   isolated_all=False, rule_ids=None, additional_rule_ids=None):
+    if additional_rule_ids is not None:
+        if any((include_cloud, include_sequence, include_attacks, include_patterns, isolated_all)) or rule_ids is not None:
+            raise ValueError('Conflicting additional rule profile')
+        from cloud_soc.detection.profiles import select
+        return select(rule_ids=additional_rule_ids, retain_auth=False)
     if isolated_all or rule_ids is not None:
         if any((include_cloud, include_sequence, include_attacks, include_patterns)):
             raise ValueError('Conflicting rule profiles')

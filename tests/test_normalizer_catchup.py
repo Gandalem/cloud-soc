@@ -57,3 +57,21 @@ def test_cli_passes_tuning_and_waits_before_retrying(tmp_path):
             main(args)
         assert run.call_args.kwargs['window_minutes'] == 60
         sleep.assert_called_once_with(10)
+
+
+def test_priority_requires_separate_state_without_network():
+    with patch('cloud_soc.processing.__main__.Elasticsearch') as es:
+        assert main(['--start',START,'--priority']) == 1
+        es.assert_not_called()
+
+
+def test_priority_never_advances_existing_backlog_state(tmp_path):
+    client = Mock();client.options.return_value=client
+    old=tmp_path/'old.sqlite';fresh=tmp_path/'priority.sqlite'
+    run_once(client,old,START,now=NOW,scanner=lambda *_:[])
+    original=old.read_bytes()
+    result=run_once(client,fresh,'2026-09-22T01:18:00Z',now=NOW,scanner=lambda *_:[],
+                    status_id='normalizer-priority')
+    assert result['checkpoint']=='2026-09-22T01:19:30Z'
+    assert old.read_bytes()==original
+    assert client.index.call_args.kwargs['id']=='normalizer-priority'

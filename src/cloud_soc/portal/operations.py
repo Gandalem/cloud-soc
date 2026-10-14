@@ -277,6 +277,24 @@ class Operations:
             result["detector"] = {"state": "unavailable"}
         result["detection"] = result["detector"]["state"]
         result["coverage"] = analysis_coverage(result, result["detector"])
+        if self.organizations is None:
+            try:
+                priority_worker = self.worker_status("normalizer-priority")
+            except Exception:
+                priority_worker = {"state": "unavailable"}
+            if priority_worker.get("state") != "not_started":
+                result["priority_normalizer"] = priority_worker
+            try:
+                additional = self.worker_status("detector-additional")
+            except Exception:
+                additional = {"state": "unavailable"}
+            if additional.get("state") != "not_started":
+                result["additional_detector"] = additional
+                coverage = analysis_coverage(result, additional)
+                priority = {"blocked": 6, "unknown": 5, "not_started": 4, "delayed": 3,
+                            "catching_up": 2, "warning": 1, "observed": 0}
+                if priority[coverage["state"]] > priority[result["coverage"]["state"]]:
+                    result["coverage"] = {**coverage, "reason": "additional_" + coverage["reason"]}
         return result
 
     def summary(self, pairs):
