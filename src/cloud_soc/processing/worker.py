@@ -143,6 +143,7 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
         end = min(now - timedelta(seconds=30), checkpoint + timedelta(minutes=window_minutes))
         counts = {"normalized": 0, "unsupported": 0, "invalid": 0}
         status = {"@timestamp": iso(now), "state": "running", "detection": "separate_worker",
+                  "initial_start": iso(initial),
                   "checkpoint": iso(checkpoint), "last_success": row[1] if row else None,
                   "range": {"start": iso(start), "end": iso(end)}, "counts": counts, "error": None}
         meta = None

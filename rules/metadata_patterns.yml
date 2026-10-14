@@ -1,6 +1,6 @@
 # Administrator opt-in: --include-patterns. Never part of the default profile.
-# Only SSH has a verified received source with the required fields. Other rules
-# are executable offline candidates, disabled until their live field gate is approved.
+# SSH and the controlled Windows/web/final-flow sources have verified metadata.
+# Live workers still require an explicit reviewed selection; console remains gated.
 rules:
   - id: AUTH-SPRAY-001
     name: Multiple SSH account authentication failures
@@ -29,7 +29,7 @@ rules:
   - id: WIN-AUTH-001
     name: Windows repeated failed network authentication
     type: cardinality
-    enabled: false
+    enabled: true
     severity: high
     conditions:
       - {field: cloud_soc.detail.adapter, operator: equals, value: windows_security_v1}
@@ -43,7 +43,7 @@ rules:
     cooldown: {seconds: 300}
     required_fields: [organization.id, host.id, source.ip, user.name, cloud_soc.detail.fields.logon_type]
     dedup_fields: []
-    limitations: [live_source_ip_and_logon_type_gate_pending, logon_type_is_observed_not_assumed_protocol, password_retries_and_saved_credentials_can_match]
+    limitations: [live_validation_is_owned_lab_loopback_smb, logon_type_is_observed_not_assumed_protocol, password_retries_and_saved_credentials_can_match]
     alert:
       title: Windows 로그인 무차별 대입 의심
       message: 같은 조직·호스트·출발지·로그온 유형에서 5분 이내 실패 이벤트 10건 이상이 관측되었습니다. 실제 로그온 유형을 확인하고 정상 재시도·저장 자격 증명 오류를 조사하세요. 4625만으로 RDP나 침해 성공을 판정하지 않습니다.

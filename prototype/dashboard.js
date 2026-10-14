@@ -46,7 +46,10 @@
     const sections=data?.sections||{},pipeline=sections.pipeline||{},coverage=pipeline.coverage?.state||'unknown';
     const initialWarnings={initial_notice_failed:'초기 탐지 통지 처리에 실패했습니다.',initial_notice_reconciliation_required:'초기 통지와 최종 근거의 연결을 다시 확인해야 합니다.',initial_notice_pending:'초기 통지의 조회·전달 또는 최종 연결이 아직 완료되지 않았습니다.',initial_notice_unconfirmed:'초기 통지 상태를 확인하지 못했습니다.'};
     const reason=pipeline.coverage?.reason;
-    const message=coverage==='warning'&&Object.hasOwn(initialWarnings,reason)?initialWarnings[reason]:({blocked:'새 로그 분석이 중단됐습니다.',delayed:'새 로그 분석이 지연되고 있습니다.',catching_up:'대기 로그를 분석하고 있습니다.',warning:'일부 로그의 위험 평가가 완료되지 않았습니다.',not_started:'위험 분석이 아직 시작되지 않았습니다.'}[coverage]||'분석 범위를 확인하지 못했습니다.');
+    let message=coverage==='warning'&&Object.hasOwn(initialWarnings,reason)?initialWarnings[reason]:({blocked:'새 로그 분석이 중단됐습니다.',delayed:'새 로그 분석이 지연되고 있습니다.',catching_up:'대기 로그를 분석하고 있습니다.',warning:'일부 로그의 위험 평가가 완료되지 않았습니다.',not_started:'위험 분석이 아직 시작되지 않았습니다.'}[coverage]||'분석 범위를 확인하지 못했습니다.');
+    const processing=window.CloudSOCProcessing?.view(pipeline);
+    for(const [id,key] of [['dashboard-realtime','realtime'],['dashboard-backlog','historical']]){const box=$(id);if(box){box.hidden=!processing;box.textContent=processing?.[key]||'';}}
+    if(processing&&['observed','warning'].includes(processing.state)&&coverage==='delayed')message='과거 로그 분석이 지연되고 있습니다.';
     const warning=$('dashboard-coverage');warning.hidden=!data||coverage==='observed';warning.dataset.state=coverage;warning.textContent=message+' 경보 0건이 안전을 뜻하지 않습니다.';
     for(const widget of layout.widgets.filter(w=>ids.includes(w.id))){const box=node('section',undefined,'dash-widget'+(widget.size==='wide'?' wide':''));box.dataset.widget=widget.id;box.append(node('h2',titles[widget.id]));
       if(widget.id==='overview') {const group=node('div',undefined,'dash-overview');const metrics=[['저장된 경보',count(sections.alerts),'선택한 조회 기간'],['수신 로그',count(sections.intake),'서버 수신 시각 기준'],['진행 중 사건',numeric(cases?.counts?.total)?cases.counts.total.toLocaleString('ko-KR'):'미확인','미종결 사건 · 조회 기간과 별도']];metrics.forEach(([title,value,description],i)=>{const card=node('div',undefined,'dash-kpi'+(i===0?' alert':''));card.append(node('p',title),node('strong',value),node('span',description));group.append(card);});box.append(group);}

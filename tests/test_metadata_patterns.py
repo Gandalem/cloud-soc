@@ -151,7 +151,7 @@ def test_console_principal_and_event_id_not_inferred_and_success_excluded():
 
 def test_opt_in_identity_and_strict_cardinality_validation():
     assert [r['id'] for r in approved_rules()]==['AUTH-001']
-    assert [r['id'] for r in approved_rules(include_patterns=True)]==['AUTH-001','AUTH-SPRAY-001']
+    assert [r['id'] for r in approved_rules(include_patterns=True)]==['AUTH-001','AUTH-SPRAY-001','WIN-AUTH-001']
     for key,value in [('distinct',{'field':'user.name','count':True}),('dedup_fields',['url.query']),
                       ('required_fields',['source.ip']),('limitations',[]),('cooldown',{'seconds':3601})]:
         r=deepcopy(RULES['AUTH-SPRAY-001']);r[key]=value

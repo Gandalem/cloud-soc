@@ -15,6 +15,8 @@
 <div class="dashboard-heading"><div><p class="builder-eyebrow">내 관제 공간</p><h1 id="dashboard-title">내 대시보드</h1><p id="dashboard-description">목적에 맞는 위젯을 선택하고 이 계정의 화면으로 저장하세요.</p></div><div class="dash-actions"><a href="index.html">홈</a><button id="dashboard-edit" disabled>편집</button><button id="dashboard-create" class="dash-primary" disabled>＋ 새 대시보드</button></div></div>
 <div class="dash-toolbar"><label>조회 기간<select id="dashboard-period" disabled><option value="60">최근 1시간</option><option value="1440" selected>최근 24시간</option><option value="10080">최근 7일</option></select></label><button id="dashboard-refresh">새로고침</button><label class="builder-auto"><input id="dashboard-auto" type="checkbox" checked>자동 갱신 · 일반 60초 / 초기 통지 10초</label><span id="dashboard-updated" role="status">구성 조회 중</span></div>
 <p id="dashboard-error" role="alert" hidden></p><p id="dashboard-coverage" class="dash-warning" role="status" hidden></p>
+<p id="dashboard-realtime" class="dash-subtitle" role="status" hidden></p>
+<p id="dashboard-backlog" class="dash-subtitle" role="status" hidden></p>
 <nav class="builder-tabs" aria-label="대시보드 패널"><button data-panel="list" aria-pressed="false">내 화면</button><button data-panel="canvas" aria-pressed="true">대시보드</button><button data-panel="library" aria-pressed="false">위젯 찾기</button></nav>
 <div class="builder-workspace" data-panel="canvas">
 <aside class="builder-list builder-panel" aria-label="내 대시보드 목록"><div class="builder-panel-heading"><h2>내 대시보드</h2><span id="dashboard-total"></span></div><div id="dashboard-list"></div><h2>기본 템플릿</h2><div id="dashboard-templates"></div><p class="dash-subtitle">개인 화면은 이 계정에만 저장됩니다. 기존 개인 설정도 그대로 보존됩니다.</p></aside>

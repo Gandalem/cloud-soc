@@ -88,7 +88,10 @@
     if(!layout.widgets.length){const blank=node('div',undefined,'builder-blank');blank.append(node('h2','나만의 관제 화면을 구성하세요'),node('p','위젯 찾기에서 필요한 정보를 추가하거나 기본 템플릿으로 시작할 수 있습니다.'));const b=node('button','위젯 찾기','dash-primary');b.type='button';b.addEventListener('click',()=>setPanel('library'));blank.append(b);grid.append(blank);}
     const coverage=results.status?.body?.coverage,state=coverage?.state,warning=$('dashboard-coverage');
     const initialWarnings={initial_notice_failed:'초기 탐지 통지 처리에 실패했습니다.',initial_notice_reconciliation_required:'초기 통지와 최종 근거의 연결을 다시 확인해야 합니다.',initial_notice_pending:'초기 통지의 조회·전달 또는 최종 연결이 아직 완료되지 않았습니다.',initial_notice_unconfirmed:'초기 통지 상태를 확인하지 못했습니다.'};
-    const message=state==='warning'&&Object.hasOwn(initialWarnings,coverage?.reason)?initialWarnings[coverage.reason]:({blocked:'새 로그 분석이 중단됐습니다.',delayed:'분석이 지연되고 있습니다.',catching_up:'대기 로그를 분석하고 있습니다.',warning:'일부 로그의 위험 평가가 완료되지 않았습니다.',not_started:'분석 미실행 · 탐지가 아직 시작되지 않았습니다.'}[state]||'분석 상태 미확인 · 조회 권한과 연결을 확인하세요.');
+    let message=state==='warning'&&Object.hasOwn(initialWarnings,coverage?.reason)?initialWarnings[coverage.reason]:({blocked:'새 로그 분석이 중단됐습니다.',delayed:'분석이 지연되고 있습니다.',catching_up:'대기 로그를 분석하고 있습니다.',warning:'일부 로그의 위험 평가가 완료되지 않았습니다.',not_started:'분석 미실행 · 탐지가 아직 시작되지 않았습니다.'}[state]||'분석 상태 미확인 · 조회 권한과 연결을 확인하세요.');
+    const processing=window.CloudSOCProcessing?.view(results.status?.body);
+    for(const [id,key] of [['dashboard-realtime','realtime'],['dashboard-backlog','historical']]){const box=$(id);if(box){box.hidden=!processing;box.textContent=processing?.[key]||'';}}
+    if(processing&&['observed','warning'].includes(processing.state)&&state==='delayed')message='과거 로그 분석이 지연되고 있습니다.';
     warning.hidden=state==='observed';warning.textContent=message+' 경보 0건이 안전을 뜻하지 않습니다.';
   }
   async function refresh(){
