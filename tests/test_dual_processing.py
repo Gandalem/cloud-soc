@@ -16,7 +16,7 @@ def test_live_coverage_does_not_hide_historical_backlog_or_additional_failure():
     stages={'normalizer':{'state':'running','health':'delayed','checkpoint':LOW},
         'normalizer-priority':{'state':'success','health':'healthy','checkpoint':HIGH,'initial_start':HIGH},
         'detector':{'state':'success','health':'healthy'},'detector-additional':{'state':'not_started'}}
-    with patch.object(operations,'worker_status',side_effect=lambda name:stages[name]):
+    with patch.object(operations,'worker_status',side_effect=lambda name:stages.get(name,{'state':'not_started'})):
         result=operations.pipeline()
         assert result['realtime_coverage']['state']=='observed'
         assert result['coverage']['state']=='delayed'
@@ -51,7 +51,7 @@ def test_backlog_query_failure_leaves_realtime_status_visible():
     stages={'normalizer':{'state':'running','health':'delayed','checkpoint':LOW},
         'normalizer-priority':{'state':'success','health':'healthy','checkpoint':HIGH,'initial_start':HIGH},
         'detector':{'state':'success','health':'healthy'},'detector-additional':{'state':'not_started'}}
-    with patch.object(operations,'worker_status',side_effect=lambda name:stages[name]):result=operations.pipeline()
+    with patch.object(operations,'worker_status',side_effect=lambda name:stages.get(name,{'state':'not_started'})):result=operations.pipeline()
     assert result['historical_backlog']=={'state':'unavailable'}
     assert result['realtime_coverage']['state']=='observed'
 

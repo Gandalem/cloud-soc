@@ -11,6 +11,12 @@ const sh = process.env.SH_EXE || (process.platform === 'win32' ? 'C:/Program Fil
 const definitions = source.split('# RUN INSTALLER')[0];
 const quote = value => `'${String(value).replace(/\\/g, '/').replace(/'/g, `'"'"'`)}'`;
 
+// Ubuntu dash rejects hyphens in function names. Keep POSIX sh and intercept apt-get through PATH.
+function aptGetStub(body = 'printf "%s\\n" "Unexpected live operation: apt-get $*" >&2; exit 97') {
+  return ['cat > "$ROOT/bin/apt-get" <<\'SOC_APT_STUB\'', '#!/bin/sh', body,
+    'SOC_APT_STUB', 'chmod 755 "$ROOT/bin/apt-get"', ''].join('\n');
+}
+
 function run(args, input) {
   const result = spawnSync(sh, args, { cwd: root, input, encoding: 'utf8', timeout: 15000 });
   assert.ifError(result.error);
@@ -44,7 +50,9 @@ SYSCTL_FILE=$ROOT/sysctl.conf
 HOST=soc.example.invalid BIND_IP=10.0.0.5 ARCH=amd64 TEMP=
 UBUNTU_VERSION=22.04 UBUNTU_SUITE=jammy
 forbidden() { die "Unexpected live operation: $*"; }
-apt-get() { forbidden apt-get "$@"; }
+mkdir -p "$ROOT/bin"
+PATH="$(cd "$ROOT/bin" && pwd):$PATH"; export PATH
+${aptGetStub()}
 curl() { forbidden curl "$@"; }
 docker() { forbidden docker "$@"; }
 systemctl() { forbidden systemctl "$@"; }
@@ -109,6 +117,11 @@ install_packages
 
 test('--yes confirmation skips the prompt without reading input', () => {
   assert.equal(ok(fixture('YES=yes; confirm_installation < /dev/null')), '');
+});
+
+test('apt-get is an isolated executable stub and refuses unplanned package operations', () => {
+  assert.match(ok(fixture('command -v apt-get')), /\/bin\/apt-get\s*$/);
+  fail(fixture('apt-get update'), /Unexpected live operation: apt-get update/);
 });
 
 for (const [version, suite] of [['22.04', 'jammy'], ['24.04', 'noble'], ['26.04', 'resolute']]) {
@@ -229,7 +242,7 @@ test('Docker failures, existing central containers/volumes and conflicting packa
 test('only missing dependencies are installed, with no upgrade/removal flags', () => {
   const result = ok(fixture(`
 installed() { [ "$1" != curl ] && [ "$1" != openssl ]; }
-apt-get() { printf '%s\n' "$*"; }
+${aptGetStub('printf \'%s\\n\' "$*"')}
 install_packages
 `));
   assert.equal(result, 'update\ninstall -y --no-remove --no-upgrade --no-install-recommends curl openssl\n');
@@ -263,7 +276,7 @@ test('new Docker install uses verified HTTPS key transport and explicit signed A
 INSTALL_DOCKER=yes
 mktemp() { mkdir "$ROOT/download"; printf '%s' "$ROOT/download"; }
 curl() { printf 'CURL %s\n' "$*"; printf '%s\n' '-----BEGIN PGP PUBLIC KEY BLOCK-----' > "$TEMP/docker.asc"; }
-apt-get() { printf 'APT %s\n' "$*"; }
+${aptGetStub('printf \'APT %s\\n\' "$*"')}
 systemctl() { printf 'SYSTEMCTL %s\n' "$*"; }
 check_docker_stack() { printf 'CHECK STACK\n'; }
 install_docker
@@ -300,31 +313,29 @@ cat "$SYSCTL_FILE"
   fail(fixture('printf "foreign setting" > "$SYSCTL_FILE"; check_kernel_config'), /not be overwritten/);
 });
 
-test('Compose ignores inherited state overrides and validates before starting', () => {
+test('new installs delegate to the same versioned manager used by upgrades', () => {
   const result = ok(fixture(`
 SOC_PUBLIC_HOST=evil SOC_STATE_DIR=/elsewhere COMPOSE_PROFILES=evil
 export SOC_PUBLIC_HOST SOC_STATE_DIR COMPOSE_PROFILES
-docker_local() {
-  if env | grep -qE '^(SOC_PUBLIC_HOST|SOC_STATE_DIR|COMPOSE_PROFILES)='; then forbidden inherited; fi
+python3() {
   printf '%s\n' "$*"
 }
 start_stack
 `));
-  assert.match(result, /--project-name cloud-soc-central --env-file .*\/state\/server\/compose.env/);
-  assert.match(result, /config --quiet\n.*up -d --build\n$/);
-  const failure = fixture('compose() { printf "%s\\n" "$*"; return 42; }; start_stack');
+  assert.match(result, /manage.py install --workspace .* --state .*\/state\/server --build/);
+  const failure = fixture('python3() { printf "%s\\n" "$*"; return 42; }; start_stack');
   assert.equal(failure.status, 42);
   assert.doesNotMatch(failure.stdout, /up -d/);
 });
 
-test('readiness requires successful bootstrap and all three authenticated TLS endpoints', () => {
+test('readiness requires managed worker startup and all three authenticated TLS endpoints', () => {
   const setup = `
-compose() { printf 'bootstrap-id'; }
-docker_local() { printf 'exited:0'; }
+python3() { printf '%s\n' 'runtime ready; ingestion not verified'; }
 http_status() { case "$1" in 9200|443) printf 401;; 5601) printf 200;; esac; }
 `;
   assert.match(ok(fixture(setup + '\ncheck_ready')), /startup checks passed/);
-  fail(fixture(setup + '\ndocker_local() { printf "exited:1"; }; check_ready'), /did not exit successfully/);
+  const failed = fixture(setup + '\npython3() { return 42; }; check_ready');
+  assert.equal(failed.status, 42);
   fail(fixture(setup + `
 http_status() { printf 200; }
 date() { if [ -f "$ROOT/timed-out" ]; then printf 301; else printf 0; fi; }

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {groups, current, markup, coverageView} = require('../shell.js');
-const pages = ['index.html','dashboard.html','operations.html','logs.html','cases.html','workbench.html','collection-health.html','agents.html','agent-status.html','detection-history.html','reprocessing-history.html'];
+const pages = ['index.html','dashboard.html','operations.html','logs.html','cases.html','workbench.html','collection-health.html','agents.html','agent-status.html','detection-history.html','reprocessing-history.html','settings-slack.html'];
 
 test('every live page loads one shared shell and no duplicate header or sidebar', () => {
   for (const page of pages) {
@@ -20,7 +20,7 @@ test('every live page loads one shared shell and no duplicate header or sidebar'
 
 test('same navigation labels, groups and order on every page', () => {
   const expected = groups.flatMap(group => group.items);
-  assert.equal(expected.length, 7);
+  assert.equal(expected.length, 8);
   for (const page of pages) {
     const html = markup('/'+page, '');
     const links = [...html.matchAll(/<a class="nav-item(?: active)?" href="([^"]+)"[^>]*>([^<]+)<\/a>/g)].map(match => [match[1],match[2]]);

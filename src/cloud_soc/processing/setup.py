@@ -13,7 +13,7 @@ DATE = {"type": "date"}
 KEYWORD = {"type": "keyword", "ignore_above": 1024}
 
 
-def prepare(client):
+def prepare(client, *, update_role=True):
     mappings = {
         RUNS: {'@timestamp': DATE, 'record_id': KEYWORD, 'run_id': KEYWORD, 'state': KEYWORD, 'error': KEYWORD,
                'engine_version': KEYWORD, 'rule_snapshot': {'type': 'object', 'enabled': False},
@@ -61,4 +61,5 @@ def prepare(client):
                 client.indices.put_mapping(index=name, properties={k: properties[k] for k in ('health', 'lag_seconds', 'late_total', 'legacy_excluded', 'excluded_total', 'history_pending', 'counts')})
             if name in (RUNS, EXCLUSIONS):
                 client.indices.put_mapping(index=name, properties=properties)
-    client.security.put_role(name="cloud_soc_normalizer", **ROLE)
+    if update_role:
+        client.security.put_role(name="cloud_soc_normalizer", **ROLE)

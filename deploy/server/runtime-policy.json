@@ -1,0 +1,50 @@
+{
+  "version": 2,
+  "migrations": [
+    "001-permissions-and-indices",
+    "002-independent-workers",
+    "003-slack-notifications"
+  ],
+  "workers": [
+    "normalizer",
+    "normalizer-priority",
+    "detector",
+    "detector-priority",
+    "detector-additional",
+    "detector-retrospective"
+  ],
+  "verified_rules": {
+    "AUTH-001": "83eb85548f4a2f61a4b4fc7bdd13ddf020931b31f3a2029f1b959e6f0b0cf734",
+    "AUTH-SEQ-001": "1a3603a00b541aed9f4cdcdd54db4edddfa8679aef301586441504954a01325c",
+    "AUTH-SPRAY-001": "626286efe3ac6ec14ae2d924b19ee426d2afc2c5b7a5198fe6074adeea900af6",
+    "ATTACK-01": "d826039a1ee29ee3b3db900911cf55bf41af17f99287fca1ebb004b032a745f6",
+    "WIN-AUTH-001": "116fa1bee4e799daff144d4b0b3f620cbe5732604e07de04475b29bce4eedce1",
+    "WEB-404-001": "250a60ecd0ecab188130c1b4a44665fa12e99a05f2a622ab4f9795261a57d7b0",
+    "NET-PORT-001": "62b534f4cb405c4f4fe313b425be4cc8068bd79bcb994fa31fcaa3c4964e49b4"
+  },
+  "validation_reference": "docs/work_tracker.md:2026-10-14 16:10 KST",
+  "resources": {
+    "min_cpus": 2,
+    "min_memory_bytes": 7516192768,
+    "fresh_free_bytes": 10737418240,
+    "upgrade_free_bytes": 2147483648,
+    "headroom_bytes": 536870912,
+    "limits_mib": {
+      "elasticsearch": 3072,
+      "kibana": 1536,
+      "portal": 384,
+      "gateway": 64,
+      "enrollment-cleanup": 128,
+      "normalizer": 256,
+      "normalizer-priority": 192,
+      "detector": 256,
+      "detector-priority": 192,
+      "detector-additional": 256,
+      "detector-retrospective": 256,
+      "slack-notifier": 64
+    }
+  },
+  "auxiliary_workers": [
+    "slack-notifier"
+  ]
+}

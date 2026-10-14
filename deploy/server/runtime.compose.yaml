@@ -1,0 +1,79 @@
+# All six workers are mandatory in compose.yaml; this fragment is shared via extends.
+x-worker: &worker
+  image: ${SOC_RUNTIME_IMAGE:-cloud-soc-central-runtime:local}
+  build: {context: ../.., dockerfile: deploy/server/Dockerfile}
+  restart: unless-stopped
+  depends_on:
+    elasticsearch: {condition: service_healthy}
+  read_only: true
+  tmpfs: [/tmp]
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  environment: {SOC_LOG_FORMAT: json}
+services:
+  slack-notifier:
+    <<: *worker
+    command: [python, -m, cloud_soc.notifications.worker]
+    mem_limit: 64m
+    environment:
+      SOC_LOG_FORMAT: json
+      SOC_NOTIFICATION_STATE_DIR: /notifications
+      SOC_PUBLIC_URL: https://${SOC_PUBLIC_HOST:?Run prepare.py first}
+    volumes:
+      - ${SOC_STATE_DIR}/notifications:/notifications
+      - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+      - ${SOC_STATE_DIR}/runtime/keys/slack-notifier.key:/run/keys/worker.key:ro
+  normalizer:
+    <<: *worker
+    command: [python, -m, cloud_soc.deployment.worker, --service, normalizer]
+    mem_limit: 256m
+    volumes:
+      - ${SOC_STATE_DIR}/runtime/contract.json:/run/runtime/contract.json:ro
+      - ${SOC_STATE_DIR}/runtime/state/normalizer:/data
+      - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+      - ${SOC_STATE_DIR}/runtime/keys/normalizer.key:/run/keys/worker.key:ro
+  normalizer-priority:
+    <<: *worker
+    command: [python, -m, cloud_soc.deployment.worker, --service, normalizer-priority]
+    mem_limit: 192m
+    volumes:
+      - ${SOC_STATE_DIR}/runtime/contract.json:/run/runtime/contract.json:ro
+      - ${SOC_STATE_DIR}/runtime/state/normalizer-priority:/data
+      - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+      - ${SOC_STATE_DIR}/runtime/keys/normalizer-priority.key:/run/keys/worker.key:ro
+  detector:
+    <<: *worker
+    command: [python, -m, cloud_soc.deployment.worker, --service, detector]
+    mem_limit: 256m
+    volumes:
+      - ${SOC_STATE_DIR}/runtime/contract.json:/run/runtime/contract.json:ro
+      - ${SOC_STATE_DIR}/runtime/state/detector:/data
+      - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+      - ${SOC_STATE_DIR}/runtime/keys/detector.key:/run/keys/worker.key:ro
+  detector-priority:
+    <<: *worker
+    command: [python, -m, cloud_soc.deployment.worker, --service, detector-priority]
+    mem_limit: 192m
+    volumes:
+      - ${SOC_STATE_DIR}/runtime/contract.json:/run/runtime/contract.json:ro
+      - ${SOC_STATE_DIR}/runtime/state/detector-priority:/data
+      - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+      - ${SOC_STATE_DIR}/runtime/keys/detector-priority.key:/run/keys/worker.key:ro
+  detector-additional:
+    <<: *worker
+    command: [python, -m, cloud_soc.deployment.worker, --service, detector-additional]
+    mem_limit: 256m
+    volumes:
+      - ${SOC_STATE_DIR}/runtime/contract.json:/run/runtime/contract.json:ro
+      - ${SOC_STATE_DIR}/runtime/state/detector-additional:/data
+      - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+      - ${SOC_STATE_DIR}/runtime/keys/detector-additional.key:/run/keys/worker.key:ro
+  detector-retrospective:
+    <<: *worker
+    command: [python, -m, cloud_soc.deployment.worker, --service, detector-retrospective]
+    mem_limit: 256m
+    volumes:
+      - ${SOC_STATE_DIR}/runtime/contract.json:/run/runtime/contract.json:ro
+      - ${SOC_STATE_DIR}/runtime/state/detector-retrospective:/data
+      - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+      - ${SOC_STATE_DIR}/runtime/keys/detector-retrospective.key:/run/keys/worker.key:ro

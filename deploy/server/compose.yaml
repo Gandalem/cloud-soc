@@ -30,6 +30,8 @@ services:
       retries: 30
 
   bootstrap:
+    profiles: [initialization]
+    image: ${SOC_RUNTIME_IMAGE:-cloud-soc-central-runtime:local}
     build:
       context: ../..
       dockerfile: deploy/server/Dockerfile
@@ -47,12 +49,13 @@ services:
     security_opt: ["no-new-privileges:true"]
 
   portal:
+    image: ${SOC_RUNTIME_IMAGE:-cloud-soc-central-runtime:local}
     build:
       context: ../..
       dockerfile: deploy/server/Dockerfile
     restart: unless-stopped
     depends_on:
-      bootstrap: {condition: service_completed_successfully}
+      elasticsearch: {condition: service_healthy}
     environment: &portal-environment
       SOC_LOG_FORMAT: json
       SOC_PUBLIC_URL: https://${SOC_PUBLIC_HOST:?Run prepare.py first}
@@ -67,24 +70,45 @@ services:
       SOC_MONITOR_PASSWORD_FILE: /run/secrets/monitor_password
       SOC_CA_FILE: /run/certs/ca.crt
       SOC_STATE_DIR: /data
+      SOC_RUNTIME_CONTRACT_FILE: /run/runtime/contract.json
+      SOC_NOTIFICATION_STATE_DIR: /notifications
     secrets: [admin_hash, issuer_password, monitor_password]
     volumes:
       - ${SOC_STATE_DIR}/portal:/data
       - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+      - ${SOC_STATE_DIR}/runtime/contract.json:/run/runtime/contract.json:ro
+      - ${SOC_STATE_DIR}/notifications:/notifications
     read_only: true
     tmpfs: [/tmp]
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
+    mem_limit: 384m
+
+  normalizer:
+    extends: {file: runtime.compose.yaml, service: normalizer}
+  normalizer-priority:
+    extends: {file: runtime.compose.yaml, service: normalizer-priority}
+  detector:
+    extends: {file: runtime.compose.yaml, service: detector}
+  detector-priority:
+    extends: {file: runtime.compose.yaml, service: detector-priority}
+  detector-additional:
+    extends: {file: runtime.compose.yaml, service: detector-additional}
+  detector-retrospective:
+    extends: {file: runtime.compose.yaml, service: detector-retrospective}
+
+  slack-notifier:
+    extends: {file: runtime.compose.yaml, service: slack-notifier}
 
   enrollment-cleanup:
-    profiles: [enrollment]
+    image: ${SOC_RUNTIME_IMAGE:-cloud-soc-central-runtime:local}
     build:
       context: ../..
       dockerfile: deploy/server/Dockerfile
     command: [python, /app/deploy/server/enrollment-maintenance.py]
     restart: unless-stopped
     depends_on:
-      bootstrap: {condition: service_completed_successfully}
+      elasticsearch: {condition: service_healthy}
     environment: *portal-environment
     secrets: [issuer_password]
     volumes:
@@ -94,16 +118,25 @@ services:
     tmpfs: [/tmp]
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
+    mem_limit: 128m
 
   kibana:
     image: docker.elastic.co/kibana/kibana:9.5.2
     restart: unless-stopped
     depends_on:
-      bootstrap: {condition: service_completed_successfully}
+      elasticsearch: {condition: service_healthy}
+    environment:
+      NODE_OPTIONS: --max-old-space-size=1024
     volumes:
       - ${SOC_STATE_DIR}/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
       - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
-    mem_limit: 1g
+    mem_limit: 1536m
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS http://localhost:5601/api/status >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
 
   gateway:
     image: caddy:2.11.4-alpine
@@ -122,6 +155,7 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
 
 secrets:
   elastic_password: {file: "${SOC_STATE_DIR}/secrets/elastic_password"}

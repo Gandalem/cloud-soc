@@ -7,6 +7,7 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import sqlite3
 import ssl
@@ -58,6 +59,8 @@ def settings_from_environment():
         "PUBLIC_URL": public_url,
         "LAN_URL": os.environ.get("SOC_PORTAL_LAN_ORIGIN"),
         "USERS_FILE": os.environ.get("SOC_USERS_FILE"),
+        "RUNTIME_CONTRACT_FILE": os.environ.get('SOC_RUNTIME_CONTRACT_FILE'),
+        "NOTIFICATION_STATE_DIR": os.environ.get('SOC_NOTIFICATION_STATE_DIR'),
         "ENROLLMENT_ENABLED": os.environ.get("SOC_ENROLLMENT_ENABLED") == "1",
         "ENDPOINT": validate_endpoint(os.environ.get("SOC_AGENT_ENDPOINT") or os.environ["SOC_ELASTIC_ENDPOINT"]),
         "ADMIN_USER": os.environ.get("SOC_ADMIN_USER", "admin"),
@@ -118,6 +121,69 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     from cloud_soc.portal.dashboards import DashboardStore, DashboardError
     dashboards = DashboardStore(Path(settings['STATE_DIR']) / 'dashboards.sqlite')
     app.extensions['dashboards'] = dashboards
+    from cloud_soc.notifications.store import SlackStore
+    from cloud_soc.notifications.transport import SlackError, addresses
+    slack = SlackStore(settings.get('NOTIFICATION_STATE_DIR') or Path(settings['STATE_DIR']) / 'notifications')
+    app.extensions['slack'] = slack
+
+    @app.errorhandler(SlackError)
+    def slack_error(error):
+        messages = {'invalid_slack_webhook': 'Slack 공식 Incoming Webhook 주소를 확인하세요.',
+            'slack_address_unavailable': 'Slack 연결 주소를 확인하지 못했습니다. 잠시 후 다시 시도하세요.',
+            'slack_settings_changed': '다른 작업에서 설정이 변경됐습니다. 새로고침 후 다시 저장하세요.',
+            'slack_webhook_required': 'Webhook을 먼저 등록하세요.',
+            'slack_duplicate_risk_confirmation_required': '이미 수신됐을 수 있습니다. 중복 위험을 확인해야 재전송할 수 있습니다.',
+            'slack_manual_retry_unavailable': '설정 변경 전 이력이거나 현재 재전송할 수 없는 상태입니다.',
+            'slack_manual_retry_rate_limited': '테스트·수동 재전송 요청이 많습니다. 잠시 후 다시 시도하세요.',
+            'slack_test_rate_limited': '테스트 요청이 많습니다. 잠시 후 다시 시도하세요.'}
+        response = jsonify(code=error.code, error=messages.get(error.code, 'Slack 설정을 처리하지 못했습니다. 입력과 서버 상태를 확인하세요.'))
+        response.status_code = error.status
+        if error.status == 429:
+            response.headers['Retry-After'] = '30'
+        return response
+
+    def slack_request(*, allow_args=False):
+        if g.role != 'admin' or request.args and not allow_args:
+            abort(403)
+        if request.method != 'GET' and not sessions and request.headers.get('Origin') not in origins.values():
+            abort(403)
+
+    @app.get('/api/settings/notifications/slack')
+    def slack_settings_get():
+        slack_request()
+        return jsonify(slack.status())
+
+    @app.post('/api/settings/notifications/slack')
+    def slack_settings_save():
+        slack_request()
+        return jsonify(slack.save(request.get_json(), check_address=addresses))
+
+    @app.delete('/api/settings/notifications/slack')
+    def slack_settings_delete():
+        slack_request();body = request.get_json()
+        if not isinstance(body, dict) or set(body) != {'revision'}:
+            raise SlackError('invalid_slack_settings')
+        return jsonify(slack.delete(body['revision']))
+
+    @app.post('/api/settings/notifications/slack/test')
+    def slack_settings_test():
+        slack_request()
+        if request.get_json() != {}:
+            raise SlackError('invalid_slack_settings')
+        return jsonify(slack.test()), 202
+
+    @app.get('/api/settings/notifications/slack/unconfirmed')
+    def slack_unconfirmed_get():
+        slack_request(allow_args=True)
+        offset = request.args.get('offset', '0')
+        if set(request.args) - {'offset'} or len(request.args.getlist('offset')) > 1 or not offset.isascii() or not offset.isdigit() or len(offset) > 6:
+            raise SlackError('invalid_slack_settings')
+        return jsonify(slack.unconfirmed(int(offset)))
+
+    @app.post('/api/settings/notifications/slack/retry')
+    def slack_unconfirmed_retry():
+        slack_request()
+        return jsonify(slack.retry_unconfirmed(request.get_json(), actor=g.principal)), 202
 
     @app.errorhandler(DashboardError)
     def dashboard_error(error):
@@ -271,7 +337,18 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                 response.status_code = 401
                 response.headers["WWW-Authenticate"] = 'Basic realm="Cloud SOC Admin", charset="UTF-8"'
                 return response
-        if request.headers.get("Sec-Fetch-Site") == "cross-site":
+        # A Slack link is a cross-site top-level navigation, not an API request.
+        # Only an exact alert detail/login destination is eligible; authentication below is unchanged.
+        alert_id = request.args.get('alert', '')
+        alert_navigation = (set(request.args) == {'alert'} and len(request.args.getlist('alert')) == 1
+                            and re.fullmatch(r'[0-9a-f]{64}', alert_id) is not None)
+        external_navigation = (request.method in ('GET', 'HEAD') and alert_navigation
+            and request.headers.get('Sec-Fetch-Mode') == 'navigate'
+            and request.headers.get('Sec-Fetch-Dest') == 'document'
+            and request.headers.get('Sec-Fetch-User') == '?1'
+            and (request.endpoint == 'login_page' or request.endpoint == 'static_file'
+                 and (request.view_args or {}).get('filename') == 'workbench.html'))
+        if request.headers.get("Sec-Fetch-Site") == "cross-site" and not external_navigation:
             abort(403)
         origin = request.headers.get("Origin")
         if origin and origin != request_origin:
@@ -285,6 +362,8 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             identity = sessions.get(request.cookies.get(COOKIE))
             if not identity:
                 if request.method in ("GET", "HEAD") and (request.path == "/" or request.path.endswith(".html")):
+                    if alert_navigation and request.path == '/workbench.html':
+                        return redirect('/login?alert=' + alert_id)
                     return redirect("/login")
                 return jsonify(code="login_required", error="로그인이 필요합니다."), 401
             g.principal, g.role, g.csrf = identity["user"], identity["role"], identity["csrf"]
@@ -389,7 +468,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def auth_me():
         navigation = ["logs.html"]
         if g.log_principal.role == "admin":
-            navigation += ["index.html", "dashboard.html", "cases.html", "agents.html", "agents.html#keys", "agent-status.html"]
+            navigation += ["index.html", "dashboard.html", "cases.html", "agents.html", "agents.html#keys", "agent-status.html", "settings-slack.html"]
         elif sessions:
             navigation += ["index.html", "dashboard.html", "cases.html"]
         return jsonify(user=g.principal, role=g.role, csrf=g.csrf,
@@ -527,7 +606,25 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def operations_status():
         if request.args:
             return jsonify(error="분석 상태 조회에는 검색 조건을 사용할 수 없습니다."), 400
-        return jsonify(operations_for(g.log_principal).pipeline())
+        result = operations_for(g.log_principal).pipeline()
+        if settings.get('RUNTIME_CONTRACT_FILE') and g.role == 'admin':
+            from cloud_soc.deployment.contract import WORKERS
+            missing = [name for name in WORKERS if operations.worker_status(name)['state'] == 'not_started']
+            result['runtime_missing_workers'] = missing
+            if missing:
+                result['realtime_coverage'] = {'state': 'blocked', 'reason': 'required_runtime_worker_missing'}
+        return jsonify(result)
+
+    @app.get('/api/runtime')
+    def runtime_contract():
+        from cloud_soc.deployment.contract import ALL_WORKERS, WORKERS
+        path = settings.get('RUNTIME_CONTRACT_FILE')
+        if not path:
+            return jsonify(state='unmanaged', required_workers=list(ALL_WORKERS)), 200
+        value = json.loads(Path(path).read_text())
+        return jsonify(state='configured' if value.get('prepared') else 'migration_incomplete',
+                       version=value['version'], policy_sha256=value['policy_sha256'],
+                       required_workers=list(ALL_WORKERS), pipeline_workers=list(WORKERS), verified_rules=value['verified_rules'])
 
     @app.get("/api/alerts/detail")
     def alert_detail():
@@ -719,6 +816,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def static_file(filename):
         # Never serve the repo, secrets, SQLite, source code, or arbitrary uploads.
         allowed = {"reprocessing-history.html", "reprocessing-history.js", "agents.html", "agents.js", "agents.css", "styles.css", "shell.js", "shell.css", "assets/mark.svg",
+                   "settings-slack.html", "settings-slack.js", "settings-slack.css",
                    "detection-history.html", "detection-history.js",
                    "agent-status.html", "agent-status.js", "agent-status.css",
                    "collection-health.html", "collection-health.js",

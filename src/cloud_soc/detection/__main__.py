@@ -35,6 +35,8 @@ def main(argv=None):
     parser.add_argument("--retrospective", action="store_true",
                         help="Separate-state historical-context review for events normalized beyond the lateness allowance")
     parser.add_argument("--early-auth", action="store_true", help="Opt in to separate AUTH-001 provisional notices; needs explicit notice setup/permissions")
+    parser.add_argument('--status-id', choices=('detector', 'detector-priority'), default=None,
+                        help='Independent priority AUTH telemetry; state and alert IDs stay unchanged')
     parser.add_argument("--es-url")
     parser.add_argument("--ca-file")
     parser.add_argument("--api-key-file")
@@ -44,7 +46,9 @@ def main(argv=None):
     try:
         if (not 10 <= args.interval <= 3600 or not 1 <= args.max_documents <= 100000
                 or not 1 <= args.max_active_events <= 1_000_000 or args.once and not args.run
-                or args.early_auth and args.snapshot):
+                or args.early_auth and args.snapshot
+                or args.status_id and (args.retrospective or args.additional_rules is not None or args.snapshot)
+                or args.status_id == 'detector-priority' and args.early_auth):
             raise ValueError("Invalid options")
         selection = dict(include_cloud=args.include_cloud, include_sequence=args.include_sequence,
                          include_attacks=args.include_attacks, include_patterns=args.include_patterns,
@@ -88,7 +92,8 @@ def main(argv=None):
                               run_incremental(client, state_path=args.state, start=args.start,
                                               max_documents=args.max_documents, max_active_events=args.max_active_events,
                                               lateness_seconds=args.lateness_seconds, source_id=url,
-                                              accept_legacy_exclusion=args.accept_legacy_exclusion, **selection, early_auth=args.early_auth))
+                                              accept_legacy_exclusion=args.accept_legacy_exclusion, **selection, early_auth=args.early_auth,
+                                              status_id=args.status_id))
                     print(json.dumps(result), flush=True)
                 except Exception:
                     failed = True

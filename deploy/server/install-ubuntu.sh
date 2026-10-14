@@ -61,7 +61,7 @@ show_plan() {
         "Local bind IP: ${BIND_IP:-<prompt; blank selects 127.0.0.1>}" \
         "State: $STATE" \
         "Ubuntu release/suite: ${UBUNTU_VERSION:-<checked at install>} / ${UBUNTU_SUITE:-<checked at install>}" \
-        '1. Require Ubuntu 22.04/24.04/26.04 LTS, systemd, root, >=6 GiB RAM and >=10 GiB free disk.' \
+        '1. Require Ubuntu 22.04/24.04/26.04 LTS, systemd, root, the versioned runtime memory budget (8 GiB class) and >=10 GiB free disk.' \
         '2. Reject existing state/stack, occupied TCP 443/5601/9200, nonlocal bind IP.' \
         '3. Install missing ca-certificates, curl, git, python3 and openssl using APT.' \
         '4. Reuse a running local Docker + Compose plugin, or install Docker CE from its official signed APT repository.' \
@@ -70,7 +70,7 @@ show_plan() {
     if [ "$PREPARE_ONLY" = yes ]; then
         printf '%s\n' '7. Stop before starting the SOC containers (a newly installed Docker daemon will run).'
     else
-        printf '%s\n' '7. Build/start the central Compose stack and check bootstrap plus local HTTPS endpoints.'
+        printf '%s\n' '7. Build the common image; run versioned migrations and all six required workers; verify local HTTPS endpoints.'
     fi
     printf '%s\n' \
         'Restrict AWS security groups to approved source IPs BEFORE installation.' \
@@ -277,8 +277,7 @@ prepare_state() {
 }
 
 start_stack() {
-    compose config --quiet
-    compose up -d --build
+    python3 "$ROOT/deploy/server/manage.py" install --workspace "$ROOT" --state "$STATE" --build
 }
 
 http_status() {
@@ -287,9 +286,7 @@ http_status() {
 }
 
 check_ready() {
-    BOOTSTRAP_ID=$(compose ps -aq bootstrap)
-    [ -n "$BOOTSTRAP_ID" ] || die 'Bootstrap container not found.'
-    [ "$(docker_local inspect --format '{{.State.Status}}:{{.State.ExitCode}}' "$BOOTSTRAP_ID")" = 'exited:0' ] || die 'Bootstrap did not exit successfully.'
+    python3 "$ROOT/deploy/server/manage.py" verify --state "$STATE" --startup-only
     DEADLINE=$(($(date +%s) + 300))
     while [ "$(date +%s)" -lt "$DEADLINE" ]; do
         ES_CODE=$(http_status 9200 /)

@@ -8,11 +8,13 @@ import subprocess
 from urllib.parse import urlsplit
 
 SERVICES = ("portal", "gateway", "normalizer", "detector", "elasticsearch", "kibana")
+RUNTIME_SERVICES = (*SERVICES, 'normalizer-priority', 'detector-priority', 'detector-additional', 'detector-retrospective', 'slack-notifier')
 PUBLIC_ENV = {"SOC_PUBLIC_URL", "SOC_PORTAL_LAN_ORIGIN", "SOC_INTERNAL_ES_URL", "SOC_AGENT_ENDPOINT",
               "SOC_ELASTIC_ENDPOINT", "SOC_PUBLIC_HOST", "SOC_ENROLLMENT_ENABLED"}
 VALUE_OPTIONS = {"--es-url", "--start", "--state", "--ca-file", "--api-key-file", "--interval",
-                 "--linux-ssh-v2-start", "--max-documents", "--max-active-events", "--lateness-seconds"}
-FLAG_OPTIONS = {"--run", "--once", "--early-auth", "--include-cloud", "--include-sequence", "--include-attacks", "--include-patterns", "--isolated-all"}
+                 "--linux-ssh-v2-start", "--max-documents", "--max-active-events", "--lateness-seconds",
+                 "--window-minutes", "--max-pages", "--rules", "--additional-rules", "--status-id"}
+FLAG_OPTIONS = {"--run", "--once", "--early-auth", "--include-cloud", "--include-sequence", "--include-attacks", "--include-patterns", "--isolated-all", "--priority", "--retrospective"}
 
 
 def public_value(key, value):
@@ -51,6 +53,10 @@ def command_options(command):
                     result[option] = value if valid else "[withheld]"
                 elif option in ("--state", "--ca-file", "--api-key-file"):
                     result[option] = value if (PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()) and not any(ord(c) < 32 for c in value) else "[withheld]"
+                elif option in ('--rules', '--additional-rules'):
+                    result[option] = value if re.fullmatch(r'[A-Z0-9-]+(?:,[A-Z0-9-]+)*', value) else '[withheld]'
+                elif option == '--status-id':
+                    result[option] = value if value in ('detector', 'detector-priority') else '[withheld]'
                 else:
                     result[option] = value if re.fullmatch(r"[0-9]{1,9}", value) else "[withheld]"
     return result
@@ -61,7 +67,7 @@ def service_report(objects):
     for obj in objects:
         configuration = obj.get("Config", {});labels = configuration.get("Labels") or {}
         name = labels.get("com.docker.compose.service")
-        if name not in SERVICES:
+        if name not in RUNTIME_SERVICES:
             continue
         if name in result:
             raise ValueError("Duplicate service identity; deployment requires review")
@@ -76,7 +82,7 @@ def service_report(objects):
         result[name] = {"container_id": obj.get("Id"), "image_id": obj.get("Image"), "state": state.get("Status"),
                         "started_at": state.get("StartedAt"), "restart_count": obj.get("RestartCount"),
                         "public_environment": env, "source_labels": source,
-                        "options": command_options(configuration.get("Cmd")) if name in ("normalizer", "detector") else {},
+                        "options": command_options(configuration.get("Cmd")) if name.startswith(("normalizer", "detector")) else {},
                         "networks": sorted((obj.get("NetworkSettings", {}).get("Networks") or {}).keys())}
     return result
 
@@ -85,10 +91,11 @@ def run_json(args):
     return json.loads(subprocess.check_output(args, text=True, stderr=subprocess.DEVNULL, timeout=30))
 
 
-def inventory(workspace, project="cloud-soc-central", *, inspect=run_json):
+def inventory(workspace, project="cloud-soc-central", *, inspect=run_json, managed=False):
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", project):
         raise ValueError("Invalid project identity")
-    names = [project + "-" + service + "-1" for service in SERVICES]
+    expected = RUNTIME_SERVICES if managed else SERVICES
+    names = [project + "-" + service + "-1" for service in expected]
     objects = inspect(["docker", "inspect", *names])
     if any((obj.get("Config", {}).get("Labels") or {}).get("com.docker.compose.project") != project for obj in objects):
         raise ValueError("Unexpected deployment project; no inferred service identity")
@@ -103,6 +110,6 @@ def inventory(workspace, project="cloud-soc-central", *, inspect=run_json):
         if path.stat().st_size > 1024 * 1024:
             raise ValueError("Active configuration exceeds audit limit")
         files[str(path.relative_to(workspace))] = hashlib.sha256(path.read_bytes()).hexdigest()
-    return {"read_only": True, "services": services, "missing_services": [name for name in SERVICES if name not in services],
+    return {"read_only": True, "services": services, "missing_services": [name for name in expected if name not in services],
             "active_config_sha256": files, "source_equivalence": "not_verified_by_image_label",
             "notes": ["labels_and_checkout_are_not_file_equivalence", "no_credentials_or_original_argv_disclosed"]}

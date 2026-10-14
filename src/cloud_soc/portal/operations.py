@@ -302,6 +302,13 @@ class Operations:
                 result["priority_normalizer"] = priority_worker
                 result["realtime_coverage"] = analysis_coverage(priority_worker, result["detector"])
                 try:
+                    priority_detector = self.worker_status('detector-priority')
+                except Exception:
+                    priority_detector = {'state': 'unavailable'}
+                if priority_detector.get('state') != 'not_started':
+                    result['priority_detector'] = priority_detector
+                    result['realtime_coverage'] = analysis_coverage(priority_worker, priority_detector)
+                try:
                     result["historical_backlog"] = self.backlog(result.get("checkpoint"), priority_worker.get("initial_start"))
                 except Exception:
                     result["historical_backlog"] = {"state": "unavailable"}

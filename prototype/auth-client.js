@@ -33,7 +33,7 @@
     }
     if (Array.isArray(user.navigation)) {
       const known = new Set(['index.html', 'dashboard.html', 'operations.html', 'logs.html', 'cases.html', 'workbench.html', 'agents.html',
-        'agent-status.html', 'collection-health.html', 'detection-history.html', 'reprocessing-history.html']);
+        'agent-status.html', 'collection-health.html', 'detection-history.html', 'reprocessing-history.html', 'settings-slack.html']);
       const diagnostics = new Set(['collection-health.html', 'detection-history.html', 'reprocessing-history.html']);
       for (const link of document.querySelectorAll('a[href]')) {
         const href = link.getAttribute('href'), page = href.split(/[?#]/)[0].split('/').pop();

@@ -1,5 +1,7 @@
 # Ubuntu LTS 중앙 서버 설치
 
+현재 중앙의 신규 설치와 기존 서버 업그레이드는 [공통 런타임 안내](../../docs/runtime_deployment.md)의 버전 있는 Compose·마이그레이션·자동 인수 경로를 사용합니다. `manage.py plan → apply → verify`가 필수 워커·권한·기존 상태와 서버별 설정 차이를 함께 검사합니다. 아래의 과거 수동 `up` 절차만으로 최신 기능의 배포/실수신을 완료 처리하지 않습니다.
+
 이 구성은 **단일 노드 졸업작품·실습용**입니다. Elasticsearch, Kibana, 에이전트 배포 포털을 함께 실행합니다. 저장소 루트의 `compose.yaml`은 기존 로컬 개발용으로 유지하며, 아래에서는 항상 `deploy/server/compose.yaml`을 지정합니다.
 
 AWS EC2에 처음 배포하고 Windows PC에서 검증하는 경우에는 [AWS Ubuntu + Windows 실제 수집 테스트](../../docs/aws_windows_e2e_test.md)를 먼저 따라가세요. 아래는 공통 구성과 운영 제약 설명입니다.

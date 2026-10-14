@@ -9,7 +9,8 @@
     { title: "에이전트", items: [
       ["agents.html", "에이전트 설치 파일"], ["agents.html#keys", "발급 키 관리"],
       ["agent-status.html", "에이전트 수신 현황"]
-    ] }
+    ] },
+    { title: "설정", items: [["settings-slack.html", "알림 연동 → Slack"]] }
   ];
   function current(pathname, hash) {
     const page = pathname.split("/").pop() || "index.html";
@@ -62,7 +63,7 @@
     const late = pipeline.late_review;
     const historicalReview = late ? ' · 늦은 로그 재평가: '+({success:'최근 실행 확인',running:'처리 중',waiting:'대기',failed:'실패',stale:'미확인'}[late.state] || '미확인')+' · 대기 범위 '+(valid(late.pending_contexts) ? late.pending_contexts.toLocaleString('ko-KR')+'개' : '미확인') : '';
     return {state,
-      realtime:'실시간 분석: '+label+' · 정규화 지연 '+lag(pipeline.priority_normalizer)+' · 탐지 지연 '+lag(pipeline.additional_detector || pipeline.detector),
+      realtime:'실시간 분석: '+label+' · 정규화 지연 '+lag(pipeline.priority_normalizer)+' · 탐지 지연 '+lag(pipeline.priority_detector || pipeline.additional_detector || pipeline.detector),
       historical:'과거 로그: 미완료 구간 '+(backlog?.state==='ok' && valid(backlog.count) ? backlog.count.toLocaleString('ko-KR')+'건' : '미확인')+' · 처리 지연 '+lag(pipeline)+' · 처리 기록 완료 기준'+historicalReview};
   }
   if (typeof module !== "undefined" && module.exports) module.exports = { groups, current, markup, coverageView, processingView };
