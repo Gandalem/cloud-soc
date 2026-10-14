@@ -100,7 +100,8 @@ class ContinuationTests(unittest.TestCase):
         self.client.search.side_effect = [self.page(0, 1)]
         first = run_once(self.client, self.path, START, now=NOW, max_pages=1)
         self.client.search.side_effect = [{'hits': {'hits': []}}]
-        final = run_once(self.client, self.path, START, now=NOW + timedelta(hours=1), max_pages=1)
+        final = run_once(self.client, self.path, START, now=NOW + timedelta(hours=1), max_pages=1,
+                         window_minutes=60)
         self.assertEqual(final['range'], first['range'])
         self.assertEqual(final['checkpoint'], first['range']['end'])
 

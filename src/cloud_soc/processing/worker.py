@@ -108,10 +108,12 @@ def create_batch(client, documents):
         raise RuntimeError("normalization_bulk_failed")
 
 
-def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_pages=1000, ssh_v2_start=None):
+def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_pages=1000, ssh_v2_start=None,
+             window_minutes=5):
     now = now or datetime.now(timezone.utc)
     initial = parse_time(initial_start)
-    if initial is None or initial > now or type(max_pages) is not int or not 1 <= max_pages <= 10000:
+    if (initial is None or initial > now or type(max_pages) is not int or not 1 <= max_pages <= 10000
+            or type(window_minutes) is not int or not 1 <= window_minutes <= 60):
         raise ValueError("A past aware initial start is required")
     ssh_start = parse_time(ssh_v2_start) if ssh_v2_start is not None else None
     if ssh_v2_start is not None and (ssh_start is None or not initial <= ssh_start <= now):
@@ -137,7 +139,7 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
         if checkpoint is None or checkpoint > now:
             raise ValueError("Invalid checkpoint or clock regression")
         start = max(initial, checkpoint - timedelta(minutes=15))
-        end = min(now - timedelta(seconds=30), checkpoint + timedelta(minutes=5))
+        end = min(now - timedelta(seconds=30), checkpoint + timedelta(minutes=window_minutes))
         counts = {"normalized": 0, "unsupported": 0, "invalid": 0}
         status = {"@timestamp": iso(now), "state": "running", "detection": "separate_worker",
                   "checkpoint": iso(checkpoint), "last_success": row[1] if row else None,
