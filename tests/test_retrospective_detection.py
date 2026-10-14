@@ -101,6 +101,7 @@ def test_live_database_and_early_notice_modes_are_refused(tmp_path):
     f=fixture();path=tmp_path/'existing.sqlite'
     with sqlite3.connect(path) as db:
         db.execute('CREATE TABLE runtime (body TEXT)');db.execute("INSERT INTO runtime VALUES('original')")
+    path.chmod(0o600)
     before=path.read_bytes()
     with pytest.raises(ValueError,match='independent_state'):
         run(f,path)
