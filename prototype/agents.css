@@ -60,6 +60,15 @@
 fieldset.form-row { border:0; padding:0; min-width:0; display:flex; gap:16px; }
 fieldset.form-row legend { float:left; width:130px; flex-shrink:0; padding:0; }
 .radio-group { display:flex; gap:15px; flex-wrap:wrap; }
+fieldset.collection-fields { display:block; }
+fieldset.collection-fields legend { float:none; width:auto; margin-bottom:10px; }
+.collection-fields label { display:grid; grid-template-columns:16px minmax(0,1fr); align-items:start; gap:8px; margin:8px 0; line-height:1.6; }
+.collection-fields input { margin:3px 0 0; }
+fieldset#site-fields { display:block; padding:16px; border:1px solid var(--border); border-radius:4px; }
+#site-fields legend { float:none; width:auto; padding:0 6px; font-weight:600; }
+#site-fields .form-row { min-width:0; }
+#site-fields .field-note { margin:0 0 12px; }
+#site-fields .field-note:last-child { margin-bottom:0; }
 .form-row input:not([type=radio]):not([type=checkbox]),.form-row select,textarea { width:100%; padding:8px; background:white; color:var(--text); }
 .form-row input[readonly] { background:#f4f7fa !important; color:#617187 !important; }
 .form-row code { font-size:10px; overflow-wrap:anywhere; }

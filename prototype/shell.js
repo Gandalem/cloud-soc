@@ -51,7 +51,22 @@
     const view = state === 'warning' && Object.hasOwn(initialViews, reason) ? initialViews[reason] : views[state] || views.unknown;
     return {state: views[state] ? state : 'unknown', title: view[0], description: view[1]};
   }
-  if (typeof module !== "undefined" && module.exports) module.exports = { groups, current, markup, coverageView };
+  function processingView(pipeline) {
+    if (!pipeline?.priority_normalizer) return null;
+    const valid = n => Number.isSafeInteger(n) && n >= 0;
+    const lag = worker => valid(worker?.lag_seconds) ? worker.lag_seconds.toLocaleString('ko-KR')+'초' : '미확인';
+    const reported = pipeline.realtime_coverage?.state;
+    const state = ['observed','warning','blocked','delayed','catching_up','not_started'].includes(reported) ? reported : 'unknown';
+    const label = ({observed:'최근 실행 확인',warning:'일부 평가 확인 필요',blocked:'중단',delayed:'지연',catching_up:'따라잡는 중',not_started:'미시작'}[state] || '미확인');
+    const backlog = pipeline.historical_backlog;
+    const late = pipeline.late_review;
+    const historicalReview = late ? ' · 늦은 로그 재평가: '+({success:'최근 실행 확인',running:'처리 중',waiting:'대기',failed:'실패',stale:'미확인'}[late.state] || '미확인')+' · 대기 범위 '+(valid(late.pending_contexts) ? late.pending_contexts.toLocaleString('ko-KR')+'개' : '미확인') : '';
+    return {state,
+      realtime:'실시간 분석: '+label+' · 정규화 지연 '+lag(pipeline.priority_normalizer)+' · 탐지 지연 '+lag(pipeline.additional_detector || pipeline.detector),
+      historical:'과거 로그: 미완료 구간 '+(backlog?.state==='ok' && valid(backlog.count) ? backlog.count.toLocaleString('ko-KR')+'건' : '미확인')+' · 처리 지연 '+lag(pipeline)+' · 처리 기록 완료 기준'+historicalReview};
+  }
+  if (typeof module !== "undefined" && module.exports) module.exports = { groups, current, markup, coverageView, processingView };
+  if (typeof window !== "undefined") window.CloudSOCProcessing = {view: processingView};
   if (typeof document === "undefined") return;
   const root = document.getElementById("app-shell");
   if (!root) return;

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import re
+from ipaddress import ip_address
 from typing import Any
 
 from elasticsearch import Elasticsearch
@@ -48,6 +49,20 @@ def event_evidence(event: dict[str, Any]) -> dict[str, Any]:
         "normalized": normalized, "raw": deepcopy(raw),
         "event_hash": event_fingerprint(event), "complete": complete,
     }
+
+
+def observation_identity(event):
+    """Count an immutable raw observation once across normalization revisions."""
+    organization = get_field_value(event, 'organization.id')
+    if get_field_value(event, 'event.dataset') == 'aws.cloudtrail':
+        identifier = get_field_value(event, 'cloud_soc.detail.fields.event_id')
+        account = get_field_value(event, 'cloud.account.id')
+        if isinstance(identifier, str) and identifier and isinstance(account, str) and account:
+            return event_fingerprint({'organization': organization, 'account': account, 'event_id': identifier})
+    raw = get_field_value(event, 'cloud_soc.provenance.raw')
+    if isinstance(raw, dict) and all(isinstance(raw.get(key), str) and raw[key] for key in ('index', 'id')):
+        return event_fingerprint({'organization': organization, 'raw': raw})
+    return event_fingerprint(event)
 
 
 def ssh_collection_mirror(first, second):
@@ -134,6 +149,8 @@ def condition_matches(
     # --------------------------------------------------------
 
     if operator == "equals":
+        if type(expected) is bool:
+            return type(actual) is bool and actual == expected
         return actual == expected
 
     # --------------------------------------------------------
@@ -280,8 +297,15 @@ def build_group_key(
 
         # 그룹 기준 값이 없는 이벤트는
         # Threshold 계산에서 제외한다.
-        if value is None or not isinstance(value, (str, int, float, bool)):
+        if (value is None or not isinstance(value, (str, int, float, bool))
+                or isinstance(value, str) and (not value.strip() or value == '[REDACTED]')):
             return None
+        if field in ('source.ip', 'destination.ip'):
+            try:
+                if not isinstance(value, str) or str(ip_address(value)) != value:
+                    return None
+            except ValueError:
+                return None
 
         values.append(value)
 
@@ -402,10 +426,13 @@ def _detect_threshold(
                 dict[str, Any],
             ]
         ] = deque((parse_event_timestamp(item), item) for item in prior.get("window", []))
+        observations = {observation_identity(item) for _, item in window}
 
         last_alert_time = datetime.fromisoformat(prior["last_alert"]) if prior.get("last_alert") else None
 
         for timestamp, event in group_events:
+            if window and timestamp < window[-1][0]:
+                raise ValueError('Threshold runtime requires finalized event order')
 
             # 현재 이벤트보다 Time Window 이상 오래된
             # 이벤트를 Window에서 제거한다.
@@ -422,7 +449,12 @@ def _detect_threshold(
                 ):
                     break
 
-                window.popleft()
+                _, expired = window.popleft()
+                observations.discard(observation_identity(expired))
+
+            observation = observation_identity(event)
+            if observation in observations:
+                continue
 
             # Keep both immutable documents, but count a journal/file mirror once.
             if any(ssh_collection_mirror(event, item) for _, item in window):
@@ -435,6 +467,7 @@ def _detect_threshold(
                     event,
                 )
             )
+            observations.add(observation)
 
             # 아직 Threshold에 도달하지 않았다.
             if len(window) < threshold_count:

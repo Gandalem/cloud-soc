@@ -3,7 +3,7 @@ from copy import deepcopy
 from datetime import timedelta
 import json
 from cloud_soc.detection.engine import (build_group_key, event_matches_rule, event_fingerprint,
-    parse_event_timestamp, get_field_value, event_evidence, rule_revision)
+    parse_event_timestamp, get_field_value, event_evidence, rule_revision, observation_identity, ssh_collection_mirror)
 
 
 def detect_sequence(events, rule, runtime):
@@ -18,16 +18,19 @@ def detect_sequence(events, rule, runtime):
         key = build_group_key(event, fields)
         if key is None or any(get_field_value(event, f) in (None, '') for f in fields):
             continue
-        fingerprint = event_fingerprint(event)
+        fingerprint = observation_identity(event)
         if fingerprint in seen:
             continue
         seen.add(fingerprint)
         stamp = parse_event_timestamp(event)
         state = runtime.setdefault(json.dumps(key), {'failures': []})
         failures = [e for e in state['failures'] if parse_event_timestamp(e) >= stamp - timedelta(seconds=seconds)]
+        if failures and stamp < parse_event_timestamp(failures[-1]):
+            raise ValueError('Sequence runtime requires finalized event order')
         outcome = get_field_value(event, 'event.outcome')
         if outcome == 'failure':
-            if fingerprint not in {event_fingerprint(item) for item in failures}:
+            if (fingerprint not in {observation_identity(item) for item in failures}
+                    and not any(ssh_collection_mirror(event, item) for item in failures)):
                 failures.append(deepcopy(event))
             state['failures'] = failures
             continue

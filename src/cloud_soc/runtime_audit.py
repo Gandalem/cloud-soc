@@ -12,7 +12,7 @@ PUBLIC_ENV = {"SOC_PUBLIC_URL", "SOC_PORTAL_LAN_ORIGIN", "SOC_INTERNAL_ES_URL", 
               "SOC_ELASTIC_ENDPOINT", "SOC_PUBLIC_HOST", "SOC_ENROLLMENT_ENABLED"}
 VALUE_OPTIONS = {"--es-url", "--start", "--state", "--ca-file", "--api-key-file", "--interval",
                  "--linux-ssh-v2-start", "--max-documents", "--max-active-events", "--lateness-seconds"}
-FLAG_OPTIONS = {"--run", "--once", "--early-auth", "--include-cloud", "--include-sequence", "--include-attacks", "--include-patterns"}
+FLAG_OPTIONS = {"--run", "--once", "--early-auth", "--include-cloud", "--include-sequence", "--include-attacks", "--include-patterns", "--isolated-all"}
 
 
 def public_value(key, value):

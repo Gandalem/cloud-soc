@@ -1,6 +1,6 @@
 # Administrator opt-in: --include-patterns. Never part of the default profile.
-# Only SSH has a verified received source with the required fields. Other rules
-# are executable offline candidates, disabled until their live field gate is approved.
+# SSH and the controlled Windows/web/final-flow sources have verified metadata.
+# Live workers still require an explicit reviewed selection; console remains gated.
 rules:
   - id: AUTH-SPRAY-001
     name: Multiple SSH account authentication failures
@@ -29,7 +29,7 @@ rules:
   - id: WIN-AUTH-001
     name: Windows repeated failed network authentication
     type: cardinality
-    enabled: false
+    enabled: true
     severity: high
     conditions:
       - {field: cloud_soc.detail.adapter, operator: equals, value: windows_security_v1}
@@ -43,7 +43,7 @@ rules:
     cooldown: {seconds: 300}
     required_fields: [organization.id, host.id, source.ip, user.name, cloud_soc.detail.fields.logon_type]
     dedup_fields: []
-    limitations: [live_source_ip_and_logon_type_gate_pending, logon_type_is_observed_not_assumed_protocol, password_retries_and_saved_credentials_can_match]
+    limitations: [live_validation_is_owned_lab_loopback_smb, logon_type_is_observed_not_assumed_protocol, password_retries_and_saved_credentials_can_match]
     alert:
       title: Windows 로그인 무차별 대입 의심
       message: 같은 조직·호스트·출발지·로그온 유형에서 5분 이내 실패 이벤트 10건 이상이 관측되었습니다. 실제 로그온 유형을 확인하고 정상 재시도·저장 자격 증명 오류를 조사하세요. 4625만으로 RDP나 침해 성공을 판정하지 않습니다.
@@ -53,10 +53,10 @@ rules:
   - id: WEB-404-001
     name: Repeated HTTP not-found responses
     type: cardinality
-    enabled: false
+    enabled: true
     severity: low
     conditions:
-      - {field: cloud_soc.detail.adapter, operator: equals, value: linux_operational_v1}
+      - {field: cloud_soc.detail.adapter, operator: in, value: [linux_operational_v1, web_access_metadata_v1, web_access_agent_v1]}
       - {field: cloud_soc.detail.fields.http_status, operator: equals, value: 404}
     group_by: [organization.id, host.id, source.ip]
     threshold: {count: 20}
@@ -65,7 +65,7 @@ rules:
     cooldown: {seconds: 300}
     required_fields: [organization.id, host.id, source.ip]
     dedup_fields: []
-    limitations: [live_web_ip_host_gate_pending, no_request_path_payload_or_vulnerability_signature, crawler_bad_links_healthchecks_can_match]
+    limitations: [live_validation_is_owned_dvwa_metadata, no_request_path_payload_or_vulnerability_signature, crawler_bad_links_healthchecks_can_match]
     alert:
       title: 웹 서버에 반복적인 미존재 페이지 요청 관측
       message: 같은 조직·웹 호스트·출발지에서 5분 이내 HTTP 404 기록 20건 이상이 관측되었습니다. URL·본문은 저장하지 않으며 취약점 종류·SQLi·XSS·명령 실행을 판정하지 않습니다. 정상 크롤러·잘못된 링크·프록시를 조사하세요.
@@ -75,7 +75,7 @@ rules:
   - id: NET-PORT-001
     name: Multiple destination ports in finalized flows
     type: cardinality
-    enabled: false
+    enabled: true
     severity: medium
     conditions:
       - {field: cloud_soc.detail.adapter, operator: equals, value: packetbeat_metadata_v1}
@@ -89,7 +89,7 @@ rules:
     cooldown: {seconds: 300}
     required_fields: [organization.id, source.ip, destination.ip, destination.port, network.transport, cloud_soc.detail.fields.flow_id]
     dedup_fields: [organization.id, source.ip, destination.ip, destination.port, network.transport, cloud_soc.detail.fields.flow_id]
-    limitations: [live_final_flow_ports_gate_pending, finalized_flow_timing_not_connection_attempt_time, no_nmap_or_syn_tool_attribution, service_discovery_monitoring_can_match]
+    limitations: [live_validation_is_15_owned_vm_high_ports, finalized_flow_timing_not_connection_attempt_time, no_nmap_or_syn_tool_attribution, service_discovery_monitoring_can_match]
     alert:
       title: 다수 목적지 포트 접근에 따른 포트 탐색 의심
       message: 같은 조직·출발지·목적지의 5분 구간에서 종료 Flow의 목적지 포트 15종 이상이 관측되었습니다. 같은 Flow 관측은 한 번 셉니다. 연결 시도 횟수·Nmap·SYN 스캔이나 실제 서비스 접근 성공은 확정하지 않습니다. 정상 검색·모니터링을 조사하세요.

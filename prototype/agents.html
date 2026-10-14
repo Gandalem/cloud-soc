@@ -38,7 +38,7 @@
         <label class="form-row"><span>조직 ID</span><input name="organization" required pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,63}" maxlength="64" placeholder="예: school"></label>
         <p class="field-note">이름과 조직 ID는 영문·숫자·하이픈·밑줄, 최대 64자입니다.</p>
         <label class="form-row"><span>관리 서버</span><input id="form-endpoint" readonly aria-describedby="endpoint-note"></label><p id="endpoint-note" class="field-note">중앙 서버 설정에서 지정한 주소입니다.</p>
-        <fieldset class="form-row"><legend>수집할 항목 선택</legend>
+        <fieldset class="form-row collection-fields"><legend>수집할 항목 선택</legend>
           <label><input name="system" type="checkbox" checked>시스템·보안 로그 — SSH·계정·인증·서비스</label>
           <label><input name="web" type="checkbox">웹 로그 — 접속 IP·요청 방식·응답 상태</label>
           <label><input name="network" type="checkbox">네트워크 메타데이터 — 통신 IP·포트·프로토콜·전송량</label>

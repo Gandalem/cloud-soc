@@ -1,5 +1,46 @@
 # Cloud SOC 작업 목록
 
+- [x] DUAL-LIVE-WIN-20261014 완료(2026-10-14 지정 시험 서버·7룰 선택 범위): 사용자 지정 최우선인 priority/기존 과거 처리 병행·공통ID/create-only·실제 홈/개인 상태 분리·WIN 실행worker의9→10경계·재시작/기존상태보존을 검증한다. 457e358 전체1072 Python/150UI·Ruff/Bandit·Actions38513272451 success, 보호 배포290개SHA·portal5DB backup/restore·원래AUTH900초/과거처리기불변·별도WIN검증state60초를 확인했다. 실제9개정규화/raw참조·window9/pending0·frontier마지막실패초과/경보0 이후177초내10번째실패를발생시켰으며최종경보1건/정확근거10개와후속재시작보존인수를완료했다. 실제홈은정규화39초/탐지37초·과거미완료구간0건·조회오류없음/1280px넘침없음을확인했다. 과거수백만건처리진척과실시간상태를별도표시하며지원밖/평가제외경고를유지한다.
+- [x] DUAL-RETRO-20261014 완료(2026-10-14 코드·격리14룰·실제7룰 선택 범위): 이후늦게도착하는과거로그를실시간worker의900초frontier/DB를되감지않고 별도영속상태/수신체크포인트·정확근거창으로재평가한다. 유효필드/조직·상한/완전한검색·중복/create-only·문서불변을보존하고회고평가임을표시하며누락필드를정상/공격부재로판정하지않는다. 기존실시간경보와같은고유ID의재게시와늦은시퀀스연결·재시작/장애복구를검증한뒤명시선택된실제검증룰만운영적용한다.
+
+## 2026-10-14 실제 이벤트 생성·조건부 활성화·배포 요청
+
+- [ ] DET-EXT-ACTIVATE-20261014 진행 중: 사용자가 전체 검증 후 정상 룰의 활성화·기능 브랜치 일반 push·중앙 배포와 데이터 부족 시 실제 시험 이벤트 생성을 요청했다. 기존 DET-EXT-LIVE-01의 실제 인수를 우선한다. 지정 Ubuntu/Windows/AWS에서 제한된 인증·404·종료 flow와 정상/경계 이벤트를 발생시켜 정확한 원본→정규화→경보·포털 및 재시작을 대조한다. 필수 입력/권한이 없는 클라우드 룰은 격리 검증과 실제 수집을 구분하며 운영 활성화를 주장하지 않는다. 기존 상태·체크포인트/경보·초기 통지·개인 자료를 보존하고 먼저 정규화 지연을 해소한다. 실제 감사 중단·권한 부여·공개 관리 포트 변경은 승인된 격리 자원 없이 실행하지 않는다.
+
+2026-10-14 최신 사용자 우선순위: 과거/실시간 이중 처리·create-only/공통ID·과거 적체와 실시간 상태의 별도 대시보드 표시를 최종 구조로 지정했다. priority의 보호 검증/배포 → WIN 실제9/10 경계 인수 → 늦은 과거 도착의 별도 재평가를 우선한다. 실제 OCI 제외·기능 브랜치 일반push/배포 요청·전체 기존 이력을 보존하며 과거 삭제/체크포인트 초기화는 하지 않는다. 023730f의 전체1064 passed/15skip/257subtests와 Actions38511072568 Windows/Ubuntu success, 기존5개서비스 그대로·portal/priority별도 state 보호 적용을 확인했다. 과거 처리기의현재 미완료75분 구간에서3599313건 처리 중 대 priority약45초 지연을 따로 관측했다. Windows10/SSH9대10·분산10·임시5실패→성공→root true·15종 종료Flow·웹20개의 실제 정규화/정확raw참조·엔진근거를 대조했다. 첫 진단의 비색인detail 필드 쿼리 기대는 실제색인범위/_source 엔진 평가로 보정했다. 임시시험계정은잔류 systemd user세션을 해당UID만 종료하여계정/true전용sudo정책을제거했다. 이 실제입력/읽기엔진인수는 아직추가운영worker의 최종경보/9→10지속실행/재시작인수와 구분한다.
+
+2026-10-14 후속 범위/검증: 사용자 명시로 OCI-IAM-001은 이번 실제 시험/활성화에서 제외한다(기존 코드/격리 검증은 보존). 화면의 AWS 계정897722691159를 확인했으나 EC2 IAM 역할 없음·PC default STS InvalidClientTokenId로 실제 API 인증이 불가하다. 접근키 본문을 출력/기록하지 않고 기존 자격 증명 갱신 경로를 요청했다. 정규화 5분 전진 대비15분 중복 읽기와 약3시간 지연을 확인해 명시적 window-minutes1..60/interval10..3600을 추가했다. 기본5/60·15분 overlap/30초 안정화·page 상한·원래 시작점/SSH floor·미완료 구간의 재개/불변 create를 유지한다. 관련214 passed/9subtests, 전체1053 passed/15skip/257subtests·147UI·Ruff/Bandit 통과. 실제 지연 해소·통합 탐지·추가 활성화 인수는 진행 중이다.
+
+2026-10-14 단계별 실제 결과: 60eedbd 일반push·Actions38509157919 Windows/Ubuntu success를 확인했다. 중앙 공개289파일/SHA·후보import/pipcheck·SQLite8개 online backup/격리restore 및 중지 후3개backup 뒤 portal/normalizer/detector만 de73b11b…로 적용했다. 기존AUTH/early/runtime 시작점·SSH floor·900초/비밀·ES/Kibana/gateway ID·사건/저장dashboard를 보존한다. 실제 Windows loopback SMB로 존재하지 않는 시험 계정의4625 9→10건/IP127.0.0.1/type3을 관측했으나 중앙 정규화/탐지 인수와 분리한다. 초기 잘못된 SMB 경로의 오류67을 기록·보정했고 권한/방화벽/계정을 바꾸지 않았다. 대량 기존 수신 때문에 과거 처리 지연이 남아 독립 priority 상태/지정수신floor와 별도status를 추가한다. 기존AUTH를 복제/초기화하지 않는 additional-rules 별도state/status·early소유 거부와 대시보드 추가 탐지 장애 표시를 보완해 관련69 passed/9subtests를 확인했다. 기본 프로필과 원래 체크포인트는 유지하며 실제 검증 전 후보 활성화는 보류한다.
+
+## 2026-10-14 시험 서버 재시작·AWS 주소 변경
+
+사용자가 AWS 새 주소13.208.191.1/기존 osaka 키와 중앙192.168.32.60/Windows192.168.1.138을 제공했다. 이전 승인 호스트 키를 사용해 동일 AWS 인스턴스·세 SSH 접속/수집 서비스·중앙 수신을 읽었다. 주소 변경으로 기존 웹 릴레이가13.208.175.237에 연결해 실패하며 seq5를 유지하는 상태다.
+- [x] WEB-ROUTE-20261014 완료(2026-10-14 기존 전송 복구·raw 수신 범위): 기존 고정 AWS 호스트 키로 새주소/동일instance/container/조직·stream을 검증하고 목적 키의 제한 export를 확인했다. state/web-route-20261014T032810Z에 config/known_hosts/기존모듈·SQLite backup/무결성/격리restore 후 검증된 기존 Git의 주소 설정 지원 모듈을 적용했다. 새주소 핀과 config·transport binding만 조정하고 stream/전달seq5를 유지해126까지 이어갔다. root publisher/키/CA·정규화/탐지 상태·기존 경보hash/다른서비스 재시작은 변경하지 않았다. 새 raw121건 중 정상GET1회의302/200 두 문서 실제 source03:28:48UTC→receipt03:28:57UTC를 대조했다. 보호 배포/초기근거를 유지한 실제 새 수신이며 공격 룰 인수는 아니다.
+
+2026-10-14 재기동 점검 제한: Windows 두 사용자 정의 수집서비스 Running/최근 중앙1970건·정상 인증유형3/5를 확인했으나 실제4625 실패/필수IP 시험은 하지 않았다. AWS CloudTrail 최근0/웹은별도이며 새IAM/과금/공개포트·새키/CloudTrail 설치·13개룰활성화는 하지 않았다. producer source_gaps1 경고/queue_gap=false를 보존했다. 중앙 normalizer checkpoint00:26:16UTC 대 실제03:30UTC로 약3시간 지연 중이며 새web 두 문서의 실제 정규화 참조는 아직 없다. 처리 위치를 되감거나 합성 정규화/경보를 넣지 않았다. 기존에 수집된 큐119건과 이번 새정상GET2건을 구분한다. 초기 소스바이트 해시의 Windows CRLF/Linux LF 차이는 적용 전 중단됐고 LF 정규화 SHA679dd31b…를 대조한 뒤 재개했다. 임시 원격 scripts만 정리했다. 이번 운영 복구 기록은 로컬 변경이며 새commit/push/전체앱배포는 하지 않았다.
+
+## 2026-10-14 전체 14개 룰셋 구현·자동 검증 요청
+
+사용자 새 요청을 최우선으로 적용한다. 지정 codex/dashboard-platform-20261013은 기존 33db896에서 검증된 최신 d49a4af로 fast-forward했다. 개인 Word/JSON·운영 DB/체크포인트·기존 경보를 보존한다. 전체 룰의 격리 실행·평가 불가 표시·엔진/근거/포털/사건 연동과 자동 회귀를 보완하고 일반 commit/push·CI를 확인한다. 실환경 필드/정상·경계 검증이 없는 룰의 운영 활성화는 하지 않는다.
+
+- [x] RULESET-14-01 완료(2026-10-14 코드·격리 자동 인수·Git/CI 범위): 기존14개 엔진/정의를 재사용해 전체 격리·개별 선택/미검증·평가불가와 근거·조직·개인정보·재시작·장애 재시도·포털/사건/대시보드를 인수했다. 전체1,042 Python/15skip/257subtests·147UI/Ruff/Bandit/pipcheck/pip-audit·12개 브라우저 조합과 a1125fe의 Windows/Ubuntu GitHub Actions 모두 통과했다. 실제 수집/탐지 인수와 코드·격리 완료는 분리하며 운영13개 추가 활성화·배포는 하지 않았다. [룰별 결과·26개파일·제한](ruleset_14_validation_20261014.md).
+
+2026-10-14 로컬 인수 완료·Git/CI 진행: 고정14개 profiles/CLI·raw/event ID 중복·SSH mirror/현행v2 및 두 웹 어댑터·필수 scope/bounds·source_events/assessment/포털 이력을 보완했다. 전체1,042 Python/15skip/257subtests·147UI/Ruff/Bandit 중간높음0/pipcheck·새프로세스14개/실제FlaskAPI·격리대시보드/이력12화면 조합 JS/HTTP0·가로넘침0 통과. 기존 중앙30일 읽기에서 SSH256/sudo51/Windows89/웹5/네트워크220,094·CloudTrail/OCI0을 구분했고 기존AUTH 근거10개의 경보ID가 새 코드와 같다. 운영은 기존AUTH/early 유지·새13개 미활성/미배포다. 초기 fixture/합성 API/도구venv 보정과 파일·실환경 제한은 [룰별 결과](ruleset_14_validation_20261014.md)에 기록했다. 개인정보/Word/JSON/state는 제외한다. 원격 CI를 확인한 뒤 이 로컬 코드·자동 검증 요청을 완료 표시한다. 상위 DET-EXT-LIVE-01은 미완료로 유지한다.
+
+2026-10-14 최종 Git/CI: 구현 a1125fec0f3b14fa7b5633487df928878b0d523b를 지정 기능 브랜치에 일반 push했고 [Actions45](https://github.com/Gandalem/cloud-soc/actions/runs/38498674935)의 Windows/Ubuntu 두 job success를 공식 API로 확인했다. Ubuntu1,041 passed/18skip/255subtests·coverage90.1%·147UI·이미지빌드/게이트웨이4passed/18subtests도 확인했다(OS별 수치를 합산하지 않는다). 실제 임시 읽기 스크립트/localhost viewer·브라우저를 종료/정리했고 개인Word2개/JSON 최초SHA·main eec0717를 보존했다. 마지막 완료/CI 기록만 별도 문서 commit/push하며 동일 구현의 CI를 중복 실행하지 않도록 [skip ci]로 표시한다.
+
+
+## 2026-10-14 기존 중앙 Ubuntu 최신화·배포 요청
+
+사용자는 이번 대상을 기존 중앙 Ubuntu 192.168.32.60으로 확인했다. 최신 기록의 별도 VMware 192.168.235.128 배포와 구분한다. 원격 main eec0717의 공개 소스를 최신화하고 현재 실행 구성/개인 파일/서버 운영 변경·상태·키·CA·경보/사건·대시보드를 보호한 뒤 필요한 애플리케이션 서비스만 갱신한다. 새 프로필/수집기 설치·키/권한 변경·다른 서버 배포·공개 인증·CA 추가는 범위가 아니다. 최초 요청은 최신화/배포였으며 이후 사용자가 폼 소스 수정·commit/push까지 명시 허용했다. codex/vm-form-layout-20261014에서 결과를 검증·반영한다.
+
+- [x] UPDATE-VM-20261014 완료(2026-10-14 지정 기존 중앙 최신화/배포 범위·ISSUE-12 일부): PC/192.168.32.60 저장소를main eec0717로 fast-forward하고 공개288개 개별SHA/import/pipcheck·관련158 Python/21subtests·145UI/Ruff/diff·main Windows/Ubuntu CI를 확인했다. SQLite8개/이미지3개/설정·키·CA 보호/개별restore와 중지 후3개상태 backup 후 portal/normalizer/detector만 적용했다. private endpoint/원래명령·시작점/900초/mount·ES/Kibana/gateway ID·저장 dashboard2/revision13/사건·경보hash를 유지했다. LAN 인증/API200·Ubuntu 두 수집기 recent·기존 web5 정확 참조와 checkpoint 전진을 확인했다. 분석 지연 해소/오늘 AWS 신규 수신/ES 독립DR은 미인수로 구분한다. [결과/실제 이미지/중단·보정/제한](ubuntu_update_20261014.md).
+
+- [x] FIX-SITE-FORM-20261014 완료(2026-10-14 소스/실제 포털 폼 범위): 실제929px에서flex 사이트 높이2358px·dialog623/858px 넘침을 재현했다. agents.html의 선택 class·agents.css 세로 배치로 수정하고 실제4폭/2테마/3OS24조합·웹 선택/해제/시작 시각·JS/HTTP0·가로넘침0·UI145를 검증했다. 당시portal이미지/override·portal5DB의 backup/restore 후 정적2파일만 적용하고 다른5서비스·저장설정/사건을 유지했다. 최종portal498ca9e7…/patch c4438a03…이며 소스·실행 파일 해시를 대조한다. 패키지/토큰/키/설치는 생성하지 않았다.
+
+2026-10-14 후속 Git 요청: 사용자가 프로젝트 폼 수정과 commit/push를 명시 허용했다. codex/vm-form-layout-20261014에 CSS/HTML·배포 기록/관리표·해당 브랜치 CI 실행 설정만 명시 stage한다. 개인Word2개/JSON의 최초SHA·비밀/state/원문 제외를 검사하고 main 직접push/자동PR병합은 하지 않는다. 실제 이미지의 base eec0717와 두 파일patch c4438a03…을 구분한다. 원래 분석 checkpoint를 전진시키며 남은 backlog를 전체 인수 완료로 바꾸지 않는다.
+
 ## 2026-10-14 통합 사이트 에이전트 요청
 
 새 명시 요청으로 우선순위를 VM 임시 파일 정리 → 지정 AWS DVWA 실제 수신 → 통합 설치기 → 선택형 네트워크 → 상태/대시보드 연동으로 변경한다. 현재 `codex/unified-site-agent-20261013`에서 기존 미커밋 복구 변경과 완료 이력을 보존한다. Windows 키 만료 검사는 제외한다. 새 과금 자원·공개 포트·IAM 변경·main 직접 push/자동 병합은 실행하지 않는다.
@@ -298,3 +339,15 @@ CA·주소 검증 HTTPS를 거치는 루프백 중계/Chrome으로 실제 사용
 2026-10-14 검색 실환경 보완: 기존 동적 labels.log_source는 text+keyword, DVWA는 keyword임을 확인했다. 고정 매핑 변경 없이 두 검색 필드로 후보를 먼저 좁히고 원본 소스 값의 정확 일치를 확인한다. 실제19 shard/24시간/웹11건 조회0.028초·부분응답없음과34 Python/14 subtests를 통과했다. cf27fa6의 keyword 전용 검사 가정은 후속 호환 보완으로 대체하며 그 중간 후보를 실제 적용하지 않았다.
 
 2026-10-14 최종 기록: 코드009de94 일반push·CI38437154683 Windows/Ubuntu success. 실제 포털 조회11건/신규Apache4건 상세·신규패키지1개 SHA/멤버15·PC/모바일/두테마/JS0/넘침0/로그아웃401·개인구성 불변·실자료2위젯 미리보기를 대조했다. 마지막 검색 보완은 포털만 보호 적용해 정규화/탐지/기존수집기를 추가 재시작하지 않았다. 최신SQLite8개/설정·SUCCESS snapshot unified-site-final-20261014 하나로 갱신하고 중간 snapshot/미사용 후보/임시전송·격리파일을 정리했다. 여유4,496,531,456 bytes/primary미할당0·replica yellow. [최종 결과·활성 명령·보호 경로·실수신/격리 구분](unified_site_validation_20261014.md). SITE-AGENT-01/SITE-LIVE-01은 신규3OS전체설치/개별스위치실수신/AWS시스템·네트워크사설경로 인수가 남아 unchecked로 유지한다. 실제웹수신과신규코드 검증을 전체 통합 설치 완료로 표시하지 않는다.
+
+2026-10-14 DUAL-LIVE-WIN-20261014·DUAL-RETRO-20261014 재개(사용자 요청): C 드라이브 공간 부족으로 중단했던 미커밋 변경과 기존 개인 파일을 보존해 검증·일반 push·중앙 Ubuntu 보호 배포를 재개한다. 지정 VM SSH와 cloud-soc-web-relay.service active를 확인했다. 기존 Windows 실제 9회 경보0/10회 경보1은 확인 완료이며 재시작 후 경보·정확 근거 불변 검증이 남는다. 늦은 웹 로그의 실제 수신/별도 회고 평가 및 최종 전체 검사·CI·배포는 진행 중으로 유지한다. AWS 감사 API 자격 증명 미확보와 OCI 제외는 기존 한계로 유지하며 미검증 룰을 운영 활성화하지 않는다.
+
+2026-10-14 DUAL-RETRO-20261014 코드/격리 완료·실환경 적용 준비: src/cloud_soc/detection/retrospective.py의 별도 수신 spool/영속 review job·완전한 조직/그룹 근거 조회·event-time 쿨다운 ledger·create-only 동일 경보ID·재시작/실패 재시도·기존 실시간DB 거부를 구현했다. 대시보드/API는 과거 재평가 표시와 실시간/과거 적체/늦은 평가 상태를 분리하고 발생 구간 시각 안내를 보정한다. 실제 20건/15종 종료flow 근거 gate를 확보한 WEB-404-001·NET-PORT-001을 명시 선택 가능하게 하며 기본 AUTH와 기존 초기통지를 유지한다. 최종 독립 환경 전체 Python1101 passed/15 skipped/257 subtests(420.90초), UI152 passed, 추가 회고/API37 passed, Ruff·Bandit 중간/높음·pip check·pip-audit 통과. Windows 에이전트 전체110 중108 passed/1 skipped/기존pwsh 복구1 timeout 후 해당 파일 단독10 passed로 재검증했다. 공유 환경의 무관한 패키지 충돌과 초기 임시 검사 wrapper의 spawn 재실행은 독립 D 드라이브 검사 환경/실행 guard로 보정했으며 프로젝트 의존성/설치기 코드는 변경하지 않았다. 실제18분 전달 지연 guard 후 relay active를 확인했다. 사용자 개인Word/JSON·기존 체크포인트/문서/계정·키는 보존하며 새 코드 운영 배포/최종 경보·재시작 인수와 CI는 후속 검증 전이므로 위 실환경 작업을 완료로 바꾸지 않는다.
+
+2026-10-14 후속 CI/실제 배포: 2c2e4c2 일반 push·소스291개 SHA·SQLite10개 online backup/격리 memory restore를 검증해 포털/priority와 별도6룰 additional/7룰 retrospective worker를 적용했다. 원래 AUTH900초/초기 통지·과거 처리 DB·ES/수집기·기존 사건/대시보드·키/CA·개인 파일을 보존했다. 실제7개룰 경보의 정확 근거를 확보하고 실시간 worker가 최신 구간까지 추적했으며 과거 재평가 대기 구간은 별도 표시한다. PC/모바일·두테마/홈·개인8조합 API조회 완료·JS0/넘침0/화면 오류0. 18분 지연20개 웹로그의 최소정규화지연1095초를 확인했다. Actions38524112869 Windows success·Ubuntu는 기존DB거부 시험fixture가 SQLite기본0644로 만들어져 독립DB거부보다 private-mode거부에 먼저 걸렸다. 보호 로직을 완화하지 않고 시험fixture에0600을 명시해 관련27 passed·Ruff를 재검증했다. CI·늦은 실제 경보/재시작 최종 인수는 후속 확인 전으로 유지한다.
+
+2026-10-14 16:10 KST 최종 인수: 배포 코드2c2e4c2/시험보정194e308의 Actions38525476052에서 Ubuntu·Windows 전체 job success를 확인했다. 14개 룰은 구현/자동·격리 검증 완료이며 실제 운영 선택은 AUTH-001·AUTH-SEQ-001·AUTH-SPRAY-001·ATTACK-01·WIN-AUTH-001·WEB-404-001·NET-PORT-001의7개다. 실제경보/정확근거는 AUTH10·sequence6·spray10·sudo연결7·Windows10·web20·종료flow15로 대조했고 포털7종 행/과거표시/근거API200 exact_reference를 확인했다. 실제Windows9→경보0/10→경보1 이후 새 운영프로필에서도 같은 경보ID를 유지했다. 실제18분 지연웹20개(최소1095.8242초)는 별도 회고경보1개/정확근거20개로 저장됐다. 과거수신미완료구간0·회고대기0·priority39초/additional33초·기존초기통지observed를 확인했다.
+
+새 additional/retrospective만 재시작해 상태identity/체크포인트 보존·SQLite backup/memory restore·경보12개 SHA 불변·재시작추가경보0을 확인했다. 기존 portal/normalizer/priority/AUTH/ES/gateway/kibana의ID/시작시각은 해당 재시작 동안 동일했고 배포 전4개 경보도 보존했다. 기존 사건/대시보드/계정/키/CA/수집설정·개인Word/JSON을 보존했다. 실제홈·개인8조합 PC/모바일/두테마 JS0/넘침0/조회실패0이며 과거경보표시는두화면에서확인했다. 전체Python1101 passed/15 skipped/257 subtests·UI152·Windows설치기109개고유pass/1skip(기존timeout1개는파일단독10pass로해소)·Ruff/Bandit중간이상/pip check/pip-audit 통과. Git제외 state/ruleset-14-20261014에 증거를, 서버 state/rules-retro-live-20261014에 DB10개/설정/이전이미지·후속재시작DB2개 보호본을 보존한다.
+
+남은 범위: AWS감사API6룰은 유효API프로필/시험권한·실제수집이 없어 미검증/운영미선택, OCI1룰은 사용자 제외다. SSH.pem을AWS API인증으로간주하지않고 공유IAM 권한/CloudTrail/공개포트는변경하지않았다. 기존 누락필드/평가제외 경고를 유지하며 공격부재로바꾸지않는다. DET-EXT-ACTIVATE-20261014·기존상위P0~P7/P2-02의남은인수와독립DR보류는유지한다. 이번두개DUAL작업의완료는위선택범위에한정한다.

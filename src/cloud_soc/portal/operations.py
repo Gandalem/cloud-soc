@@ -135,6 +135,7 @@ def alert_row(hit):
     source = hit["_source"]
     get = lambda path: text(field(source, path))
     return {"id": identifier(hit["_id"]), "timestamp": get("@timestamp"), "rule": get("rule.id"),
+            "historical_review": field(source, "cloud_soc.provenance.review.mode") == "retrospective",
             "title": get("cloud_soc.alert_title") or get("rule.name"), "severity": get("cloud_soc.severity"),
             "organization": get("organization.id"), "source_ip": get("source.ip"),
             "risk_score": field(source, "cloud_soc.risk_score") if type(field(source, "cloud_soc.risk_score")) is int and 0 <= field(source, "cloud_soc.risk_score") <= 100 else None,
@@ -231,7 +232,7 @@ class Operations:
     def worker_status(self, worker):
         if self.organizations is not None:
             return {"state": "unavailable"}
-        value = self.get(STATUS, worker, ["@timestamp", "state", "last_success", "checkpoint", "error", "detection", "health", "lag_seconds", "late_total", "legacy_excluded", "excluded_total", "history_pending", "progress", "counts"])
+        value = self.get(STATUS, worker, ["@timestamp", "state", "last_success", "checkpoint", "initial_start", "error", "detection", "health", "lag_seconds", "late_total", "legacy_excluded", "excluded_total", "history_pending", "pending_contexts", "progress", "counts"])
         if value is None:
             return {"state": "not_started"}
         stamp = parse_time(value.get("@timestamp"))
@@ -256,6 +257,13 @@ class Operations:
                 "error": text(value.get('error'))}
         if early is not None:
             result["early"] = early
+        if parse_time(value.get("initial_start")) is not None:
+            result["initial_start"] = iso(parse_time(value["initial_start"]))
+        if "pending_contexts" in value:
+            queued = value["pending_contexts"]
+            result["pending_contexts"] = queued if type(queued) is int and queued >= 0 else None
+            if result["pending_contexts"] and result["health"] == "healthy":
+                result["health"] = "warning"
         progress = value.get("progress")
         if isinstance(progress, dict) and progress.get("state") == "catching_up":
             processed = progress.get("processed")
@@ -277,7 +285,69 @@ class Operations:
             result["detector"] = {"state": "unavailable"}
         result["detection"] = result["detector"]["state"]
         result["coverage"] = analysis_coverage(result, result["detector"])
+        if self.organizations is None:
+            try:
+                historical = self.worker_status("detector-retrospective")
+            except Exception:
+                historical = {"state": "unavailable"}
+            if historical.get("state") != "not_started":
+                result["late_review"] = historical
+                if historical.get("state") == "failed":
+                    result["coverage"] = {"state": "blocked", "reason": "retrospective_failed"}
+            try:
+                priority_worker = self.worker_status("normalizer-priority")
+            except Exception:
+                priority_worker = {"state": "unavailable"}
+            if priority_worker.get("state") != "not_started":
+                result["priority_normalizer"] = priority_worker
+                result["realtime_coverage"] = analysis_coverage(priority_worker, result["detector"])
+                try:
+                    result["historical_backlog"] = self.backlog(result.get("checkpoint"), priority_worker.get("initial_start"))
+                except Exception:
+                    result["historical_backlog"] = {"state": "unavailable"}
+            try:
+                additional = self.worker_status("detector-additional")
+            except Exception:
+                additional = {"state": "unavailable"}
+            if additional.get("state") != "not_started":
+                result["additional_detector"] = additional
+                coverage = analysis_coverage(result, additional)
+                priority = {"blocked": 6, "unknown": 5, "not_started": 4, "delayed": 3,
+                            "catching_up": 2, "warning": 1, "observed": 0}
+                if priority[coverage["state"]] > priority[result["coverage"]["state"]]:
+                    result["coverage"] = {**coverage, "reason": "additional_" + coverage["reason"]}
+                if "priority_normalizer" in result:
+                    current = result["realtime_coverage"]
+                    extra = analysis_coverage(result["priority_normalizer"], additional)
+                    if priority[extra["state"]] > priority[current["state"]]:
+                        result["realtime_coverage"] = {**extra, "reason": "additional_" + extra["reason"]}
         return result
+
+    def backlog(self, checkpoint, priority_floor):
+        """Unconfirmed raw receipt range before the live floor, not event-time age."""
+        if self.organizations is not None or not self.client:
+            return {"state": "unavailable"}
+        lower, upper = parse_time(checkpoint), parse_time(priority_floor)
+        if lower is None or upper is None:
+            return {"state": "unavailable"}
+        if lower >= upper:
+            return {"state": "ok", "count": 0, "start": iso(upper), "end": iso(upper),
+                    "basis": "unconfirmed_receipt_range"}
+        count = 0
+        deadline = monotonic() + SERIES_TIMEOUT
+        for scope in index_batches(exact_indices(self.client, INDICES)):
+            if monotonic() >= deadline:
+                raise RuntimeError("Query budget exhausted")
+            caps = self.client.field_caps(index=scope, fields=["event.ingested"], include_unmapped=True)["fields"].get("event.ingested", {})
+            if not caps or set(caps) - {"date", "date_nanos"}:
+                raise ValueError("Receipt mapping missing")
+            response = checked(self.client.options(request_timeout=4, max_retries=0).count(
+                index=scope, query={"range": {"event.ingested": {"gte": iso(lower), "lt": iso(upper)}}}))
+            count = exact_count(count + exact_count(response["count"]))
+            if monotonic() >= deadline:
+                raise RuntimeError("Query budget exhausted")
+        return {"state": "ok", "count": count, "start": iso(lower), "end": iso(upper),
+                "basis": "unconfirmed_receipt_range"}
 
     def summary(self, pairs):
         pairs = list(pairs)

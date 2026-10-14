@@ -108,10 +108,13 @@ def create_batch(client, documents):
         raise RuntimeError("normalization_bulk_failed")
 
 
-def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_pages=1000, ssh_v2_start=None):
+def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_pages=1000, ssh_v2_start=None,
+             window_minutes=5, status_id='normalizer'):
     now = now or datetime.now(timezone.utc)
     initial = parse_time(initial_start)
-    if initial is None or initial > now or type(max_pages) is not int or not 1 <= max_pages <= 10000:
+    if (initial is None or initial > now or type(max_pages) is not int or not 1 <= max_pages <= 10000
+            or type(window_minutes) is not int or not 1 <= window_minutes <= 60
+            or status_id not in ('normalizer', 'normalizer-priority')):
         raise ValueError("A past aware initial start is required")
     ssh_start = parse_time(ssh_v2_start) if ssh_v2_start is not None else None
     if ssh_v2_start is not None and (ssh_start is None or not initial <= ssh_start <= now):
@@ -137,14 +140,15 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
         if checkpoint is None or checkpoint > now:
             raise ValueError("Invalid checkpoint or clock regression")
         start = max(initial, checkpoint - timedelta(minutes=15))
-        end = min(now - timedelta(seconds=30), checkpoint + timedelta(minutes=5))
+        end = min(now - timedelta(seconds=30), checkpoint + timedelta(minutes=window_minutes))
         counts = {"normalized": 0, "unsupported": 0, "invalid": 0}
         status = {"@timestamp": iso(now), "state": "running", "detection": "separate_worker",
+                  "initial_start": iso(initial),
                   "checkpoint": iso(checkpoint), "last_success": row[1] if row else None,
                   "range": {"start": iso(start), "end": iso(end)}, "counts": counts, "error": None}
         meta = None
         try:
-            client.index(index=STATUS, id="normalizer", document=status)
+            client.index(index=STATUS, id=status_id, document=status)
             if end > checkpoint:
                 def consume(hits, counters):
                     batch = []
@@ -173,7 +177,7 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
                         status.update(state="running", error=None,
                             progress={"state": "catching_up", "processed": sum(counts.values()),
                                       "range_complete": False})
-                        client.index(index=STATUS, id="normalizer", document=status)
+                        client.index(index=STATUS, id=status_id, document=status)
                         continuation.remember(db, meta)
                         db.commit()
                         return status
@@ -182,7 +186,7 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
             completed = end > (parse_time(row[0]) if row else initial)
             status.update(state="success" if completed else "waiting", checkpoint=iso(checkpoint),
                           last_success=iso(now) if completed else (row[1] if row else None))
-            client.index(index=STATUS, id="normalizer", document=status)
+            client.index(index=STATUS, id=status_id, document=status)
             db.execute("INSERT OR REPLACE INTO state VALUES (1,?,?)", (iso(checkpoint), status["last_success"]))
             if meta is not None:
                 continuation.clear(db)
@@ -198,7 +202,7 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
             status.update(state="failed", error="processing_failed", checkpoint=row[0] if row else iso(initial),
                           last_success=row[1] if row else None)
             try:
-                client.index(index=STATUS, id="normalizer", document=status)
+                client.index(index=STATUS, id=status_id, document=status)
             except Exception:
                 pass
             raise RuntimeError("processing_failed; checkpoint retained") from None

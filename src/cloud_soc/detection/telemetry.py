@@ -25,7 +25,9 @@ def evaluate(event, rule):
             mismatch = True
     if mismatch:
         return 'not_matched', []
-    return ('unknown', missing) if missing else ('matched', [])
+    required = list(dict.fromkeys(['organization.id', *rule['group_by']]))
+    missing += [field for field in required if get_field_value(event, field) in (None, '')]
+    return ('unknown', sorted(set(missing))) if missing else ('matched', [])
 
 
 def create_record(client, index, identifier, document):
@@ -55,19 +57,20 @@ def exclusion(client, event, rule, reason, missing, stamp, run_id):
 
 
 def stats_for(rules):
-    return {rule['id']: {'input_events': 0, 'matched': 0, 'not_matched': 0, 'unknown': 0,
+    return {rule['id']: {'input_events': 0, 'source_events': 0, 'matched': 0, 'not_matched': 0, 'unknown': 0,
                          'excluded': 0, 'late': 0, 'alerts_created': 0, 'alerts_existing': 0,
                          'policy_excluded': 0}
             for rule in rules}
 
 
 def run_records(rules, stats, *, run_id, stamp, start, end, state, error=None):
+    from cloud_soc.detection.profiles import assessment
     for rule in rules:
         identifier = run_id + ':' + rule['id'] + ':' + state
         document = {'@timestamp': stamp, 'record_id': identifier, 'run_id': run_id, 'rule': {'id': rule['id'], 'version': rule_revision(rule)},
                     'engine_version': rule_engine_version(rule), 'rule_snapshot': deepcopy(rule),
                     'state': state, 'range_start': start, 'range_end': end,
-                    'counts': deepcopy(stats[rule['id']]), 'error': error}
+                    'counts': deepcopy(stats[rule['id']]), 'assessment': assessment(stats[rule['id']], state), 'error': error}
         yield identifier, document
 
 

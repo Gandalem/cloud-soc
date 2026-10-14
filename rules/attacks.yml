@@ -9,7 +9,7 @@ rules:
     detection_type: attack_correlation
     group_by: [organization.id, host.id, user.name]
     conditions:
-      - {field: cloud_soc.detail.adapter, operator: in, value: [linux_ssh_v1, linux_sudo_session_v1]}
+      - {field: cloud_soc.detail.adapter, operator: in, value: [linux_ssh_v1, linux_ssh_v2, linux_sudo_session_v1]}
       - {field: user.name, operator: not_equals, value: root}
     threshold: {count: 5}
     time_window: {seconds: 900}

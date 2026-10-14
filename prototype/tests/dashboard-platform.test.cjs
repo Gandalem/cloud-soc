@@ -4,6 +4,13 @@ function scope(fetch=async()=>({ok:true,json:async()=>({rows:[]})})){
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../dashboard-widgets.js'),'utf8'),context);return context.window.CloudSOCWidgets;
 }
 const config={period:0,severity:'all',limit:8,sort:'newest',chart:'line',title:'경보',color:'blue'};
+test('historical alerts are explicitly labelled without changing their title or identity',()=>{
+ const w=scope(),row={title:'웹 경보',rule:'WEB-404-001',id:'immutable'};
+ assert.equal(w.alertTitle(row),'웹 경보');
+ assert.equal(w.alertTitle({...row,historical_review:true}),'과거 로그 재평가 · 웹 경보');
+ assert.equal(w.alertTitle({...row,historical_review:'PRIVATE_CANARY'}),'웹 경보');
+ assert.equal(row.id,'immutable');
+});
 test('24 duplicate widgets share one dataset per source and period',()=>{
  const w=scope(),layout={period:1440,widgets:Array.from({length:24},(_,i)=>({id:String(i),type:'trend',config}))};
  assert.deepEqual(Array.from(w.plan(layout,[{type:'trend',enabled:true,source:'operations'}])),['status','operations:1440']);

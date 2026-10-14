@@ -4,11 +4,13 @@ import argparse
 import json
 from pathlib import Path
 import time
+from urllib.parse import urlsplit
 
 from elasticsearch import Elasticsearch
 from cloud_soc.aws.__main__ import endpoint, protected_key
 from cloud_soc.detection.worker import approved_rules, run_once
 from cloud_soc.detection.incremental import run_incremental, utc
+from cloud_soc.detection.retrospective import run_retrospective
 
 
 def main(argv=None):
@@ -27,6 +29,11 @@ def main(argv=None):
     parser.add_argument("--include-sequence", action="store_true", help="Opt in to SSH repeated-failure then success detection")
     parser.add_argument("--include-attacks", action="store_true", help="Opt in to experimental metadata attack correlations; thresholds require real-data validation")
     parser.add_argument("--include-patterns", action="store_true", help="Opt in to enabled experimental metadata patterns; unverified candidates remain disabled")
+    parser.add_argument("--isolated-all", action="store_true", help="All 14 rules for isolated validation; writes require an explicit loopback HTTPS ES and separate state")
+    parser.add_argument("--rules", help="Explicit comma-separated enabled rule IDs; AUTH-001 is retained; disabled candidates are refused")
+    parser.add_argument("--additional-rules", help="Enabled rules excluding AUTH-001, in separate state/status; preserve existing AUTH worker")
+    parser.add_argument("--retrospective", action="store_true",
+                        help="Separate-state historical-context review for events normalized beyond the lateness allowance")
     parser.add_argument("--early-auth", action="store_true", help="Opt in to separate AUTH-001 provisional notices; needs explicit notice setup/permissions")
     parser.add_argument("--es-url")
     parser.add_argument("--ca-file")
@@ -39,7 +46,24 @@ def main(argv=None):
                 or not 1 <= args.max_active_events <= 1_000_000 or args.once and not args.run
                 or args.early_auth and args.snapshot):
             raise ValueError("Invalid options")
-        selected_rules = approved_rules(include_cloud=args.include_cloud, include_sequence=args.include_sequence, include_attacks=args.include_attacks, include_patterns=args.include_patterns)
+        selection = dict(include_cloud=args.include_cloud, include_sequence=args.include_sequence,
+                         include_attacks=args.include_attacks, include_patterns=args.include_patterns,
+                         isolated_all=args.isolated_all, rule_ids=args.rules.split(',') if args.rules is not None else None)
+        if args.additional_rules is not None:
+            if (args.snapshot or args.early_auth
+                    or Path(args.state).resolve() == Path('state/detection/runtime.sqlite').resolve()):
+                raise ValueError('Additional profile requires separate explicit state and no AUTH early/snapshot mode')
+            selection['additional_rule_ids'] = args.additional_rules.split(',')
+        if args.retrospective and (args.snapshot or args.early_auth or args.isolated_all
+                or Path(args.state).resolve() == Path('state/detection/runtime.sqlite').resolve()):
+            raise ValueError('Retrospective review requires separate explicit state, no early/snapshot/isolated mode')
+        selected_rules = approved_rules(**selection)
+        if args.isolated_all and args.run:
+            target = urlsplit(args.es_url or '')
+            if (target.scheme != 'https' or target.hostname not in ('127.0.0.1', '::1', 'localhost')
+                    or Path(args.state).resolve() == Path('state/detection/runtime.sqlite').resolve() or target.username or target.password
+                    or target.path or target.query or target.fragment):
+                raise ValueError('Isolated profile requires explicit loopback HTTPS and separate state')
         if args.run and not args.snapshot:
             utc(args.start)
             if not 60 <= args.lateness_seconds <= 86400:
@@ -57,11 +81,14 @@ def main(argv=None):
             while True:
                 failed = False
                 try:
-                    result = (run_once(client, max_documents=args.max_documents, include_cloud=args.include_cloud, include_sequence=args.include_sequence, include_attacks=args.include_attacks, include_patterns=args.include_patterns) if args.snapshot else
+                    result = (run_retrospective(client, state_path=args.state, start=args.start,
+                              lateness_seconds=args.lateness_seconds, max_documents=args.max_documents,
+                              source_id=url, **selection) if args.retrospective else
+                              run_once(client, max_documents=args.max_documents, **selection) if args.snapshot else
                               run_incremental(client, state_path=args.state, start=args.start,
                                               max_documents=args.max_documents, max_active_events=args.max_active_events,
                                               lateness_seconds=args.lateness_seconds, source_id=url,
-                                              accept_legacy_exclusion=args.accept_legacy_exclusion, include_cloud=args.include_cloud, include_sequence=args.include_sequence, include_attacks=args.include_attacks, include_patterns=args.include_patterns, early_auth=args.early_auth))
+                                              accept_legacy_exclusion=args.accept_legacy_exclusion, **selection, early_auth=args.early_auth))
                     print(json.dumps(result), flush=True)
                 except Exception:
                     failed = True
