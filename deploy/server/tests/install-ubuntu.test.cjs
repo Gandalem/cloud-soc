@@ -11,6 +11,12 @@ const sh = process.env.SH_EXE || (process.platform === 'win32' ? 'C:/Program Fil
 const definitions = source.split('# RUN INSTALLER')[0];
 const quote = value => `'${String(value).replace(/\\/g, '/').replace(/'/g, `'"'"'`)}'`;
 
+// Ubuntu dash rejects hyphens in function names. Keep POSIX sh and intercept apt-get through PATH.
+function aptGetStub(body = 'printf "%s\\n" "Unexpected live operation: apt-get $*" >&2; exit 97') {
+  return ['cat > "$ROOT/bin/apt-get" <<\'SOC_APT_STUB\'', '#!/bin/sh', body,
+    'SOC_APT_STUB', 'chmod 755 "$ROOT/bin/apt-get"', ''].join('\n');
+}
+
 function run(args, input) {
   const result = spawnSync(sh, args, { cwd: root, input, encoding: 'utf8', timeout: 15000 });
   assert.ifError(result.error);
@@ -44,7 +50,9 @@ SYSCTL_FILE=$ROOT/sysctl.conf
 HOST=soc.example.invalid BIND_IP=10.0.0.5 ARCH=amd64 TEMP=
 UBUNTU_VERSION=22.04 UBUNTU_SUITE=jammy
 forbidden() { die "Unexpected live operation: $*"; }
-apt-get() { forbidden apt-get "$@"; }
+mkdir -p "$ROOT/bin"
+PATH="$(cd "$ROOT/bin" && pwd):$PATH"; export PATH
+${aptGetStub()}
 curl() { forbidden curl "$@"; }
 docker() { forbidden docker "$@"; }
 systemctl() { forbidden systemctl "$@"; }
@@ -109,6 +117,11 @@ install_packages
 
 test('--yes confirmation skips the prompt without reading input', () => {
   assert.equal(ok(fixture('YES=yes; confirm_installation < /dev/null')), '');
+});
+
+test('apt-get is an isolated executable stub and refuses unplanned package operations', () => {
+  assert.match(ok(fixture('command -v apt-get')), /\/bin\/apt-get\s*$/);
+  fail(fixture('apt-get update'), /Unexpected live operation: apt-get update/);
 });
 
 for (const [version, suite] of [['22.04', 'jammy'], ['24.04', 'noble'], ['26.04', 'resolute']]) {
@@ -229,7 +242,7 @@ test('Docker failures, existing central containers/volumes and conflicting packa
 test('only missing dependencies are installed, with no upgrade/removal flags', () => {
   const result = ok(fixture(`
 installed() { [ "$1" != curl ] && [ "$1" != openssl ]; }
-apt-get() { printf '%s\n' "$*"; }
+${aptGetStub('printf \'%s\\n\' "$*"')}
 install_packages
 `));
   assert.equal(result, 'update\ninstall -y --no-remove --no-upgrade --no-install-recommends curl openssl\n');
@@ -263,7 +276,7 @@ test('new Docker install uses verified HTTPS key transport and explicit signed A
 INSTALL_DOCKER=yes
 mktemp() { mkdir "$ROOT/download"; printf '%s' "$ROOT/download"; }
 curl() { printf 'CURL %s\n' "$*"; printf '%s\n' '-----BEGIN PGP PUBLIC KEY BLOCK-----' > "$TEMP/docker.asc"; }
-apt-get() { printf 'APT %s\n' "$*"; }
+${aptGetStub('printf \'APT %s\\n\' "$*"')}
 systemctl() { printf 'SYSTEMCTL %s\n' "$*"; }
 check_docker_stack() { printf 'CHECK STACK\n'; }
 install_docker

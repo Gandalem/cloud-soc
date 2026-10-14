@@ -6,6 +6,9 @@
 
 2026-10-15 권한 시험 보완 기록(커밋 전 로컬 기준):
 
+- 후속 `c257b78`의 Ubuntu 전체 Python은1,298 passed/18 skipped/하위255로 기존18건을 포함해 통과했다. 다음 설치 JS 단계에서 기존 시험 대역의 `apt-get()` 함수 이름을 Ubuntu dash가 거부해22건이 실패했다. 운영 sh를 bash로 바꾸거나 시험을 빼지 않고, 시험의 임시 PATH에 실행 파일 대역을 두고 비계획 패키지 실행 거부도 추가 검증한다. 실제 root 소유권 단계는 선행 JS 실패로 아직 실행되지 않았으므로 미검증이다. 새 HEAD의 모든 CI를 다시 통과해야 병합한다.
+- PATH 대역 보완 후 로컬 설치 JS57 passed/기존 조건부 제외1·diff 검사를 통과했다. 실제 운영 설치 스크립트/배포 소스는 불변이며 Ubuntu dash 실행은 새 CI에서 다시 확인한다. 테스트를 통과시키려고 실제 패키지 관리자나 Docker 명령을 실행하지 않도록 기본 대역의 거부도 시험한다.
+
 - 실패15건은 기존 상태 인수2·신규/업그레이드 키2·중단 재개1·coordinator5·계약 복구1·신규 설치4다. 나머지3건은 Slack 부분 migration 재개·암호화 키/설정 보존·기존 canonical 읽기 키 재사용이다. 공통 실제 호출 지점은 host의 DB/워커 디렉터리 chown, atomic_json의 임시 계약 파일 chown, migrations의 기존 워커/Slack 읽기 키와 알림 디렉터리/DB/암호화 키 chown이다.
 - `tests/deployment_ownership.py`와 opt-in `ownership_calls` fixture는 이9개 시험 함수의 POSIX 분기만 모듈별 OS 대역으로 실행한다. 전역 os.name/os.chown과 운영 코드는 변경하지 않으며 실제 경로 존재·시험 tmp 경계·UID/GID1000:1000·POSIX0700/0600을 검사한다. 각 시험은 필요한 대상/원자적 임시 계약 파일 호출과 키 재사용 시 추가 chown 부재도 단언한다. 독립 시험으로 fixture가 없는 코드가 실제 os를 사용하는지도 확인한다.
 - 소유권 거부 시 임시 계약 파일 정리/원본 보존·WAL 원본 보존·후속 워커 중단·실패 ledger·기존 알림 키/설정 보존을 검사했다. coordinator에도 ownership 실패/기존 실행 복귀 사례를 추가했다. 로컬 관련 Python120 passed/기존 Windows symlink 조건부 제외1, Ruff·Bandit 중간 이상0·diff 통과다. 새 skip/xfail/검사 비활성화는 없다. 실행 소스240개 hash `b6bafc954a026b6b175b8ff116e39b4254cf3e5840f8fddbd317c7e0ae787522`는 그대로다.
