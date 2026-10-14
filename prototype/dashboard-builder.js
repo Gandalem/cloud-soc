@@ -92,6 +92,7 @@
     const processing=window.CloudSOCProcessing?.view(results.status?.body);
     for(const [id,key] of [['dashboard-realtime','realtime'],['dashboard-backlog','historical']]){const box=$(id);if(box){box.hidden=!processing;box.textContent=processing?.[key]||'';}}
     if(processing&&['observed','warning'].includes(processing.state)&&state==='delayed')message='과거 로그 분석이 지연되고 있습니다.';
+    if(coverage?.reason==='retrospective_failed')message='늦게 도착한 과거 로그의 재평가가 중단됐습니다.';
     warning.hidden=state==='observed';warning.textContent=message+' 경보 0건이 안전을 뜻하지 않습니다.';
   }
   async function refresh(){

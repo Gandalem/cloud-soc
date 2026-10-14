@@ -25,7 +25,7 @@
 <section id="dashboard-editor" class="builder-editbar" hidden aria-label="화면 편집"><label>이름<input id="dashboard-name" maxlength="48"></label><div class="dash-actions"><button id="dashboard-save" class="dash-primary">구성 저장</button><button id="dashboard-cancel">취소·저장 구성 복원</button><button id="dashboard-undo">되돌리기</button><button id="dashboard-reset">템플릿으로 초기화</button></div><p id="dashboard-save-state" role="status">핸들로 이동·크기를 조정하거나 각 위젯의 버튼을 사용하세요.</p></section>
 <div id="dashboard-conflict" class="builder-editbar" hidden><p>현재 편집 내용은 유지됩니다. 서버 구성을 다시 불러오면 현재 편집을 취소합니다.</p><button id="dashboard-reload">서버 구성 다시 불러오기</button></div>
 <div id="platform-grid" class="platform-grid" aria-label="대시보드 위젯"></div>
-<p class="dash-footnote">KST 표시 · 로그는 서버 수신 시각,경보는 저장 시각 기준입니다. 미종결 사건과 서비스 상태는 현재 상태입니다. 경보 수는 공격 성공 횟수가 아닙니다. <a href="logs.html">통합 로그</a> · <a href="cases.html">사건 조사</a></p>
+<p class="dash-footnote">KST 표시 · 로그는 서버 수신 시각,경보는 발생 구간 시각 기준입니다. 미종결 사건과 서비스 상태는 현재 상태입니다. 경보 수는 공격 성공 횟수가 아닙니다. <a href="logs.html">통합 로그</a> · <a href="cases.html">사건 조사</a></p>
 </section>
 <aside class="builder-library builder-panel" aria-label="위젯 라이브러리"><div class="builder-panel-heading"><h2>위젯 라이브러리</h2><span id="widget-total"></span></div><label class="builder-search">위젯 검색<input id="widget-search" type="search" placeholder="경보, 추이, 사건…" autocomplete="off"></label><label>분류<select id="widget-category"><option value="all">전체</option><option>보안</option><option>조사</option><option>클라우드</option><option>수집</option><option>운영</option></select></label><div id="dashboard-widget-options" class="builder-catalog"></div></aside>
 </div>

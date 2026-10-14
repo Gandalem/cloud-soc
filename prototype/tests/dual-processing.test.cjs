@@ -23,3 +23,10 @@ test('additional detector delay is visible independently from primary AUTH',()=>
  assert.match(view.realtime,/지연.*1,300초/);
  assert.match(view.historical,/0건/);
 });
+test('late review failure and its pending ranges remain separate from current latency',()=>{
+ const view=processingView({priority_normalizer:{lag_seconds:39},detector:{lag_seconds:30},
+  realtime_coverage:{state:'observed'},historical_backlog:{state:'ok',count:0},
+  late_review:{state:'failed',pending_contexts:2}});
+ assert.match(view.realtime,/최근 실행 확인.*39초/);
+ assert.match(view.historical,/미완료 구간 0건.*재평가: 실패.*대기 범위 2개/);
+});

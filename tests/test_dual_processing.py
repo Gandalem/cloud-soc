@@ -54,3 +54,24 @@ def test_backlog_query_failure_leaves_realtime_status_visible():
     with patch.object(operations,'worker_status',side_effect=lambda name:stages[name]):result=operations.pipeline()
     assert result['historical_backlog']=={'state':'unavailable'}
     assert result['realtime_coverage']['state']=='observed'
+
+def test_late_review_failure_is_visible_without_hiding_live_coverage():
+    operations,client=reader()
+    stages={'normalizer':{'state':'success','health':'healthy','checkpoint':HIGH},
+        'normalizer-priority':{'state':'success','health':'healthy','checkpoint':HIGH,'initial_start':HIGH},
+        'detector':{'state':'success','health':'healthy'},
+        'detector-retrospective':{'state':'failed','health':'failed','pending_contexts':2}}
+    with patch.object(operations,'worker_status',side_effect=lambda name:stages.get(name,{'state':'not_started'})):
+        result=operations.pipeline()
+    assert result['realtime_coverage']['state']=='observed'
+    assert result['coverage']=={'state':'blocked','reason':'retrospective_failed'}
+    assert result['late_review']['pending_contexts']==2
+
+def test_alert_row_exposes_only_fixed_historical_review_flag():
+    from cloud_soc.portal.operations import alert_row
+    source={'rule':{'id':'WEB-404-001'},'cloud_soc':{'provenance':{'review':{
+        'mode':'retrospective','private':'SECRET_CANARY'}}}}
+    row=alert_row({'_id':'a'*64,'_source':source})
+    assert row['historical_review'] is True and 'SECRET_CANARY' not in str(row)
+    source['cloud_soc']['provenance']['review']['mode']='SECRET_CANARY'
+    assert alert_row({'_id':'a'*64,'_source':source})['historical_review'] is False

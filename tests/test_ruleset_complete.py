@@ -145,7 +145,7 @@ def test_complete_inventory_explicit_selection_cli_and_live_write_gate():
     assert [r['id'] for r in approved_rules()] == ['AUTH-001']
     assert [r['id'] for r in approved_rules(rule_ids=['AUTH-SEQ-001'])] == ['AUTH-001', 'AUTH-SEQ-001']
     assert rule_revision(approved_rules()[0]) == rule_revision(RULES['AUTH-001'])
-    for options in ({'rule_ids': ['WEB-404-001']}, {'rule_ids': ['invented']}, {'rule_ids': []},
+    for options in ({'rule_ids': ['AWS-CONSOLE-001']}, {'rule_ids': ['invented']}, {'rule_ids': []},
                     {'rule_ids': ['AUTH-001', 'AUTH-001']}, {'isolated_all': True, 'include_cloud': True}):
         with pytest.raises(ValueError):
             approved_rules(**options)
