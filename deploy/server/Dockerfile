@@ -10,9 +10,7 @@ COPY prototype /app/prototype
 COPY deploy/agents /app/deploy/agents
 COPY deploy/aws /app/deploy/aws
 COPY deploy/oci /app/deploy/oci
-COPY deploy/server/bootstrap.py /app/deploy/server/bootstrap.py
-COPY deploy/server/storage-report.py /app/deploy/server/storage-report.py
-COPY deploy/server/enrollment-maintenance.py /app/deploy/server/enrollment-maintenance.py
+COPY deploy/server /app/deploy/server
 # Normalize public source permissions even from a restrictive build archive.
 # Runtime databases, certificates and secrets are mounted separately afterwards.
 RUN find /app/src /app/rules /app/prototype /app/deploy -type d -exec chmod 755 {} + \

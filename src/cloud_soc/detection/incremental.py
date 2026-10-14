@@ -29,13 +29,17 @@ def utc(value):
 
 def run_incremental(client, *, state_path, start, now=None, max_documents=20000, max_active_events=20000,
                     lateness_seconds=900, scanner=None, source_id='local', accept_legacy_exclusion=False, include_cloud=False, include_sequence=False, include_attacks=False, include_patterns=False, early_auth=False,
-                    isolated_all=False, rule_ids=None, additional_rule_ids=None):
+                    isolated_all=False, rule_ids=None, additional_rule_ids=None, status_id=None):
     """Late events beyond the finalized frontier are counted, never silently replayed.
 
     A 15-minute normalization receipt overlap handles bounded refresh/write delays.
     Rule/source identity is pinned; changing it requires a new explicit state file.
     """
     now, start = utc(now or datetime.now(timezone.utc)), utc(start)
+    expected_status = 'detector-additional' if additional_rule_ids is not None else 'detector'
+    if status_id not in (None, expected_status, 'detector-priority') or (status_id == 'detector-priority' and (additional_rule_ids is not None or early_auth)):
+        raise ValueError('Invalid status ownership')
+    status_id = status_id or expected_status
     if (type(max_documents) is not int or type(max_active_events) is not int
             or not 1 <= max_documents <= 100000 or not 1 <= max_active_events <= 1_000_000
             or not 60 <= lateness_seconds <= 86400 or start > now):
@@ -101,7 +105,7 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
         def publish(kind, error=None):
             history_pending = db.execute('SELECT count(*) FROM telemetry_outbox').fetchone()[0]
             health = 'failed' if kind == 'failed' else 'delayed' if (now - utc(state['checkpoint'])).total_seconds() > 1200 else 'warning' if history_pending or state.get('excluded_total') or state['late_total'] or state.get('legacy_excluded') or counts.get('early_failed') or counts.get('early_final_reconcile_required') else 'healthy'
-            client.index(index=STATUS, id='detector-additional' if additional_rule_ids is not None else 'detector', document={'@timestamp': now.isoformat(),
+            client.index(index=STATUS, id=status_id, document={'@timestamp': now.isoformat(),
                 'state': kind, 'detection': ','.join(rule['id'] for rule in rules), 'checkpoint': state['checkpoint'],
                 'last_success': state['last_success'], 'error': error,
                 'health': health, 'legacy_excluded': state.get('legacy_excluded', 0),

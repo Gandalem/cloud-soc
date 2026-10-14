@@ -1,6 +1,10 @@
 (() => {
   "use strict";
   const form = document.getElementById("login-form"), error = document.getElementById("login-error");
+  const query = new URLSearchParams(window.location.search || ""), alert = query.get("alert") || "";
+  // Only this fixed same-origin route may survive login; never accept a caller-supplied return URL.
+  const destination = query.getAll("alert").length === 1 && /^[0-9a-f]{64}$/.test(alert)
+    ? "/workbench.html?alert=" + alert : "/";
   let mode = null;
   async function configure() {
     try {
@@ -22,7 +26,7 @@
     try {
       const response = await fetch("/api/auth/login", {method:"POST",headers:{"Content-Type":"application/json","X-Cloud-SOC":"portal"},body:JSON.stringify({username:form.elements.username.value,password:form.elements.password.value})});
       form.elements.password.value = "";
-      if (response.ok) window.location.replace("/");
+      if (response.ok) window.location.replace(destination);
       else error.textContent = (await response.json()).error || "로그인에 실패했습니다.";
     } catch { error.textContent = "서버 연결을 확인하세요."; }
     finally { form.elements.password.value = ""; button.disabled = false; }

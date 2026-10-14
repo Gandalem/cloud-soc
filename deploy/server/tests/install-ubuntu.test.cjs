@@ -300,31 +300,29 @@ cat "$SYSCTL_FILE"
   fail(fixture('printf "foreign setting" > "$SYSCTL_FILE"; check_kernel_config'), /not be overwritten/);
 });
 
-test('Compose ignores inherited state overrides and validates before starting', () => {
+test('new installs delegate to the same versioned manager used by upgrades', () => {
   const result = ok(fixture(`
 SOC_PUBLIC_HOST=evil SOC_STATE_DIR=/elsewhere COMPOSE_PROFILES=evil
 export SOC_PUBLIC_HOST SOC_STATE_DIR COMPOSE_PROFILES
-docker_local() {
-  if env | grep -qE '^(SOC_PUBLIC_HOST|SOC_STATE_DIR|COMPOSE_PROFILES)='; then forbidden inherited; fi
+python3() {
   printf '%s\n' "$*"
 }
 start_stack
 `));
-  assert.match(result, /--project-name cloud-soc-central --env-file .*\/state\/server\/compose.env/);
-  assert.match(result, /config --quiet\n.*up -d --build\n$/);
-  const failure = fixture('compose() { printf "%s\\n" "$*"; return 42; }; start_stack');
+  assert.match(result, /manage.py install --workspace .* --state .*\/state\/server --build/);
+  const failure = fixture('python3() { printf "%s\\n" "$*"; return 42; }; start_stack');
   assert.equal(failure.status, 42);
   assert.doesNotMatch(failure.stdout, /up -d/);
 });
 
-test('readiness requires successful bootstrap and all three authenticated TLS endpoints', () => {
+test('readiness requires managed worker startup and all three authenticated TLS endpoints', () => {
   const setup = `
-compose() { printf 'bootstrap-id'; }
-docker_local() { printf 'exited:0'; }
+python3() { printf '%s\n' 'runtime ready; ingestion not verified'; }
 http_status() { case "$1" in 9200|443) printf 401;; 5601) printf 200;; esac; }
 `;
   assert.match(ok(fixture(setup + '\ncheck_ready')), /startup checks passed/);
-  fail(fixture(setup + '\ndocker_local() { printf "exited:1"; }; check_ready'), /did not exit successfully/);
+  const failed = fixture(setup + '\npython3() { return 42; }; check_ready');
+  assert.equal(failed.status, 42);
   fail(fixture(setup + `
 http_status() { printf 200; }
 date() { if [ -f "$ROOT/timed-out" ]; then printf 301; else printf 0; fi; }
