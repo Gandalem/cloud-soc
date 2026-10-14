@@ -7,7 +7,7 @@ import re
 
 from cloud_soc.detection.engine import (
     build_group_key, condition_matches, event_evidence, event_fingerprint,
-    get_field_value, parse_event_timestamp, rule_revision,
+    get_field_value, parse_event_timestamp, rule_revision, ssh_collection_mirror,
 )
 from cloud_soc.privacy import REDACTED
 
@@ -203,6 +203,8 @@ def detect_behavior(events, rule, runtime=None):
                     diversity[action] -= 1
                     if not diversity[action]:
                         del diversity[action]
+            if any(ssh_collection_mirror(event, prior) for _, _, prior in window):
+                continue
             window.append((stamp, identifier, deepcopy(event)))
             seen.add(identifier)
             if rule['type'] == 'diversity':

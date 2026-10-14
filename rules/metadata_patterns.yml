@@ -56,7 +56,7 @@ rules:
     enabled: false
     severity: low
     conditions:
-      - {field: cloud_soc.detail.adapter, operator: equals, value: linux_operational_v1}
+      - {field: cloud_soc.detail.adapter, operator: in, value: [linux_operational_v1, web_access_metadata_v1, web_access_agent_v1]}
       - {field: cloud_soc.detail.fields.http_status, operator: equals, value: 404}
     group_by: [organization.id, host.id, source.ip]
     threshold: {count: 20}

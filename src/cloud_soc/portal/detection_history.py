@@ -9,7 +9,7 @@ from cloud_soc.portal.log_query import LogQueryError, bounded_json
 from cloud_soc.portal.privacy import display
 
 FIELDS = ['@timestamp', 'record_id', 'run_id', 'rule', 'state', 'range_start', 'range_end',
-          'counts', 'error', 'reason', 'missing_fields', 'normalized', 'raw', 'event_time', 'event_hash']
+          'counts', 'assessment', 'error', 'reason', 'missing_fields', 'normalized', 'raw', 'event_time', 'event_hash']
 
 
 def latest_runs(client, sources):
@@ -57,10 +57,15 @@ def project(source):
             result[key] = {field: display(value.get(field)) for field in fields}
     counts = source.get('counts')
     if isinstance(counts, dict):
-        result['counts'] = {k: v for k, v in counts.items() if k in ('input_events', 'matched', 'not_matched', 'unknown',
+        result['counts'] = {k: v for k, v in counts.items() if k in ('input_events', 'source_events', 'matched', 'not_matched', 'unknown',
             'excluded', 'late', 'policy_excluded', 'alerts_created', 'alerts_existing', 'evaluated_events', 'detection_matches') and type(v) is int and v >= 0}
     if isinstance(source.get('missing_fields'), list):
         result['missing_fields'] = [display(value) for value in source['missing_fields'][:50] if isinstance(value, str)]
+    value = source.get('assessment')
+    if (isinstance(value, dict) and value.get('state') in ('unverified', 'not_evaluable', 'evaluated')
+            and value.get('reason') in ('run_not_committed', 'incomplete_or_excluded_input',
+                                     'no_source_observations', 'bounded_observed_input')):
+        result['assessment'] = {'state': value['state'], 'reason': value['reason']}
     return result
 
 

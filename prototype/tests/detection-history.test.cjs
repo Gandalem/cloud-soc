@@ -35,6 +35,26 @@ test('history failures expose no upstream payload and clear stale rows on refres
 
 const zero={input_events:0,matched:0,not_matched:0,unknown:0,excluded:0,late:0,policy_excluded:0,evaluated_events:0,detection_matches:0,alerts_created:0,alerts_existing:0};
 const textOf=n=>n.textContent+n.children.map(textOf).join(' ');
+
+test('all fourteen rule histories distinguish evaluated input, missing fields and absent sources',async()=>{
+ const ids=['AUTH-001','AUTH-SEQ-001','AUTH-SPRAY-001','ATTACK-01','ATTACK-02','ATTACK-03','AWS-IAM-001',
+  'AWS-AUDIT-001','AWS-NETWORK-001','OCI-IAM-001','WIN-AUTH-001','WEB-404-001','NET-PORT-001','AWS-CONSOLE-001'];
+ const rows=ids.map((id,i)=>({rule:{id},run_id:'run-'+i,state:'committed',counts:{...zero,input_events:1},
+  assessment:i%3===0?{state:'evaluated',reason:'bounded_observed_input'}:i%3===1?
+   {state:'unverified',reason:'no_source_observations'}:{state:'not_evaluable',reason:'incomplete_or_excluded_input'}}));
+ const ui=browser([ok({state:'ok',rows,next:null})]);await settle();
+ assert.equal(ui.get('history-rows').children.length,14);
+ const text=textOf(ui.get('history-rows'));
+ assert.match(text,/관측 입력 평가 완료/);assert.match(text,/미검증/);assert.match(text,/평가 불가/);
+ assert.match(text,/경보 0건은 공격 부재나 전체 실환경 검증 완료를 의미하지 않습니다/);
+ assert.doesNotMatch(text,/undefined|NaN|Invalid Date/);
+});
+
+test('an empty committed run remains unverified when folded',async()=>{
+ const ui=browser([ok({state:'ok',rows:[{run_id:'quiet',rule:{id:'AWS-CONSOLE-001'},state:'committed',counts:zero,
+  assessment:{state:'unverified',reason:'no_source_observations'}}],next:null})]);await settle();
+ assert.match(textOf(ui.get('history-rows')),/새 입력 없음 · 미검증/);
+});
 test('one run keeps its terminal outcome across raw records and seek page boundaries',async()=>{
  const base={run_id:'one',rule:{id:'AUTH-001'},counts:{...zero,input_events:5},'@timestamp':'2026-10-12T09:00:00Z'};
  const ui=browser([ok({state:'ok',rows:[{...base,state:'committed'},{...base,state:'evaluated'}],next:'next'}),ok({state:'ok',rows:[{...base,state:'evaluated'}],next:null})]);await settle();

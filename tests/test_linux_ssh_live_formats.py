@@ -99,8 +99,13 @@ def test_same_format_distinct_attempts_and_hosts_are_not_collapsed():
     a, b = raw(), raw(origin='rfc3339')
     b['_source']['host']['id'] = 'other-host'
     assert event(a)['cloud_soc']['observation']['id'] != event(b)['cloud_soc']['observation']['id']
-    same = [event(raw()) for _ in range(10)]
+    same = []
+    for i in range(10):
+        distinct = raw()
+        distinct['_id'] = f'same-format-distinct-attempt-{i}'
+        same.append(event(distinct))
     assert len(detect_rule(same, RULE)) == 1
+    assert detect_rule([event(raw())] * 10, RULE) == []
     assert detect_rule([event(raw(i, outcome='success')) for i in range(10)], RULE) == []
 
 

@@ -14,8 +14,14 @@ class ThresholdDetector:
 
 class SingleDetector:
     def detect(self, events, rule, runtime):
-        from cloud_soc.detection.engine import _detect_threshold
-        return [match for event in events for match in _detect_threshold([event], rule)]
+        from cloud_soc.detection.engine import _detect_threshold, observation_identity, parse_event_timestamp, event_fingerprint
+        seen, result = set(), []
+        for event in sorted(events, key=lambda e: (parse_event_timestamp(e), event_fingerprint(e))):
+            identifier = observation_identity(event)
+            if identifier not in seen:
+                seen.add(identifier)
+                result.extend(_detect_threshold([event], rule))
+        return result
 
 
 class SequenceDetector:

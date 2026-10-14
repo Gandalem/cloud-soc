@@ -5,7 +5,12 @@
   const states = {evaluated: '최종 저장 미확인', committed: '실행 완료', failed: '실행 실패', waiting: '입력 대기'};
   const rank = {committed: 4, failed: 3, evaluated: 2, waiting: 1};
   const names = {'AUTH-001': 'SSH 반복 로그인 실패', 'ATTACK-01': 'SSH 인증 후 특권 활동',
-    'ATTACK-02': 'AWS API 열거 의심', 'ATTACK-03': '권한 변경 후 감사 중단 의심'};
+    'ATTACK-02': 'AWS API 열거 의심', 'ATTACK-03': '권한 변경 후 감사 중단 의심',
+    'AUTH-SEQ-001': 'SSH 실패 후 로그인 성공', 'AUTH-SPRAY-001': '여러 계정 대상 SSH 실패',
+    'AWS-IAM-001': 'AWS 고권한 정책 연결', 'AWS-AUDIT-001': 'AWS 감사 중지·삭제',
+    'AWS-NETWORK-001': 'AWS 관리 포트 인터넷 허용', 'OCI-IAM-001': 'OCI 정책 생성·변경',
+    'WIN-AUTH-001': 'Windows 반복 로그인 실패', 'WEB-404-001': '웹 404 반복 응답',
+    'NET-PORT-001': '다수 목적지 포트 관측', 'AWS-CONSOLE-001': 'AWS 콘솔 반복 로그인 실패'};
   const reasons = {late_event: '평가 가능한 지연 시간을 초과했습니다.', missing_condition_fields: '규칙에 필요한 정보가 없습니다.',
     missing_group_fields: '조직·사용자 등 연결에 필요한 정보가 없습니다.', invalid_event_time: '발생 시각을 확인할 수 없습니다.',
     future_event_clock: '발생 시각이 미래로 기록돼 있습니다.', approved_policy_exception: '승인된 예외 조건에 해당합니다.'};
@@ -20,6 +25,15 @@
     box.append(node('h2', (names[rule] || rule) + ' · ' + (row.reason ? '평가 제외' : states[row.state] || '상태 미확인')));
     box.append(node('p', fmt(row['@timestamp']) + ' (KST)'));
     if (row.reason) box.append(node('p', reasons[row.reason] || '제외 사유 확인이 필요합니다.'));
+    if (row.assessment) {
+      const labels = {unverified: '미검증', not_evaluable: '평가 불가', evaluated: '관측 입력 평가 완료'};
+      const notes = {no_source_observations: '이 실행 구간에 해당 로그 소스가 관측되지 않았습니다.',
+        incomplete_or_excluded_input: '필수 정보 누락 또는 평가 제외 입력이 있습니다.',
+        run_not_committed: '최종 처리 위치 저장이 확인되지 않았습니다.',
+        bounded_observed_input: '해당 실행 구간의 관측 입력에 한정된 결과입니다.'};
+      box.append(node('p', (labels[row.assessment.state] || '미검증') + ' · ' + (notes[row.assessment.reason] || '검증 범위를 확인하세요.')),
+        node('p', '경보 0건은 공격 부재나 전체 실환경 검증 완료를 의미하지 않습니다.'));
+    }
     if (row.counts) {
       const c = row.counts;
       box.append(node('p', '새 입력 ' + number(c.input_events) + '건 · 새 경보 ' + number(c.alerts_created) + '건 · 평가 제외 ' + number(c.excluded) + '건'));
@@ -50,9 +64,10 @@
     for (const row of active) $('history-rows').append(card(row));
     if (quiet.length) {
       const details = node('details'); details.className = 'history-idle panel';
-      details.append(node('summary', '새 입력 없는 완료 실행 ' + quiet.length.toLocaleString('ko-KR') + '회 · 개별 시각 보기'));
+      details.append(node('summary', '새 입력 없는 완료 실행 ' + quiet.length.toLocaleString('ko-KR') + '회' +
+        (quiet.some(row => row.assessment) ? ' · 미검증' : '') + ' · 개별 시각 보기'));
       const table = node('table'); table.className = 'history-idle-table';
-      for (const row of quiet) {const tr = node('tr'); tr.append(node('td', fmt(row['@timestamp'])), node('td', names[row.rule?.id] || row.rule?.id || '규칙 미기록'), node('td', '새 입력 없음')); table.append(tr);}
+      for (const row of quiet) {const tr = node('tr'); tr.append(node('td', fmt(row['@timestamp'])), node('td', names[row.rule?.id] || row.rule?.id || '규칙 미기록'), node('td', row.assessment ? '새 입력 없음 · 미검증' : '새 입력 없음')); table.append(tr);}
       details.append(table); $('history-rows').append(details);
     }
   }

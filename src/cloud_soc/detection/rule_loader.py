@@ -229,7 +229,7 @@ def validate_rule(
     )
 
     if (
-        not isinstance(threshold_count, int)
+        type(threshold_count) is not int
         or threshold_count <= 0
     ):
         raise ValueError(
@@ -248,7 +248,7 @@ def validate_rule(
     )
 
     if (
-        not isinstance(window_seconds, int)
+        type(window_seconds) is not int
         or window_seconds <= 0
     ):
         raise ValueError(
@@ -256,6 +256,14 @@ def validate_rule(
             "time_window.seconds는 "
             "1 이상의 정수여야 합니다."
         )
+
+    cooldown = rule.get('cooldown', {'seconds': 0})
+    if (not isinstance(cooldown, dict) or type(cooldown.get('seconds')) is not int
+            or not 0 <= cooldown['seconds'] <= 86400
+            or any(not isinstance(field, str) or not field.strip() for field in group_by)
+            or type(rule.get('enabled', True)) is not bool
+            or rule.get('severity', 'medium') not in ('low', 'medium', 'high', 'critical')):
+        raise ValueError('Invalid cooldown, scope, enabled flag or severity')
 
     if kind == 'cardinality':
         from cloud_soc.detection.patterns import validate_pattern

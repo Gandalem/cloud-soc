@@ -17,6 +17,7 @@ from cloud_soc.elastic.repository import ensure_provenance_mapping, save_securit
 from cloud_soc.main import make_alert_id, build_security_alert
 from cloud_soc.processing.contract import NORMALIZED, STATUS
 from cloud_soc.detection.telemetry import evaluate, exclusion, stats_for, runs, queue_committed_runs, flush_outbox
+from cloud_soc.detection.profiles import source_observed
 
 
 def utc(value):
@@ -27,7 +28,8 @@ def utc(value):
 
 
 def run_incremental(client, *, state_path, start, now=None, max_documents=20000, max_active_events=20000,
-                    lateness_seconds=900, scanner=None, source_id='local', accept_legacy_exclusion=False, include_cloud=False, include_sequence=False, include_attacks=False, include_patterns=False, early_auth=False):
+                    lateness_seconds=900, scanner=None, source_id='local', accept_legacy_exclusion=False, include_cloud=False, include_sequence=False, include_attacks=False, include_patterns=False, early_auth=False,
+                    isolated_all=False, rule_ids=None):
     """Late events beyond the finalized frontier are counted, never silently replayed.
 
     A 15-minute normalization receipt overlap handles bounded refresh/write delays.
@@ -38,6 +40,9 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
             or not 1 <= max_documents <= 100000 or not 1 <= max_active_events <= 1_000_000
             or not 60 <= lateness_seconds <= 86400 or start > now):
         raise ValueError('invalid_incremental_options')
+    rules = approved_rules(include_cloud=include_cloud, include_sequence=include_sequence,
+                           include_attacks=include_attacks, include_patterns=include_patterns,
+                           isolated_all=isolated_all, rule_ids=rule_ids)
     path = Path(state_path)
     if path.is_symlink():
         raise ValueError('unsafe_state_path')
@@ -48,7 +53,6 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
     except FileExistsError:
         if not path.is_file() or (os.name != 'nt' and stat.S_IMODE(path.stat().st_mode) & 0o077):
             raise ValueError('state_file_must_be_private_and_regular')
-    rules = approved_rules(include_cloud=include_cloud, include_sequence=include_sequence, include_attacks=include_attacks, include_patterns=include_patterns)
     identity = event_fingerprint({'rules': rules, 'start': start.isoformat(), 'lateness': lateness_seconds,
                                   'index': NORMALIZED, 'source': source_id, 'legacy_exclusion': accept_legacy_exclusion,
                                   'runtime_contract': 2, 'rule_versions': [rule_revision(rule) for rule in rules]})
@@ -158,6 +162,7 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                 for rule in rules:
                     metrics = rule_stats[rule['id']]
                     metrics['input_events'] += 1
+                    metrics['source_events'] += int(source_observed(event, rule['id']))
                     outcome, missing = evaluate(event, rule)
                     if outcome == 'excluded':
                         metrics['policy_excluded'] += 1

@@ -19,6 +19,7 @@ def prepare(client):
                'engine_version': KEYWORD, 'rule_snapshot': {'type': 'object', 'enabled': False},
                'range_start': DATE, 'range_end': DATE,
                'rule': {'properties': {'id': KEYWORD, 'version': KEYWORD}},
+               'assessment': {'type': 'object', 'enabled': False},
                'counts': {'type': 'object', 'enabled': False}},
         EXCLUSIONS: {'@timestamp': DATE, 'record_id': KEYWORD, 'run_id': KEYWORD, 'reason': KEYWORD, 'missing_fields': KEYWORD,
                      'event_time': DATE, 'event_hash': KEYWORD,
