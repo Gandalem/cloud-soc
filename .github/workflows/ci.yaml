@@ -1,7 +1,7 @@
 name: Cloud SOC quality
 on:
   push:
-    branches: [main, JEONGRIM-SEO, 'integration/**', 'codex/dashboard-platform-20261013']
+    branches: [main, JEONGRIM-SEO, 'integration/**', 'codex/dashboard-platform-20261013', 'codex/vm-form-layout-20261014']
   pull_request:
   workflow_dispatch:
 permissions:

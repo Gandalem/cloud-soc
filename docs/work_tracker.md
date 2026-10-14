@@ -1,5 +1,15 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-14 기존 중앙 Ubuntu 최신화·배포 요청
+
+사용자는 이번 대상을 기존 중앙 Ubuntu 192.168.32.60으로 확인했다. 최신 기록의 별도 VMware 192.168.235.128 배포와 구분한다. 원격 main eec0717의 공개 소스를 최신화하고 현재 실행 구성/개인 파일/서버 운영 변경·상태·키·CA·경보/사건·대시보드를 보호한 뒤 필요한 애플리케이션 서비스만 갱신한다. 새 프로필/수집기 설치·키/권한 변경·다른 서버 배포·공개 인증·CA 추가는 범위가 아니다. 최초 요청은 최신화/배포였으며 이후 사용자가 폼 소스 수정·commit/push까지 명시 허용했다. codex/vm-form-layout-20261014에서 결과를 검증·반영한다.
+
+- [x] UPDATE-VM-20261014 완료(2026-10-14 지정 기존 중앙 최신화/배포 범위·ISSUE-12 일부): PC/192.168.32.60 저장소를main eec0717로 fast-forward하고 공개288개 개별SHA/import/pipcheck·관련158 Python/21subtests·145UI/Ruff/diff·main Windows/Ubuntu CI를 확인했다. SQLite8개/이미지3개/설정·키·CA 보호/개별restore와 중지 후3개상태 backup 후 portal/normalizer/detector만 적용했다. private endpoint/원래명령·시작점/900초/mount·ES/Kibana/gateway ID·저장 dashboard2/revision13/사건·경보hash를 유지했다. LAN 인증/API200·Ubuntu 두 수집기 recent·기존 web5 정확 참조와 checkpoint 전진을 확인했다. 분석 지연 해소/오늘 AWS 신규 수신/ES 독립DR은 미인수로 구분한다. [결과/실제 이미지/중단·보정/제한](ubuntu_update_20261014.md).
+
+- [x] FIX-SITE-FORM-20261014 완료(2026-10-14 소스/실제 포털 폼 범위): 실제929px에서flex 사이트 높이2358px·dialog623/858px 넘침을 재현했다. agents.html의 선택 class·agents.css 세로 배치로 수정하고 실제4폭/2테마/3OS24조합·웹 선택/해제/시작 시각·JS/HTTP0·가로넘침0·UI145를 검증했다. 당시portal이미지/override·portal5DB의 backup/restore 후 정적2파일만 적용하고 다른5서비스·저장설정/사건을 유지했다. 최종portal498ca9e7…/patch c4438a03…이며 소스·실행 파일 해시를 대조한다. 패키지/토큰/키/설치는 생성하지 않았다.
+
+2026-10-14 후속 Git 요청: 사용자가 프로젝트 폼 수정과 commit/push를 명시 허용했다. codex/vm-form-layout-20261014에 CSS/HTML·배포 기록/관리표·해당 브랜치 CI 실행 설정만 명시 stage한다. 개인Word2개/JSON의 최초SHA·비밀/state/원문 제외를 검사하고 main 직접push/자동PR병합은 하지 않는다. 실제 이미지의 base eec0717와 두 파일patch c4438a03…을 구분한다. 원래 분석 checkpoint를 전진시키며 남은 backlog를 전체 인수 완료로 바꾸지 않는다.
+
 ## 2026-10-14 통합 사이트 에이전트 요청
 
 새 명시 요청으로 우선순위를 VM 임시 파일 정리 → 지정 AWS DVWA 실제 수신 → 통합 설치기 → 선택형 네트워크 → 상태/대시보드 연동으로 변경한다. 현재 `codex/unified-site-agent-20261013`에서 기존 미커밋 복구 변경과 완료 이력을 보존한다. Windows 키 만료 검사는 제외한다. 새 과금 자원·공개 포트·IAM 변경·main 직접 push/자동 병합은 실행하지 않는다.
