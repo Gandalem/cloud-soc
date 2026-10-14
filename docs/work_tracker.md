@@ -4,9 +4,11 @@
 
 사용자 새 요청을 최우선으로 적용한다. 지정 codex/dashboard-platform-20261013은 기존 33db896에서 검증된 최신 d49a4af로 fast-forward했다. 개인 Word/JSON·운영 DB/체크포인트·기존 경보를 보존한다. 전체 룰의 격리 실행·평가 불가 표시·엔진/근거/포털/사건 연동과 자동 회귀를 보완하고 일반 commit/push·CI를 확인한다. 실환경 필드/정상·경계 검증이 없는 룰의 운영 활성화는 하지 않는다.
 
-- [ ] RULESET-14-01 진행 중: 기존 14개 정의/엔진을 재사용해 명시적인 전체 격리 프로필과 안전한 개별 선택, 미수집/누락 필드 평가 불가를 구현하고 임계값·시간·중복·쿨다운·재시작·조직·개인정보·연동을 검증한다. 전체 Python/UI/Ruff/Bandit 및 원격 CI를 확인한다. 실제 수집/탐지 인수와 코드·격리 완료는 별도로 보고한다.
+- [x] RULESET-14-01 완료(2026-10-14 코드·격리 자동 인수·Git/CI 범위): 기존14개 엔진/정의를 재사용해 전체 격리·개별 선택/미검증·평가불가와 근거·조직·개인정보·재시작·장애 재시도·포털/사건/대시보드를 인수했다. 전체1,042 Python/15skip/257subtests·147UI/Ruff/Bandit/pipcheck/pip-audit·12개 브라우저 조합과 a1125fe의 Windows/Ubuntu GitHub Actions 모두 통과했다. 실제 수집/탐지 인수와 코드·격리 완료는 분리하며 운영13개 추가 활성화·배포는 하지 않았다. [룰별 결과·26개파일·제한](ruleset_14_validation_20261014.md).
 
 2026-10-14 로컬 인수 완료·Git/CI 진행: 고정14개 profiles/CLI·raw/event ID 중복·SSH mirror/현행v2 및 두 웹 어댑터·필수 scope/bounds·source_events/assessment/포털 이력을 보완했다. 전체1,042 Python/15skip/257subtests·147UI/Ruff/Bandit 중간높음0/pipcheck·새프로세스14개/실제FlaskAPI·격리대시보드/이력12화면 조합 JS/HTTP0·가로넘침0 통과. 기존 중앙30일 읽기에서 SSH256/sudo51/Windows89/웹5/네트워크220,094·CloudTrail/OCI0을 구분했고 기존AUTH 근거10개의 경보ID가 새 코드와 같다. 운영은 기존AUTH/early 유지·새13개 미활성/미배포다. 초기 fixture/합성 API/도구venv 보정과 파일·실환경 제한은 [룰별 결과](ruleset_14_validation_20261014.md)에 기록했다. 개인정보/Word/JSON/state는 제외한다. 원격 CI를 확인한 뒤 이 로컬 코드·자동 검증 요청을 완료 표시한다. 상위 DET-EXT-LIVE-01은 미완료로 유지한다.
+
+2026-10-14 최종 Git/CI: 구현 a1125fec0f3b14fa7b5633487df928878b0d523b를 지정 기능 브랜치에 일반 push했고 [Actions45](https://github.com/Gandalem/cloud-soc/actions/runs/38498674935)의 Windows/Ubuntu 두 job success를 공식 API로 확인했다. Ubuntu1,041 passed/18skip/255subtests·coverage90.1%·147UI·이미지빌드/게이트웨이4passed/18subtests도 확인했다(OS별 수치를 합산하지 않는다). 실제 임시 읽기 스크립트/localhost viewer·브라우저를 종료/정리했고 개인Word2개/JSON 최초SHA·main eec0717를 보존했다. 마지막 완료/CI 기록만 별도 문서 commit/push하며 동일 구현의 CI를 중복 실행하지 않도록 [skip ci]로 표시한다.
 
 
 ## 2026-10-14 기존 중앙 Ubuntu 최신화·배포 요청

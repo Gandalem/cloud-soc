@@ -70,4 +70,6 @@ SQLi/XSS/명령 주입/경로 탐색은 이번 14개에 포함되지 않으며 H
 
 변경26파일: `.github/workflows/ci.yaml`; `docs/{README.md,work_tracker.md,ruleset_14_validation_20261014.md}`; `prototype/{detection-history.js,tests/detection-history.test.cjs}`; `rules/{attacks.yml,metadata_patterns.yml}`; `src/cloud_soc/detection/{__main__.py,behavior.py,engine.py,incremental.py,profiles.py,registry.py,rule_loader.py,sequence.py,telemetry.py,worker.py}`; `src/cloud_soc/{portal/detection_history.py,processing/setup.py,runtime_audit.py}`; `tests/{preview_ruleset.py,ruleset_fixtures.py,test_linux_ssh_live_formats.py,test_ruleset_complete.py,test_ruleset_integration.py}`.
 
-요청한 `codex/dashboard-platform-20261013`을 기존 33db896에서 d49a4af까지 fast-forward해 최근 설치기/폼 수정·이력을 보존한 뒤 이번 변경을 반영한다. 일반 push만 사용한다. main 직접 push·force push·PR 자동 병합은 하지 않는다. 로컬 완료 후 Git/CI 실제 결과는 후속 기록과 최종 보고에서 확정한다.
+요청한 `codex/dashboard-platform-20261013`을 기존33db896에서 d49a4af까지 fast-forward해 최근 설치기/폼 수정·이력을 보존한 뒤 구현 **a1125fec0f3b14fa7b5633487df928878b0d523b**를 일반 push했다. main은 eec0717를 유지했다. force push·PR 생성/자동 병합은 하지 않았다.
+
+[GitHub Actions45](https://github.com/Gandalem/cloud-soc/actions/runs/38498674935)의 **Windows2025·Ubuntu24.04 모두 success**를 공식 API로 확인했다. Ubuntu전체1,041 passed/18skip/255subtests, statement coverage90.1%, UI147, pip-audit·이미지빌드·게이트웨이4passed/18subtests도 통과했다. 로컬Windows의1,042/15skip/257subtests와 OS별 조건 차이를 구분하며 수치를 합산하지 않는다. 마지막 완료/CI 기록은 이 두 문서만 별도 commit/push([skip ci])한다. 검증된 구현 소스는 변경하지 않는다.
