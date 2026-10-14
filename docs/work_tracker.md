@@ -2,7 +2,14 @@
 
 ## 2026-10-15 검증 소스 GitHub 통합
 
-- [ ] GIT-CI-OWNERSHIP-20261015 진행 중: 사용자의 재개 승인으로 일반 CI 사용자와 실제 root 배포의 권한 모델을 분리한다. 실패18건(배포 parity15건·Slack migration3건)의 소유권 호출을 분석하고, 필요한 격리 단위 시험에만 UID/GID·대상 경로·보호 mode를 검증하는 대역을 주입한다. 실제 chown/0600/접근 거부·권한 부족 시 실패는 별도 Linux root 컨테이너에서 검사한다. 운영 코드/권한을 완화하거나 skip/xfail/CI 비활성화하지 않는다. 최종 HEAD의 양 플랫폼 CI·보안/보존 시험 성공 후 PR13을 병합하며 운영/학교 서버·Slack에는 접근하지 않는다.
+- [x] GIT-CI-OWNERSHIP-20261015 완료(2026-10-15 권한 시험 구현·격리/양 플랫폼 CI 인수 범위): 일반 사용자 단위 시험과 실제 root 배포 소유권 시험을 분리했고, 기존 실패18건을 모두 대조해 통과했다. `111b57f34ef4ede1cf22561ea79039f38e59643f`의 [Actions38594058246](https://github.com/Gandalem/cloud-soc/actions/runs/38594058246)에서 Ubuntu·Windows 두 job이 success다. 실제 Linux 소유권19검사·실패 시 원본/WAL/키/설정/발송 이력 보존과 보안 검사도 통과했다. 운영 src/Compose/Dockerfile·권한은 불변이며 새 skip/xfail/CI 비활성화가 없다. 코드/시험 인수와 GitHub 병합을 분리 기록한다. 이 결과 기록 커밋을 포함한 최종 HEAD의 양 CI를 다시 확인한 뒤 PR13을 병합하며, 실제 병합 SHA/상태는 PR의 병합 기록과 최종 보고를 따른다. 운영/학교 서버·Slack에는 접근하지 않았다.
+
+2026-10-15 `111b57f` 최종 시험 인수 결과:
+
+- Ubuntu: 전체 Python1,298 passed/기존 조건부 제외18/하위255, 신규 공통 권한 회귀, UI153, 설치 JS57/기존 조건부 제외1, Ruff·Bandit·pip audit·Compose/image build·게이트웨이 실제 격리4/하위18 통과다. 비밀정보/경로 검사는 PR 전체56파일의 diff와 blob을 대조했다. 기존 실패18개 ID와 새 JUnit 사례를 일대일 비교했으며 모두 통과·새 skip/xfail0이다.
+- 별도 Linux root 컨테이너의 실제 소유권19검사는 진짜 os.chown으로 UID/GID1000:1000·파일0600/디렉터리0700·앱 UID1000 읽기 허용·UID1001 접근 거부를 확인했다. 일반 UID1001의 실제 chown PermissionError에서 기존 계약 원본/UID를 보존하고 임시 파일을 정리했다. 온라인 WAL 백업·6워커 디렉터리·7읽기/처리 키·암호화 키·설정·outbox 보존/반복 migration을 통과했다. os 모의0·운영 mount0·네트워크 none·rootfs read-only·tmpfs/CPU1/512MiB/PID64 조건이다.
+- Windows: Python655/조건부 제외8/하위136, 독립 처리59, 공통 배포/Slack/권한198이 통과했다. PowerShell/오프라인 에이전트109/기존 조건부 제외1, UI153, 설치 JS57/기존 조건부 제외1도 통과했다. 이 수치는 Windows 전체1,298 실행을 의미하지 않으며 CI가 명시한 시험 범위를 따른다.
+- 소유권 거부 경로는 원자적 계약 저장, DB/워커 디렉터리 인수, 기존 워커 및 알림 읽기 키, 알림 디렉터리/DB/암호화 키, coordinator 중단 복귀를 함께 검사했다. 실패를 무조건 무시하는 예외 처리나 운영 권한 변경은 추가하지 않았다. 실행 소스240개의 원본 hash는 기존 배포본과 같으며, 운영 DB/키/CA/체크포인트/발송 이력·집/학교 서버·Slack 전송에는 접근하지 않았다. 빈 Ubuntu 실서버·학교 중앙·장기 부하/독립 DR은 기존 미검증 범위 그대로다.
 
 2026-10-15 권한 시험 보완 기록(커밋 전 로컬 기준):
 
