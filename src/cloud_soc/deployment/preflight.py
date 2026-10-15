@@ -74,7 +74,11 @@ def main():
     data = json.load(sys.stdin)
     with Elasticsearch('https://elasticsearch:9200', basic_auth=('elastic', data['password']),
                        ca_certs='/run/certs/ca.crt', request_timeout=30, max_retries=0) as c:
-        print(json.dumps(inspect(c, data['policy'], data['contract'], data['keys'], data['states'], data.get('notification_key'))))
+        if data.get('disk_only'):
+            from cloud_soc.deployment.resources import es_disk_observation
+            print(json.dumps(es_disk_observation(c)))
+        else:
+            print(json.dumps(inspect(c, data['policy'], data['contract'], data['keys'], data['states'], data.get('notification_key'))))
 
 
 if __name__ == '__main__':

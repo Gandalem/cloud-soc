@@ -49,7 +49,7 @@ def seed(root, names):
                 run_incremental(f.client, state_path=path, start=o['--start'], now=BASE+timedelta(seconds=600),
                     scanner=lambda *_, **__: [], source_id=URL, status_id=o.get('--status-id'), **extra)
         path.chmod(0o600)
-        objects[name] = {'Id': name+'-container', 'Config': {'Cmd': command(row['module'], o)},
+        objects[name] = {'Id': name+'-container', 'State': {'Running': True, 'Status': 'running'}, 'Config': {'Cmd': command(row['module'], o)},
             'Mounts': [{'Source': str(folder), 'Destination': '/data'}, {'Source': str(key), 'Destination': '/run/keys/worker.key'}]}
     return objects
 
@@ -70,7 +70,7 @@ def test_home_and_other_central_converge_to_same_fresh_features_without_reset(tm
     assert feature_signature(contract) == feature_signature(fresh)
     assert set(contract['workers']) == set(WORKERS)
     runtime = state/'runtime';runtime.mkdir()
-    copy_adopted_state({'adoption':adoption,'state':str(state)}, runtime)
+    copy_adopted_state({'adoption':adoption,'state':str(state),'contract':contract}, runtime)
     for name in legacy_names:
         dest=runtime/'state'/name/contract['workers'][name]['state_file']
         state_compatible(contract['workers'][name],dest)
@@ -318,7 +318,7 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
         if engine.phase=='old':return old
         return {n:{'State':{'Running':True},'Image':plan['image_id']} for n in host.SERVICES}
     monkeypatch.setattr(host,'containers',objects)
-    monkeypatch.setattr(host,'worker_inventory',lambda *_,stopped=False: {} if stopped else {n:n for n in ALL_WORKERS})
+    monkeypatch.setattr(host,'worker_inventory',lambda *_,stopped=False: {} if stopped else {n:n for n in (ALL_WORKERS if engine.phase=='new' else old)})
     monkeypatch.setattr(host,'immutable_documents',lambda *_,**__: {'existing_immutable_documents_preserved':2})
     if fault=='none':
         result=host.apply(engine,plan)
@@ -333,7 +333,7 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
             assert engine.phase=='old'
             assert not (runtime/'contract.json').exists()
             # A retry preserves each unactivated copy, instead of deleting state.
-            copy_adopted_state({'adoption':adopt,'state':str(state)},runtime)
+            copy_adopted_state({'adoption':adopt,'state':str(state),'contract':c},runtime)
             assert list((runtime/'state/normalizer').glob('*.unactivated-*'))
     assert all(Path(adopt[n]['state_source']).read_bytes()==b for n,b in original.items())
     assert 'PRIVATE_PASSWORD' not in json.dumps(engine.calls)
@@ -436,7 +436,8 @@ def test_process_kill_journal_recovers_execution_without_restoring_any_database(
        'old_names':['portal','detector'],'old_contract':None if fresh else previous,'old_current':None,
        'canonical':['compose','--project-name','cloud-soc-central','-f','missing-after-kill.json'],'environment':{}}))
     monkeypatch.setattr(host,'lock',lambda _:nullcontext())
-    monkeypatch.setattr(host,'containers',lambda *_:{'portal':{},'detector':{}})
+    monkeypatch.setattr(host,'containers',lambda *_:{n:{'State':{'Running':True,'Status':'running'}} for n in ('portal','detector')})
+    monkeypatch.setattr(host,'worker_inventory',lambda *_:{'detector':'old'} if not fresh else {})
     engine=Mock();result=host.recover(engine,state)
     assert result['databases_rewound'] is False and result['old_execution_restored']==(not fresh)
     assert db.read_bytes()==original and not (runtime/'pending.json').exists()
@@ -534,6 +535,12 @@ def test_fresh_common_install_and_retry_preserve_pinned_start_and_state(tmp_path
         assert pinned['workers']==c['workers']
         plan['contract']=pinned  # Retry reviews a new plan, preserving the pinned initial scope.
         engine.fail='none';engine.phase='initial'
+        if fault == 'bootstrap':
+            with pytest.raises(ValueError, match='Interrupted bootstrap'):
+                host.apply(engine,plan)
+            # Simulate an operator's explicit isolated reconciliation after checking
+            # bootstrap output. An unknown remote result never initializes twice.
+            (state/'runtime/bootstrap.json').write_text(json.dumps({'state':'complete'}))
     assert host.apply(engine,plan)['runtime_ready']
     with closing(sqlite3.connect(state/'runtime/state/detector/runtime.sqlite')) as db:
         assert db.execute('select value from preserved').fetchall()==[(73,)]

@@ -11,7 +11,9 @@ from cloud_soc.portal.packages import PackageStore
 
 def main():
     if os.environ.get("SOC_ENROLLMENT_ENABLED") != "1":
-        raise SystemExit("Enrollment cleanup requires explicit SOC_ENROLLMENT_ENABLED=1.")
+        print("Enrollment disabled; cleanup waiting without external actions.", flush=True)
+        while True:
+            time.sleep(60)
     ca = Path(os.environ["SOC_CA_FILE"])
     issuer = Elasticsearch(os.environ["SOC_INTERNAL_ES_URL"], ca_certs=str(ca),
         basic_auth=("cloud_soc_issuer", Path(os.environ["SOC_ISSUER_PASSWORD_FILE"]).read_text().strip()),

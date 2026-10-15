@@ -1,5 +1,23 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-15 공통 런타임 v2 업그레이드 안정화
+
+- [ ] RUNTIME-V2-HARDEN-20261015 진행 중: 최신 사용자 요청을 최우선으로 별도 codex/runtime-v2-upgrade-hardening 브랜치에서 main9d97ee2와 학교 검증 수정본을 대조·재사용하고 구형/기존관리형/신규Ubuntu 설치의 반복가능한 업그레이드를 구현·격리 검증한다. 등록OFF 무작업대기/ON유지·bootstrap없는 정확복귀·활성Compose와잔존컨테이너구분·부분migration/키/state 재사용·중단journal·포털동시저장 기준·실제파일시스템별최대디스크/WAL/backup/image/build/로그유입/ES실제watermark/메모리예산·안전한자원부족보고와읽기전용plan을 개선한다. 이전실패백업은자동삭제하지않고 외부백업은별도장치 검증·무결성/복원을 보장한다. 전체Python/Ruff/Bandit/UI/설치·Compose/실제Linux기동/UID권한·실패복구와3유형격리를 검증한다. 기존본작업폴더의사용자Word/JSON/작업이력 보존, 양운영서버배포/데이터·키·Webhook변경/기록삭제 금지. 최신 사용자 요청으로 완료 수정본의 commit/일반 push가 승인됐다. PR 생성·운영 배포는 승인 범위 밖이다. 코드·격리·원격CI·실환경인수를 구분하고 새 skip/xfail/보안완화 없이 진행한다.
+
+2026-10-15 시작 상태: 원격main9d97ee2, 원래작업폴더 HEADdb68f6c/codex/dashboard-platform-20261013·미커밋작업기록/개인Word/JSON을 유지했다. 별도작업디렉터리는 D:/cloud-soc/state/worktrees/runtime-v2-upgrade-hardening이다. 학교 후보의 원래 기준main9d97ee2·검증image d0c4c3a4…/240공개파일 source20985361… 및 기존1314Python/69관련검증 결과를 출발점으로 재검토하며 이를 이번수정본검증으로 대신하지 않는다. 앞선학교운영배포/사용자승인청소는 과거작업이며 이번범위는 소스안정화/격리시험이다. ES쓰기차단사고는 백업중간복제량과실제watermark가공식plan에누락된 것이므로 단순고정여유값을늘리는방식으로 우회하지 않는다.
+
+2026-10-15 RUNTIME-V2-HARDEN-20261015 로컬 구현·격리 인수 완료, 원격 CI 승인 대기:
+
+- 학교의 공개 호환성6파일과 로컬 보관본의 hash 일치를 읽기 확인해 OFF 대기/ON sweep, 최소 no-deps 복귀, retry 계약, 선택적 DB 인수, 쓰기 중지 기준을 재사용했다. 새 구현은 장치별 최대량/실제 ES watermark·신규 ES bootstrap 전 재조회, native filesystem/외부 백업 판정, WAL/온라인·중지 후 무결성·복원 manifest와 검증 중복 제거, 발급 경계·ownership 재시도/fsync journal, 고정 이미지 이전 Compose, 남은 자원 재확인, 행/근거 손실 시 재시도 차단을 포함한다. 운영 DB·WAL·키·인증서·ES·Webhook과 원래 사용자 파일을 변경하지 않았다.
+- 실제 격리 스택에서 발견한 별도 릴리스 경로 제한, Compose null CMD/ENTRYPOINT 상속, Docker Mounts 반환 순서로 인한 잘못된 stale 판정도 수정했다. 경로·이미지·RW 등 실제 변경 차단과 조직/RBAC/Basic·Session/7룰/900초 정책을 유지했다. 이전 백업·실패 증거·이미지를 자동 삭제하거나 디스크 보호/메모리 한도를 완화하지 않았다.
+- 최종 Ubuntu 전체 pytest **1390 passed/기존 조건부12/하위255**, Windows 전체 **1386 passed/기존 조건부16/하위257**. 실제 Caddy 격리 **4/하위18**, UI153·설치57/기존조건부1 양 OS, Ruff/Bandit/pip check/pip audit/Compose3구성 통과. Windows 에이전트는 일괄108통과/1기존120초timeout/기존조건부1 후 동일 실패1을 제한시간·제품 수정 없이 다시 실행해 통과(약115초); 고유109사례이며 원격 CI 시간초과는 재확인한다. 새 skip/xfail·기존 실패 시험 삭제는 없다.
+- 실제 Linux root 컨테이너의 UID/GID1000·파일0600/디렉터리0700·UID1001 접근 거부·chown 실패 시 원본 보존19검사 통과. 실제 Docker/Compose2.40.3에서 관리형/구형/신규 세 유형의 12서비스·7워커 생명주기, OFF 재시작0, bootstrap 없는 최소 복귀, 건강한 ES·워커 유지, 동일 구성 무재생성·DB/WAL/키 보존을 순차 검증했다. 생명주기 대역을 실제 ES 탐지로 표시하지 않는다.
+- 별도의 새 실제 ES9.5.2/Kibana/포털/6처리+Slack1 스택을 공식 plan/apply로 기동해 HTTP200/healthy·TLS/Basic/API10, 정상 합성 raw1→정규화1/정확 원본 참조, 같은 관리형 구성의 unchanged 재적용·컨테이너 ID 보존, OOM/재시작 증가0·OFF 정리0/Slack 미설정OFF를 통과했다. 공격·Slack 메시지는 발송하지 않았다. 기존 데이터가 쌓인 실제 학교/집의 신규 배포·장기운영·새 실제 경보 인수와 전체 ES snapshot/DR은 수행하지 않았다.
+- 최종 이미지 **sha256:baeaaaccf739128cf8cebada9a7444d89a3d1076797e797b822068c45c3e2444**, 공개243파일 hash 및 검증7룰 revision 대조 통과. 소스 manifest **574f336e4fd3f88fb6e26965e07836e33d265d556e1109290079dc197e7e3e22**. 새 commit SHA가 아니며 commit/push/PR 없음. Git 제외 `state/runtime-hardening-validation-20261015/`에 비밀 없는 증명/격리 결과를 보관한다. 코드/파일·정확 재배포 절차·잔여 위험은 `docs/runtime_upgrade_hardening.md`, 공식 절차는 `docs/runtime_deployment.md`다.
+- CI YAML에 양 플랫폼 새 회귀와 Linux 실제 생명주기 단계를 추가했으나 push/PR 승인 전이므로 새 GitHub Actions는 미실행이다. 위 항목의 전체 완료 체크는 원격 CI를 포함한 남은 인수 전까지 보류한다. 원래 D:/cloud-soc의 db68f6c 브랜치·사용자 Word/JSON/작업 기록 및 원격 main9d97ee2는 보존됐다.
+
+2026-10-15 후속 승인: 사용자가 완료 후 커밋·push를 요청했다. 검증한 19개 소스/시험/문서 파일만 별도 기능 브랜치에 커밋하고 일반 push하며, 새 원격 CI 결과를 확인한다. 기존 로컬 검증 기록은 유지하고 PR·양 서버 배포는 진행하지 않는다.
+
 ## 2026-10-15 검증 소스 GitHub 통합
 
 - [x] GIT-CI-OWNERSHIP-20261015 완료(2026-10-15 권한 시험 구현·격리/양 플랫폼 CI 인수 범위): 일반 사용자 단위 시험과 실제 root 배포 소유권 시험을 분리했고, 기존 실패18건을 모두 대조해 통과했다. `111b57f34ef4ede1cf22561ea79039f38e59643f`의 [Actions38594058246](https://github.com/Gandalem/cloud-soc/actions/runs/38594058246)에서 Ubuntu·Windows 두 job이 success다. 실제 Linux 소유권19검사·실패 시 원본/WAL/키/설정/발송 이력 보존과 보안 검사도 통과했다. 운영 src/Compose/Dockerfile·권한은 불변이며 새 skip/xfail/CI 비활성화가 없다. 코드/시험 인수와 GitHub 병합을 분리 기록한다. 이 결과 기록 커밋을 포함한 최종 HEAD의 양 CI를 다시 확인한 뒤 PR13을 병합하며, 실제 병합 SHA/상태는 PR의 병합 기록과 최종 보고를 따른다. 운영/학교 서버·Slack에는 접근하지 않았다.

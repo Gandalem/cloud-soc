@@ -165,9 +165,11 @@ def build_contract(value, containers, state, *, now=None, existing=None, initial
                     raise ValueError('Existing rule/source profile differs; no identity rewrite')
             source = mapped_file(obj, opts['--state'], state)
             key = mapped_file(obj, opts['--api-key-file'], state)
-            if not source.is_file() or not key.is_file():
+            if (not source.is_file() and not (obj.get('UnactivatedRuntime') and not obj.get('State', {}).get('Running'))) or not key.is_file():
                 raise ValueError('Existing state/key missing; no reinitialization')
-            adoption[name] = {'state_source': str(source), 'key_source': str(key), 'container': obj['Id']}
+            adoption[name] = {'key_source': str(key), 'container': obj['Id']}
+            if source.is_file():
+                adoption[name]['state_source'] = str(source)
             # Observable status routing and early mode do not change detector identity.
             if name == 'detector-priority':
                 opts['--status-id'] = 'detector-priority'
@@ -193,21 +195,23 @@ def build_contract(value, containers, state, *, now=None, existing=None, initial
     return result, adoption
 
 
-def resource_check(value, hardware, *, fresh, database_bytes=0):
+def resource_check(value, hardware, *, fresh, database_bytes=0, adoption_bytes=0, storage=None, backup_memory_bytes=0):
     r = value['resources'];issues = []
     reserved = sum(r['limits_mib'].values()) * 1024**2 + r['headroom_bytes']
     available = hardware.get('available_memory_bytes', 0) + hardware.get('managed_working_set_bytes', 0)
-    needed = (r['fresh_free_bytes'] if fresh else r['upgrade_free_bytes']) + 2 * database_bytes
+    needed = (r['fresh_free_bytes'] if fresh else r['upgrade_free_bytes']) + 2 * database_bytes + adoption_bytes
     for ok, reason in [(hardware['cpus'] >= r['min_cpus'], 'cpu_below_minimum'),
                        (hardware['memory_bytes'] >= max(reserved, r['min_memory_bytes']), 'memory_budget_exceeded'),
                        (available >= reserved, 'available_memory_budget_exceeded'),
-                       (hardware['free_bytes'] >= needed, 'disk_backup_and_release_budget_exceeded'),
+                       (storage['ok'] if storage is not None else hardware['free_bytes'] >= needed, 'disk_backup_and_release_budget_exceeded'),
+                       (hardware.get('available_memory_bytes', 0) >= backup_memory_bytes + r['headroom_bytes'], 'backup_restore_memory_budget_exceeded'),
                        (hardware.get('map_count', 0) >= 262144, 'vm_max_map_count_too_low')]:
         if not ok:
             issues.append(reason)
-    return {'ok': not issues, 'issues': issues, 'required_free_bytes': needed, 'reserved_memory_bytes': reserved,
+    return {'ok': not issues, 'issues': issues, 'required_free_bytes': needed, 'adoption_copy_bytes': adoption_bytes, 'reserved_memory_bytes': reserved,
             'available_after_replacing_managed_bytes': available,
-            'observed': dict(hardware)}
+            'observed': dict(hardware), 'disk': storage,
+            'backup_restore_memory_bytes': backup_memory_bytes + r['headroom_bytes']}
 
 
 def validate_rendered(value, rendered, image):

@@ -11,10 +11,22 @@ import shutil
 import sqlite3
 import subprocess
 import tempfile
+import time
 
-from cloud_soc.deployment.contract import (ALL_WORKERS, APP_SERVICES, SERVICES, WORKERS, build_contract, digest,
+from cloud_soc.deployment.contract import (ALL_WORKERS, APP_SERVICES, SERVICES, WORKERS, build_contract, command, digest,
     policy, resource_check, source_files, validate_rendered)
-from cloud_soc.deployment.migrations import atomic_json
+from cloud_soc.deployment.migrations import atomic_json, durable_unlink, reusable_key
+from cloud_soc.deployment import backups, execution, resources as disk_resources
+
+
+class PreservationError(ValueError):
+    pass
+
+
+class ResourceBudgetError(ValueError):
+    def __init__(self, report):
+        self.report = report
+        super().__init__('Resource budget refused; no service stop requested')
 
 
 class Docker:
@@ -51,16 +63,11 @@ def protected_hashes(state):
     root = Path(state)
     paths = [p for folder in ('tls', 'private', 'secrets') for p in (root / folder).rglob('*') if p.is_file()]
     paths += [root / 'compose.env']
+    paths += [p for p in (root / 'runtime/keys').glob('*') if p.is_file() and p.suffix in ('.key', '.issued')]
     if (root / 'notifications/slack.key').exists():
         paths.append(root / 'notifications/slack.key')
     # Site-specific bind mounts are included separately in the runtime snapshot.
     return {str(checked_path(p, root, file=True)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
-
-
-def databases(state):
-    return [checked_path(p, state, file=True) for p in Path(state).rglob('*')
-            if p.suffix in ('.sqlite', '.sqlite3') and 'upgrades' not in p.relative_to(state).parts
-            and 'backup' not in p.relative_to(state).parts]
 
 
 def backup_database(source, target):
@@ -78,6 +85,9 @@ def backup_database(source, target):
             if restored.execute('pragma integrity_check').fetchall() != [('ok',)]:
                 raise ValueError('Backup restore verification failed')
     target.chmod(0o600)
+    with target.open('r+b') as stream:
+        os.fsync(stream.fileno())
+    backups.fsync_directory(target.parent)
 
 
 def portal_rows(state):
@@ -166,10 +176,25 @@ def active_command(state, objects):
         except (ValueError, OSError):
             continue
         if isinstance(value, list) and value[:2] == ['docker', 'compose']:
+            arguments = value[2:];position = 0
+            pairs = {'-f', '--project-name', '-p', '--env-file', '--project-directory', '--profile'}
+            while position < len(arguments):
+                option = arguments[position]
+                if option == '--compatibility':
+                    position += 1;continue
+                if option not in pairs or position+1 >= len(arguments) or str(arguments[position+1]).startswith('-'):
+                    raise ValueError('Active receipt must contain only reviewed Compose global options')
+                position += 2
             observed = [value[i+1] for i, v in enumerate(value[:-1]) if v == '-f']
             if observed == files:
                 for name in observed:
-                    checked_path(name, Path(state).parent.parent, file=True)
+                    source = Path(name)
+                    if not source.is_absolute():
+                        raise ValueError('Active Compose receipt must record absolute source files')
+                    # Source releases may live on a different disk from state.
+                    # Labels + receipt + rendered/observed signature prove them;
+                    # guessing ancestry from the state directory rejects valid releases.
+                    checked_path(source, Path(source.anchor), file=True)
                 return value[2:]
     raise ValueError('Cannot identify the exact active Compose command; provide its protected receipt')
 
@@ -182,6 +207,13 @@ def public_environment(obj):
     return {k: v for item in obj['Config'].get('Env', []) for k, _, v in [item.partition('=')] if k in allowed}
 
 
+def observed_services(objects):
+    """Docker's Mounts array has no stable order; preserve values, canonicalize order."""
+    return {name: {'id': obj['Id'], 'image': obj['Image'], 'command': obj['Config']['Cmd'],
+                  'mounts': sorted(obj.get('Mounts', []), key=lambda row: (row['Destination'], row['Source'], row.get('Type', ''))),
+                  'environment': public_environment(obj)} for name, obj in objects.items()}
+
+
 def site_overlay(rendered, objects):
     """Keep explicitly reviewed site mounts/endpoints, never historical worker commands."""
     result = {'services': {}, 'secrets': deepcopy(rendered.get('secrets', {})),
@@ -190,7 +222,7 @@ def site_overlay(rendered, objects):
         if name not in rendered.get('services', {}):
             continue
         old = rendered['services'][name]
-        row = {k: deepcopy(old[k]) for k in ('volumes', 'ports') if k in old}
+        row = {k: deepcopy(old[k]) for k in ('volumes', 'ports', 'secrets', 'configs', 'networks') if k in old}
         if name == 'elasticsearch':
             allowed = ('path.repo', 'cluster.name', 'node.name')
             row['environment'] = {k: v for k, v in old.get('environment', {}).items() if k in allowed}
@@ -230,7 +262,84 @@ def hardware(engine, state, project='cloud-soc-central'):
     return {'cpus': info['NCPU'], 'memory_bytes': info['MemTotal'], 'free_bytes': free,
             'available_memory_bytes': memory['MemAvailable'], 'managed_working_set_bytes': managed,
             'other_container_working_set_bytes': other, 'container_working_set_bytes': working,
+            'docker_root': info['DockerRootDir'],
             'map_count': int(Path('/proc/sys/vm/max_map_count').read_text())}
+
+
+def storage_budget(engine, state, image, project, objects, rows, adopted_bytes, hardware, value,
+                   *, backup_root=None, ingress_bytes=1024**3, build_bytes=0, fresh=False, online_complete=False):
+    """Inspect actual allocation pools and ES floors before any DB copy or stop."""
+    locations = {name: disk_resources.path_filesystem(path) for name, path in {
+        'state': state, 'scratch': state.parent, 'backup': backup_root or state / 'runtime/upgrades',
+        'docker': hardware['docker_root']}.items()}
+    es_paths = [];observed = None
+    if 'elasticsearch' in objects:
+        mounts = [m['Source'] for m in objects['elasticsearch'].get('Mounts', [])
+                  if m['Destination'] == '/usr/share/elasticsearch/data']
+        if len(mounts) != 1:
+            raise ValueError('Cannot map the actual Elasticsearch data allocation pool')
+        es_paths = mounts;locations['elasticsearch'] = disk_resources.path_filesystem(mounts[0])
+        # The read-only probe also works before building the candidate, using the
+        # previous app's Python dependencies and this reviewed public helper text.
+        probe = "import json,sys;from elasticsearch import Elasticsearch;v=json.load(sys.stdin);s={};exec(compile(v['source'],'disk_probe','exec'),s);c=Elasticsearch('https://elasticsearch:9200',basic_auth=('elastic',v['password']),ca_certs='/run/certs/ca.crt',request_timeout=30,max_retries=0);print(json.dumps(s['es_disk_observation'](c)))"
+        observed = engine.json(['run', '--rm', '-i', '--network', project + '_default',
+            '-v', str(state / 'tls/ca.crt') + ':/run/certs/ca.crt:ro', '--entrypoint', 'python',
+            image, '-c', probe],
+            input=json.dumps({'source': Path(disk_resources.__file__).read_text(),
+                              'password': (state / 'secrets/elastic_password').read_text().strip()}))
+        if abs(observed['data']['total_in_bytes'] - locations['elasticsearch']['total_bytes']) > 1024**2:
+            raise ValueError('Elasticsearch and host filesystem observations disagree')
+        locations['elasticsearch']['free_bytes'] = min(locations['elasticsearch']['free_bytes'], observed['data']['available_in_bytes'])
+    elif not fresh:
+        raise ValueError('Existing Elasticsearch missing; storage budget cannot be verified')
+    else:
+        # The common fresh named data volume uses Docker's allocation pool.
+        locations['elasticsearch'] = dict(locations['docker'])
+    if backup_root:
+        locations['backup'] = disk_resources.validate_backup_root(backup_root, state, hardware['docker_root'], es_paths)
+    amount = sum(row['copy_upper_bound_bytes'] for row in rows)
+    storage = disk_resources.disk_budget(locations, online_bytes=0 if online_complete else amount, stopped_bytes=amount,
+        adoption_bytes=adopted_bytes, preflight_bytes=0 if online_complete else amount, build_bytes=build_bytes,
+        ingress_bytes=ingress_bytes, safety_bytes=max(value['resources']['headroom_bytes'],
+            value['resources']['fresh_free_bytes'] if fresh else value['resources']['upgrade_free_bytes']),
+        es_policy=observed['policy'] if observed else disk_resources.initial_disk_policy())
+    storage['sqlite'] = rows;storage['sqlite_wal_bytes'] = sum(row['wal_bytes'] for row in rows)
+    storage['elasticsearch'] = observed;storage['ingress_reserve_bytes'] = ingress_bytes
+    storage['es_policy_source'] = 'actual_cluster' if observed else 'fresh_pinned_defaults_requires_startup_readback'
+    storage['backup_root'] = str(backup_root) if backup_root else None
+    storage['candidate_already_built'] = build_bytes == 0
+    storage['new_backup_upper_bound_bytes'] = 2 * amount
+    storage['elasticsearch_allocated_bytes'] = sum(backups.allocated_bytes(path) for path in es_paths)
+    storage['retained_upgrades_allocated_bytes'] = backups.allocated_bytes(state / 'runtime/upgrades')
+    images = {obj['Image'] for obj in objects.values()}
+    inspected = [engine.json(['image', 'inspect', identifier])[0] for identifier in images]
+    storage['existing_images'] = [{'id': row['Id'], 'uncompressed_bytes': row['Size']} for row in inspected]
+    storage['image_sizes_share_layers'] = True
+    return storage
+
+
+def before_build(engine, workspace, state, *, build_bytes, backup_root=None, ingress_bytes=1024**3, project='cloud-soc-central'):
+    """Resource-only, non-applicable plan. Build cost is an operator-supplied bound."""
+    if type(build_bytes) is not int or build_bytes < 1024**3:
+        raise ValueError('Declare at least 1GiB of candidate/build scratch before building')
+    state = Path(state).resolve();value = policy(workspace);objects = containers(engine, project)
+    if (state / 'runtime/pending.json').exists():
+        raise ValueError('Recover the interrupted upgrade before building another candidate')
+    current = state / 'runtime/contract.json'
+    contract, adoption = build_contract(value, adoption_containers(objects, state), state,
+        existing=json.loads(current.read_text()) if current.exists() else None)
+    rows = backups.inventory(state, contract, adoption)
+    amount = sum(row['copy_upper_bound_bytes'] for row in rows)
+    machine = hardware(engine, state, project)
+    probe_image = objects.get('portal', {}).get('Image')
+    if objects and not probe_image:
+        raise ValueError('Existing app image required for pre-build ES observation')
+    storage = storage_budget(engine, state, probe_image, project, objects, rows, amount, machine, value,
+        backup_root=backup_root, ingress_bytes=ingress_bytes, build_bytes=build_bytes, fresh=not objects)
+    return {'applicable': False, 'kind': 'before_build_budget', 'build_upper_bound_bytes': build_bytes,
+            'resources': resource_check(value, machine, fresh=not objects, storage=storage,
+                database_bytes=amount, backup_memory_bytes=max((r['copy_upper_bound_bytes'] for r in rows), default=0)),
+            'next': 'Build only within the declared bound, then create a new full manage.py plan'}
 
 
 def compose_environment(state, image, objects):
@@ -253,8 +362,9 @@ def inspect_prerequisites(engine, state, image, project, value, contract, adopti
         for name in WORKERS:
             row = adoption.get(name, {})
             key = Path(row['key_source']) if 'key_source' in row else runtime / 'keys' / (name + '.key')
-            if key.is_file():
-                keys[name] = key.read_text().strip()
+            encoded = reusable_key(key)
+            if encoded:
+                keys[name] = encoded
             db = Path(row['state_source']) if 'state_source' in row else runtime / 'state' / name / contract['workers'][name]['state_file']
             if db.is_file():
                 folder = copies / name;folder.mkdir(mode=0o700)
@@ -267,11 +377,34 @@ def inspect_prerequisites(engine, state, image, project, value, contract, adopti
             '--entrypoint', 'python', image, '-m', 'cloud_soc.deployment.preflight'],
             input=json.dumps({'password': (state / 'secrets/elastic_password').read_text().strip(),
                               'policy': value, 'contract': contract, 'keys': keys, 'states': states,
-                              'notification_key': (runtime / 'keys/slack-notifier.key').read_text().strip()
-                              if (runtime / 'keys/slack-notifier.key').is_file() else None}))
+                              'notification_key': reusable_key(runtime / 'keys/slack-notifier.key')}))
 
 
-def snapshot(engine, workspace, state, image, project='cloud-soc-central'):
+def adoption_containers(objects, state):
+    """Resolve stopped, unactivated managed workers from a verified recovery contract."""
+    result = deepcopy(objects)
+    for name in WORKERS:
+        obj = result.get(name)
+        if not obj or obj.get('State', {}).get('Running'):
+            continue
+        if obj.get('Config', {}).get('Cmd') != ['python', '-m', 'cloud_soc.deployment.worker', '--service', name]:
+            continue
+        retry = Path(state) / 'runtime/retry.json'
+        if not retry.is_file():
+            raise ValueError('Unactivated managed state has no verified recovery receipt')
+        pointer = json.loads(retry.read_text())
+        path = checked_path(Path(pointer['run']) / 'interrupted-contract.json', Path(state) / 'runtime/upgrades', file=True)
+        if hashlib.sha256(path.read_bytes()).hexdigest() != pointer['contract_sha256']:
+            raise ValueError('Retained state contract changed')
+        row = json.loads(path.read_text())['workers'][name]
+        obj['Config']['Cmd'] = command(row['module'], row['options'])
+        retained_plan = json.loads(checked_path(Path(pointer['run']) / 'plan.json', Path(state) / 'runtime/upgrades', file=True).read_text()) if (Path(pointer['run']) / 'plan.json').is_file() else {}
+        if name in retained_plan.get('new_workers', []):
+            obj['UnactivatedRuntime'] = True
+    return result
+
+
+def snapshot(engine, workspace, state, image, project='cloud-soc-central', *, backup_root=None, ingress_bytes=1024**3):
     workspace, state = Path(workspace).resolve(), Path(state).resolve()
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,62}', project) or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,200}', image):
         raise ValueError('Invalid image/project identity')
@@ -279,20 +412,43 @@ def snapshot(engine, workspace, state, image, project='cloud-soc-central'):
     checked_path(state / 'notifications', state)
     if (state / 'runtime/pending.json').exists():
         raise ValueError('Interrupted upgrade retained; run manage.py recover before making a new plan')
+    if (state / 'runtime/preservation-failed.json').exists():
+        raise ValueError('Data preservation failure retained; reconcile the quiesced baseline before another upgrade')
     value = policy(workspace);objects = containers(engine, project)
+    capabilities = execution.compose_capabilities(engine)
     inventory = worker_inventory(engine, project)
     active = active_command(state, objects)
     env = compose_environment(state, image, objects)
     original = engine.json(['compose', *active, 'config', '--format', 'json']) if active else {}
     runtime = state / 'runtime'
     current = json.loads((runtime / 'contract.json').read_text()) if (runtime / 'contract.json').is_file() else None
-    contract, adoption = build_contract(value, objects, state, existing=current)
-    dbs = databases(state)
-    fresh = not objects or ((runtime / 'install.json').is_file() and not (runtime / 'current.json').exists())
-    resources = resource_check(value, hardware(engine, state, project), fresh=fresh,
-                               database_bytes=sum(p.stat().st_size for p in dbs))
-    selected = {name: {'id': obj['Id'], 'image': obj['Image'], 'command': obj['Config']['Cmd'],
-                      'mounts': obj.get('Mounts', []), 'environment': public_environment(obj)} for name, obj in objects.items()}
+    adopted_objects = adoption_containers(objects, state)
+    contract, adoption = build_contract(value, adopted_objects, state, existing=current)
+    ledger = runtime / 'migrations.json'
+    if ledger.exists():
+        history = json.loads(checked_path(ledger, state, file=True).read_text())
+        if (history.get('version', 0) > value['version'] or set(history.get('migrations', {})) - set(value['migrations'])
+                or any(row.get('state') not in ('applying', 'applied', 'failed') for row in history.get('migrations', {}).values())
+                or (history.get('version') == value['version'] and any(row.get('policy_sha256') != digest(value)
+                    for row in history.get('migrations', {}).values() if row.get('state') == 'applied'))):
+            raise ValueError('Migration journal incompatible; no services stopped')
+    for name in ALL_WORKERS:
+        reusable_key(runtime / 'keys' / (name + '.key'))
+    fresh = not (runtime / 'current.json').exists() and (not objects or (runtime / 'install.json').is_file())
+    classification, frozen = (execution.verify_previous(engine, active, original, objects, project) if active
+                               else ({'defined': [], 'running': [], 'stopped': sorted(objects), 'residual_stopped': [], 'stop': []}, {}))
+    rows = backups.inventory(state, contract, adoption)
+    if fresh and rows and not (runtime / 'install.json').is_file():
+        raise ValueError('Existing databases without an installation receipt; fresh bootstrap refused')
+    adoption_bytes = sum(path.stat().st_size + (Path(str(path)+'-wal').stat().st_size if Path(str(path)+'-wal').exists() else 0)
+                         for _, paths in adopted_files({'state': str(state), 'adoption': adoption, 'contract': contract}, runtime) for path in paths)
+    machine = hardware(engine, state, project)
+    storage = storage_budget(engine, state, image, project, objects, rows, adoption_bytes, machine, value,
+                             backup_root=backup_root, ingress_bytes=ingress_bytes, fresh=fresh)
+    resources = resource_check(value, machine, fresh=fresh, storage=storage,
+                               database_bytes=sum(row['copy_upper_bound_bytes'] for row in rows), adoption_bytes=adoption_bytes,
+                               backup_memory_bytes=max((row['copy_upper_bound_bytes'] for row in rows), default=0))
+    selected = observed_services(objects)
     fingerprints = protected_hashes(state)
     for obj in objects.values():
         for mount in obj.get('Mounts', []):
@@ -311,22 +467,31 @@ def snapshot(engine, workspace, state, image, project='cloud-soc-central'):
     if objects and not active and not fresh:
         raise ValueError('Existing infrastructure has no adoption receipt; not a fresh installation')
     prerequisites = {'state': 'fresh_bootstrap_required'}
-    if not fresh:
+    if not fresh and resources['ok']:
         prerequisites = inspect_prerequisites(engine, state, image, project, value, contract, adoption)
+    elif not fresh:
+        prerequisites = {'state': 'resource_budget_refused_before_sqlite_copy'}
     # Only stable configuration participates in the stale-plan guard, not progress counters.
     identity = {'containers': selected, 'protected_sha256': fingerprints, 'image': candidate,
-                'source_sha256': digest(source), 'prerequisites': prerequisites}
-    result = {'plan_version': 1, 'policy': value, 'workspace': str(workspace), 'state': str(state), 'project': project,
+                'source_sha256': digest(source), 'prerequisites': prerequisites,
+                'execution': digest(frozen), 'disk_policy': storage['elasticsearch']['policy'] if storage['elasticsearch'] else None,
+                'backup_root': storage['backup_root'], 'ingress_reserve_bytes': ingress_bytes,
+                'migration_sha256': backups.sha256(ledger) if ledger.exists() else None}
+    result = {'plan_version': 2, 'policy': value, 'workspace': str(workspace), 'state': str(state), 'project': project,
         'image': image, 'image_id': candidate, 'source': source, 'source_sha256': digest(source),
         'fresh': fresh, 'contract': contract, 'adoption': adoption, 'resources': resources,
         'observed': selected, 'protected_sha256': fingerprints, 'previous_compose': active,
         'site': site_overlay(original, objects) if original else {}, 'compose_environment': env,
-        'new_workers': [n for n in ALL_WORKERS if n not in objects], 'prerequisites': prerequisites,
+        'new_workers': [n for n in ALL_WORKERS if n not in objects or n not in classification['defined']
+                        or adopted_objects.get(n, {}).get('UnactivatedRuntime')], 'prerequisites': prerequisites,
         'worker_inventory': inventory, 'fingerprint': digest(identity)}
     desired = engine.json(['compose', '--profile', 'initialization', '--project-name', project, '--env-file', str(state / 'compose.env'),
         '-f', str(workspace / 'deploy/server/compose.yaml'), '-f', '-', 'config', '--format', 'json'],
         input=json.dumps(configure_site(result, runtime)), env=env)
     result['compose_validation'] = validate_rendered(value, desired, image)
+    result['previous_execution'] = frozen;result['service_classification'] = classification
+    result['compose_capabilities'] = capabilities
+    result['backup_root'] = storage['backup_root'];result['ingress_reserve_bytes'] = ingress_bytes
     return result
 
 
@@ -349,22 +514,47 @@ def configure_site(plan, runtime):
     return site
 
 
+def adopted_files(plan, runtime):
+    """Copy only a worker's database and its required AUTH early-notice companion."""
+    for name, row in plan['adoption'].items():
+        if 'state_source' not in row:
+            continue
+        source = checked_path(Path(row['state_source']), plan['state'], file=True)
+        if source.parent.resolve() == (runtime / 'state' / name).resolve():
+            continue
+        paths = [source]
+        early = Path(str(source) + '.early.sqlite')
+        if early.exists() and plan['contract']['workers'][name]['options'].get('--early-auth'):
+            paths.append(checked_path(early, plan['state'], file=True))
+        yield name, paths
+
+
 def copy_adopted_state(plan, runtime):
+    selected = dict(adopted_files(plan, runtime))
     for name in WORKERS:
         folder = runtime / 'state' / name;folder.mkdir(mode=0o700, parents=True, exist_ok=True)
         adoption = plan['adoption'].get(name, {})
         if 'state_source' in adoption:
             source = Path(adoption['state_source'])
-            for path in source.parent.iterdir():
-                if path.suffix not in ('.sqlite', '.sqlite3'):
-                    continue
+            checked_path(source, plan['state'], file=True)
+            if source.parent.resolve() == folder.resolve():
+                # A failed first attempt already prepared this independent worker's state.
+                # Reuse it in place; never rename its source and then try to copy itself.
+                continue
+            for path in selected[name]:
                 checked_path(path, plan['state'], file=True)
                 dest = folder / path.name
                 if dest.exists():
                     if (runtime / 'current.json').exists():
                         raise ValueError('Active managed state cannot be re-adopted')
                     # Preserve an unactivated copy before retrying from the resumed legacy DB.
-                    os.replace(dest, folder / (dest.name + '.unactivated-' + datetime.now(timezone.utc).strftime('%H%M%S%f')))
+                    archived = folder / (dest.name + '.unactivated-' + datetime.now(timezone.utc).strftime('%H%M%S%f'))
+                    os.replace(dest, archived)
+                    for suffix in ('-wal', '-shm'):
+                        sidecar = Path(str(dest) + suffix)
+                        if sidecar.exists():
+                            checked_path(sidecar, plan['state'], file=True)
+                            os.replace(sidecar, Path(str(archived) + suffix))
                 backup_database(path, dest)
                 if os.name == 'posix':
                     os.chown(dest, 1000, 1000)
@@ -375,74 +565,151 @@ def copy_adopted_state(plan, runtime):
 def apply(engine, plan, *, poll=None):
     workspace, state = Path(plan['workspace']), Path(plan['state']);runtime = state / 'runtime'
     if not plan['resources']['ok']:
-        raise ValueError('Server resource preflight failed; no mutation performed')
+        raise ResourceBudgetError(plan['resources'])
+    if (runtime / 'preservation-failed.json').exists():
+        raise ValueError('Data preservation failure requires explicit reconciliation; no mutation performed')
     with lock(runtime):
-        current = snapshot(engine, workspace, state, plan['image'], plan['project'])
+        options = ({'backup_root': plan.get('backup_root'), 'ingress_bytes': plan['ingress_reserve_bytes']}
+                   if plan.get('plan_version') == 2 else {})
+        current = snapshot(engine, workspace, state, plan['image'], plan['project'], **options)
         if current['fingerprint'] != plan['fingerprint']:
             raise ValueError('Deployment changed after planning; no mutation performed')
         if not current['resources']['ok']:
-            raise ValueError('Resource budget changed after review; no mutation performed')
+            raise ResourceBudgetError(current['resources'])
         for field in ('policy', 'site', 'observed', 'protected_sha256', 'previous_compose', 'source', 'image_id', 'adoption'):
             if current[field] != plan[field]:
                 raise ValueError('Reviewed plan was modified; no mutation performed')
+        for field in ('previous_execution', 'service_classification', 'backup_root', 'ingress_reserve_bytes'):
+            if current.get(field) != plan.get(field):
+                raise ValueError('Reviewed recovery or storage plan was modified')
+        existing_receipt = runtime / 'current.json'
+        if existing_receipt.is_file():
+            receipt = json.loads(existing_receipt.read_text())
+            actual = containers(engine, plan['project'])
+            if (receipt.get('source_sha256') == plan['source_sha256'] and receipt.get('image_id') == plan['image_id']
+                    and receipt.get('policy_sha256') == digest(plan['policy'])
+                    and receipt.get('execution_sha256') == digest({name: service_signature(obj) for name, obj in actual.items() if name in SERVICES})
+                    and set(actual) >= set(SERVICES) and all(service_running(actual[name]) for name in SERVICES)):
+                return {**receipt, 'unchanged': True}
         from cloud_soc.deployment.contract import stamp
         previous_contract = json.loads((runtime / 'contract.json').read_text()) if (runtime / 'contract.json').is_file() else None
-        expected_contract, _ = build_contract(plan['policy'], containers(engine, plan['project']), state,
+        expected_contract, _ = build_contract(plan['policy'], adoption_containers(containers(engine, plan['project']), state), state,
             now=stamp(plan['contract']['created_at']), existing=previous_contract)
         if expected_contract != plan['contract']:
             raise ValueError('Reviewed state/command plan was modified')
         run = runtime / 'upgrades' / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
         run.mkdir(mode=0o700, parents=True)
+        backups.fsync_directory(run.parent);backups.fsync_directory(runtime)
         if plan['fresh'] and not (runtime / 'install.json').exists():
             atomic_json(runtime / 'install.json', {'version': plan['policy']['version'], 'started': True})
         atomic_json(run / 'plan.json', plan)
-        for name, digest_value in plan['protected_sha256'].items():
-            p = Path(name)
-            if hashlib.sha256(p.read_bytes()).hexdigest() != digest_value:
-                raise ValueError('Protected file changed before backup')
-            target = run / 'settings' / p.as_posix().lstrip('/')
-            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True);shutil.copy2(p, target)
-        for p in databases(state):
-            backup_database(p, run / 'online' / p.relative_to(state))
         active = plan['previous_compose']
         old_objects = containers(engine, plan['project'])
         old_contract = (runtime / 'contract.json').read_bytes() if (runtime / 'contract.json').is_file() else None
         canonical = ['compose', '--project-name', plan['project'], '--env-file', str(state / 'compose.env'),
                      '-f', str(workspace / 'deploy/server/compose.yaml'), '-f', str(runtime / 'site.json')]
-        atomic_json(run / 'recovery.json', {'previous_compose': active, 'old_names': list(old_objects),
+        old_running = {name: obj for name, obj in old_objects.items() if obj.get('State', {}).get('Running')}
+        recovery_compose = None
+        if active and plan.get('previous_execution'):
+            frozen = run / 'previous.compose.json'
+            atomic_json(frozen, execution.literal_config(plan['previous_execution']))
+            recovery_compose = ['--project-name', plan['project'], '-f', str(frozen)]
+        atomic_json(run / 'recovery.json', {'previous_compose': active, 'old_names': list(old_running),
+            'recovery_compose': recovery_compose,
+            'recovery_compose_sha256': backups.sha256(frozen) if recovery_compose else None,
+            'old_services': {name: service_signature(obj) for name, obj in old_running.items()},
             'old_contract': json.loads(old_contract) if old_contract else None,
             'old_current': json.loads((runtime / 'current.json').read_text()) if (runtime / 'current.json').is_file() else None,
             'canonical': canonical, 'environment': plan['compose_environment']})
         atomic_json(runtime / 'pending.json', {'run': str(run)})
+        def stage(name):
+            atomic_json(run / 'stage.json', {'stage': name, 'utc': datetime.now(timezone.utc).isoformat()})
         try:
+            stage('online_backup')
+            for name, digest_value in plan['protected_sha256'].items():
+                p = Path(name)
+                if hashlib.sha256(p.read_bytes()).hexdigest() != digest_value:
+                    raise ValueError('Protected file changed before backup')
+                # Flat names avoid drive-anchor escapes and Windows path limits.
+                # The protected plan records the source-to-hash mapping.
+                target = run / 'settings' / digest(str(p))[:24]
+                if target.exists():
+                    raise ValueError('Protected backup target collision')
+                target.parent.mkdir(mode=0o700, parents=True, exist_ok=True);shutil.copy2(p, target)
+                target.chmod(0o600)
+                if backups.sha256(target) != digest_value:
+                    raise ValueError('Protected settings backup differs')
+            backup_run = Path(plan['backup_root']) / ('cloud-soc-' + run.name) if plan.get('backup_root') else run
+            rows = backups.inventory(state, plan['contract'], plan['adoption'])
+            online = backups.snapshot_set(rows, backup_run / 'online', backup_database)
+            atomic_json(run / 'backup-location.json', {'path': str(backup_run), 'online_manifest_sha256': backups.sha256(backup_run / 'online/manifest.json')})
+            if plan.get('plan_version') == 2:
+                # Writers may have grown WAL during online backup. Re-budget the
+                # remaining phases, counting the completed copy as existing usage.
+                rows = backups.inventory(state, plan['contract'], plan['adoption'])
+                machine = hardware(engine, state, plan['project'])
+                remaining = storage_budget(engine, state, plan['image_id'], plan['project'], old_objects, rows,
+                    plan['resources'].get('adoption_copy_bytes', 0), machine, plan['policy'],
+                    backup_root=plan.get('backup_root'), ingress_bytes=plan['ingress_reserve_bytes'],
+                    fresh=plan['fresh'], online_complete=True)
+                remaining_check = resource_check(plan['policy'], machine, fresh=plan['fresh'], storage=remaining,
+                    backup_memory_bytes=max((row['copy_upper_bound_bytes'] for row in rows), default=0))
+                atomic_json(run / 'remaining-resource-check.json', remaining_check)
+                if not remaining_check['ok']:
+                    raise ResourceBudgetError(remaining_check)
+                if any(backups.sha256(Path(name)) != value for name, value in plan['protected_sha256'].items()):
+                    raise ValueError('Protected files changed during backup; services not stopped')
+            stage('quiescing')
             if active:
-                stop = [n for n in APP_SERVICES if n in old_objects]
-                engine.run(['compose', *active, 'stop', *stop])
+                stop = plan['service_classification']['stop'] if 'service_classification' in plan else [n for n in APP_SERVICES if n in old_running]
+                if stop:
+                    engine.run(['compose', *active, 'stop', *stop])
             worker_inventory(engine, plan['project'], stopped=True)
-            for p in databases(state):
-                backup_database(p, run / 'stopped' / p.relative_to(state))
+            if plan.get('plan_version') == 2 and any(obj.get('State', {}).get('Running') for name, obj in containers(engine, plan['project']).items() if name in APP_SERVICES):
+                raise ValueError('Application writers not fully stopped; quiesced baseline refused')
+            stage('quiesced_backup')
+            rows = backups.inventory(state, plan['contract'], plan['adoption'])
+            backups.snapshot_set(rows, backup_run / 'stopped', backup_database, previous=online)
             saved_rows = portal_rows(state)
             saved_docs = {} if plan['fresh'] else immutable_documents(engine, state, plan['image'], plan['project'])
             atomic_json(run / 'preservation-before.json', {'portal_rows': saved_rows, 'documents': saved_docs})
+            stage('adoption')
             if not old_contract:
                 copy_adopted_state(plan, runtime)
             contract = deepcopy(plan['contract']);contract['prepared'] = False
             atomic_json(runtime / 'contract.json', contract, uid=1000)
-            atomic_json(runtime / 'site.json', configure_site(plan, runtime))
-            env = plan['compose_environment']
+            execution_plan = {**plan, 'image': plan['image_id']} if plan.get('plan_version') == 2 else plan
+            atomic_json(runtime / 'site.json', configure_site(execution_plan, runtime))
+            env = {**plan['compose_environment'], 'SOC_RUNTIME_IMAGE': execution_plan['image']}
             rendered = engine.json(canonical + ['config', '--format', 'json'], env=env)
             if not set(SERVICES) <= set(rendered['services']):
                 raise ValueError('Common Compose omitted required services')
             for name in APP_SERVICES:
-                if rendered['services'][name]['image'] != plan['image']:
+                if rendered['services'][name]['image'] != execution_plan['image']:
                     raise ValueError('Mixed application image versions refused')
             if plan['fresh']:
                 engine.run(canonical + ['up', '-d', '--no-deps', '--no-build', '--pull', 'never', 'elasticsearch'], env=env)
                 if poll:
                     poll(engine, 'elasticsearch', plan['project'])
-                engine.run(canonical + ['--profile', 'initialization', 'run', '--rm', '--no-deps', '--pull', 'never', 'bootstrap'], env=env)
+                if plan.get('plan_version') == 2:
+                    measured = storage_budget(engine, state, plan['image_id'], plan['project'], containers(engine, plan['project']),
+                        backups.inventory(state, plan['contract'], plan['adoption']), 0, hardware(engine, state, plan['project']),
+                        plan['policy'], backup_root=plan.get('backup_root'), ingress_bytes=plan['ingress_reserve_bytes'],
+                        fresh=True, online_complete=True)
+                    atomic_json(run / 'fresh-es-disk-readback.json', measured)
+                    if not measured['ok'] or measured.get('es_policy_source') != 'actual_cluster':
+                        raise ResourceBudgetError({'issues': ['fresh_es_disk_readback_failed'], 'disk': measured})
+                bootstrap = runtime / 'bootstrap.json'
+                if bootstrap.exists():
+                    if json.loads(bootstrap.read_text()).get('state') != 'complete':
+                        raise ValueError('Interrupted bootstrap requires explicit reconciliation; never automatically rerun')
+                else:
+                    atomic_json(bootstrap, {'state': 'running'})
+                    engine.run(canonical + ['--profile', 'initialization', 'run', '--rm', '--no-deps', '--pull', 'never', 'bootstrap'], env=env)
+                    atomic_json(bootstrap, {'state': 'complete'})
             keys = {name: Path(row['key_source']).read_text().strip() for name, row in plan['adoption'].items() if 'key_source' in row}
             password = (state / 'secrets/elastic_password').read_text().strip()
+            stage('migrations')
             migration = engine.json(['run', '--rm', '-i', '--network', plan['project'] + '_default', '--user', '0:0',
                 '-v', str(state / 'tls/ca.crt') + ':/run/certs/ca.crt:ro', '-v', str(runtime) + ':/deployment',
                 '-v', str(state / 'notifications') + ':/notifications',
@@ -450,50 +717,113 @@ def apply(engine, plan, *, poll=None):
                 input=json.dumps({'password': password, 'policy': plan['policy'], 'contract': contract, 'existing_keys': keys}))
             contract['prepared'] = True
             atomic_json(runtime / 'contract.json', contract, uid=1000)
-            engine.run(canonical + ['up', '-d', '--no-build', '--pull', 'never', *SERVICES], env=env, timeout=300)
+            try:
+                # Initial notices may legitimately advance after detector resume.
+                # Compare the migration's effects while all writers are fenced.
+                preservation = immutable_documents(engine, state, plan['image'], plan['project'], before=saved_docs)
+            except Exception as error:
+                raise PreservationError('Existing alert/notice preservation could not be verified') from error
+            # Check saved mutable portal rows while its writer is still stopped.
+            background = [name for name in SERVICES if name not in ('portal', 'gateway')]
+            stage('background_readiness')
+            engine.run(canonical + ['up', '-d', '--no-deps', '--no-build', '--pull', 'never', *background], env=env, timeout=300)
             if poll:
-                for name in SERVICES:
+                for name in background:
+                    poll(engine, name, plan['project'])
+            after_rows = portal_rows(state)
+            if any(not set(rows) <= set(after_rows.get(name, [])) for name, rows in saved_rows.items()):
+                raise PreservationError('Existing case/dashboard rows changed')
+            engine.run(canonical + ['up', '-d', '--no-deps', '--no-build', '--pull', 'never', 'portal', 'gateway'], env=env, timeout=300)
+            stage('portal_readiness')
+            if poll:
+                for name in ('portal', 'gateway'):
                     poll(engine, name, plan['project'])
             after = containers(engine, plan['project'])
             if set(worker_inventory(engine, plan['project'])) != set(ALL_WORKERS):
                 raise ValueError('Exactly one instance of every common worker is required')
             for name in SERVICES:
-                if name not in after or not after[name]['State']['Running']:
+                if name not in after or not service_running(after[name]):
                     raise ValueError('Required service not running')
                 if name in APP_SERVICES and after[name]['Image'] != plan['image_id']:
                     raise ValueError('Runtime image differs from verified release')
             for name, h in plan['protected_sha256'].items():
                 if hashlib.sha256(Path(name).read_bytes()).hexdigest() != h:
                     raise ValueError('Existing key/certificate/site file changed')
-            after_rows = portal_rows(state)
-            if any(not set(rows) <= set(after_rows.get(name, [])) for name, rows in saved_rows.items()):
-                raise ValueError('Existing case/dashboard rows changed')
-            preservation = immutable_documents(engine, state, plan['image'], plan['project'], before=saved_docs)
             receipt = {'version': plan['policy']['version'], 'policy_sha256': digest(plan['policy']), 'runtime_ready': True, 'source_sha256': plan['source_sha256'],
                 'image_id': plan['image_id'], 'migrations': migration, 'preservation': preservation,
+                'preservation_phase': 'after_migrations_before_writer_resume',
+                'execution_sha256': digest({name: service_signature(obj) for name, obj in after.items() if name in SERVICES}),
                 'portal_saved_rows_preserved': sum(len(rows) for rows in saved_rows.values()), 'new_workers': plan['new_workers'],
                 'live_ingestion_acceptance': 'not_yet_verified', 'utc': datetime.now(timezone.utc).isoformat()}
             atomic_json(run / 'applied.json', receipt)
             atomic_json(runtime / 'current.json', receipt)
             # A receipt is also the unambiguous input for the next upgrade.
-            (run / 'compose.active.json').write_text(json.dumps(['docker', *canonical]))
-            (runtime / 'compose.active.json').write_text(json.dumps(['docker', *canonical]))
-            (runtime / 'pending.json').unlink()
+            atomic_json(run / 'compose.active.json', ['docker', *canonical])
+            atomic_json(runtime / 'compose.active.json', ['docker', *canonical])
+            stage('complete')
+            durable_unlink(runtime / 'pending.json')
             return receipt
         except BaseException as error:
             # Revert execution only. Original DBs were retained; migrated DBs are never rewound.
-            _restore_execution(engine, runtime, run, json.loads((run / 'recovery.json').read_text()))
+            failure = {'state': 'restoring', 'error_type': type(error).__name__, 'databases_rewound': False}
+            atomic_json(run / 'failed.json', failure)
+            if isinstance(error, PreservationError):
+                atomic_json(runtime / 'preservation-failed.json', {'run': str(run), 'baseline': 'preservation-before.json',
+                    'reason': 'quiesced_data_preservation_failed_or_unverified', 'automatic_retry_allowed': False})
+            try:
+                _restore_execution(engine, runtime, run, json.loads((run / 'recovery.json').read_text()))
+            except BaseException as recovery_error:
+                atomic_json(run / 'failed.json', {**failure, 'state': 'recovery_failed',
+                    'recovery_error_type': type(recovery_error).__name__, 'old_execution_restored': False})
+                raise
             atomic_json(run / 'failed.json', {'state': 'failed', 'error_type': type(error).__name__,
                 'old_execution_restored': bool(active), 'databases_rewound': False})
-            (runtime / 'pending.json').unlink()
+            durable_unlink(runtime / 'pending.json')
             raise
 
 
+def service_running(obj):
+    state = obj.get('State', {})
+    return bool(state.get('Running') and state.get('Status', 'running') == 'running'
+                and not state.get('Restarting') and not state.get('OOMKilled')
+                and state.get('Health', {}).get('Status', 'healthy') == 'healthy')
+
+
+def service_signature(obj):
+    config = obj.get('Config', {});host = obj.get('HostConfig', {})
+    return {'image': obj.get('Image'), 'command': config.get('Cmd'), 'entrypoint': config.get('Entrypoint'),
+        'mounts': sorted((m['Destination'], m['Source'], m.get('Type', 'bind'), m.get('RW', True)) for m in obj.get('Mounts', [])),
+        'memory': host.get('Memory'), 'ports': host.get('PortBindings'),
+        'read_only': host.get('ReadonlyRootfs'), 'security_opt': host.get('SecurityOpt'),
+        'cap_drop': host.get('CapDrop'), 'cap_add': host.get('CapAdd'), 'user': config.get('User'),
+        'network_mode': host.get('NetworkMode'),
+        'environment_sha256': digest(sorted(config.get('Env', [])))}
+
+
 def _restore_execution(engine, runtime, run, saved):
-    active = saved['previous_compose']
+    active = saved.get('recovery_compose') or saved['previous_compose']
+    if saved.get('recovery_compose'):
+        frozen = checked_path(run / 'previous.compose.json', runtime, file=True)
+        if backups.sha256(frozen) != saved['recovery_compose_sha256']:
+            raise ValueError('Frozen previous execution changed; recovery journal retained')
     project = saved['canonical'][saved['canonical'].index('--project-name') + 1]
     present = containers(engine, project)
-    targets = [project + '-' + name + '-1' for name in APP_SERVICES if name in present]
+    signatures = saved.get('old_services', {})
+    original_plan = json.loads((run / 'plan.json').read_text()) if (run / 'plan.json').exists() else {}
+    def matches(name, obj):
+        if not obj:
+            return False
+        if name in signatures:
+            # JSON protection records encode the sorted mount tuples as lists.
+            return digest(service_signature(obj)) == digest(signatures[name])
+        previous = original_plan.get('observed', {}).get(name)
+        if previous:
+            current = service_signature(obj)
+            mounts = sorted((m['Destination'], m['Source'], m.get('Type', 'bind'), m.get('RW', True)) for m in previous.get('mounts', []))
+            return current['image'] == previous['image'] and current['command'] == previous['command'] and current['mounts'] == mounts
+        return False
+    targets = [project + '-' + name + '-1' for name in SERVICES if name != 'elasticsearch' and name in present
+        and (name not in saved['old_names'] or not matches(name, present[name]))]
     if targets:
         engine.run(['stop', *targets])
     # Restore metadata before starting the previous image; never restore a database.
@@ -504,7 +834,26 @@ def _restore_execution(engine, runtime, run, saved):
         elif path.exists() and (active or name != 'contract.json'):
             shutil.copy2(path, run / ('interrupted-' + name));path.unlink()
     if active:
-        engine.run(['compose', *active, 'up', '-d', '--no-build', '--pull', 'never', *saved['old_names']], timeout=300)
+        needed = [name for name in saved['old_names'] if not matches(name, present.get(name)) or not service_running(present.get(name, {}))]
+        if needed:
+            engine.run(['compose', *active, 'up', '-d', '--no-deps', '--no-build', '--pull', 'never', *needed], timeout=300)
+        deadline = time.monotonic() + 180
+        while True:
+            restored = containers(engine, project)
+            if all(name in restored and service_running(restored[name]) for name in saved['old_names']):
+                break
+            if time.monotonic() >= deadline:
+                raise ValueError('Previous services not ready; recovery journal retained')
+            time.sleep(0.5)
+        if (signatures or original_plan.get('observed')) and any(not matches(name, restored[name]) for name in saved['old_names']):
+            raise ValueError('Previous service identity differs; recovery journal retained')
+        expected = set(saved['old_names']) & set(ALL_WORKERS)
+        if set(worker_inventory(engine, project)) != expected:
+            raise ValueError('Unexpected worker after recovery; journal retained')
+        retained = run / 'interrupted-contract.json'
+        if not saved['old_contract'] and retained.is_file():
+            atomic_json(runtime / 'retry.json', {'run': str(run),
+                'contract_sha256': hashlib.sha256(retained.read_bytes()).hexdigest()})
         atomic_json(runtime / 'compose.active.json', ['docker', 'compose', *active])
 
 
@@ -520,6 +869,6 @@ def recover(engine, state):
         active = saved['previous_compose']
         _restore_execution(engine, runtime, run, saved)
         atomic_json(run / 'recovered.json', {'old_execution_restored': bool(active), 'databases_rewound': False})
-        pending.unlink()
+        durable_unlink(pending)
         return {'recovery_required': True, 'old_execution_restored': bool(active), 'databases_rewound': False,
                 'fresh_install_can_resume': not bool(active)}
