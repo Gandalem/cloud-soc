@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="shell.css">
   <script src="auth-client.js"></script>
   <script src="shell.js" defer></script>
+  <script src="mall-alerts.js" defer></script>
   <script src="operations.js" defer></script>
   <link rel="stylesheet" href="cases.css"><script src="cases.js" defer></script>
 <link rel="stylesheet" href="/theme.css">
@@ -24,7 +25,7 @@
     <section id="ops-metrics" class="ops-metrics" aria-label="조회 기간의 집계"></section>
     <section class="panel ops-notice"><h2>분석 상태</h2><p id="ops-pipeline">조회 중</p><details class="usage-details"><summary>마지막 분석 시각과 처리 상태</summary><p id="ops-pipeline-times"></p></details><a href="detection-history.html">분석 중단·지연 확인</a></section>
     <section class="ops-charts" aria-label="기간별 추이"><article class="panel"><h2>로그 수신 추이</h2><p>서버 수신 시각 기준</p><div id="ops-intake-chart"></div></article><article class="panel"><h2>경보 추이</h2><p>경보 건수 · 공격 횟수와 다름</p><div id="ops-alert-chart"></div></article></section>
-    <section id="ops-alerts" class="panel ops-alerts"><h2>경보 목록</h2><p id="ops-alert-state">조회 중</p><div class="table-scroll" tabindex="0" aria-label="경보 표"><table><thead><tr><th>경보 시각 (KST)</th><th>심각도</th><th>규칙</th><th>경보</th><th>조직</th><th>근거</th></tr></thead><tbody id="ops-alert-rows"></tbody></table></div></section>
+    <section id="ops-alerts" class="panel ops-alerts"><h2>경보 목록</h2><p id="ops-alert-state">조회 중</p><div class="table-scroll" tabindex="0" aria-label="경보 표"><table><thead><tr><th>경보 시각 (KST)</th><th>계산 위험 등급</th><th>규칙 ID</th><th>경보</th><th>서비스</th><th>조직</th><th>상태</th><th>관측 건수</th><th>근거</th></tr></thead><tbody id="ops-alert-rows"></tbody></table></div></section>
     <section id="case-queue" class="panel case-panel" aria-labelledby="case-queue-title">
       <div class="section-heading"><h2 id="case-queue-title">사건 목록</h2><a href="cases.html">사건 조사</a></div>
       <form id="case-filters" class="case-toolbar">

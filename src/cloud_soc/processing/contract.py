@@ -12,6 +12,8 @@ from cloud_soc.parsers.linux_operational import parse_linux_operational, VERSION
 from cloud_soc.normalizers.ecs import parse_syslog_timestamp
 from cloud_soc.normalizers.time_context import raw_time_context, parse_utc_offset
 from cloud_soc.web.metadata import VERSION as WEB_VERSION
+from cloud_soc.parsers.security_mall import ADAPTER as MALL_ADAPTER, VERSION as MALL_VERSION
+from cloud_soc.parsers.security_mall_edge import ADAPTER as EDGE_ADAPTER, VERSION as EDGE_VERSION
 
 VERSION = "intake-v1"
 NORMALIZED = "soc-normalized-v1"
@@ -36,7 +38,54 @@ def normalize(hit, processed_at, *, ssh_v2_start=None):
     if not received or not occurred or not organization or organization == REDACTED or organization != raw_organization:
         return identifier, record, None
     detail = security_detail(source)
+    if detail['adapter'] == EDGE_ADAPTER:
+        identifier = hashlib.sha256(json.dumps([EDGE_VERSION, reference], sort_keys=True).encode()).hexdigest()
+        record.update(version=EDGE_VERSION, adapter=EDGE_ADAPTER)
+        if detail['status'] != 'recognized':
+            record.update(reason=detail['reason'])
+            return identifier, record, None
+        if not reference['index'].startswith('soc-host-raw-mall-edge-'):
+            record.update(reason='source_scope_mismatch')
+            return identifier, record, None
+        values = detail['fields']
+        access = values['stream'] == 'access'
+        status = values.get('status_code', 0)
+        outcome = ('failure' if status >= 400 else 'success' if status < 300 else 'unknown') if access else 'unknown'
+        event = {'@timestamp': iso(occurred), 'organization': {'id': organization},
+                 'host': {'id': field(source, 'host.id')}, 'service': {'name': values['service_name']},
+                 'source': {'ip': values['source_ip']},
+                 'event': {'id': field(source, 'event.id'), 'kind': 'event', 'category': ['web'],
+                           'action': 'http_access' if access else 'waf_rule_match',
+                           'outcome': outcome, 'ingested': iso(received)},
+                 'http': {'request': {'id': values['request_id']}},
+                 'cloud_soc': {'normalized_at': processed_at, 'normalizer_version': EDGE_VERSION,
+                     'parse_status': 'recognized', 'detail': detail, 'security_mall_edge': values,
+                     'provenance': {'schema_version': 1, 'raw': reference,
+                         'time': {'basis': 'apache_access_timestamp' if access else 'modsecurity_audit_timestamp',
+                                  'year_inferred': False, 'raw_is_protected_metadata': True}}}}
+        if access:
+            event['http']['request']['method'] = values['method']
+            event['http']['response'] = {'status_code': status}
+            event['url'] = {'path': values['path']}
+            event['event']['duration'] = values['duration_us'] * 1000
+        record.update(status='normalized', reason='recognized', normalized={'index': NORMALIZED, 'id': identifier})
+        return identifier, record, event
     time_metadata = {"basis": "source_timestamp"}
+    mall = detail["adapter"] == MALL_ADAPTER
+    if mall:
+        identifier = hashlib.sha256(json.dumps([MALL_VERSION, reference], sort_keys=True).encode()).hexdigest()
+        record["version"] = MALL_VERSION
+        if detail["status"] != "recognized":
+            record.update(status=detail["status"], reason=detail["reason"], adapter=MALL_ADAPTER)
+            return identifier, record, None
+        host_id = field(source, "host.id")
+        if not isinstance(host_id, str) or not 0 < len(host_id) <= 128 or text(host_id) != host_id:
+            record["reason"] = "security_mall_collector_host_invalid"
+            return identifier, record, None
+        if parse_time(detail["fields"]["timestamp"]) != occurred:
+            record["reason"] = "security_mall_time_mismatch"
+            return identifier, record, None
+        time_metadata = {"basis": "security_mall_audit_timestamp", "year_inferred": False}
     if detail['adapter'] == 'web_access_agent_v1':
         version = 'web-access-agent-v1'
         identifier = hashlib.sha256(json.dumps([version, reference], sort_keys=True).encode()).hexdigest()
@@ -110,7 +159,7 @@ def normalize(hit, processed_at, *, ssh_v2_start=None):
     if detail["status"] == "unsupported":
         record.update(status="unsupported", reason="adapter_not_supported")
         return identifier, record, None
-    expected = {"web_access_agent_v1":"soc-host-raw-", "web_access_metadata_v1":"soc-host-raw-web-", "windows_security_v1": "soc-host-raw-", "sysmon_v1": "soc-host-raw-", "linux_ssh_v1": "soc-host-raw-", "linux_ssh_v2": "soc-host-raw-",
+    expected = {MALL_ADAPTER: "soc-host-raw-", "web_access_agent_v1":"soc-host-raw-", "web_access_metadata_v1":"soc-host-raw-web-", "windows_security_v1": "soc-host-raw-", "sysmon_v1": "soc-host-raw-", "linux_ssh_v1": "soc-host-raw-", "linux_ssh_v2": "soc-host-raw-",
                 "linux_operational_v1": "soc-host-raw-", "linux_sudo_session_v1": "soc-host-raw-", "linux_unclassified_v1": "soc-host-raw-", "packetbeat_metadata_v1": "soc-network-", "aws_cloudtrail_metadata_v1": "soc-cloud-aws-", "oci_audit_metadata_v1": "soc-cloud-oci-"}
     if not reference["index"].startswith(expected[detail["adapter"]]):
         record.update(status="invalid", reason="source_scope_mismatch")
@@ -125,6 +174,21 @@ def normalize(hit, processed_at, *, ssh_v2_start=None):
                        "outcome": values["outcome"], "ingested": iso(received)},
              "cloud_soc": {"normalized_at": processed_at, "normalizer_version": record["version"], "parse_status": detail["status"],
                            "detail": detail, "provenance": {"schema_version": 1, "raw": reference, "time": time_metadata}}}
+    if mall:
+        # Only the collector envelope supplies organization/host identity. Do not
+        # inherit user/cloud/destination/event claims or raw text from the input.
+        event["event"]["id"] = values["event_id"]
+        event["service"] = {"name": values["service_name"]}
+        event["host"] = {"id": host_id}
+        event["source"] = {"ip": values["source_ip"]}
+        if "request_id" in values:
+            event["http"] = {"request": {"id": values["request_id"]}}
+        event["cloud_soc"]["security_mall"] = {
+            name: values[name] for name in ("schema_version", "account_id", "account_key_id",
+                                           "resource_type", "authorization_reason") if name in values}
+        record.update(status="normalized", reason="recognized", adapter=MALL_ADAPTER,
+                      normalized={"index": NORMALIZED, "id": identifier})
+        return identifier, record, event
     for name in ("source", "destination"):
         ip = address(values.get(name + "_ip") or field(source, name + ".ip"))
         if ip:

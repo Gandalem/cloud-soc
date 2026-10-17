@@ -9,6 +9,9 @@ EXCLUSIONS = 'soc-detection-exclusions-v1'
 
 
 def evaluate(event, rule):
+    if 'waf_sqli' in rule:
+        from cloud_soc.detection.waf import matches_waf
+        return ('matched', []) if matches_waf(event, rule) else ('not_matched', [])
     if rule.get('type') == 'cardinality':
         from cloud_soc.detection.patterns import evaluate_pattern
         return evaluate_pattern(event, rule)

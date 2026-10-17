@@ -145,7 +145,12 @@ def validate_rule(
         rule.setdefault('cooldown', {'seconds': 0})
         if rule['threshold'] != {'count': 1} or rule['cooldown'] != {'seconds': 0}:
             raise ValueError('Single event rules cannot aggregate or suppress independent events')
-    if kind == 'sequence' and rule.get('cooldown', {'seconds': 0}) != {'seconds': 0}:
+    if 'success_window' in rule:
+        success = rule['success_window']
+        if (kind != 'sequence' or not isinstance(success, dict) or set(success) != {'seconds'}
+                or type(success['seconds']) is not int or not 1 <= success['seconds'] <= 86400):
+            raise ValueError('success_window requires bounded sequence seconds')
+    if kind == 'sequence' and 'success_window' not in rule and rule.get('cooldown', {'seconds': 0}) != {'seconds': 0}:
         raise ValueError('Failure-success sequences reset on successful authentication; cooldown must be zero')
 
     required_fields = [
@@ -265,6 +270,9 @@ def validate_rule(
             or rule.get('severity', 'medium') not in ('low', 'medium', 'high', 'critical')):
         raise ValueError('Invalid cooldown, scope, enabled flag or severity')
 
+    if 'waf_sqli' in rule or rule.get('id') == 'WEB-WAF-01':
+        from cloud_soc.detection.waf import validate_waf_rule
+        validate_waf_rule(rule)
     if kind == 'cardinality':
         from cloud_soc.detection.patterns import validate_pattern
         validate_pattern(rule)

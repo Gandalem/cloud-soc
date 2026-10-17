@@ -18,6 +18,7 @@ from cloud_soc.main import make_alert_id, build_security_alert
 from cloud_soc.processing.contract import NORMALIZED, STATUS
 from cloud_soc.detection.telemetry import evaluate, exclusion, stats_for, runs, queue_committed_runs, flush_outbox
 from cloud_soc.detection.profiles import source_observed
+from cloud_soc.detection.sequence import retention_seconds
 
 
 def utc(value):
@@ -223,7 +224,8 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
             state['pending'] = {k: e for k, e in state['pending'].items() if parse_event_timestamp(e) >= final}
             for rule in rules:
                 groups = runtimes.get(rule['id'], {})
-                window = timedelta(seconds=rule['time_window']['seconds'])
+                window = timedelta(seconds=retention_seconds(rule) if rule.get('type') == 'sequence'
+                                   else rule['time_window']['seconds'])
                 cooldown = timedelta(seconds=rule.get('cooldown', {}).get('seconds', 0))
                 for key, group in list(groups.items()):
                     slot = 'failures' if rule.get('type') == 'sequence' else 'window'

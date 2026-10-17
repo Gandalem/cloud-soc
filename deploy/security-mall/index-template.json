@@ -1,0 +1,37 @@
+{
+  "index_patterns": ["soc-host-raw-mall-isolated-*"],
+  "priority": 450,
+  "_meta": {"contract": "security-mall-audit-v1", "scope": "isolated-example-only"},
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "index.final_pipeline": "security-mall-isolated-final-v1"
+    },
+    "mappings": {
+      "dynamic": "strict",
+      "_source": {"enabled": true},
+      "properties": {
+        "@timestamp": {"type": "date"},
+        "organization": {"properties": {"id": {"type": "keyword"}}},
+        "host": {"properties": {"id": {"type": "keyword"}}},
+        "labels": {"properties": {"log_source": {"type": "keyword"}}},
+        "event": {"properties": {"ingested": {"type": "date"}}},
+        "security_mall": {"properties": {"audit": {"properties": {
+          "schema_version": {"type": "short"},
+          "@timestamp": {"type": "date"},
+          "event_id": {"type": "keyword"},
+          "service_name": {"type": "keyword"},
+          "event_action": {"type": "keyword"},
+          "event_outcome": {"type": "keyword"},
+          "source_ip": {"type": "ip"},
+          "account_id": {"type": "keyword"},
+          "account_key_id": {"type": "keyword"},
+          "resource_type": {"type": "keyword"},
+          "authorization_reason": {"type": "keyword"},
+          "request_id": {"type": "keyword"}
+        }}}}
+      }
+    }
+  }
+}
