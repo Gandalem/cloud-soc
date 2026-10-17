@@ -68,7 +68,13 @@ def validate_draft(text, organization, reserved):
             elif isinstance(event, (yaml.MappingEndEvent, yaml.SequenceEndEvent)):
                 depth -= 1
             require(depth <= 12, 'yaml_too_complex')
-        document = yaml.load(text, Loader=UniqueLoader)
+        # UniqueLoader inherits SafeLoader's constructors and rejects duplicate keys.
+        # Own its lifecycle explicitly; no generic yaml.load on untrusted drafts.
+        loader = UniqueLoader(text)
+        try:
+            document = loader.get_single_data()
+        finally:
+            loader.dispose()
         require(isinstance(document, dict) and set(document) == {'rules'} and
                 isinstance(document['rules'], list) and len(document['rules']) == 1, 'one_rule_required')
         rule = document['rules'][0]

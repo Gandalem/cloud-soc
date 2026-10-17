@@ -111,8 +111,13 @@ class CorrelationStore:
                 old = db.execute('SELECT document FROM alerts WHERE id=?', (identifier,)).fetchone()
                 require(old is None or old[0] == serialized, 'alert_identity_conflict')
                 db.execute('INSERT OR IGNORE INTO alerts VALUES(?,?)', (identifier, serialized))
-            require(all(db.execute('SELECT count(*) FROM ' + table).fetchone()[0] <= self.scope.max_events
-                        for table in ('events', 'observations', 'alerts')), 'correlation_capacity_limit')
+            # Fixed SQL literals keep table names independent of any caller input.
+            counts = (
+                db.execute('SELECT count(*) FROM events').fetchone()[0],
+                db.execute('SELECT count(*) FROM observations').fetchone()[0],
+                db.execute('SELECT count(*) FROM alerts').fetchone()[0],
+            )
+            require(all(value <= self.scope.max_events for value in counts), 'correlation_capacity_limit')
             # Bound persisted alert fan-out as well as single-batch input.
             require(sum(len(json.loads(value)['evidence']) for (value,) in db.execute('SELECT document FROM alerts'))
                     <= self.scope.max_events, 'correlation_evidence_limit')
