@@ -2,6 +2,7 @@
 import base64
 from copy import deepcopy
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -247,10 +248,14 @@ def test_cli_default_does_not_load_writer_and_does_not_disclose(tmp_path, capsys
     assert json.loads(capsys.readouterr().out)['mode'] == 'dry_run'
     writer.create.assert_not_called()
     command = [sys.executable, '-m', 'cloud_soc.detection.mall_lab']
-    help_result = subprocess.run([*command, '--help'], capture_output=True, text=True, check=False)
+    child_env = os.environ.copy()
+    source_dir = str(Path(__file__).resolve().parents[1] / 'src')
+    child_env['PYTHONPATH'] = os.pathsep.join(filter(None, (source_dir, child_env.get('PYTHONPATH'))))
+    help_result = subprocess.run([*command, '--help'], capture_output=True, text=True,
+                                 check=False, env=child_env)
     assert help_result.returncode == 0 and '--write-alerts' in help_result.stdout
     failure = subprocess.run([*command, '--config', str(tmp_path / 'missing'), '--start', START,
-                              '--end', END], capture_output=True, text=True, check=False)
+                              '--end', END], capture_output=True, text=True, check=False, env=child_env)
     assert failure.returncode == 1 and json.loads(failure.stdout)['state'] == 'failed'
     assert not failure.stderr
 
