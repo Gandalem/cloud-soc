@@ -1,5 +1,9 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-18 Security Mall 9-C 배포 전 연결
+
+- [x] MALL-9C 로컬 구현·검증 완료(2026-10-18): main18ad348 기반 codex/security-mall-9c-integration에서 legacy 문자열/복수 exact raw·normalized allowlist와 기존 ACCESS/7-C+WAF 증거 동시 조회를 추가했다. 기존 엔진·Operations 증거 검증·save_security_alert를 재사용하는 기본 dry-run/명시적 create-only 일회성 CLI를 추가했고 AUTH Worker·위험도·통지·조직/원문 정책은 보존했다. 신규40/직접회귀7의 고유Python47건, 공유DOM12건, 변경5파일 Ruff/Bandit medium-high 통과다. 관련 파일·권한/인덱스 계약·실행 예시·9-D 승인/중단 조건은 docs/security_mall_9c_predeployment.md에 기록했다. SSH/VM/실제ES/키발급/서비스/DB/SQLi/브라우저는 미실행·미검증이며 기존 원본 브랜치·미추적87파일·PR14/Runtime-v2는 보존했다. 작업 브랜치 commit/push/새 PR만 요청 범위로 수행하고 CI 결과는 별도 확인한다.
+
 ## 2026-10-17 누적 7~9단계 Git 보존 검토
 
 - [x] GIT-REVIEW-7-9 범위·민감정보 검토 완료: 사용자 승인으로 7-A/B/C·8-A/B/C·9-B 및 이를 실행/검증하는 미커밋 Mall 정규화·수집 계약 의존 파일100개를 단일 통합 커밋 대상으로 선정했다. 기존 브랜치 codex/security-mall-collection과 최신 origin/main 기준점은 동일하며 원격 동명 브랜치는 없었다. 후보의 실제 비밀값/개인키/운영 DB·로그·스냅샷은 발견되지 않았고 API Key 예시는 환경변수 자리표시자, 시험 표식은 합성임을 확인했다. 별도 6단계 부팅·서비스 전환·ES 구성 도구와 관련 기록/테스트87개는 범위 밖으로 보존·제외한다. state/·실제 비밀/DB는 커밋하지 않는다. 공유 파일의 단계별 부분 분리는 피하고 현재 구현 그대로 보존한다. 전체/기존 검증 재실행·서비스/ES 변경은 없으며 9-B는 로컬 구현/합성 검증만 완료, 실제 SQLi/배포/ES/브라우저 미검증을 유지한다. 실제 commit/push 결과는 Git 이력·원격 참조와 최종 보고로 확인한다.

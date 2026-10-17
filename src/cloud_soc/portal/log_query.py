@@ -122,9 +122,9 @@ def valid_sort(value):
 
 class LogReader:
     def __init__(self, client, *, secret, principal, clock=time.time, organizations=None, mall_scope=None):
-        from cloud_soc.portal.mall_scope import validate_scope
+        from cloud_soc.portal.mall_scope import validate_scope, scope_indices
         scope = validate_scope(mall_scope)
-        self.allowed_indices = (scope['raw'],) if scope else INDICES
+        self.allowed_indices = scope_indices(scope, 'raw') if scope else INDICES
         self.lab_scope = scope is not None
         self.client = client.options(
             request_timeout=5,
@@ -250,7 +250,7 @@ class LogReader:
                 pass
 
     def indices(self, name):
-        if self.lab_scope and name not in (self.allowed_indices, self.allowed_indices[0]):
+        if self.lab_scope and name != self.allowed_indices and name not in self.allowed_indices:
             return []
         resolved = self.client.indices.resolve_index(name=name, expand_wildcards="open",
                                                      allow_no_indices=True, ignore_unavailable=True)

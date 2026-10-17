@@ -13,7 +13,7 @@ from cloud_soc.processing.contract import NORMALIZED, RECORDS, STATUS
 from cloud_soc.processing.worker import checked
 from cloud_soc.detection.engine import event_fingerprint
 from cloud_soc.privacy import redact_metadata
-from cloud_soc.portal.mall_scope import validate_scope
+from cloud_soc.portal.mall_scope import validate_scope, scope_indices
 
 ALERT = "security-alerts"
 INDEX_PATH_BUDGET = 3000
@@ -172,7 +172,7 @@ class Operations:
         return self.organizations is None or (isinstance(organization, str) and organization in self.organizations)
 
     def get(self, index, doc_id, fields):
-        if self.mall_scope and index not in self.mall_scope.values():
+        if self.mall_scope and index not in scope_indices(self.mall_scope):
             return None
         if not self.client:
             raise RuntimeError("Monitor not configured")
@@ -391,7 +391,7 @@ class Operations:
         interval = "5m" if (parse_time(filters.end) - parse_time(filters.start)).total_seconds() <= 86400 else "1h"
         result = {"start": filters.start, "end": filters.end, "incident_work": "separate_case_api", "sections": {}}
         for key, operation in {
-            "intake": lambda: self.series([self.mall_scope['raw']] if self.mall_scope else INDICES, "event.ingested", filters.start, filters.end, interval),
+            "intake": lambda: self.series(scope_indices(self.mall_scope, 'raw') if self.mall_scope else INDICES, "event.ingested", filters.start, filters.end, interval),
             "processing": lambda: {"state": "unavailable"} if self.mall_scope else self.series([RECORDS], "event.ingested", filters.start, filters.end, interval, records=True),
             "alerts": lambda: self.series([self.alert_index], "@timestamp", filters.start, filters.end, interval, alerts=True),
             "quality": lambda: {"state": "unavailable"} if self.mall_scope else self.series(["soc-agent-health-*"], "event.ingested", filters.start, filters.end, interval),
@@ -479,12 +479,12 @@ class Operations:
             return {"state": "invalid_reference"}
         normalized, raw = reference.get("normalized"), reference.get("raw")
         try:
-            allowed_normalized = (self.mall_scope['normalized'],) if self.mall_scope else (NORMALIZED, "normalized-events")
+            allowed_normalized = scope_indices(self.mall_scope, 'normalized') if self.mall_scope else (NORMALIZED, "normalized-events")
             if not isinstance(normalized, dict) or normalized.get("index") not in allowed_normalized:
                 raise ValueError()
             normalized = {"index": normalized["index"], "id": identifier(normalized.get("id"))}
             if self.mall_scope:
-                if not isinstance(raw, dict) or raw.get('index') != self.mall_scope['raw']:
+                if not isinstance(raw, dict) or raw.get('index') not in scope_indices(self.mall_scope, 'raw'):
                     raise ValueError()
                 raw = {'index': raw['index'], 'id': identifier(raw.get('id'))}
             elif isinstance(raw, dict) and re.fullmatch(r"raw-logs-[a-z0-9][a-z0-9_.-]{0,220}", str(raw.get("index", ""))):
