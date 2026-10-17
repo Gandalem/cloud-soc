@@ -1,0 +1,10 @@
+{
+  "cluster": ["monitor"],
+  "indices": [{
+    "names": ["soc-host-raw-mall-edge-isolated-example"],
+    "privileges": ["create_doc"],
+    "allow_restricted_indices": false
+  }],
+  "applications": [],
+  "run_as": []
+}

@@ -55,6 +55,9 @@ class NoticeReader:
         self.operations = operations
 
     def sources(self, *, identifier=None, start=None, end=None):
+        # Lab reads are limited to its three concrete indices, not operational notices.
+        if self.operations.mall_scope:
+            return None
         client, organizations = self.operations.client, self.operations.organizations
         if not client:
             raise bad()

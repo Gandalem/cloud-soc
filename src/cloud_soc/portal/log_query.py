@@ -121,7 +121,11 @@ def valid_sort(value):
 
 
 class LogReader:
-    def __init__(self, client, *, secret, principal, clock=time.time, organizations=None):
+    def __init__(self, client, *, secret, principal, clock=time.time, organizations=None, mall_scope=None):
+        from cloud_soc.portal.mall_scope import validate_scope
+        scope = validate_scope(mall_scope)
+        self.allowed_indices = (scope['raw'],) if scope else INDICES
+        self.lab_scope = scope is not None
         self.client = client.options(
             request_timeout=5,
             max_retries=0,
@@ -246,11 +250,15 @@ class LogReader:
                 pass
 
     def indices(self, name):
+        if self.lab_scope and name not in (self.allowed_indices, self.allowed_indices[0]):
+            return []
         resolved = self.client.indices.resolve_index(name=name, expand_wildcards="open",
                                                      allow_no_indices=True, ignore_unavailable=True)
         names = [entry["name"] for entry in resolved["indices"]]
         for index in names:
             document_reference(index, "validation")
+            if self.lab_scope and index not in self.allowed_indices:
+                raise unavailable()
         # Alias/data-stream matches are not a substitute for a concrete intake index.
         if resolved.get("aliases") or resolved.get("data_streams"):
             raise unavailable()
@@ -305,7 +313,7 @@ class LogReader:
         if filters.source_kind == 'web':
             fields.append('labels.log_source')
             required['labels.log_source']={'keyword','text'}
-        caps = self.client.field_caps(index=INDICES, fields=fields, include_unmapped=True)["fields"]
+        caps = self.client.field_caps(index=self.allowed_indices, fields=fields, include_unmapped=True)["fields"]
         for name, allowed in required.items():
             for kind, info in caps.get(name, {}).items():
                 if kind == "unmapped":
@@ -330,11 +338,11 @@ class LogReader:
         self.require_client()
         try:
             if state is None:
-                names = self.indices(INDICES)
+                names = self.indices(self.allowed_indices)
                 if not names:
                     return bounded_json(self.result(filters, [], None, data_state='no_index'))
                 self.check_mappings(names, filters)
-                opened = self.client.open_point_in_time(index=INDICES, keep_alive=PIT_TTL,
+                opened = self.client.open_point_in_time(index=self.allowed_indices, keep_alive=PIT_TTL,
                                                         allow_partial_search_results=False)
                 pit = opened["id"]
                 if opened.get("_shards", {}).get("failed", 0):

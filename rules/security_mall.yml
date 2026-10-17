@@ -1,0 +1,65 @@
+rules:
+  - id: WEB-ACCESS-01
+    type: single
+    name: Security Mall order ownership access denied
+    enabled: true
+    severity: low
+    group_by: [organization.id, service.name, host.id, event.id, source.ip]
+    conditions:
+      - {field: service.name, operator: equals, value: security-mall}
+      - {field: cloud_soc.detail.adapter, operator: equals, value: security_mall_audit_v1}
+      - {field: event.action, operator: equals, value: order_view}
+      - {field: event.outcome, operator: equals, value: failure}
+      - {field: cloud_soc.security_mall.resource_type, operator: equals, value: order}
+      - {field: cloud_soc.security_mall.authorization_reason, operator: equals, value: not_owner}
+    alert:
+      title: 쇼핑몰 타인 주문 접근 거부
+      message: 주문 소유권 검사에서 접근이 차단되었습니다. 원본 증거와 정상 사용 여부를 확인하세요. 주문 정보 유출 성공을 의미하지 않습니다.
+      category: iam
+      tags: [security-mall, order, access-denied]
+  - id: WEB-AUTH-01
+    type: sequence
+    name: Security Mall repeated login failures followed by success
+    enabled: true
+    severity: medium
+    group_by: [organization.id, service.name, cloud_soc.security_mall.account_id, cloud_soc.security_mall.account_key_id, source.ip]
+    threshold: {count: 5}
+    time_window: {seconds: 300}
+    success_window: {seconds: 600}
+    cooldown: {seconds: 900}
+    conditions:
+      - {field: service.name, operator: equals, value: security-mall}
+      - {field: cloud_soc.detail.adapter, operator: equals, value: security_mall_audit_v1}
+      - {field: event.category, operator: contains, value: authentication}
+      - {field: event.action, operator: equals, value: login}
+      - {field: event.outcome, operator: in, value: [failure, success]}
+    alert:
+      title: 쇼핑몰 반복 로그인 실패 후 성공
+      message: 동일 조직·서비스·가명 계정·키 버전·관측 IP에서 5분 이내 실패 5건 이상 후 마지막 해당 실패로부터 10분 안에 성공이 관측되었습니다. 정상 재시도 여부와 성공 후 활동을 확인하세요. 계정 탈취를 확정하지 않습니다.
+      category: authentication
+      tags: [security-mall, authentication, failure-success]
+  - id: WEB-WAF-01
+    type: threshold
+    name: Security Mall SQLi suspicion from scoped WAF metadata
+    enabled: true
+    severity: medium
+    group_by: [organization.id, service.name, host.id, source.ip]
+    threshold: {count: 1}
+    time_window: {seconds: 300}
+    cooldown: {seconds: 0}
+    waf_sqli:
+      crs_version: '3.3.5'
+      rule_ids: ['942100', '942140', '942160', '942170', '942190', '942220', '942230', '942240']
+      repeat_requests: 3
+    conditions:
+      - {field: service.name, operator: equals, value: security-mall}
+      - {field: cloud_soc.detail.adapter, operator: equals, value: security_mall_edge_v1}
+      - {field: event.action, operator: equals, value: waf_rule_match}
+      - {field: cloud_soc.security_mall_edge.stream, operator: equals, value: waf}
+      - {field: cloud_soc.security_mall_edge.engine_mode, operator: equals, value: DetectionOnly}
+      - {field: cloud_soc.security_mall_edge.blocked, operator: equals, value: false}
+    alert:
+      title: 쇼핑몰 SQLi 의심 요청 관측
+      message: 허용된 CRS SQLi 규칙 메타데이터를 관측했습니다. 동일 범위와 관측 IP의 독립 요청 수를 확인하세요. DetectionOnly이며 실제 차단 또는 SQL 실행 성공을 의미하지 않습니다.
+      category: web
+      tags: [security-mall, waf, sqli-suspicion, detection-only]

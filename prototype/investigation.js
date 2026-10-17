@@ -52,6 +52,7 @@
     try{
       const data=await request("/api/alerts/detail?"+new URLSearchParams({id}));if(version!==generation)return;
       const c=data.condition;detail.replaceChildren(node("p","규칙 "+(data.alert.rule||"미기록")),node("p","관측 로그 "+(c.event_count??"미기록")+"건"));
+      window.CloudSOCMall.summary(detail,data);
       detail.append(node("p","조직 "+(data.alert.organization||"미기록")+" · 출발지 IP "+(data.alert.source_ip||"미관측")));
       const ruleInfo=node('details');ruleInfo.append(node('summary','규칙 정보'),node('p','버전 '+(data.rule_version||'미기록')),node('p','임계값 '+(c.threshold??'미기록')+' / 시간 범위 '+(c.time_window_seconds??'미기록')+'초'));detail.append(ruleInfo);
       if(data.assessment) {
@@ -91,6 +92,7 @@
             if(e.normalized_event)result.append(node("p","근거 이벤트 시각 (KST): "+fmt(e.normalized_event.timestamp)+" · 행위 "+(e.normalized_event.action||"미관측")+" · 결과 "+(e.normalized_event.outcome||"미관측")));
             if(e.metadata)result.append(node("pre",JSON.stringify(e.metadata,null,2)));
             if(e.security)result.append(node("pre",JSON.stringify(e.security,null,2)));
+            window.CloudSOCMall.evidence(result,e,i);
           }catch(failure){result.textContent=failure.message;}finally{button.disabled=false;}
         });evidenceBody.append(button,result);
       }

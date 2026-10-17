@@ -16,7 +16,7 @@ import pytest
 from cloud_soc.detection import early
 from cloud_soc.detection.engine import event_fingerprint
 from cloud_soc.detection.incremental import run_incremental
-from cloud_soc.detection.profiles import RULE_IDS
+from cloud_soc.detection.profiles import RULE_IDS as CATALOG_IDS
 from cloud_soc.detection.telemetry import RUNS, EXCLUSIONS
 from cloud_soc.portal.app import create_app
 from cloud_soc.portal.operations import Operations
@@ -25,6 +25,10 @@ from cloud_soc.portal.log_query import LogQueryError
 from ruleset_fixtures import positive, BASE, delete
 from test_early_notices import Fixture
 from test_integration_security import make_session_portal, login
+
+# Legacy fixtures rewrite timestamps without edge-v1's corresponding envelope.
+# WAF adapter/Portal/runtime/create-only cases have dedicated tests in 9-B.
+RULE_IDS = tuple(key for key in CATALOG_IDS if key != 'WEB-WAF-01')
 
 
 def fixture_for(identifier):

@@ -12,6 +12,7 @@ from test_cloud_detection import event as cloud_event, ingress
 from test_metadata_patterns import ssh, windows, flow, console
 from test_sequence_detection import ssh as sequence_ssh
 from test_web_collection import received, event as web_event, line
+from security_mall_fixtures import mall
 
 BASE = utc('2026-10-01T00:00:00Z')
 
@@ -42,6 +43,10 @@ def positive(identifier):
         rows = [sequence_ssh(i) for i in range(10)]
     elif identifier == 'AUTH-SEQ-001':
         rows = [sequence_ssh(i) for i in range(5)] + [sequence_ssh(5, outcome='success')]
+    elif identifier == 'WEB-ACCESS-01':
+        rows = [mall(0, action='order_view')]
+    elif identifier == 'WEB-AUTH-01':
+        rows = [mall(i) for i in range(5)] + [mall(5, outcome='success')]
     elif identifier == 'AUTH-SPRAY-001':
         rows = [ssh(i) for i in range(10)]
     elif identifier == 'ATTACK-01':
@@ -89,6 +94,9 @@ def second_burst(rows, seconds):
         row['@timestamp'] = (utc(row['@timestamp']) + timedelta(seconds=seconds)).isoformat()
         row['cloud_soc']['provenance']['raw']['id'] += '-second'
         row['_cloud_soc_meta']['document_id'] += '-second'
+        if row.get('service', {}).get('name') == 'security-mall':
+            from uuid import NAMESPACE_URL, uuid5
+            row['event']['id'] = str(uuid5(NAMESPACE_URL, row['event']['id'] + '/second'))
         for field in ('event_id', 'flow_id'):
             values = row['cloud_soc']['detail']['fields']
             if field in values:

@@ -44,7 +44,7 @@ def permitted(endpoint, method, role, filename=None):
     if role == "admin":
         return True
     if endpoint == "static_file":
-        return filename not in {"agents.html", "agents.js", "app.js", "demo-data.js", "settings-slack.html", "settings-slack.js", "settings-slack.css"}
+        return filename not in {"agents.html", "agents.js", "app.js", "demo-data.js", "settings-slack.html", "settings-slack.js", "settings-slack.css", "settings-rules.html", "settings-rules.js"}
     if endpoint in READ_ENDPOINTS and method in {"GET", "HEAD", "OPTIONS"}:
         return True
     if endpoint == "logout":

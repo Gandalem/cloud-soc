@@ -1,0 +1,77 @@
+description: Strict private edge projection; final pipeline central receipt v1
+version: 1
+processors:
+  - script:
+      lang: painless
+      params:
+        raw_index: REPLACE_WITH_EXACT_NEW_LAB_INDEX
+        organization_id: mall-isolated
+        host_id: mall-host-isolated
+      source: |
+        try {
+          def roots = ['@timestamp','organization','host','labels','event','security_mall_edge',
+            '_index','_id','_routing','_version','_version_type','_dynamic_templates'];
+          for (def key : ctx.keySet()) { if (!roots.contains(key)) { throw new IllegalArgumentException(); } }
+          if (ctx._index != params.raw_index || !(ctx._id instanceof String) ||
+              !(ctx._id ==~ /[0-9a-f]{64}/) || !(ctx.event instanceof Map) ||
+              ctx.event.id != ctx._id) { throw new IllegalArgumentException(); }
+          for (def key : ctx.event.keySet()) {
+            if (key != 'id' && key != 'ingested') { throw new IllegalArgumentException(); }
+          }
+          if (!(ctx.organization instanceof Map) || ctx.organization.size() != 1 ||
+              ctx.organization.id != params.organization_id || !(ctx.host instanceof Map) ||
+              ctx.host.size() != 1 || ctx.host.id != params.host_id || !(ctx.labels instanceof Map) ||
+              ctx.labels.size() != 1 || ctx.labels.log_source != 'security_mall_edge' ||
+              !(ctx.security_mall_edge instanceof Map)) { throw new IllegalArgumentException(); }
+          def p = ctx.security_mall_edge;
+          def common = ['schema_version','stream','timestamp','request_id','service_name','source_ip'];
+          def allowed = new ArrayList(common);
+          if (p.stream == 'access') { allowed.addAll(['method','path','status_code','duration_us']); }
+          else if (p.stream == 'waf') { allowed.addAll(['rules','engine_mode','blocked']); }
+          else { throw new IllegalArgumentException(); }
+          if (p.size() != allowed.size() || !p.keySet().containsAll(allowed) ||
+              !(p.schema_version instanceof Integer || p.schema_version instanceof Long) || p.schema_version != 1 ||
+              p.service_name != 'security-mall' || !(p.request_id instanceof String) ||
+              !(p.request_id ==~ /[A-Za-z0-9_-]{27}/) || !(p.source_ip instanceof String) ||
+              !(p.timestamp instanceof String) ||
+              !(p.timestamp ==~ /[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?Z/)) {
+            throw new IllegalArgumentException();
+          }
+          ZonedDateTime.parse(p.timestamp);
+          // Filebeat's root timestamp is collection time, never occurrence time.
+          ctx['@timestamp'] = p.timestamp;
+          if (p.stream == 'access') {
+            def paths = ['/','/login','/logout','/signup','/cart','/cart/add','/item/:id',
+              '/order/checkout','/order/complete/:id','/board','/board/:id','/board/mutation',
+              '/board/mutation/:id','/admin','/admin/item/mutation','/admin/resource/mutation/:id','/static','/_unclassified'];
+            if (!['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS','OTHER'].contains(p.method) ||
+                !paths.contains(p.path) || !(p.status_code instanceof Integer || p.status_code instanceof Long) ||
+                p.status_code < 100 || p.status_code > 599 ||
+                !(p.duration_us instanceof Integer || p.duration_us instanceof Long) ||
+                p.duration_us < 0 || p.duration_us > 9000000000000000L) { throw new IllegalArgumentException(); }
+          } else {
+            if (p.engine_mode != 'DetectionOnly' || p.blocked != false || !(p.rules instanceof List) ||
+                p.rules.size() < 1 || p.rules.size() > 1024) { throw new IllegalArgumentException(); }
+            def ids = new HashSet();
+            for (def r : p.rules) {
+              if (!(r instanceof Map) || !r.keySet().containsAll(['id','action','diagnostic']) ||
+                  !(r.size() == 3 || (r.size() == 4 && r.containsKey('severity'))) ||
+                  !(r.id instanceof String) || !(r.id ==~ /[0-9]{1,9}/) || !ids.add(r.id) ||
+                  !['pass','block','deny','drop','allow'].contains(r.action) ||
+                  r.diagnostic != (r.id == '10002') ||
+                  (r.containsKey('severity') && !['emergency','alert','critical','error','warning','notice','info','debug'].contains(r.severity))) {
+                throw new IllegalArgumentException();
+              }
+            }
+          }
+        } catch (Exception ignored) { throw new IllegalArgumentException('edge_intake_invalid'); }
+  - convert:
+      field: security_mall_edge.source_ip
+      type: ip
+  - set:
+      field: event.ingested
+      value: '{{{_ingest.timestamp}}}'
+      override: true
+on_failure:
+  - fail:
+      message: edge_intake_invalid

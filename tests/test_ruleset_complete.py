@@ -10,13 +10,17 @@ import pytest
 
 from cloud_soc.detection.__main__ import main
 from cloud_soc.detection.engine import detect_events, detect_rule, event_fingerprint, rule_revision
-from cloud_soc.detection.profiles import RULE_IDS, catalog, assessment, source_observed
+from cloud_soc.detection.profiles import RULE_IDS as CATALOG_IDS, catalog, assessment, source_observed
 from cloud_soc.detection.telemetry import evaluate, stats_for, run_records
 from cloud_soc.detection.worker import approved_rules
 from cloud_soc.detection.rule_loader import validate_rule
 from cloud_soc.main import make_alert_id, build_security_alert
 from ruleset_fixtures import positive, delete, assign, second_burst, BASE
 
+# These legacy fixtures mutate threshold timestamps/outcomes in isolation.
+# Edge-v1 requires matching envelope/identity fields; WEB-WAF-01's real-adapter
+# cases are covered by test_security_mall_waf_detection.py instead.
+RULE_IDS = tuple(key for key in CATALOG_IDS if key != 'WEB-WAF-01')
 RULES = {rule['id']: rule for rule in approved_rules(isolated_all=True)}
 
 
@@ -140,8 +144,8 @@ def test_duplicates_raw_revision_and_cooldown_across_runtime_serialization(ident
 
 
 def test_complete_inventory_explicit_selection_cli_and_live_write_gate():
-    assert tuple(RULES) == RULE_IDS
-    assert len(catalog()) == 14
+    assert tuple(RULES) == CATALOG_IDS
+    assert len(catalog()) == 17
     assert [r['id'] for r in approved_rules()] == ['AUTH-001']
     assert [r['id'] for r in approved_rules(rule_ids=['AUTH-SEQ-001'])] == ['AUTH-001', 'AUTH-SEQ-001']
     assert rule_revision(approved_rules()[0]) == rule_revision(RULES['AUTH-001'])

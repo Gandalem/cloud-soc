@@ -17,12 +17,14 @@ ENGINE_VERSION = "threshold-v2"
 
 
 def rule_engine_version(rule):
+    if 'waf_sqli' in rule:
+        return 'waf-metadata-threshold-v1'
     if rule.get('type') == 'cardinality':
         return 'metadata-cardinality-v1'
     if rule.get('type') in ('ordered', 'diversity'):
         return 'behavior-v1'
     if rule.get('type') == 'sequence':
-        return 'failure-success-v2'
+        return 'failure-success-v3' if 'success_window' in rule else 'failure-success-v2'
     if rule.get('type') == 'single':
         return 'single-v1'
     return 'threshold-v3' if any(c['operator'] in ('exists', 'not_equals') for c in rule['conditions']) else ENGINE_VERSION
@@ -54,6 +56,9 @@ def event_evidence(event: dict[str, Any]) -> dict[str, Any]:
 def observation_identity(event):
     """Count an immutable raw observation once across normalization revisions."""
     organization = get_field_value(event, 'organization.id')
+    mall = mall_observation_identity(event)
+    if mall is not None:
+        return mall
     if get_field_value(event, 'event.dataset') == 'aws.cloudtrail':
         identifier = get_field_value(event, 'cloud_soc.detail.fields.event_id')
         account = get_field_value(event, 'cloud.account.id')
@@ -63,6 +68,24 @@ def observation_identity(event):
     if isinstance(raw, dict) and all(isinstance(raw.get(key), str) and raw[key] for key in ('index', 'id')):
         return event_fingerprint({'organization': organization, 'raw': raw})
     return event_fingerprint(event)
+
+
+def mall_observation_identity(event):
+    """Original UUID identity within the collector's organization/host/service scope."""
+    from uuid import UUID
+    if (get_field_value(event, 'cloud_soc.detail.adapter') != 'security_mall_audit_v1'
+            or get_field_value(event, 'service.name') != 'security-mall'):
+        return None
+    fields = ('organization.id', 'host.id', 'service.name', 'event.id')
+    values = [get_field_value(event, field) for field in fields]
+    if any(not isinstance(value, str) or not value.strip() for value in values):
+        return None
+    try:
+        if not UUID(values[-1]).int or str(UUID(values[-1])) != values[-1]:
+            return None
+    except ValueError:
+        return None
+    return event_fingerprint(dict(zip(fields, values)))
 
 
 def ssh_collection_mirror(first, second):
@@ -321,7 +344,7 @@ def detect_rule(events, rule, *, runtime=None, _single_event=False):
 def _detect_threshold(
     events: list[dict[str, Any]],
     rule: dict[str, Any],
-    *, runtime: dict | None = None, _single_event: bool = False,
+    *, runtime: dict | None = None, _single_event: bool = False, _observation=None,
 ) -> list[dict[str, Any]]:
     """
     특정 Rule 하나를 이벤트 목록에 적용한다.
@@ -341,6 +364,7 @@ def _detect_threshold(
 
 
     threshold_count = rule["threshold"]["count"]
+    identify = _observation or observation_identity
 
     window_seconds = (
         rule["time_window"]["seconds"]
@@ -426,7 +450,7 @@ def _detect_threshold(
                 dict[str, Any],
             ]
         ] = deque((parse_event_timestamp(item), item) for item in prior.get("window", []))
-        observations = {observation_identity(item) for _, item in window}
+        observations = {identify(item) for _, item in window}
 
         last_alert_time = datetime.fromisoformat(prior["last_alert"]) if prior.get("last_alert") else None
 
@@ -450,9 +474,9 @@ def _detect_threshold(
                     break
 
                 _, expired = window.popleft()
-                observations.discard(observation_identity(expired))
+                observations.discard(identify(expired))
 
-            observation = observation_identity(event)
+            observation = identify(event)
             if observation in observations:
                 continue
 

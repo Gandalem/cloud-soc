@@ -13,6 +13,7 @@ from cloud_soc.processing.contract import NORMALIZED, RECORDS, STATUS
 from cloud_soc.processing.worker import checked
 from cloud_soc.detection.engine import event_fingerprint
 from cloud_soc.privacy import redact_metadata
+from cloud_soc.portal.mall_scope import validate_scope
 
 ALERT = "security-alerts"
 INDEX_PATH_BUDGET = 3000
@@ -22,6 +23,7 @@ ALERT_FIELDS = ["@timestamp", "rule.id", "rule.name", "organization.id", "source
                 "cloud_soc.alert_title", "cloud_soc.event_count", "cloud_soc.threshold", "cloud_soc.time_window_seconds",
                 "cloud_soc.window_start", "cloud_soc.window_end", "cloud_soc.provenance",
                 "cloud_soc.risk_score", "cloud_soc.risk_level", "cloud_soc.risk_version", "cloud_soc.risk_factors", "mitre"]
+MALL_RULES = ('WEB-ACCESS-01', 'WEB-AUTH-01', 'WEB-WAF-01')
 
 
 def exact_indices(client, patterns):
@@ -138,20 +140,40 @@ def alert_row(hit):
             "historical_review": field(source, "cloud_soc.provenance.review.mode") == "retrospective",
             "title": get("cloud_soc.alert_title") or get("rule.name"), "severity": get("cloud_soc.severity"),
             "organization": get("organization.id"), "source_ip": get("source.ip"),
+            "reason": get("cloud_soc.provenance.rule_snapshot.alert.message"), "service": None, "status": "stored",
+            "event_count": field(source, "cloud_soc.event_count") if type(field(source, "cloud_soc.event_count")) is int else None,
             "risk_score": field(source, "cloud_soc.risk_score") if type(field(source, "cloud_soc.risk_score")) is int and 0 <= field(source, "cloud_soc.risk_score") <= 100 else None,
             "risk_level": get("cloud_soc.risk_level")}
 
 
 class Operations:
-    def __init__(self, client, *, organizations=None):
+    def __init__(self, client, *, organizations=None, mall_scope=None, mall_investigation=None, principal=None):
         self.client = client.options(request_timeout=5, max_retries=0) if client is not None else None
         self.organizations = tuple(organizations) if organizations is not None else None
+        self.mall_scope = validate_scope(mall_scope)
+        self.alert_index = self.mall_scope['alerts'] if self.mall_scope else ALERT
+        self.mall_investigation, self.principal = mall_investigation, principal
+
+    def row(self, hit):
+        row = alert_row(hit)
+        if row['rule'] in MALL_RULES:
+            evidence = field(hit['_source'], 'cloud_soc.provenance.evidence')
+            if isinstance(evidence, list) and evidence:
+                ref = evidence[0]
+                item = self.evidence(ref, organization=row['organization'])
+                if (item.get('integrity') == 'normalized_hash_verified'
+                        and item.get('security', {}).get('status') == 'recognized'
+                        and item.get('security', {}).get('adapter') in ('security_mall_audit_v1', 'security_mall_edge_v1')):
+                    row['service'] = 'security-mall'
+        return row
 
     def visible(self, source):
         organization = field(source, "organization.id")
         return self.organizations is None or (isinstance(organization, str) and organization in self.organizations)
 
     def get(self, index, doc_id, fields):
+        if self.mall_scope and index not in self.mall_scope.values():
+            return None
         if not self.client:
             raise RuntimeError("Monitor not configured")
         if not exact_indices(self.client, [index]):
@@ -175,7 +197,7 @@ class Operations:
             return {"state": "no_index", "count": 0, "buckets": [], "rows": [], "statuses": []}
         batches = index_batches(names)
         # Alerts are a single concrete index; do not approximate cross-index top-N sorting.
-        if alerts and names != [ALERT]:
+        if alerts and names != [self.alert_index]:
             raise ValueError("Unexpected alert scope")
         aggs = {"trend": {"date_histogram": {"field": time_field, "fixed_interval": interval,
                     "min_doc_count": 0, "extended_bounds": {"min": start, "max": iso(parse_time(end))}}}}
@@ -224,7 +246,7 @@ class Operations:
             if alerts:
                 if any(not self.visible(hit["_source"]) for hit in result["hits"]["hits"]):
                     raise ValueError("Organization scope mismatch")
-                rows = [alert_row(hit) for hit in result["hits"]["hits"]]
+                rows = [self.row(hit) for hit in result["hits"]["hits"]]
         return {"state": "ok", "count": count,
                 "buckets": [{"time": iso(stamp), "count": buckets[stamp]} for stamp in sorted(buckets)],
                 "rows": rows, "statuses": [{"key": key, "doc_count": statuses[key]} for key in sorted(statuses)]}
@@ -275,6 +297,8 @@ class Operations:
         return result
 
     def pipeline(self):
+        if self.mall_scope:
+            return {"state": "unavailable", "coverage": {"state": "unknown", "reason": "isolated_lab_read_only"}}
         try:
             result = self.worker_status("normalizer")
         except Exception:
@@ -367,16 +391,29 @@ class Operations:
         interval = "5m" if (parse_time(filters.end) - parse_time(filters.start)).total_seconds() <= 86400 else "1h"
         result = {"start": filters.start, "end": filters.end, "incident_work": "separate_case_api", "sections": {}}
         for key, operation in {
-            "intake": lambda: self.series(INDICES, "event.ingested", filters.start, filters.end, interval),
-            "processing": lambda: self.series([RECORDS], "event.ingested", filters.start, filters.end, interval, records=True),
-            "alerts": lambda: self.series([ALERT], "@timestamp", filters.start, filters.end, interval, alerts=True),
-            "quality": lambda: self.series(["soc-agent-health-*"], "event.ingested", filters.start, filters.end, interval),
+            "intake": lambda: self.series([self.mall_scope['raw']] if self.mall_scope else INDICES, "event.ingested", filters.start, filters.end, interval),
+            "processing": lambda: {"state": "unavailable"} if self.mall_scope else self.series([RECORDS], "event.ingested", filters.start, filters.end, interval, records=True),
+            "alerts": lambda: self.series([self.alert_index], "@timestamp", filters.start, filters.end, interval, alerts=True),
+            "quality": lambda: {"state": "unavailable"} if self.mall_scope else self.series(["soc-agent-health-*"], "event.ingested", filters.start, filters.end, interval),
             "pipeline": self.pipeline,
         }.items():
             try:
                 result["sections"][key] = operation()
             except Exception:
                 result["sections"][key] = {"state": "unavailable"}
+        # Exact rule-filtered count, not the newest-50 sample used by list widgets.
+        try:
+            if not self.client:
+                raise RuntimeError()
+            query = {'bool': {'filter': [{'range': {'@timestamp': {'gte': filters.start, 'lt': filters.end}}},
+                                        {'terms': {'rule.id': list(MALL_RULES)}}]}}
+            if self.organizations is not None:
+                query['bool']['filter'].append({'terms': {'organization.id': list(self.organizations)}})
+            names = exact_indices(self.client, [self.alert_index])
+            count = exact_count(checked(self.client.count(index=names, query=query))['count']) if names else 0
+            result['sections']['security_mall'] = {'state': 'ok', 'count': count}
+        except Exception:
+            result['sections']['security_mall'] = {'state': 'unavailable'}
         return bounded_json(result)
 
     def detail(self, pairs):
@@ -397,12 +434,12 @@ class Operations:
         except ValueError:
             raise LogQueryError("invalid_alert_query", 400, "경보 참조를 확인하세요.") from None
         try:
-            source = self.get(ALERT, doc_id, ALERT_FIELDS)
+            source = self.get(self.alert_index, doc_id, ALERT_FIELDS)
             if source is None:
                 raise LogQueryError("alert_missing", 404, "경보가 없거나 보존 기간이 지났습니다.")
             evidence = field(source, "cloud_soc.provenance.evidence")
             evidence = evidence if isinstance(evidence, list) else []
-            result = {"alert": alert_row({"_source": source, "_id": doc_id}), "evidence_count": len(evidence),
+            result = {"alert": self.row({"_source": source, "_id": doc_id}), "evidence_count": len(evidence),
                       "evidence_limit": min(len(evidence), 100), "evidence_state": "referenced" if evidence else "legacy_missing_provenance",
                       "rule_version": text(field(source, "cloud_soc.provenance.rule_version")),
                       "engine_version": text(field(source, "cloud_soc.provenance.engine_version")),
@@ -416,6 +453,11 @@ class Operations:
             if isinstance(assessment, dict):
                 result['assessment'] = redact_metadata(assessment)
             result["mitre"] = redact_metadata(field(source, "mitre"))
+            if result['alert']['rule'] in MALL_RULES:
+                result['investigation'] = self.mall_investigation.detail(
+                    self.principal, self.alert_index, doc_id, source,
+                    lambda ref: self.evidence(ref, organization=result['alert']['organization']).get('integrity')
+                    == 'normalized_hash_verified') if self.mall_investigation else {'state': 'unavailable'}
             if offset > len(evidence):
                 raise LogQueryError('invalid_evidence_offset', 400, '근거 페이지 범위를 확인하세요.')
             last = min(offset + limit, len(evidence))
@@ -437,10 +479,15 @@ class Operations:
             return {"state": "invalid_reference"}
         normalized, raw = reference.get("normalized"), reference.get("raw")
         try:
-            if not isinstance(normalized, dict) or normalized.get("index") not in (NORMALIZED, "normalized-events"):
+            allowed_normalized = (self.mall_scope['normalized'],) if self.mall_scope else (NORMALIZED, "normalized-events")
+            if not isinstance(normalized, dict) or normalized.get("index") not in allowed_normalized:
                 raise ValueError()
             normalized = {"index": normalized["index"], "id": identifier(normalized.get("id"))}
-            if isinstance(raw, dict) and re.fullmatch(r"raw-logs-[a-z0-9][a-z0-9_.-]{0,220}", str(raw.get("index", ""))):
+            if self.mall_scope:
+                if not isinstance(raw, dict) or raw.get('index') != self.mall_scope['raw']:
+                    raise ValueError()
+                raw = {'index': raw['index'], 'id': identifier(raw.get('id'))}
+            elif isinstance(raw, dict) and re.fullmatch(r"raw-logs-[a-z0-9][a-z0-9_.-]{0,220}", str(raw.get("index", ""))):
                 raw = {"index": raw["index"], "id": identifier(raw.get("id"))}
             else:
                 raw = document_reference(raw.get("index"), raw.get("id"))
@@ -476,11 +523,37 @@ class Operations:
             return {"state": "raw_missing_or_expired", "normalized": normalized, "raw": raw}
         if organization is not None and field(source, "organization.id") != organization:
             return {"state": "provenance_mismatch"}
+        security = security_detail(source)
+        if security.get('adapter') == 'security_mall_edge_v1':
+            values = security.get('fields', {})
+            if (security.get('status') != 'recognized'
+                    or field(norm, 'cloud_soc.detail.adapter') != 'security_mall_edge_v1'
+                    or values != field(norm, 'cloud_soc.security_mall_edge')
+                    or field(source, 'event.id') != field(norm, 'event.id')
+                    or field(source, 'host.id') != field(norm, 'host.id')
+                    or values.get('request_id') != field(norm, 'http.request.id')
+                    or values.get('service_name') != field(norm, 'service.name')
+                    or values.get('source_ip') != field(norm, 'source.ip')
+                    or parse_time(values.get('timestamp')) != parse_time(field(norm, '@timestamp'))):
+                return {'state': 'provenance_mismatch'}
+        if security.get('adapter') == 'security_mall_audit_v1':
+            values = security.get('fields', {})
+            # Validate the raw/normalized identity as well as the normalized hash.
+            for raw_key, path in (('event_id', 'event.id'), ('service_name', 'service.name'),
+                                  ('account_id', 'cloud_soc.security_mall.account_id'),
+                                  ('account_key_id', 'cloud_soc.security_mall.account_key_id'),
+                                  ('action', 'event.action'), ('outcome', 'event.outcome'),
+                                  ('source_ip', 'source.ip'), ('resource_type', 'cloud_soc.security_mall.resource_type'),
+                                  ('authorization_reason', 'cloud_soc.security_mall.authorization_reason')):
+                if security.get('status') != 'recognized' or values.get(raw_key) != field(norm, path):
+                    return {'state': 'provenance_mismatch'}
         metadata = ({path: text(field(source, path)) for path in ("@timestamp", "host.name", "user.name", "event.action")}
                     if raw["index"].startswith("raw-logs-") else project_hit({"_index": raw["index"], "_id": raw["id"], "_source": source}))
         return {"state": "exact_reference", "normalized": normalized, "raw": raw,
                 "integrity": integrity, "raw_integrity": 'not_hashed_at_detection',
-                "normalized_event": {"timestamp": text(norm.get("@timestamp")), "action": text(field(norm, "event.action")),
+                "normalized_event": {"id": text(field(norm, "event.id")),
+                                     "timestamp": text(norm.get("@timestamp")), "action": text(field(norm, "event.action")),
                                      "outcome": text(field(norm, "event.outcome"))},
+                "http_status": field(source, 'http.response.status_code') if type(field(source, 'http.response.status_code')) is int else None,
                 "metadata": metadata,
-                "security": security_detail(source)}
+                "security": security}

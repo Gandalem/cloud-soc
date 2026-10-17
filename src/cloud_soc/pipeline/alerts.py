@@ -19,6 +19,12 @@ def make_alert_id(detection: dict[str, Any]) -> str:
         "window_end": detection["window_end"],
         "evidence": detection["evidence"],
     }
+    if detection.get('identity_anchor'):
+        # A revised normalization/reference cannot create a second alert for the
+        # same original Mall observation (the successful event for a sequence).
+        identity = {'rule_id': detection['rule_id'], 'rule_version': detection['rule_version'],
+                    'organization_id': detection['organization_id'],
+                    'observation': detection['identity_anchor']}
     return hashlib.sha256(json.dumps(
         identity, sort_keys=True, ensure_ascii=True, separators=(",", ":"),
     ).encode("utf-8")).hexdigest()

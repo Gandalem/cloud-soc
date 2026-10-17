@@ -1,0 +1,29 @@
+{
+  "name": "mall-7ab-readonly-validation-20261017",
+  "expiration": "2h",
+  "role_descriptors": {
+    "mall_7ab_validation_reader": {
+      "cluster": [],
+      "indices": [
+        {
+          "names": [
+            "soc-host-raw-mall-isolated-continuous-20261017-42062f13",
+            "soc-host-raw-mall-edge-isolated-continuous-20261017-42062f13",
+            "soc-normalized-mall-continuous-20261017-42062f13",
+            "soc-host-raw-mall-isolated-20261016-8a070063",
+            "soc-normalized-mall-isolated-20261016-8a070063",
+            "soc-mall-alerts-lab-live-20261016-f56deb49"
+          ],
+          "privileges": ["read", "view_index_metadata"],
+          "allow_restricted_indices": false
+        }
+      ],
+      "applications": [],
+      "run_as": []
+    }
+  },
+  "metadata": {
+    "purpose": "security-mall-7ab-readonly-validation",
+    "environment": "isolated-lab"
+  }
+}

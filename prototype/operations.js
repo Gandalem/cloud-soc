@@ -80,8 +80,8 @@
       limited ? '저장된 경보가 없습니다. 분석 상태가 불완전해 위험 없음으로 해석할 수 없습니다.' : '조회 기간에 저장된 경보가 없습니다. 지원 규칙과 수집 범위를 함께 확인하세요.') : labels[alerts.state];
     for (const row of alerts.rows || []) {
       const tr = node("tr");
-      const severity = {critical: "긴급", high: "높음", medium: "중간", low: "낮음"}[row.severity] || row.severity || "미확인";
-      for (const value of [fmt(row.timestamp), severity, row.rule, row.title, row.organization]) tr.append(node("td", value || "미관측"));
+      for (const value of [fmt(row.timestamp), row.risk_level, row.rule, row.title, row.service, row.organization,
+                          row.status === 'stored' ? '저장됨' : '미기록', row.event_count]) tr.append(node("td", value ?? "미관측"));
       const td = node("td"), button = node("button", "상세 / 근거");
       button.type = "button"; button.addEventListener("click", () => detail(row.id)); td.append(button); tr.append(td); $("ops-alert-rows").append(tr);
     }
@@ -95,6 +95,7 @@
       if (version !== detailGeneration) return;
       $("ops-detail-state").textContent = data.evidence_count ? "근거 로그 " + data.evidence_count + "건" : "근거 로그가 없습니다. 주변 로그로 대체하지 않습니다.";
       const condition = data.condition;
+      window.CloudSOCMall.summary($("ops-detail-content"), data);
       const investigate = node("a", "사건 조사 / 등록");
       investigate.href = "workbench.html?" + new URLSearchParams({alert: id, return: (window.location?.search || "").slice(1), return_page: "operations.html"});
       $("ops-detail-content").append(investigate);
@@ -146,6 +147,7 @@
             if (version !== detailGeneration) return;
             const item = reply.evidence;
             result.replaceChildren(node("p", evidenceLabels[item.state] || "미확인"));
+            window.CloudSOCMall.evidence(result, item, i);
             if (item.integrity) result.append(node('p', item.integrity === 'normalized_hash_verified' ? '정규화 내용 해시 일치 · 원본 내용 해시는 미검증' : '과거 근거의 내용 해시는 미기록'));
             if (item.raw) result.append(node("p", "원본: " + item.raw.index + " / " + item.raw.id));
             if (item.metadata) result.append(node("pre", JSON.stringify(item.metadata, null, 2)));

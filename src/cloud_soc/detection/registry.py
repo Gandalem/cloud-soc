@@ -8,19 +8,27 @@ class Detector(Protocol):
 
 class ThresholdDetector:
     def detect(self, events, rule, runtime):
+        if 'waf_sqli' in rule:
+            from cloud_soc.detection.waf import detect_waf
+            return detect_waf(events, rule, runtime)
         from cloud_soc.detection.engine import _detect_threshold
         return _detect_threshold(events, rule, runtime=runtime)
 
 
 class SingleDetector:
     def detect(self, events, rule, runtime):
-        from cloud_soc.detection.engine import _detect_threshold, observation_identity, parse_event_timestamp, event_fingerprint
+        from cloud_soc.detection.engine import (_detect_threshold, observation_identity,
+            parse_event_timestamp, event_fingerprint, mall_observation_identity)
         seen, result = set(), []
         for event in sorted(events, key=lambda e: (parse_event_timestamp(e), event_fingerprint(e))):
             identifier = observation_identity(event)
             if identifier not in seen:
                 seen.add(identifier)
-                result.extend(_detect_threshold([event], rule))
+                found = _detect_threshold([event], rule)
+                if rule['id'] == 'WEB-ACCESS-01' and mall_observation_identity(event):
+                    for detection in found:
+                        detection['identity_anchor'] = mall_observation_identity(event)
+                result.extend(found)
         return result
 
 
