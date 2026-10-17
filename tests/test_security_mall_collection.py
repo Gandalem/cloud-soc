@@ -20,7 +20,7 @@ from cloud_soc.parsers.security_mall import COMMON_FIELDS, AUTHORIZATION_FIELDS,
 from cloud_soc.portal.log_contract import field
 from cloud_soc.processing.contract import normalize, NORMALIZED, RECORDS
 from cloud_soc.processing.worker import create_batch
-from test_security_mall import payload, ADMIN_RESOURCES, EVENT_ID, STAMP
+from test_security_mall import payload, ADMIN_RESOURCES, STAMP
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = yaml.safe_load((ROOT / "filebeat/security-mall/filebeat.example.yml").read_text(encoding="utf-8"))

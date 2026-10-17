@@ -16,12 +16,16 @@ from cloud_soc.portal.log_contract import field
 from cloud_soc.processing.contract import normalize, NORMALIZED
 from cloud_soc.processing.worker import READ_FIELDS
 from test_security_mall import payload, hit, PROCESSED
-from test_security_mall_collection import collector, line, receive  # noqa: F401 (pytest fixture)
+import test_security_mall_collection as collection_fixtures
+from test_security_mall_collection import line, receive
 from test_security_mall_detection import rules, sequence
 from test_security_mall_edge import TSV, native, MANIFEST, RID as EDGE_RID
 
 ROOT = Path(__file__).resolve().parents[1]
 RID = "atI3YyuokZgOiD33Gh3LxwAAAAI"
+
+# Register the original module-scoped fixture without shadowing an imported name.
+collector = collection_fixtures.collector
 
 
 @pytest.mark.parametrize("audit", [payload(outcome="failure"), payload(),

@@ -1,5 +1,9 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-17 PR14 Ruff 최소 수정
+
+- [x] PR14-RUFF-20261017 로컬 수정·최소 검증 완료: f47d035의 Ubuntu/Windows CI에서 확인한 테스트2파일의 F401 1건/F811 4건만 수정했다. EVENT_ID 미사용 import를 제거하고 collector를 원래 모듈의 fixture 객체로 명시 연결했다. AST로 모든 기존 테스트 함수/클래스가 동일하고 fixture 객체도 동일함을 확인했다. CI와 같은 Ruff0.16.10의 수정2파일 검사0오류, 해당 fixture 경로5함수/매개변수 포함20건 pass다. 기존 F401 noqa 주석은 불필요해 제거했으며 새 noqa/skip/xfail·assertion/제품코드/Ruff설정 변경은 없다. 기존 PR14 통합 브랜치에 수정 커밋을 push하며 신규 CI·병합 성공은 별도 결과로 판단한다. 전체 테스트·운영 변경·main/자동 병합은 하지 않는다.
+
 ## 2026-10-17 runtime-v2 + Security Mall 안전 통합
 
 - [x] INTEGRATE-RUNTIME-V2-MALL-20261017 로컬 통합·최소 검증 완료: 최신 main9d97ee2 기반 별도 통합 브랜치에서 runtime51d201a와 Mall4b5c1ed를 통합한다. 미추적87파일은 로컬 codex/preserve-local-lab-20261017의5b21f90에 별도 보존하고 원본 폴더/브랜치는 변경하지 않는다. 작업 기록의 양쪽 이력을 합치며 소스·인증·조직/CSRF·탐지/위험도/CI 검사를 삭제하지 않는다. 주요 import/문법·관리CLI·Portal 권한·YAML/공통 모듈 관련 검사만 수행한다. 운영 배포·서비스/Docker/ES/운영SQLite 변경·전체 테스트는 하지 않는다. 9-B 실제 배포/SQLi/ES 검증과 AI8-D 미실행을 유지하며 push/PR만 승인 범위다.
