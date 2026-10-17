@@ -57,7 +57,7 @@ def test_normal_outcome_wrong_source_and_organization_do_not_become_attacks(iden
     assert detect_rule(rows, rule) == []
     rows = positive(identifier)
     if rule.get('type') == 'single':
-        rows[0]['event']['outcome'] = 'failure'
+        rows[0]['event']['outcome'] = 'success' if identifier == 'WEB-ACCESS-01' else 'failure'
     elif identifier == 'NET-PORT-001':
         assign(rows[-1], 'cloud_soc.detail.fields.flow_final', False)
     elif identifier == 'WEB-404-001':
@@ -69,7 +69,7 @@ def test_normal_outcome_wrong_source_and_organization_do_not_become_attacks(iden
     elif identifier == 'ATTACK-01':
         assign(rows[-1], 'cloud_soc.detail.fields.target_user', 'ordinary-user')
     else:
-        rows[-1]['event']['outcome'] = 'success' if identifier not in ('AUTH-SEQ-001', 'ATTACK-01') else 'failure'
+        rows[-1]['event']['outcome'] = 'success' if identifier not in ('AUTH-SEQ-001', 'WEB-AUTH-01', 'ATTACK-01') else 'failure'
     assert detect_rule(rows, rule) == []
     rows = positive(identifier)
     rows[-1]['organization']['id'] = 'other-organization'
@@ -112,7 +112,8 @@ def test_time_window_closed_boundary_and_just_outside(identifier):
             row['@timestamp'] = BASE.isoformat()
         if identifier == 'ATTACK-01':
             rows[-2]['@timestamp'] = (BASE + timedelta(seconds=300)).isoformat()
-        rows[-1]['@timestamp'] = (BASE + timedelta(seconds=rule['time_window']['seconds'] + delta)).isoformat()
+        boundary = rule['success_window']['seconds'] if identifier == 'WEB-AUTH-01' else rule['time_window']['seconds']
+        rows[-1]['@timestamp'] = (BASE + timedelta(seconds=boundary + delta)).isoformat()
         assert len(detect_rule(rows, rule)) == expected, (identifier, delta)
 
 

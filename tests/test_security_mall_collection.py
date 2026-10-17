@@ -353,7 +353,7 @@ def test_isolated_config_has_exact_allowlists_fail_closed_guards_final_pipeline_
     assert mappings["dynamic"] == "strict"
     assert set(mappings["properties"]) == {"@timestamp", "organization", "host", "labels", "event", "security_mall"}
     audit = mappings["properties"]["security_mall"]["properties"]["audit"]["properties"]
-    assert set(audit) == set(COMMON_FIELDS + AUTHORIZATION_FIELDS)
+    assert set(audit) == set(COMMON_FIELDS + AUTHORIZATION_FIELDS + OPTIONAL_FIELDS)
     assert "null_value" not in audit["account_id"]
     assert PIPELINE["processors"][0]["script"]["params"] == PARAMS
     assert PIPELINE["on_failure"] == [{"fail": {"message": "security_mall_intake_invalid"}}]

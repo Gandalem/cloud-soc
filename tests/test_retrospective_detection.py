@@ -20,7 +20,25 @@ from test_early_notices import Fixture
 
 def fixture(identifier='WEB-404-001', delay=1000):
     hits=[]
-    for row in positive(identifier):
+    if identifier == 'WEB-WAF-01':
+        # The WAF adapter validates envelope timestamps/IDs: build a real normalized fixture.
+        from cloud_soc.parsers.security_mall_edge import envelope
+        from cloud_soc.processing.contract import normalize, NORMALIZED
+        stamp = BASE.isoformat().replace('+00:00', 'Z')
+        body = {'schema_version': 1, 'stream': 'waf', 'timestamp': stamp,
+                'request_id': '1'.zfill(27), 'service_name': 'security-mall', 'source_ip': '192.0.2.10',
+                'rules': [{'id': '942100', 'action': 'block', 'diagnostic': False}],
+                'engine_mode': 'DetectionOnly', 'blocked': False}
+        raw = envelope(body, 'mall-org', 'mall-host')
+        raw['event']['ingested'] = stamp
+        key, record, row = normalize({'_index': 'soc-host-raw-mall-retro-fixture',
+            '_id': raw['event']['id'], '_source': raw}, BASE.isoformat())
+        assert record['status'] == 'normalized'
+        row['_cloud_soc_meta'] = {'index': NORMALIZED, 'document_id': key}
+        rows = [row]
+    else:
+        rows = positive(identifier)
+    for row in rows:
         meta=row.pop('_cloud_soc_meta')
         row['cloud_soc']['normalized_at']=(BASE+timedelta(seconds=delay)).isoformat()
         hits.append({'_index':meta['index'],'_id':meta['document_id'],'_source':row})

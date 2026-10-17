@@ -36,6 +36,10 @@ COLLECTION_COLUMNS = 'actor revision body'.split()
 MAX_BYTES = 1024 ** 3
 MANIFEST = "manifest.json"
 KEY_HISTORY_COLUMNS = SCHEMAS["packages.sqlite3"]["issued_keys"] + "scope expiration target_label package_name package_os organization revoked_at checked_at server_state".split()
+RULE_WORKFLOW_COLUMNS = {
+    'rule_drafts': 'id organization yaml intent content_hash status application_state version rule_id validation created_at approved_by approved_at'.split(),
+    'rule_history': 'seq draft_id actor at action version rule_id content_hash result'.split(),
+}
 ENROLLMENT_COLUMNS = "id token_hash package_id package_sha256 spec target_label days created expires deadline state attempt_hash sealed nonce key_ids agents completed".split()
 
 
@@ -109,6 +113,8 @@ def inspect_database(path, name, budget):
             schema['dashboard_collections'] = COLLECTION_COLUMNS
         if name == "packages.sqlite3" and "enrollments" in tables:
             schema["enrollments"] = ENROLLMENT_COLUMNS
+        if name == 'cases.sqlite' and set(RULE_WORKFLOW_COLUMNS) <= tables:
+            schema.update(RULE_WORKFLOW_COLUMNS)
         if tables != set(schema):
             raise BackupError("Unsupported database schema; use the matching application version.")
         counts = {}
@@ -254,7 +260,9 @@ def verify(source, *, seconds=60, max_bytes=MAX_BYTES):
                     or not 4096 <= entry["bytes"] <= max_bytes or not re.fullmatch("[0-9a-f]{64}", entry["sha256"])
                     or set(entry["counts"]) not in (set(SCHEMAS[entry["name"]]),
                         set(SCHEMAS[entry["name"]]) | ({"enrollments"} if entry["name"] == "packages.sqlite3" else set()),
-                        {'dashboards', 'dashboard_collections'} if entry['name'] == 'dashboards.sqlite' and report['format'] == 4 else set())
+                        {'dashboards', 'dashboard_collections'} if entry['name'] == 'dashboards.sqlite' and report['format'] == 4 else set(),
+                        set(SCHEMAS[entry['name']]) | set(RULE_WORKFLOW_COLUMNS)
+                        if entry['name'] == 'cases.sqlite' else set())
                     or any(type(n) is not int or n < 0 for n in entry["counts"].values())):
                 raise ValueError
     except (ValueError, TypeError, KeyError, AttributeError):

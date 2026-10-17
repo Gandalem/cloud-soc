@@ -353,6 +353,7 @@ def test_foreign_database_path_is_read_only_rejected_without_schema_change(tmp_p
     with sqlite3.connect(path) as db:
         db.execute('CREATE TABLE unrelated(id INTEGER)')
         db.execute('INSERT INTO unrelated VALUES(7)')
+    path.chmod(0o600)  # Exercise schema rejection after satisfying the private-file gate.
     before = path.read_bytes()
     with pytest.raises(ValueError, match='foreign_store_database'):CorrelationStore(path, SCOPE)
     assert path.read_bytes() == before
@@ -361,6 +362,6 @@ def test_foreign_database_path_is_read_only_rejected_without_schema_change(tmp_p
 
 
 def test_corrupt_projection_file_is_rejected_without_modification(tmp_path):
-    path = tmp_path / 'corrupt.sqlite';path.write_bytes(b'not a database')
+    path = tmp_path / 'corrupt.sqlite';path.write_bytes(b'not a database');path.chmod(0o600)
     with pytest.raises(ValueError, match='store_database_invalid'):CorrelationStore(path, SCOPE)
     assert path.read_bytes() == b'not a database'
