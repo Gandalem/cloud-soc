@@ -14,6 +14,7 @@ def widget(key, title, category, source, renderer, description, *, admin=False, 
 
 
 CATALOG = [
+    widget('security-mall-count', 'Security Mall 탐지 경보 수', '보안', 'operations', 'kpi', '조직 권한과 조회 기간 내 Security Mall 두 규칙의 전체 저장 경보 수. 합성 실습 인덱스는 제외합니다.'),
     widget('web-events', '최근 웹 사이트 접근', '수집', 'web', 'logs', '선택 기간의 최근 웹 로그 최대 50건. 시스템 로그와 별도로 조회하며 경보나 전체 요청 집계가 아닙니다.'),
     widget('collection-components', '수집 항목별 상태', '운영', 'collection', 'agents', '최근 보고한 최대 10개 설치의 시스템·웹·네트워크 설정과 실제 수신. 관리자용 선택 위젯', admin=True),
     widget('early-notices', '초기 탐지 통지', '보안', 'notices', 'notices', '최신 최대 50개 논리적 통지와 확정 경보 연결. 초기·확정을 공격 횟수로 합산하지 않습니다.'),

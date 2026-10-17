@@ -20,6 +20,10 @@ function browser(script,responses,search='?case='+id,options={}){
     return elements.get(name);
   };
   const context={document:{body:{dataset:{caseListPage:options.page}},getElementById:get,createElement:element},window:{location:{search,hash:options.hash},history:{replaceState(_a,_b,url){locations.push(url);}},addEventListener(){}},URLSearchParams,Date,crypto:{randomUUID},FormData:class{*[Symbol.iterator](){yield['status',options.status??'open'];yield['sort','priority'];}},fetch:async(url,options)=>{calls.push({url,options});return responses.shift()();}};
+  if (script === 'investigation.js') {
+    // The real page loads this shared presentation module before investigation.js.
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../mall-alerts.js'),'utf8'),context);
+  }
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../'+script),'utf8'),context);
   return {get,calls,locations};
 }

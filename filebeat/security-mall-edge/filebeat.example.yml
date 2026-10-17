@@ -1,0 +1,53 @@
+# Only projected JSONL; never point paths at Apache native/error logs.
+path.data: '${EDGE_DATA_PATH}'
+path.logs: '${EDGE_LOG_PATH}'
+filebeat.inputs:
+  - type: filestream
+    id: '${EDGE_INPUT_ID}'
+    paths: ['${EDGE_INPUT_PATH}', '${EDGE_INPUT_PATH}.*']
+    compression: auto
+    file_identity.fingerprint:
+      growing: true
+    prospector.scanner.fingerprint.length: 64
+    prospector.scanner.check_interval: 1s
+    message_max_bytes: 262144
+    close.on_state_change.renamed: false
+    close.on_state_change.removed: false
+processors:
+  - script:
+      lang: javascript
+      file: '${path.config}/projected-edge.js'
+      timeout: 100ms
+      tag_on_exception: edge_fixed_failure
+      params:
+        organization_id: mall-isolated
+        host_id: mall-host-isolated
+  - drop_event:
+      when:
+        not:
+          equals:
+            '@metadata.edge_validated': true
+  - include_fields:
+      fields: [organization, host, labels, event, security_mall_edge]
+output.elasticsearch:
+  hosts: ['https://127.0.0.1:19200']
+  ssl.certificate_authorities: ['${EDGE_CA_PATH}']
+  ssl.verification_mode: full
+  api_key: '${EDGE_ES_API_KEY}'
+  index: '${EDGE_RAW_INDEX}'
+  bulk_max_size: 32
+setup.ilm.enabled: false
+setup.ilm.check_exists: false
+setup.template.enabled: false
+monitoring.enabled: false
+queue.mem.events: 64
+queue.mem.flush.min_events: 1
+queue.mem.flush.timeout: 1s
+filebeat.registry.flush: 0s
+filebeat.shutdown_timeout: 5s
+logging.level: info
+logging.metrics.period: 5s
+logging.to_files: true
+logging.to_stderr: false
+logging.files.permissions: 0600
+http.enabled: false

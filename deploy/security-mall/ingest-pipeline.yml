@@ -1,0 +1,85 @@
+# Authoring YAML. Convert to JSON before PUT _ingest/pipeline/security-mall-isolated-final-v1.
+description: Isolated mall intake guard and mandatory central receipt timestamp v1
+version: 1
+processors:
+  - script:
+      lang: painless
+      params:
+        organization_id: mall-isolated
+        host_id: mall-host-isolated
+      source: |
+        boolean token(def v, int max) {
+          return v instanceof String && v.length() <= max &&
+            v ==~ /[A-Za-z0-9][A-Za-z0-9_.-]*/ &&
+            !(v =~ /(?i)\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/);
+        }
+        try {
+          def roots = ['@timestamp','organization','host','labels','security_mall','event',
+            '_index','_id','_routing','_version','_version_type','_dynamic_templates'];
+          for (def k : ctx.keySet()) { if (!roots.contains(k)) { throw new IllegalArgumentException(); } }
+          if (!(ctx._index instanceof String) || !ctx._index.startsWith('soc-host-raw-mall-isolated-') ||
+              !(ctx._id instanceof String) || !(ctx._id ==~ /[0-9a-f]{64}/)) { throw new IllegalArgumentException(); }
+          if (!(ctx.organization instanceof Map) || ctx.organization.size() != 1 ||
+              ctx.organization.id != params.organization_id || !(ctx.host instanceof Map) ||
+              ctx.host.size() != 1 || ctx.host.id != params.host_id || !(ctx.labels instanceof Map) ||
+              ctx.labels.size() != 1 || ctx.labels.log_source != 'security_mall_audit' ||
+              !(ctx.security_mall instanceof Map) || ctx.security_mall.size() != 1 ||
+              !(ctx.security_mall.audit instanceof Map)) { throw new IllegalArgumentException(); }
+          def a = ctx.security_mall.audit;
+          def common = ['schema_version','@timestamp','event_id','service_name','event_action',
+            'event_outcome','source_ip','account_id','account_key_id'];
+          def allowed = new ArrayList(common);
+          allowed.add('resource_type'); allowed.add('authorization_reason');
+          allowed.add('request_id');
+          if (!a.keySet().containsAll(common)) { throw new IllegalArgumentException(); }
+          for (def k : a.keySet()) { if (!allowed.contains(k)) { throw new IllegalArgumentException(); } }
+          if (!(a.schema_version instanceof Integer || a.schema_version instanceof Long) || a.schema_version != 1 ||
+              !token(a.service_name, 64) || !token(a.account_key_id, 64) || !(a.event_id instanceof String) ||
+              !(a.event_id ==~ /[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/) ||
+              a.event_id == '00000000-0000-0000-0000-000000000000' ||
+              (a.account_id != null && (!(a.account_id instanceof String) || !(a.account_id ==~ /[0-9a-f]{64}/))) ||
+              !(a['@timestamp'] instanceof String) ||
+              !(a['@timestamp'] ==~ /[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?Z/) ||
+              a['@timestamp'].startsWith('0000-') ||
+              !(a.event_outcome == 'success' || a.event_outcome == 'failure')) { throw new IllegalArgumentException(); }
+          ZonedDateTime.parse(a['@timestamp']);
+          int optional = a.containsKey('request_id') ? 1 : 0;
+          if (optional == 1 && a.request_id != null && (!(a.request_id instanceof String) ||
+              !(a.request_id ==~ /[A-Za-z0-9_-]{27}/))) { throw new IllegalArgumentException(); }
+          def actions = ['admin_view':'admin', 'item_create_form':'item', 'item_create':'item',
+            'item_edit_form':'item', 'item_update':'item', 'item_delete':'item', 'user_delete':'user'];
+          boolean good = false;
+          if (a.event_action == 'login') { good = a.size() == 9 + optional && a.account_id != null; }
+          else {
+            def expected = a.event_action == 'order_view' ? 'order' : actions[a.event_action];
+            if (expected != null && a.size() == 11 + optional && a.resource_type == expected) {
+              if (a.authorization_reason == 'unauthenticated') {
+                good = a.event_outcome == 'failure' && a.account_id == null;
+              } else if (a.account_id != null && a.event_action == 'order_view') {
+                good = (a.event_outcome == 'success' && a.authorization_reason == 'owner') ||
+                  (a.event_outcome == 'failure' && ['not_owner','not_found'].contains(a.authorization_reason));
+              } else if (a.account_id != null) {
+                good = (a.event_outcome == 'success' && a.authorization_reason == 'admin') ||
+                  (a.event_outcome == 'failure' && a.authorization_reason == 'admin_required');
+              }
+            }
+          }
+          if (!good || !(a.source_ip instanceof String) || a.source_ip.contains('%')) { throw new IllegalArgumentException(); }
+          // Filebeat's read timestamp is not the event time. Build one authoritative
+          // root timestamp from the validated audit value, preserving its exact string.
+          ctx['@timestamp'] = a['@timestamp'];
+          if (ctx['@timestamp'] != a['@timestamp']) { throw new IllegalArgumentException(); }
+          ctx.event = new HashMap();
+        } catch (Exception ignored) {
+          throw new IllegalArgumentException('security_mall_intake_invalid');
+        }
+  - convert:
+      field: security_mall.audit.source_ip
+      type: ip
+  - set:
+      field: event.ingested
+      value: '{{{_ingest.timestamp}}}'
+      override: true
+on_failure:
+  - fail:
+      message: security_mall_intake_invalid

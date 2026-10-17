@@ -31,6 +31,9 @@ from cloud_soc.logging_config import configure_logging
 from cloud_soc.portal.enrollment import Enrollments, EnrollmentError
 from cloud_soc.portal.log_access import LogAccessPolicy, LogPrincipal, read_policy
 from cloud_soc.portal.source_access import ProtectedSourceReader, SourceAudit
+from cloud_soc.portal.mall_scope import read_scope, validate_scope
+from cloud_soc.portal.mall_investigation import MallInvestigation
+from cloud_soc.portal.rule_management import RuleDraftStore, RuleError
 
 PROJECT = Path(__file__).resolve().parents[3]
 
@@ -69,6 +72,9 @@ def settings_from_environment():
         "ES_PASSWORD": secret("SOC_ISSUER_PASSWORD_FILE"),
         "CA_FILE": str(ca_path),
         "MONITOR_PASSWORD": secret("SOC_MONITOR_PASSWORD_FILE") if os.environ.get("SOC_MONITOR_PASSWORD_FILE") else None,
+        "PORTAL_READ_API_KEY": secret("SOC_PORTAL_READ_API_KEY_FILE") if os.environ.get("SOC_PORTAL_READ_API_KEY_FILE") else None,
+        "MALL_LAB_SCOPE": read_scope(os.environ.get('SOC_MALL_LAB_SCOPE_FILE')),
+        "MALL_TRIAGE_SNAPSHOT_FILE": os.environ.get('SOC_MALL_TRIAGE_SNAPSHOT_FILE'),
         "LOG_ACCESS_POLICY": read_policy(os.environ["SOC_LOG_ACCESS_POLICY_FILE"]) if os.environ.get("SOC_LOG_ACCESS_POLICY_FILE") else None,
     }
 
@@ -100,6 +106,9 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         issuer = Elasticsearch(settings["ES_URL"], basic_auth=("cloud_soc_issuer", settings["ES_PASSWORD"]),
                                ca_certs=settings["CA_FILE"], request_timeout=5, max_retries=0)
     app.extensions["issuer"] = issuer
+    if monitor is None and settings.get('PORTAL_READ_API_KEY'):
+        monitor = Elasticsearch(settings['ES_URL'], api_key=settings['PORTAL_READ_API_KEY'],
+                                ca_certs=settings['CA_FILE'], request_timeout=5, max_retries=0)
     if monitor is None and settings.get("MONITOR_PASSWORD"):
         monitor = Elasticsearch(settings["ES_URL"], basic_auth=("cloud_soc_agent_monitor", settings["MONITOR_PASSWORD"]),
                                 ca_certs=settings["CA_FILE"], request_timeout=5, max_retries=0)
@@ -234,11 +243,19 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             if principal.username not in log_readers:
                 log_readers[principal.username] = LogReader(monitor, secret=settings["ADMIN_HASH"],
                     principal=settings["PUBLIC_URL"] + "/" + principal.cursor_principal,
-                    organizations=principal.organizations)
+                    organizations=principal.organizations, mall_scope=mall_scope)
             return log_readers[principal.username]
-    operations = Operations(monitor)
+    mall_scope = validate_scope(settings.get('MALL_LAB_SCOPE'))
+    try:
+        mall_investigation = MallInvestigation.from_file(settings.get('MALL_TRIAGE_SNAPSHOT_FILE'), mall_scope)
+    except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
+        mall_investigation = None
+        app.logger.warning('Mall investigation snapshot unavailable; existing alert access retained.')
+    operations = Operations(monitor, mall_scope=mall_scope)
     def operations_for(principal):
-        return operations if principal.organizations is None else Operations(monitor, organizations=principal.organizations)
+        # Per-request instances ensure evidence hashes are rechecked, including for admins.
+        return Operations(monitor, organizations=principal.organizations, mall_scope=mall_scope,
+                          mall_investigation=mall_investigation, principal=principal)
 
     case_organizations = None
     if users:
@@ -249,6 +266,46 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                       owners={name for name, row in users.items() if row["role"] != "viewer"} if users else None,
                       organizations=case_organizations)
     app.extensions["cases"] = cases
+    rule_organizations = set(access_policy.admin_source_organizations)
+    for policy_user in access_policy.users.values():
+        rule_organizations.update(policy_user[2])
+    rule_drafts = RuleDraftStore(cases.path, rule_organizations)
+    app.extensions['rule_drafts'] = rule_drafts
+
+    @app.errorhandler(RuleError)
+    def rule_error(error):
+        return jsonify(code=error.code, error=str(error)), error.status
+
+    def rule_request():
+        if g.role != 'admin' or request.args:
+            abort(403 if g.role != 'admin' else 400)
+
+    @app.get('/api/settings/rules')
+    def rule_management_list():
+        rule_request()
+        return jsonify(rule_drafts.listing(g.log_principal))
+
+    @app.post('/api/settings/rules')
+    def rule_management_create():
+        rule_request()
+        return jsonify(rule_drafts.create(request.get_json(), g.log_principal)), 201
+
+    @app.get('/api/settings/rules/<identifier>')
+    def rule_management_detail(identifier):
+        rule_request()
+        return jsonify(rule_drafts.detail(identifier, g.log_principal))
+
+    @app.post('/api/settings/rules/<identifier>/<action>')
+    def rule_management_action(identifier, action):
+        rule_request()
+        return jsonify(rule_drafts.action(identifier, action, request.get_json(), g.log_principal))
+
+    @app.get('/api/settings/rules/<identifier>/export')
+    def rule_management_export(identifier):
+        rule_request()
+        response = app.response_class(rule_drafts.export(identifier, g.log_principal), mimetype='application/yaml')
+        response.headers['Content-Disposition'] = 'attachment; filename="rule-' + identifier + '.yml"'
+        return response
 
     @app.errorhandler(CaseError)
     def case_error(error):
@@ -391,7 +448,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             if sessions:
                 # Session RBAC permits case writes only for analysts; all case data is tenant-scoped.
                 log_routes |= {"index", "case_list", "case_link", "case_detail", "case_create", "case_update", "dashboard_get", "dashboard_save", "dashboards_get", "dashboards_write"}
-                log_assets |= {"index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "workbench.html", "investigation.js"}
+                log_assets |= {"index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "workbench.html", "investigation.js", "mall-alerts.js"}
                 if principal.organizations:
                     log_routes |= {"operations_summary", "operations_status", "alert_detail", "notice_list", "notice_detail"}
             if request.endpoint not in log_routes and not (request.endpoint == "static_file" and (request.view_args or {}).get("filename") in log_assets):
@@ -468,7 +525,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def auth_me():
         navigation = ["logs.html"]
         if g.log_principal.role == "admin":
-            navigation += ["index.html", "dashboard.html", "cases.html", "agents.html", "agents.html#keys", "agent-status.html", "settings-slack.html"]
+            navigation += ["index.html", "dashboard.html", "cases.html", "agents.html", "agents.html#keys", "agent-status.html", "settings-slack.html", "settings-rules.html"]
         elif sessions:
             navigation += ["index.html", "dashboard.html", "cases.html"]
         return jsonify(user=g.principal, role=g.role, csrf=g.csrf,
@@ -816,11 +873,12 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def static_file(filename):
         # Never serve the repo, secrets, SQLite, source code, or arbitrary uploads.
         allowed = {"reprocessing-history.html", "reprocessing-history.js", "agents.html", "agents.js", "agents.css", "styles.css", "shell.js", "shell.css", "assets/mark.svg",
+                   "settings-rules.html", "settings-rules.js",
                    "settings-slack.html", "settings-slack.js", "settings-slack.css",
                    "detection-history.html", "detection-history.js",
                    "agent-status.html", "agent-status.js", "agent-status.css",
                    "collection-health.html", "collection-health.js",
-                   "index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css", "source-view.js"}
+                   "index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "mall-alerts.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css", "source-view.js"}
         if filename not in allowed:
             abort(404)
         return send_from_directory(PROJECT / "prototype", filename)

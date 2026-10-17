@@ -3,10 +3,10 @@ from copy import deepcopy
 from cloud_soc.detection.rule_loader import load_rules, PROJECT_ROOT
 from cloud_soc.detection.engine import get_field_value
 
-FILES = ('authentication.yml', 'authentication_sequence.yml', 'attacks.yml', 'cloud.yml', 'metadata_patterns.yml')
+FILES = ('authentication.yml', 'authentication_sequence.yml', 'attacks.yml', 'cloud.yml', 'metadata_patterns.yml', 'security_mall.yml')
 RULE_IDS = ('AUTH-001', 'AUTH-SEQ-001', 'AUTH-SPRAY-001', 'ATTACK-01', 'ATTACK-02', 'ATTACK-03',
             'AWS-IAM-001', 'AWS-AUDIT-001', 'AWS-NETWORK-001', 'OCI-IAM-001', 'WIN-AUTH-001',
-            'WEB-404-001', 'NET-PORT-001', 'AWS-CONSOLE-001')
+            'WEB-404-001', 'NET-PORT-001', 'AWS-CONSOLE-001', 'WEB-ACCESS-01', 'WEB-AUTH-01', 'WEB-WAF-01')
 
 
 def catalog():
@@ -40,6 +40,11 @@ def select(*, isolated_all=False, rule_ids=None, retain_auth=True):
 def source_observed(event, identifier):
     """Known source family, independent of whether an attack condition matches."""
     adapter = get_field_value(event, 'cloud_soc.detail.adapter')
+    if identifier == 'WEB-WAF-01':
+        return (adapter == 'security_mall_edge_v1' and get_field_value(event, 'service.name') == 'security-mall'
+                and get_field_value(event, 'cloud_soc.security_mall_edge.stream') == 'waf')
+    if identifier in ('WEB-ACCESS-01', 'WEB-AUTH-01'):
+        return adapter == 'security_mall_audit_v1' and get_field_value(event, 'service.name') == 'security-mall'
     if identifier.startswith('AWS-') or identifier in ('ATTACK-02', 'ATTACK-03'):
         return get_field_value(event, 'event.dataset') == 'aws.cloudtrail'
     if identifier == 'OCI-IAM-001':

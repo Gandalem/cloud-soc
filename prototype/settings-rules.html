@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>탐지 규칙 관리 | Cloud SOC</title><link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+<script src="/theme.js"></script><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css">
+<link rel="stylesheet" href="shell.css"><link rel="stylesheet" href="settings-slack.css"><link rel="stylesheet" href="/theme.css">
+<script src="auth-client.js"></script><script src="shell.js" defer></script><script src="settings-rules.js" defer></script></head>
+<body class="agents-page" data-theme="light"><a class="skip-link" href="#main">본문으로 이동</a><div id="app-shell"></div>
+<main id="main" class="main-content slack-settings"><h1>탐지 규칙 관리</h1>
+<p id="rule-state" role="status">상태 확인 중</p>
+<section class="slack-panel"><h2>수동 규칙 초안</h2>
+<p>수동 입력 가능 / AI 연동 대기. 자연어 메모를 YAML로 자동 변환하지 않습니다. 비밀정보와 실제 개인정보를 입력하지 마세요.</p>
+<form id="rule-create"><label for="rule-organization">조직</label><select id="rule-organization" required></select>
+<label for="rule-intent">자연어 탐지 조건 메모 (선택, UTF-8 1KiB)</label><textarea id="rule-intent" rows="2" cols="60" maxlength="1024"></textarea>
+<label for="rule-yaml">기존 엔진 형식 YAML (UTF-8 4KiB)</label><textarea id="rule-yaml" rows="20" cols="75" maxlength="4096" required spellcheck="false"></textarea>
+<div class="slack-actions"><button id="rule-example" type="button">임계값 예시 채우기</button><button id="rule-save" type="submit">초안 저장</button></div></form>
+<details><summary>지원 범위</summary><p>threshold / single 규칙만 지원합니다. 한 문서에 규칙 1개, 조직 equals 조건과 organization.id 그룹이 필수입니다. 형식 검증은 탐지 효과 검증이 아닙니다.</p><pre id="rule-fields"></pre></details></section>
+<section class="slack-panel"><h2>초안 및 승인 이력</h2><button id="rule-refresh" type="button">목록 새로고침</button><div id="rule-list"></div></section>
+<section class="slack-panel" id="rule-detail" hidden><h2>선택한 초안</h2><p id="rule-summary"></p><pre id="rule-preview"></pre>
+<p id="rule-validation"></p><p id="rule-approval"></p>
+<div class="slack-actions"><button id="rule-validate" type="button">형식 검증</button><button id="rule-approve" type="button">관리자 승인</button><button id="rule-reject" type="button">거부</button><button id="rule-apply" type="button">적용 요청 · 배포 대기</button><a id="rule-export" hidden>승인 YAML 내려받기</a></div>
+<p>승인·적용 요청은 운영 룰을 변경하지 않습니다. 기존 고정 규칙 프로필 검토와 별도 배포가 필요하며 자동 재시작하지 않습니다.</p><h3>검증·승인·적용 요청 이력</h3><div id="rule-history"></div></section>
+<p id="rule-result" role="status" aria-live="polite"></p></main></body></html>

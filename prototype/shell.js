@@ -10,7 +10,7 @@
       ["agents.html", "에이전트 설치 파일"], ["agents.html#keys", "발급 키 관리"],
       ["agent-status.html", "에이전트 수신 현황"]
     ] },
-    { title: "설정", items: [["settings-slack.html", "알림 연동 → Slack"]] }
+    { title: "설정", items: [["settings-slack.html", "알림 연동 → Slack"], ["settings-rules.html", "탐지 규칙 관리"]] }
   ];
   function current(pathname, hash) {
     const page = pathname.split("/").pop() || "index.html";

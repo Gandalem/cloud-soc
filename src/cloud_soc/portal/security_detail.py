@@ -11,6 +11,14 @@ from cloud_soc.portal.log_contract import field
 from cloud_soc.portal.privacy import display, REDACTED
 from cloud_soc.web.metadata import validate as validate_web
 from cloud_soc.web.agent_metadata import validate as validate_agent_web
+from cloud_soc.parsers.security_mall_edge import (
+    ADAPTER as EDGE_ADAPTER, SOURCE_KIND as EDGE_SOURCE, SOURCE_FIELDS as EDGE_FIELDS,
+    EdgeError, validate_source as validate_edge,
+)
+from cloud_soc.parsers.security_mall import (
+    ADAPTER as MALL_ADAPTER, SOURCE_KIND as MALL_SOURCE, PAYLOAD_PATH as MALL_PAYLOAD,
+    SOURCE_FIELDS as MALL_FIELDS, AuditError, parse as parse_mall,
+)
 
 WINDOWS_FIELDS = (
     "SubjectUserName", "TargetUserName", "TargetDomainName", "MemberSid",
@@ -22,6 +30,8 @@ WINDOWS_FIELDS = (
     "DestinationIp", "DestinationPort", "Protocol",
 )
 DETAIL_FIELDS = (
+    *EDGE_FIELDS,
+    *MALL_FIELDS,
     "event.category", "event.created", "agent.version", "service.id", "service.name", "container.id",
     "web.schema", "web.parser_version", "web.path_class", "web.ip_basis", "web.source_kind", "web.server_type", "log.offset",
     "web.position.generation", "web.position.file_id", "web.position.offset",
@@ -111,6 +121,29 @@ def security_detail(source):
     if not isinstance(source, dict):
         return result
     get = lambda path: field(source, path)
+    if get('labels.log_source') == EDGE_SOURCE:
+        result['adapter'] = EDGE_ADAPTER
+        try:
+            result.update(status='recognized', fields=validate_edge(source))
+        except EdgeError as error:
+            result.update(status='invalid', reason=error.reason)
+        result['limitations'] += ['protected_projection_not_native_log', 'observed_peer_only',
+                                  'detection_only_not_blocked', 'application_request_link_unavailable']
+        return result
+    if get("labels.log_source") == MALL_SOURCE:
+        result["adapter"] = MALL_ADAPTER
+        try:
+            payload = get(MALL_PAYLOAD)
+            if not isinstance(payload, dict):
+                raise AuditError("security_mall_payload_invalid")
+            result.update(status="recognized", fields=parse_mall(payload))
+            if "request_id" in result["fields"]:
+                result["limitations"].append("request_id_is_unverified_correlation_hint")
+        except AuditError as error:
+            result.update(status=error.status, reason=error.reason)
+        result["limitations"] += ["pseudonymous_account_requires_key_version", "ip_is_observed_socket_peer",
+                                   "authorization_result_not_operation_result"]
+        return result
     if get('labels.log_source') == 'generic_web_access':
         try:
             validate_agent_web(source)

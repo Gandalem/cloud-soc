@@ -1,0 +1,32 @@
+{
+  "index_patterns": ["soc-host-raw-mall-edge-isolated-example"],
+  "priority": 470,
+  "_meta": {"contract": "security-mall-edge-v1", "scope": "exact-isolated-index-only"},
+  "template": {
+    "settings": {"number_of_shards": 1, "number_of_replicas": 0, "index.final_pipeline": "REPLACE_WITH_LAB_PIPELINE"},
+    "mappings": {
+      "dynamic": "strict",
+      "properties": {
+        "@timestamp": {"type": "date_nanos"},
+        "organization": {"properties": {"id": {"type": "keyword"}}},
+        "host": {"properties": {"id": {"type": "keyword"}}},
+        "labels": {"properties": {"log_source": {"type": "keyword"}}},
+        "event": {"properties": {"id": {"type": "keyword"}, "ingested": {"type": "date_nanos"}}},
+        "security_mall_edge": {
+          "properties": {
+            "schema_version": {"type": "short"}, "stream": {"type": "keyword"},
+            "timestamp": {"type": "date_nanos"}, "request_id": {"type": "keyword"},
+            "service_name": {"type": "keyword"}, "source_ip": {"type": "ip"},
+            "method": {"type": "keyword"}, "path": {"type": "keyword"},
+            "status_code": {"type": "short"}, "duration_us": {"type": "long"},
+            "engine_mode": {"type": "keyword"}, "blocked": {"type": "boolean"},
+            "rules": {"type": "nested", "properties": {
+              "id": {"type": "keyword"}, "severity": {"type": "keyword"},
+              "action": {"type": "keyword"}, "diagnostic": {"type": "boolean"}
+            }}
+          }
+        }
+      }
+    }
+  }
+}

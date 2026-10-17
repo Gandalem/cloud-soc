@@ -15,11 +15,15 @@ function browser(responses) {
     append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this.children=nodes;},
     showModal(){this.open=true;},close(){this.open=false;this.listeners.close?.();}}; }
   const get = id => {if(!elements.has(id))elements.set(id,element());return elements.get(id);};
-  vm.runInNewContext(script,{document:{getElementById:get,createElement:element,createElementNS:element},
-    window:{addEventListener(){}},URLSearchParams,Date,fetch:async(url,options)=>{calls.push({url,options});return responses.shift()();}});
+  const context={document:{getElementById:get,createElement:element,createElementNS:element},
+    window:{addEventListener(){}},URLSearchParams,Date,fetch:async(url,options)=>{calls.push({url,options});return responses.shift()();}};
+  // operations.html loads the shared Mall alert renderer before operations.js.
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../mall-alerts.js'),'utf8'),context);
+  vm.runInNewContext(script,context);
   return {get,calls};
 }
 function allText(element){return element.textContent+element.children.map(allText).join(' ');}
+function alertButton(ui){const rows=ui.get('ops-alert-rows').children;assert.equal(rows.length,1);return rows[0].children.at(-1).children[0];}
 test('real page loads no demo scripts',()=>{
   const html=fs.readFileSync(path.join(__dirname,'../operations.html'),'utf8');
   assert.ok(!html.includes('demo-data.js')); assert.ok(html.includes('operations.js')); assert.ok(html.includes('처리 상태'));
@@ -53,7 +57,7 @@ test('attack rationale shows measured diversity and limitations as safe text',as
     ok({alert:row,evidence_count:20,evidence_limit:0,condition:{event_count:20,threshold:20,time_window_seconds:300},
       assessment:{type:'attack_indicator',reason:'call_count_and_api_diversity',observed_count:20,distinct_count:4,
         limitations:['no_user_agent_or_normal_activity_baseline','candidate_threshold_not_live_validated','<img src=x>']}})]);await settle();
-  ui.get('ops-alert-rows').children[0].children[5].children[0].listeners.click();await settle();
+  alertButton(ui).listeners.click();await settle();
   const content=allText(ui.get('ops-detail-content'));
   assert.match(content,/API 호출 20건.*API 4종/);
   assert.match(content,/공격 성공 미확정/);
@@ -67,7 +71,7 @@ test('SSH correlation detail states the missing session link',async()=>{
     ok({alert:row,evidence_count:7,evidence_limit:0,condition:{},assessment:{type:'attack_correlation',reason:'ordered_metadata_stages',
       stages:[{name:'ssh_failures',count:5},{name:'ssh_success',count:1},{name:'sudo_root_metadata',count:1}],
       limitations:['host_user_time_context_only_not_same_session']}})]);await settle();
-  ui.get('ops-alert-rows').children[0].children[5].children[0].listeners.click();await settle();
+  alertButton(ui).listeners.click();await settle();
   const content=allText(ui.get('ops-detail-content'));
   assert.match(content,/SSH 인증 실패 5건/);
   assert.match(content,/동일 SSH 세션인지는 확인되지/);
@@ -78,7 +82,7 @@ test('attack detail keeps versions and evidence lists collapsed without hiding l
   const ui=browser([ok({...data,sections:{...data.sections,alerts:{...section,rows:[row]}}}),
     ok({alert:row,rule_version:'version-canary',evidence_count:7,evidence_limit:0,condition:{event_count:7,threshold:5,time_window_seconds:900},
       assessment:{type:'attack_correlation',limitations:['candidate_threshold_not_live_validated']}})]);await settle();
-  ui.get('ops-alert-rows').children[0].children[5].children[0].listeners.click();await settle();
+  alertButton(ui).listeners.click();await settle();
   const content=ui.get('ops-detail-content');
   assert.equal(content.children[1].textContent,row.title);
   assert.equal(content.children[2].textContent,'관측 로그 7건');
@@ -130,7 +134,7 @@ test('alert IDs are encoded and untrusted titles are text nodes',async()=>{
   const ui=browser([ok({...data,sections:{...data.sections,alerts:{...section,count:1,rows:[row],buckets:[{time:data.start,count:1}]}}}),
     ok({alert:row,evidence_count:0,evidence_limit:0,condition:{}})]);await settle();
   const cells=ui.get('ops-alert-rows').children[0].children;
-  assert.equal(cells[3].textContent,'<img src=x>');cells[5].children[0].listeners.click();await settle();
+  assert.equal(cells[3].textContent,'<img src=x>');cells.at(-1).children[0].listeners.click();await settle();
   assert.equal(new URL(ui.calls[1].url,'https://example.test').searchParams.get('id'),row.id);
   const investigation = new URL(ui.get('ops-detail-content').children[0].href,'https://example.test');
   assert.equal(investigation.searchParams.get('return_page'),'operations.html');
@@ -143,7 +147,7 @@ test('evidence pagination reaches global positions and reports normalized integr
  ok({alert:row,condition:{},evidence_count:251,evidence_page:{positions:[0],next_offset:250}}),
  ok({evidence_count:251,evidence_page:{positions:[250],next_offset:null}}),
  ok({evidence:{state:'exact_reference',integrity:'normalized_hash_verified'}})]);await settle();
- ui.get('ops-alert-rows').children[0].children[5].children[0].listeners.click();await settle();
+ alertButton(ui).listeners.click();await settle();
  const content=ui.get('ops-detail-content');const container=content.children[3],nav=content.children[4];
  nav.children[0].listeners.click();await settle();
  assert.equal(new URL(ui.calls[2].url,'https://test').searchParams.get('offset'),'250');
