@@ -31,9 +31,9 @@ def fixture(identifier='WEB-404-001', delay=1000):
                 'engine_mode': 'DetectionOnly', 'blocked': False}
         raw = envelope(body, 'mall-org', 'mall-host')
         raw['event']['ingested'] = stamp
-        key, record, row = normalize({'_index': 'soc-host-raw-mall-retro-fixture',
+        key, record, row = normalize({'_index': 'soc-host-raw-mall-edge-retro-fixture',
             '_id': raw['event']['id'], '_source': raw}, BASE.isoformat())
-        assert record['status'] == 'normalized'
+        assert record['status'] == 'normalized', record['reason']
         row['_cloud_soc_meta'] = {'index': NORMALIZED, 'document_id': key}
         rows = [row]
     else:
