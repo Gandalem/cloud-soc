@@ -13,12 +13,29 @@ def validate_scope(value):
                 'raw': 'soc-host-raw-mall-'}
     result = {}
     for key, prefix in prefixes.items():
-        name = value[key]
-        if (not isinstance(name, str) or len(name) > 255 or 'synthetic' in name
-                or not re.fullmatch(re.escape(prefix) + r'[a-z0-9][a-z0-9-]*', name)):
-            raise ValueError('Only exact live lab indices are accepted')
-        result[key] = name
+        names = value[key]
+        single = isinstance(names, str)
+        if single:
+            names = (names,)
+        elif key == 'alerts' or not isinstance(names, (list, tuple)):
+            raise ValueError('Only raw/normalized accept explicit index lists')
+        if not 1 <= len(names) <= 8:
+            raise ValueError('Bounded nonempty index list required')
+        for name in names:
+            if (not isinstance(name, str) or len(name) > 255 or 'synthetic' in name
+                    or not re.fullmatch(re.escape(prefix) + r'[a-z0-9][a-z0-9-]*', name)):
+                raise ValueError('Only exact live lab indices are accepted')
+        if len(set(names)) != len(names):
+            raise ValueError('Duplicate lab index')
+        result[key] = names[0] if single else tuple(names)
     return result
+
+
+def scope_indices(scope, key=None):
+    """Flatten a validated server scope; legacy strings retain their contract."""
+    keys = (key,) if key else ('alerts', 'normalized', 'raw')
+    return tuple(dict.fromkeys(name for field in keys for name in
+                              ((scope[field],) if isinstance(scope[field], str) else scope[field])))
 
 
 def read_scope(path):

@@ -1,5 +1,12 @@
 {
   "alerts": "soc-mall-alerts-lab-live-20261016-f56deb49",
-  "normalized": "soc-normalized-mall-isolated-20261016-8a070063",
-  "raw": "soc-host-raw-mall-isolated-20261016-8a070063"
+  "normalized": [
+    "soc-normalized-mall-isolated-20261016-8a070063",
+    "soc-normalized-mall-continuous-20261017-42062f13"
+  ],
+  "raw": [
+    "soc-host-raw-mall-isolated-20261016-8a070063",
+    "soc-host-raw-mall-isolated-continuous-20261017-42062f13",
+    "soc-host-raw-mall-edge-isolated-continuous-20261017-42062f13"
+  ]
 }
