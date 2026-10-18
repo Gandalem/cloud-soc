@@ -42,7 +42,7 @@ class Source:
             size=1 if baseline else 100, seq_no_primary_term=True, allow_partial_search_results=False,
             query={'match_all': {}} if baseline else {'range': {'_seq_no': {'gt': after}}},
             sort=[{'_seq_no': 'desc' if baseline else 'asc'}],
-            source=False if baseline else ['rule.id', 'rule.name', 'organization.id', 'cloud_soc.severity', 'cloud_soc.risk_level', 'cloud_soc.alert_title',
+            source=False if baseline else ['@timestamp', 'rule.id', 'rule.name', 'organization.id', 'cloud_soc.severity', 'cloud_soc.risk_level', 'cloud_soc.alert_title', 'cloud_soc.window_end',
                 'cloud_soc.revision', 'cloud_soc.state', 'cloud_soc.event_count', 'notice', 'body']))
         hits = response['hits']['hits']
         if len(hits) > (1 if baseline else 100):
@@ -58,6 +58,7 @@ def event(index, hit, *, portal_url=None):
         rule = source.get('rule', {}).get('id', '미기록');severity = details.get('risk_level', details.get('severity'))
         count = details.get('event_count');kind = 'final'
         title = details.get('alert_title') or source.get('rule', {}).get('name')
+        occurred_at = details.get('window_end') or source.get('@timestamp')
     else:
         meta = source.get('notice', {});details = source.get('body', {})
         identifier = meta.get('id');revision = meta.get('revision');state = meta.get('state')
@@ -67,13 +68,14 @@ def event(index, hit, *, portal_url=None):
             return None  # The linked immutable final alert is sent once via security-alerts.
         rule = details.get('rule_id', '미기록');severity = details.get('severity');count = details.get('observed_count');kind = 'notice'
         title = details.get('title')
+        occurred_at = details.get('window_end')  # Notice creation time is not event occurrence.
     if (not isinstance(identifier, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,256}', identifier)
             or type(revision) is not int or revision < 0 or not isinstance(state, str) or len(state) > 32):
         raise SlackError('notification_event_invalid', 503)
     if severity not in LEVELS:
         return None  # Unknown severity must never silently meet the administrator's threshold.
     payload = alert(identifier=identifier, rule=rule, severity=severity, count=count, title=title,
-                    kind=kind, state=state, portal_url=portal_url)
+                    kind=kind, state=state, portal_url=portal_url, occurred_at=occurred_at)
     return {'id': identifier, 'revision': revision, 'state': state, 'severity': severity, 'kind': kind, 'payload': payload}
 
 

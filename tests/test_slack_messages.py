@@ -69,6 +69,7 @@ def test_operator_example_is_unambiguously_synthetic_in_blocks_and_fallback_and_
     fields = payload['blocks'][1]['fields']
     assert '10건 (예시)' in fields[2]['text'] and '실제 탐지 아님' in fields[3]['text']
     assert '기존 경보의 참고 화면' in visible(payload)
+    assert '발생 시각\n해당 없음 (테스트 예시)' in visible(payload)
     assert ALERT_ID not in visible(payload)
     url, label = detail_link(payload)
     assert parse_qs(urlsplit(url).query) == {'alert': [ALERT_ID]} and label == '경보 자세히 보기'
@@ -83,7 +84,8 @@ def test_auth_alert_has_clear_fields_and_exact_detail_link_without_visible_ident
     assert item['id'] == ALERT_ID and item['revision'] == 0 and item['state'] == 'final'
     assert payload['blocks'][0]['text']['text'] == 'SSH 로그인 실패 집중 탐지'
     fields = [x['text'] for x in payload['blocks'][1]['fields']]
-    assert fields == ['위험도\n🟠 HIGH', '룰 ID\nAUTH-001', '관측 건수\n10건', '알림 유형\n최종 경보']
+    assert fields == ['위험도\n🟠 HIGH', '룰 ID\nAUTH-001', '관측 건수\n10건',
+                      '알림 유형\n최종 경보', '발생 시각\n2020-01-01 09:00:00 KST']
     assert ALERT_ID not in visible(payload)
     assert '공격 성공' not in visible(payload)
     url, label = detail_link(payload)
@@ -92,6 +94,40 @@ def test_auth_alert_has_clear_fields_and_exact_detail_link_without_visible_ident
     assert parsed.scheme + '://' + parsed.netloc == PORTAL
     assert parsed.path == '/workbench.html' and parse_qs(parsed.query) == {'alert': [ALERT_ID]}
     assert payload['unfurl_links'] is False and payload['unfurl_media'] is False
+    assert_block_limits(payload)
+
+
+
+def test_final_alert_uses_last_observed_window_time_not_send_time():
+    hit = final(1)
+    hit['_source']['@timestamp'] = '2026-10-18T14:30:00Z'
+    hit['_source']['cloud_soc']['window_end'] = '2026-10-18T03:59:16.999999Z'
+    payload = event(INDICES[0], hit)['payload']
+    assert '발생 시각: 2026-10-18 12:59:16 KST' in payload['text']
+    assert '발생 시각\\n2026-10-18 12:59:16 KST' in visible(payload)
+    assert '2026-10-18 23:30:00 KST' not in visible(payload)
+
+
+def test_early_notice_uses_observed_window_time_not_notice_revision_time():
+    hit = notice(1, state='verifying')
+    hit['_source']['@timestamp'] = '2026-10-18T13:29:00Z'
+    hit['_source']['body']['window_end'] = '2026-10-18T03:59:16+00:00'
+    payload = event(INDICES[1], hit)['payload']
+    assert '발생 시각: 2026-10-18 12:59:16 KST' in payload['text']
+    assert '2026-10-18 22:29:00 KST' not in visible(payload)
+
+
+@pytest.mark.parametrize('value', [
+    None, 123, '2026-10-18T03:59:16', '2026-10-99T03:59:16Z',
+    '<!here>\\nSENSITIVE_TIME', 'Z' * 200,
+])
+def test_missing_or_invalid_occurrence_time_is_not_invented(value):
+    hit = final(1)
+    hit['_source']['@timestamp'] = value
+    payload = event(INDICES[0], hit)['payload']
+    assert '발생 시각: 미기록' in payload['text']
+    assert '발생 시각\\n미기록' in visible(payload)
+    assert 'SENSITIVE_TIME' not in json.dumps(payload)
     assert_block_limits(payload)
 
 
@@ -217,6 +253,7 @@ def test_scanner_requests_rule_metadata_and_excludes_raw_logs():
     Source(client).page(INDICES[0], 0, 1)
     fields = client.search.call_args.kwargs['source']
     assert 'rule.name' in fields and 'cloud_soc.alert_title' in fields
+    assert '@timestamp' in fields and 'cloud_soc.window_end' in fields
     assert 'message' not in fields and 'cloud_soc.provenance' not in fields
 
 
