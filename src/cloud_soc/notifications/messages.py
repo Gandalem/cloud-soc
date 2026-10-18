@@ -1,4 +1,5 @@
 """Presentation of newly enqueued notifications; never rewrite saved payloads."""
+from datetime import datetime, timedelta, timezone
 import ipaddress
 import re
 from urllib.parse import quote, urlsplit
@@ -8,6 +9,19 @@ from cloud_soc.notifications.transport import SlackError
 NOTICE_STATES = {'initial': '초기 탐지', 'verifying': '근거 검증 중', 'delayed': '검증 지연',
                  'confirmed': '근거 확정', 'corrected': '초기 판단 정정'}
 SEVERITY = {'critical': '🔴 CRITICAL', 'high': '🟠 HIGH', 'medium': '🟡 MEDIUM', 'low': '🔵 LOW'}
+
+def occurrence_time(value):
+    """Display the stored observed event time in KST, never the notification send time."""
+    if not isinstance(value, str) or len(value) > 64:
+        return '미기록'
+    try:
+        observed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if observed.tzinfo is None or observed.utcoffset() is None:
+            return '미기록'
+        return observed.astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M:%S KST')
+    except (ValueError, OverflowError):
+        return '미기록'
+
 
 
 def plain(value, limit=120):
@@ -51,19 +65,21 @@ def connection_test():
                        {'type': 'section', 'text': text(description)}]}
 
 
-def alert(*, identifier, rule, severity, count, title, kind, state, portal_url=None):
+def alert(*, identifier, rule, severity, count, title, kind, state, portal_url=None, occurred_at=None):
     # Titles come from stored rule metadata. Future rules require no notifier code changes.
     title = 'SSH 로그인 실패 집중 탐지' if rule == 'AUTH-001' else plain(title) or '보안 이벤트 탐지'
     rule = plain(rule) or '미기록'
     observed = str(count) + '건' if type(count) is int and 0 <= count < 10**15 else '미기록'
     stage = '최종 경보' if kind == 'final' else '초기 통지 · ' + NOTICE_STATES[state]
+    occurred = occurrence_time(occurred_at)
     summary = '\n'.join(['Cloud SOC · ' + stage, title, '위험도: ' + severity.upper(),
-                         '룰 ID: ' + rule, '관측 건수: ' + observed])
+                         '룰 ID: ' + rule, '관측 건수: ' + observed, '발생 시각: ' + occurred])
     # Fallback text also serves notifications/screen readers: escape Slack's mention/link syntax.
     summary = summary.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     blocks = [{'type': 'header', 'text': text(title)},
               {'type': 'section', 'fields': [text('위험도\n' + SEVERITY[severity]), text('룰 ID\n' + rule),
-                                             text('관측 건수\n' + observed), text('알림 유형\n' + stage)]}]
+                                             text('관측 건수\n' + observed), text('알림 유형\n' + stage),
+                                             text('발생 시각\n' + occurred)]}]
     if portal_url:
         base = origin(portal_url)
         # Initial notices have no final alert yet, and the existing notice UI has no deep-link route.
@@ -83,9 +99,11 @@ def example_alert(*, reference_id, portal_url):
     explanation = ('실제 탐지가 아닌 Slack 표시 확인용 예시입니다. 관측 건수 10건은 예시 값입니다. '
                    '상세 링크는 기존 경보의 참고 화면이며 해당 경보를 재발송한 것이 아닙니다.')
     payload['text'] = ('Cloud SOC · 테스트 예시 (실제 탐지 아님)\n' + title
-                       + '\n위험도: HIGH\n룰 ID: AUTH-001\n관측 건수: 10건 (예시)\n' + explanation)
+                       + '\n위험도: HIGH\n룰 ID: AUTH-001\n관측 건수: 10건 (예시)\n'
+                       + '발생 시각: 해당 없음 (테스트 예시)\n' + explanation)
     payload['blocks'][0]['text'] = text(title)
     payload['blocks'][1]['fields'][2] = text('관측 건수\n10건 (예시)')
     payload['blocks'][1]['fields'][3] = text('알림 유형\n테스트 예시 · 실제 탐지 아님')
+    payload['blocks'][1]['fields'][4] = text('발생 시각\n해당 없음 (테스트 예시)')
     payload['blocks'].insert(2, {'type': 'section', 'text': text(explanation)})
     return payload
