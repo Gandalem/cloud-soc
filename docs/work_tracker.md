@@ -1,5 +1,10 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-19 로컬 로그인 감사 연결
+
+- [ ] MALL-LOCAL-LOGIN 부분 완료: /home/lyn/security-mall LoginAudit.java 및 HomeController에 JSONL/HMAC-SHA256 로그인 기록 추가. Java 컴파일 및 별도 localhost18080/H2 메모리 DB의 실제 HTTP 실패→성공→실패3건, SOC parse/HMAC 일관성/평문 배제/0600 통과. Python3.10 시각 호환을 위해 밀리초 UTC로 기록한다. 기존 H2 DB·실행 중8080은 미변경. outputs/login-audit-setup에 전용 ES pipeline/index/create_doc30일키·Filebeat keystore·단일로그 파일 mount·재시작/수신검사 스크립트를 준비했다. Docker 접근 제한으로 실제 중앙 설치·수신은 사용자 일반 터미널 실행 대기. 스크립트 구문 검증만 완료이며 중앙 배포 성공으로 표시하지 않는다. 정규화·탐지·Portal 표시는 미검증, 키/로그 회전은 자동화하지 않는다. Git commit/push 없음.
+
+
 ## 2026-10-18 Security Mall 9-C 배포 전 연결
 
 - [x] MALL-9C 로컬 구현·검증 완료(2026-10-18): main18ad348 기반 codex/security-mall-9c-integration에서 legacy 문자열/복수 exact raw·normalized allowlist와 기존 ACCESS/7-C+WAF 증거 동시 조회를 추가했다. 기존 엔진·Operations 증거 검증·save_security_alert를 재사용하는 기본 dry-run/명시적 create-only 일회성 CLI를 추가했고 AUTH Worker·위험도·통지·조직/원문 정책은 보존했다. 신규40/직접회귀7의 고유Python47건, 공유DOM12건, 변경5파일 Ruff/Bandit medium-high 통과다. 관련 파일·권한/인덱스 계약·실행 예시·9-D 승인/중단 조건은 docs/security_mall_9c_predeployment.md에 기록했다. SSH/VM/실제ES/키발급/서비스/DB/SQLi/브라우저는 미실행·미검증이며 기존 원본 브랜치·미추적87파일·PR14/Runtime-v2는 보존했다. 작업 브랜치 commit/push/새 PR만 요청 범위로 수행하고 CI 결과는 별도 확인한다.
