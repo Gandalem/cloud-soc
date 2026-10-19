@@ -1,5 +1,10 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-19 로그인 감사 배포 패키지
+
+- [x] MALL-LOGIN-PACKAGE 패키지 구현·로컬 검증 완료: deploy/security-mall/login-audit에 쇼핑몰 소스 패치·안전 적용기·Filebeat 연결/조회/재시작 스크립트·정적 수집 자산·설치 안내를 묶었다. 깨끗한 쇼핑몰 복제본에서 최초 적용/재적용 멱등성/Java 원본 일치, Python 구문 검사를 통과했다. 실제 state·DB·로그·HMAC/API 키는 제외하고 state를 Git ignore한다. 기존 실제HTTP3건/사용자 중앙실수신1건 증거는 README에 최소 요약했고 Kibana 구형브라우저 오류/최종화면·정규화·탐지 미검증을 유지한다. 사용자 요청으로 JEONGRIM-SEO 커밋·일반 merge·push를 진행하며 원격 결과는 최종 Git 참조로 확인한다.
+
+
 ## 2026-10-19 로컬 로그인 감사 연결
 
 - [ ] MALL-LOCAL-LOGIN 부분 완료: /home/lyn/security-mall LoginAudit.java 및 HomeController에 JSONL/HMAC-SHA256 로그인 기록 추가. Java 컴파일 및 별도 localhost18080/H2 메모리 DB의 실제 HTTP 실패→성공→실패3건, SOC parse/HMAC 일관성/평문 배제/0600 통과. Python3.10 시각 호환을 위해 밀리초 UTC로 기록한다. 기존 H2 DB·실행 중8080은 미변경. outputs/login-audit-setup에 전용 ES pipeline/index/create_doc30일키·Filebeat keystore·단일로그 파일 mount·재시작/수신검사 스크립트를 준비했다. Docker 접근 제한으로 실제 중앙 설치·수신은 사용자 일반 터미널 실행 대기. 스크립트 구문 검증만 완료이며 중앙 배포 성공으로 표시하지 않는다. 정규화·탐지·Portal 표시는 미검증, 키/로그 회전은 자동화하지 않는다. Git commit/push 없음.
