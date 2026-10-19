@@ -4,7 +4,11 @@
   const labels = {ok: "조회 성공", no_index: "인덱스 없음", unavailable: "조회 실패", not_started: "실행 기록 없음", stale: "상태 갱신 지연 / 중단 여부 확인 필요", success: "최근 정규화 성공", running: "정규화 실행 중", failed: "정규화 실패", waiting: "다음 수신 구간 대기"};
   const evidenceLabels = {exact_reference: "정확한 문서 참조 확인", normalized_hash_mismatch: "정규화 근거 내용 변경 감지", invalid_evidence_hash: "저장된 근거 해시 형식 오류", normalized_missing_or_expired: "정규화 근거 없음 / 만료", raw_missing_or_expired: "원본 근거 없음 / 만료", provenance_mismatch: "근거 참조 불일치", unsupported_or_invalid_reference: "지원하지 않거나 잘못된 근거 참조", invalid_reference: "잘못된 근거 참조"};
   const fmt = (value) => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString("ko-KR", {timeZone: "Asia/Seoul", hour12: false}) : "미확인";
-  let generation = 0, detailGeneration = 0;
+  let generation = 0, detailGeneration = 0, contextTimer = null;
+  function stopContext() {
+    if (contextTimer !== null) window.clearTimeout(contextTimer);
+    contextTimer = null;
+  }
   function node(tag, value, className) {
     const element = document.createElement(tag);
     if (value !== undefined) element.textContent = value;
@@ -15,6 +19,36 @@
     const response = await fetch(path, {cache: "no-store", credentials: "same-origin"});
     if (!response.ok) throw new Error("서버 연결·권한·조회 조건을 확인하세요. (" + response.status + ")");
     return response.json();
+  }
+  function runtimeRules(pipeline) {
+    const target = $('ops-runtime-rules');
+    if (!target) return;
+    target.replaceChildren();
+    if (!Array.isArray(pipeline.rules)) {
+      target.append(node('p', '실행 규칙 정보를 확인할 수 없습니다. 전체 운영 상태 조회 권한과 워커 버전을 확인하세요.'));
+      return;
+    }
+    const states = {running:'상주 실행 관측', stale:'보고 만료', failed:'실행 실패',
+      reported:'선택 보고만 확인', revision_mismatch:'현재 코드와 버전 다름', catalog_unavailable:'워커 선택 보고 있음 · 현재 규칙 파일 없음'};
+    const scopes = {general:'범용', application_audit:'선택 앱 감사', application_waf:'선택 앱 WAF'};
+    const table = node('table'), head = node('tr'), body = node('tbody');
+    for (const label of ['규칙', '수집 범위', '실제 워커 보고', '버전·마지막 처리']) head.append(node('th', label));
+    const thead = node('thead'); thead.append(head); table.append(thead, body);
+    for (const rule of pipeline.rules.slice(0, 64)) {
+      const row = node('tr'), reports = node('td'), versions = node('td');
+      for (const report of (rule.observations || []).slice(0, 4)) {
+        reports.append(node('p', report.worker + ': ' + (states[report.state] || '미확인')));
+        const detail = node('details');
+        detail.append(node('summary', report.worker + ' 버전'), node('code', report.revision),
+          node('p', '마지막 성공: ' + fmt(report.last_success) + ' · 처리 위치: ' + fmt(report.checkpoint)));
+        versions.append(detail);
+      }
+      if (!reports.children.length) reports.append(node('p', rule.state === 'not_observed' ? '실행 보고 없음' : '미확인 · 조회 실패 또는 이전 워커'));
+      const catalog = node('details');
+      catalog.append(node('summary', '현재 코드 버전'), node('code', rule.catalog_revision || '카탈로그 없음')); versions.append(catalog);
+      row.append(node('td', rule.id), node('td', scopes[rule.scope] || '미확인'), reports, versions); body.append(row);
+    }
+    target.append(table);
   }
   function chart(target, section) {
     target.replaceChildren();
@@ -44,6 +78,7 @@
     }
     if (!sections.pipeline || !Object.hasOwn(labels, sections.pipeline.state)) throw new Error("처리기 응답 형식을 확인하세요.");
     const pipeline = sections.pipeline, detector = pipeline.detector || {state: 'not_started'};
+    runtimeRules(pipeline);
     const limited = pipeline.coverage ? pipeline.coverage.state !== 'observed' :
       [pipeline, detector].some(stage => !['success', 'running', 'waiting'].includes(stage.state) || ['failed', 'stale', 'delayed', 'warning'].includes(stage.health));
     $("ops-range").textContent = fmt(data.start) + " ~ " + fmt(data.end) + " (KST)";
@@ -58,7 +93,7 @@
     }
     $("ops-pipeline").textContent = "정규화 처리기: " + (labels[pipeline.state] || "미확인");
     const detectorLabels = { ...labels, success: "최근 탐지 성공", running: "탐지 실행 중", failed: "탐지 실패" };
-    const detectorName = detector.detection?.includes("ATTACK-") ? "공격 행위 탐지기 (시험 프로필)" : detector.detection && detector.detection.includes(",") ? "SSH·클라우드 탐지기" : "SSH 탐지기";
+    const detectorName = detector.detection?.includes('WEB-SITE-') ? '사이트별 웹 탐지기' : detector.detection?.includes("ATTACK-") ? "공격 행위 탐지기 (시험 프로필)" : detector.detection && detector.detection.includes(",") ? "SSH·클라우드 탐지기" : "SSH 탐지기";
     $("ops-pipeline").textContent += " · " + detectorName + ": " + (detectorLabels[detector.state] || "미확인");
     if ($("ops-pipeline-times")) $("ops-pipeline-times").textContent = "정규화 마지막 성공: " + fmt(pipeline.last_success) + " · 처리 위치: " + fmt(pipeline.checkpoint) + " · 탐지 마지막 성공: " + fmt(detector.last_success);
     const healthLabels = { failed: "탐지 장애: 처리 실패", stale: "탐지 장애: 상태 갱신 중단", delayed: "탐지 지연: 처리 위치 확인 필요", warning: "탐지 경고: 평가 범위·초기 통지 확인 필요" };
@@ -88,6 +123,7 @@
   }
   async function detail(id) {
     const version = ++detailGeneration;
+    stopContext();
     $("ops-detail-content").replaceChildren(); $("ops-detail-state").textContent = "조회 중";
     if (!$("ops-detail").open) $("ops-detail").showModal();
     try {
@@ -100,10 +136,42 @@
       investigate.href = "workbench.html?" + new URLSearchParams({alert: id, return: (window.location?.search || "").slice(1), return_page: "operations.html"});
       $("ops-detail-content").append(investigate);
       $("ops-detail-content").append(node("p", data.alert.title || data.alert.rule || "경보"), node("p", "관측 로그 " + (condition.event_count ?? "미기록") + "건"));
+      if (data.alert.site_id) {
+        const box = node('section', undefined, 'ops-evidence'), status = node('p'), rows = node('div');
+        box.append(node('h3', '사이트 주변 로그'),
+          node('p', '같은 조직·호스트·사이트·출발지의 경보 구간과 이후 5분을 조회합니다. 같은 요청이나 탐지 근거를 뜻하지 않습니다. 창을 연 동안 15초마다 갱신합니다.'), status, rows);
+        $("ops-detail-content").append(box);
+        async function updateContext() {
+          if (version !== detailGeneration || !$("ops-detail").open) return;
+          if (!document.hidden) {
+            status.textContent = '사이트 주변 로그 조회 중'; rows.replaceChildren();
+            try {
+              const reply = await request('/api/alerts/site-context?' + new URLSearchParams({id}));
+              if (version !== detailGeneration || !$("ops-detail").open) return;
+              if (reply.state !== 'ok' || !Array.isArray(reply.events) || reply.events.length > 50 || !Number.isSafeInteger(reply.count)) throw new Error('사이트 주변 로그를 확인할 수 없습니다.');
+              status.textContent = fmt(reply.checked_at) + ' 조회 · ' + reply.count + '건' + (reply.truncated ? ' · 최신 50건 표시' : '');
+              for (const item of reply.events) rows.append(node('p', fmt(item.timestamp) + ' · ' + item.method + ' · HTTP ' + item.status_code));
+              if (!reply.events.length) rows.append(node('p', '조회 범위에 정규화된 주변 로그가 없습니다.'));
+            } catch (error) {
+              if (version === detailGeneration) { rows.replaceChildren(); status.textContent = error.message; }
+            }
+          }
+          if (version === detailGeneration && $("ops-detail").open) contextTimer = window.setTimeout(updateContext, 15000);
+        }
+        updateContext();
+      }
       if (data.assessment && typeof data.assessment === "object") {
         const box = node("section", undefined, "ops-evidence"), assessment = data.assessment;
         box.append(node("h3", "탐지 이유"));
         box.append(node("p", assessment.type === "attack_correlation" ? "여러 행위의 연계 의심 · 공격 성공 미확정" : "공격 징후 의심 · 공격 성공 미확정"));
+        if (assessment.waf && Array.isArray(assessment.waf.engine_modes) && Array.isArray(assessment.waf.interruption_states)) {
+          const modes = {On:'활성 모드', DetectionOnly:'탐지 전용 · 차단 미수행', Off:'비활성 모드'};
+          const interventions = {observed:'엔진 개입 기록 있음', not_observed:'엔진 개입 기록 없음', unknown:'엔진 개입 여부 미관측'};
+          box.append(node('p', 'ModSecurity: ' + assessment.waf.engine_modes.map(v=>modes[v] || '모드 미확인').join(' · ')),
+            node('p', assessment.waf.interruption_states.map(v=>interventions[v] || '미확인').join(' · ')),
+            node('p', 'HTTP 응답 코드와 엔진 모드만으로 실제 차단·앱 내부 처리 결과를 확정하지 않습니다.'));
+          if (Array.isArray(assessment.waf.matched_rule_ids)) box.append(node('p', '관측 CRS 규칙 ID: ' + assessment.waf.matched_rule_ids.slice(0, 64).join(', ')));
+        }
         if (assessment.reason === "call_count_and_api_diversity" && Number.isSafeInteger(assessment.observed_count) && Number.isSafeInteger(assessment.distinct_count)) {
           box.append(node("p", "API 호출 " + assessment.observed_count + "건 · API " + assessment.distinct_count + "종 (중복 제외)"));
         }
@@ -173,6 +241,7 @@
   async function refresh() {
     const version = ++generation;
     $("ops-error").hidden = true; $("ops-range").textContent = "조회 중";
+    if ($('ops-runtime-rules')) $('ops-runtime-rules').replaceChildren(node('p', '실행 규칙 조회 중'));
     if ($("ops-pipeline-times")) $("ops-pipeline-times").textContent = "";
     // Clear stale counts while loading a different interval or after failure.
     for (const id of ["ops-metrics", "ops-intake-chart", "ops-alert-chart", "ops-alert-rows"]) $(id).replaceChildren();
@@ -186,11 +255,12 @@
       for (const id of ["ops-metrics", "ops-intake-chart", "ops-alert-chart", "ops-alert-rows"]) $(id).replaceChildren();
       $("ops-error").hidden = false; $("ops-error").textContent = error.message;
       $("ops-range").textContent = "조회 실패"; $("ops-pipeline").textContent = "처리기 상태 미확인"; $("ops-alert-state").textContent = "조회 실패";
+      if ($('ops-runtime-rules')) $('ops-runtime-rules').replaceChildren(node('p', '실행 규칙 미확인 · 조회 실패'));
     }
   }
   $("ops-filter").addEventListener("submit", (event) => {event.preventDefault(); refresh();});
   $("ops-detail-close").addEventListener("click", () => $("ops-detail").close());
-  $("ops-detail").addEventListener("close", () => {detailGeneration++; $("ops-detail-content").replaceChildren();});
-  window.addEventListener("pagehide", () => {generation++; detailGeneration++; $("ops-detail-content").replaceChildren();});
+  $("ops-detail").addEventListener("close", () => {stopContext(); detailGeneration++; $("ops-detail-content").replaceChildren();});
+  window.addEventListener("pagehide", () => {stopContext(); generation++; detailGeneration++; $("ops-detail-content").replaceChildren();});
   refresh();
 })();

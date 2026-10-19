@@ -62,6 +62,10 @@ def test_normal_outcome_wrong_source_and_organization_do_not_become_attacks(iden
         assign(rows[-1], 'cloud_soc.detail.fields.flow_final', False)
     elif identifier == 'WEB-404-001':
         assign(rows[-1], 'cloud_soc.detail.fields.http_status', 200)
+    elif identifier == 'WEB-SITE-404-001':
+        assign(rows[-1], 'http.response.status_code', 200)
+    elif identifier == 'WEB-SITE-WAF-001':
+        assign(rows[-1], 'cloud_soc.detail.fields.sqli', False)
     elif identifier in ('ATTACK-02',):
         rows[-1]['event']['action'] = 'DescribeMadeUp'
     elif identifier == 'ATTACK-03':
@@ -146,7 +150,7 @@ def test_duplicates_raw_revision_and_cooldown_across_runtime_serialization(ident
 
 def test_complete_inventory_explicit_selection_cli_and_live_write_gate():
     assert tuple(RULES) == CATALOG_IDS
-    assert len(catalog()) == 17
+    assert len(catalog()) == 19
     assert [r['id'] for r in approved_rules()] == ['AUTH-001']
     assert [r['id'] for r in approved_rules(rule_ids=['AUTH-SEQ-001'])] == ['AUTH-001', 'AUTH-SEQ-001']
     assert rule_revision(approved_rules()[0]) == rule_revision(RULES['AUTH-001'])

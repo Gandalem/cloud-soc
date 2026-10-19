@@ -323,6 +323,8 @@ def get_document(
 
 SECURITY_ALERTS_MAPPING = {
     "properties": {
+        "host": {"properties": {"id": {"type": "keyword"}}},
+        "service": {"properties": {"id": {"type": "keyword"}}},
         "@timestamp": {
             "type": "date",
         },

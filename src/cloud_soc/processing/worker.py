@@ -13,6 +13,8 @@ from cloud_soc.portal.security_detail import DETAIL_FIELDS
 from cloud_soc.processing.contract import normalize, NORMALIZED, RECORDS, STATUS
 from cloud_soc.elastic.index_scope import index_batches
 from cloud_soc.processing import continuation
+from cloud_soc.web.scope import NORMALIZER_VERSION as SITE_VERSION, LEGACY_VERSION
+from cloud_soc.portal.log_contract import field
 
 READ_FIELDS = list(SOURCE_FIELDS + DETAIL_FIELDS) + ["message", "event.timezone", "event.created",
     "log.syslog.appname", "process.name", "journald.syslog.identifier", "journald.process.name", "journald.pid"]
@@ -110,7 +112,7 @@ def create_batch(client, documents):
         raise RuntimeError("normalization_bulk_failed")
 
 
-def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_pages=1000, ssh_v2_start=None,
+def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_pages=1000, ssh_v2_start=None, web_site_v2_start=None,
              window_minutes=5, status_id='normalizer', source_indices=None,
              normalized_index=NORMALIZED, records_index=RECORDS, status_index=STATUS):
     now = now or datetime.now(timezone.utc)
@@ -122,6 +124,9 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
     ssh_start = parse_time(ssh_v2_start) if ssh_v2_start is not None else None
     if ssh_v2_start is not None and (ssh_start is None or not initial <= ssh_start <= now):
         raise ValueError("An aware SSH adapter start within the configured receipt range is required")
+    web_start = parse_time(web_site_v2_start) if web_site_v2_start is not None else None
+    if web_site_v2_start is not None and (web_start is None or not initial <= web_start <= now):
+        raise ValueError('An aware site adapter start within the receipt range is required')
     if source_indices is not None:
         if (not isinstance(source_indices, (list, tuple)) or not source_indices
                 or any(not isinstance(n, str) or not re.fullmatch(r'[a-z0-9][a-z0-9_.-]{0,254}', n)
@@ -146,6 +151,13 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
             raise ValueError("Initial start cannot change for an existing state file")
         db.execute("INSERT OR IGNORE INTO config VALUES (1,?)", (iso(initial),))
         db.execute("CREATE TABLE IF NOT EXISTS adapter_config (name TEXT PRIMARY KEY, start TEXT NOT NULL)")
+        saved_web = db.execute("SELECT start FROM adapter_config WHERE name='web_access_site_v2'").fetchone()
+        if saved_web and (web_start is None or saved_web[0] != iso(web_start)):
+            raise ValueError('Site adapter start cannot change for an existing state file')
+        if web_start is not None and not saved_web:
+            if configured:
+                raise ValueError('Site adapter adoption requires a new explicit state file; retain the old checkpoint')
+            db.execute("INSERT INTO adapter_config VALUES ('web_access_site_v2',?)", (iso(web_start),))
         saved_ssh = db.execute("SELECT start FROM adapter_config WHERE name='linux_ssh_v2'").fetchone()
         if saved_ssh and (ssh_start is None or saved_ssh[0] != iso(ssh_start)):
             raise ValueError("SSH adapter start cannot change for an existing state file")
@@ -171,7 +183,9 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
                 def consume(hits, counters):
                     batch = []
                     for hit in hits:
-                        identifier, record, event = normalize(hit, iso(now), ssh_v2_start=ssh_start)
+                        received = parse_time(field(hit.get('_source'), 'event.ingested'))
+                        web_version = SITE_VERSION if web_start is not None and received is not None and received >= web_start else LEGACY_VERSION
+                        identifier, record, event = normalize(hit, iso(now), ssh_v2_start=ssh_start, web_version=web_version)
                         if event:
                             record['normalized']['index'] = normalized_index
                             batch.append((normalized_index, identifier, event))

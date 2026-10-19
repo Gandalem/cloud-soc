@@ -12,7 +12,7 @@ RUNTIME_SERVICES = (*SERVICES, 'normalizer-priority', 'detector-priority', 'dete
 PUBLIC_ENV = {"SOC_PUBLIC_URL", "SOC_PORTAL_LAN_ORIGIN", "SOC_INTERNAL_ES_URL", "SOC_AGENT_ENDPOINT",
               "SOC_ELASTIC_ENDPOINT", "SOC_PUBLIC_HOST", "SOC_ENROLLMENT_ENABLED"}
 VALUE_OPTIONS = {"--es-url", "--start", "--state", "--ca-file", "--api-key-file", "--interval",
-                 "--linux-ssh-v2-start", "--max-documents", "--max-active-events", "--lateness-seconds",
+                 "--linux-ssh-v2-start", "--web-site-v2-start", "--max-documents", "--max-active-events", "--lateness-seconds",
                  "--window-minutes", "--max-pages", "--rules", "--additional-rules", "--status-id"}
 FLAG_OPTIONS = {"--run", "--once", "--early-auth", "--include-cloud", "--include-sequence", "--include-attacks", "--include-patterns", "--isolated-all", "--priority", "--retrospective"}
 
@@ -44,7 +44,7 @@ def command_options(command):
             if isinstance(value, str) and not value.startswith("--") and len(value) <= 1024:
                 if option == "--es-url":
                     result[option] = public_value("SOC_INTERNAL_ES_URL", value)
-                elif option in ("--start", "--linux-ssh-v2-start"):
+                elif option in ("--start", "--linux-ssh-v2-start", "--web-site-v2-start"):
                     try:
                         stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
                         valid = stamp.tzinfo is not None and stamp.utcoffset() is not None

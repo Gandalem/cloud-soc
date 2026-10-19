@@ -1,5 +1,51 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-19 커밋·푸시 요청
+
+사용자가 현재 범용 SOC·ModSecurity·운영 관측/인수 구현과 관련 테스트·문서를 커밋하고 origin의 codex/operational-readiness 브랜치에 푸시하도록 요청했다. 기존 검증 결과와 남은 운영 인수 구분은 유지하며 state/·비밀·실제 시험 로그는 제외한다. 커밋 전 CI 단계의 run 들여쓰기를 수정하고 YAML 구문과 변경 파일을 확인한다. 실제 커밋·푸시 결과는 Git 이력과 원격 참조로 확인하며 운영 배포는 수행하지 않는다. 아래 commit/push 없음 표기는 당시 시점의 이력이다.
+
+## 2026-10-19 사용자 방향 정정 — 범용 SOC 우선
+
+2026-10-19 범용 구현·WSL 인수 결과: 아래 착수 진단 이후 사이트 ID/HTTP를 보존하는 선택 정규화 v2, 사이트별404/WAF2규칙, 공통 경보 scope·SHA/원본 대조, 조직 권한을 유지하는 사이트 필터·15초 주변 로그 갱신, 선택 ModSecurity v3 JSON 입력을 구현했다. 기존 규칙 revision·배포 검증7개·SQLite를 자동 교체하지 않으며 Mall 없이 기본 선택·인수·운영 조회·수동 초안 검증을 사용할 수 있다.
+
+- [x] GENERIC-SITE-CODE-01 구현·격리 인수 완료: 조직/호스트/사이트/IP 집계·쿨다운 분리, 명시한 적용 시점과 새 상태 파일 고정, 기존 버전 ID 보존·중복 경보 방지, 사이트 필터의 페이지 범위, 원본 시각·IPv6·사이트 변조 대조를 검증했다. Portal의 조직 제한 경로 누락도 수정해 자기 조직200/다른 조직404/임의 조직 파라미터400/비인증401을 확인했다.
+- [x] GENERIC-WAF-JSON-01 구현·격리 인수 완료: v3 JSON의 본문/헤더/매칭 내용 제거·명시 시간대·규칙 ID/CRS 버전·요청 중복 제거·모드/개입 관측 구분을 공통 경로에 연결했다. 패키지 폼과 Linux/Windows 사이트 입력·수집 중지의 접근/WAF 동시 전환을 연결했다. Windows C# 소스는 컴파일만 인수했으며 실제 Windows 런타임 인수는 완료하지 않았다.
+- [x] GENERIC-LIVE-WSL-01 실제 시험 환경 인수 완료: Nginx2사이트→실제 Filebeat9.5.2→상주 CLI→원본41/정규화41/경보2·재시작 중복0의54검사, 실제 ModSecurity/CRS SQLi3요청씩 DetectionOnly(백엔드200/WAF200·개입 없음)/On(백엔드200/WAF403·개입 있음)의12검사씩 통과했다. Chromium 실제19규칙/경보·SHA/15초갱신/사이트검색/패키지폼/타조직차단/모바일 확인, pageerror0/API실패0이다. 실제 새 범용 경보의 기존 Slack 메시지 계약 진입은 격리 검증이며 채널 수신은 미검증이다.
+
+회귀: WSL 전체1934pass/1fail/17skip·하위348pass에서 기존 웹 소스 목록 기대값에 WAF를 추가한1건을 수정·재검증했다. 후속 새 조직 경로·IPv6·범용 Slack 계약을 포함한 고유1939사례 통과(전체+영향 재검증 합계, 마지막 전체 재실행 아님). WSL 조직/권한45·최종 사이트/WAF70, Windows 영향78, JS/안내70(수집/화면54+안내16), Ruff·src/변경 도구 Bandit medium/high 통과다. C# 실행은 이 환경의 기존 .NET 예외로 중단해 한계를 보존했다. 초기 새 테스트의 들여쓰기/가정·시험 Compose 표기·최소 지연 값·브라우저 비동기/CSP 대기 오류는 수정했고 실패 자료도 보존했다. 운영 설정/방화벽/시스템 실행 정책은 변경하지 않았다.
+
+관련: rules/web_generic.yml, src/cloud_soc/{web/{scope,modsecurity,agent_metadata},processing/{contract,worker,setup,__main__},detection/{profiles,patterns,setup},pipeline/alerts,portal/{site_agents,site_context,log_contract,log_query,operations,app,auth,runtime_rules,rule_management,security_detail}}.py, deploy/agents/{site-privacy,privacy}.js·profile-reader.py·discovery-native.cs, prototype/{agents,logs,operations}.{html,js}, tests/test_generic_{sites,waf}.py와 기존 회귀, tools/validate_generic_{web,waf}.py. 범위/명령/제약은 docs/operational_acceptance.md에 기록했다. Git 제외 state/generic-e2e-summary.json·브라우저 근거·모드별 private WSL 보고서에 실제 결과를 보존한다. 시험 워커/웹/WAF/ES 종료, 활성 시험 키0·증거/DB/볼륨 보존을 확인했다. commit/push/운영 배포 없음이다.
+
+남은 인수: 호스트 설치 프로그램을 통한 새 Windows/Ubuntu 장치 설치·부분 설치 복구, 기존 중앙으로의 명시 배포/전환, ModSecurity v2 native의 범용 수집, 실제 Slack 채널 수신. 따라서 GENERIC-CORE-01·GENERIC-SITE-01·GENERIC-OPERATIONS-01·GENERIC-WAF-01 부모 항목은 운영 인수가 남아 unchecked 유지한다. 아래 착수 시점의 진단/이전 합성 인수는 이력으로 보존한다.
+
+2026-10-19 개발 재개: 사용자 요청에 따라 GENERIC-SITE-01·GENERIC-CORE-01·GENERIC-OPERATIONS-01을 진행 중으로 전환한다. 공통 사이트 식별 보존·사이트별 탐지/증거·선택 앱 확장 분리를 먼저 구현하고 관련 검증은 변경을 모은 뒤 수행한다. 기존 배포 검증 규칙과 운영 활성화는 구현 완료만으로 확대하지 않는다.
+
+- [ ] GENERIC-WAF-01 진행 중: 추가 사용자 요청으로 ModSecurity도 범용화한다. 사이트별 선택 JSON 감사 수집·본문 제거·조직/호스트/사이트/요청별 중복 제거·CRS SQLi 메타데이터 탐지·DetectionOnly/엔진 개입 관측 구분을 연결한다. 기존 Mall 전용 WAF 규칙과 시험 이력은 유지하고 실제 WAF 공격·차단 인수는 별도 증거로 기록한다.
+
+사용자는 이번 요청이 쇼핑몰 종속 기능 개발이 아니라 범용 SOC 개발임을 재명시했다. 최신 범위로 이전 후속 작업의 우선순위를 정정한다. 기존 Mall 구현·시험 이력은 보존하되 Mall 상주 연결·실제 Mall 로그인/SQLi 인수를 기본 SOC의 필수 완료 조건에 넣지 않는다. 기존 런타임 보고·지정 경보 검사 CLI도 특정 앱 없는 공통 수집/처리/경보 경로를 기준으로 유지한다.
+
+- [ ] GENERIC-CORE-01 우선: 쇼핑몰 없이 Windows/Ubuntu와 일반 Apache/Nginx/Docker 로그의 설치→수신→정규화→상주 탐지→경보/증거→통지 흐름을 인수한다. 현재 WSL 증거는 실제 ES/워커/브라우저를 사용했지만 합성 SSH 입력이므로 실제 에이전트·일반 웹 수집 인수를 대신하지 않는다.
+- [ ] GENERIC-SITE-01 우선: 조직·사이트·호스트 범위를 공통 이벤트에 보존하고 탐지/조회/연관에서 서로 섞이지 않는지 검증한다. 읽기 확인상 agent_metadata는 service.id를 받지만 일반 normalize는 service를 최상위 이벤트에 보존하지 않고 WEB-404-001은 organization.id/host.id/source.ip로 묶는다. 같은 호스트의 여러 사이트 분리와 기존 rule revision/상태/배포 인수의 호환성을 검토한 뒤 구현한다. 이 확인만으로 수정 완료나 실제 사이트 격리를 주장하지 않는다.
+- [ ] GENERIC-OPERATIONS-01 우선: 일반 규칙의 실제 실행 상태·증거·재시작/부분 설치 복구·실시간 범위별 연관·범용 신규 경보의 Slack 인수를 이어 간다. 앱 로그인 성공·주문 소유권은 일반 접근 로그에서 추정하지 않고 선택 앱 감사 계약으로 확장한다.
+
+이번 후속 응답은 개발 방향과 인수 우선순위를 정정한 기록이다. 새 기능 구현·기존 검증 재실행·운영 활성화는 수행하지 않았다. Mall 선택 확장과 기존 데이터/시험 기록은 삭제하지 않는다.
+
+## 2026-10-19 독립 SOC 운영 연결 보완
+
+- [ ] OPS-RUNTIME-01 진행 중: 최신 사용자 요청으로 기능 확장보다 설치→수신→정규화→상주 탐지→경보→Portal 인수 흐름을 우선한다. 워커의 실제 선택 규칙/revision/실행 결과와 미실행 카탈로그를 구분해 Portal에 표시한다. 기존 verified_rules를 실제 인수 없이 확대하지 않는다.
+- [ ] OPS-ACCEPTANCE-01 진행 중: Mall 없이 사용하는 읽기 전용 실제 경보 인수 CLI와 단계별 인수 기준을 추가한다. 원본/정규화 근거·조직·경보 버전·현재 워커를 확인하고 부족/조회 실패를 통과로 해석하지 않는다. 합성/격리 검증·실제 설치·브라우저·Slack 수신을 각각 기록한다.
+
+- [x] OPS-RUNTIME-CODE-01 구현·격리 인수 완료(2026-10-19): 연속/스냅샷/과거 검토 워커가 실제 선택 ID/revision/엔진/mode를 보고한다. Portal은 카탈로그·현재 관측·만료·실패·버전 차이를 구분하고 조직 제한 사용자의 전역 상태를 보존한다. 새로고침 실패 시 이전 표를 제거하며 모바일 가로 스크롤을 지원한다. 기존 verified_rules·탐지 identity·원본 권한은 보존했다.
+- [x] OPS-ACCEPTANCE-CODE-01 구현·격리 인수 완료(2026-10-19): 읽기 전용 지정 경보 CLI에 정확한 원본 범위·조직·정규화 SHA/재계산·처리 기록·신규 시각·현재 연속 워커/revision/체크포인트 대조와 독점 보고서를 추가했다. 기존 배포 검증의 과거 AUTH 경보/미래 성공 시각 허용을 보강했다. 실제 브라우저/Slack/전체 인수는 CLI 결과만으로 통과 처리하지 않는다.
+
+2026-10-19 WSL 최종 검증: 사용자가 WSL 시험을 요청해 Ubuntu24.04.3 전용 캐시 사본/venv·독립 Docker 프로젝트에서 ES9.5.2 TLS/실제 HTTP 28검사와 원본16/정규화14/처리16/경보1을 확인했다. 실제 최소 권한 연속 normalizer/detector CLI·같은 상태 재시작/중복0/identity·checkpoint·integrity를 검증했다. Chromium156 로그인·17규칙·실제 revision·미관측 WAF·SHA 근거·390px 통과/pageerror0/API실패0, 배포 이미지 빌드와 실제 Linux UID/GID19검사/WAL·키·설정·outbox 보존 통과다. 전체 Python 최초1837pass/7fail/17skip/하위348pass이며 기존 Slack의 문자\\n 기대값2곳을 실제 줄바꿈으로 수정한 영향7이 Linux/Windows 통과(합산 고유1844, 최종 전체 재실행 아님)다. DOM18·최종 안내/구문/링크16·Ruff/Bandit medium-high/pip check 통과다. WSL Node18/pwsh 부재 및 Windows 실행 정책/.NET의 광범위 스크립트 시험 실패는 미해결 환경 제한으로 보존한다.
+
+관련: src/cloud_soc/{acceptance.py,portal/runtime_rules.py,portal/operations.py,detection/{telemetry,incremental,worker,retrospective}.py,processing/setup.py,deployment/verify.py}, prototype/operations.{html,js,css}, tests/test_{runtime_rules,operational_acceptance,slack_messages,deployment_parity}.py, tests/fixtures/operational.compose.yaml, tools/validate_{integration.py,ui.cjs}, CI·README와 docs/first_install_walkthrough.md·operational_acceptance.md. 새 OS/에이전트 설치·실장치 수신·실제 Mall/SQLi·상시 연관 발행·다중 사이트 일반화·Slack 채널 수신·운영 중앙 배포는 미완료로 부모 항목을 unchecked 유지한다. 초기 WSL 임시 경로 유실/ES중단/TLS·브라우저 시간 초과는 별도 로그로 보존했고 같은 컨테이너 내 브라우저 인수로 최종 확인했다. Git 제외 근거 위치·재현 범위·남은 인수는 docs/operational_acceptance.md에 기록한다. commit/push 없음.
+
+2026-10-19 시작: 원격 main 6925f8f를 빈 D:\\cloud-soc에 새로 clone했다. 기존 설치/운영 상태/비밀은 내려받지 않았다. 현재 Windows Docker daemon은 연결되지 않으며 실제 중앙 서버 접속 정보는 아직 제공되지 않았다. commit/push는 요청되지 않았다.
+
+2026-10-19 정리: 최종 모바일 수정 포함 배포 이미지 빌드 통과. 시험 CLI/Portal/ES/브라우저 종료·남은 시험 API키5개 폐기, 증거/SQLite/시험 볼륨 보존. 기존 Windows/Linux 실행 정책과 시스템 패키지는 변경하지 않았다. 로컬 브랜치는 codex/operational-readiness이며 commit/push/운영 배포 없음이다.
+
 ## 2026-10-18 Security Mall 9-C 배포 전 연결
 
 - [x] MALL-9C 로컬 구현·검증 완료(2026-10-18): main18ad348 기반 codex/security-mall-9c-integration에서 legacy 문자열/복수 exact raw·normalized allowlist와 기존 ACCESS/7-C+WAF 증거 동시 조회를 추가했다. 기존 엔진·Operations 증거 검증·save_security_alert를 재사용하는 기본 dry-run/명시적 create-only 일회성 CLI를 추가했고 AUTH Worker·위험도·통지·조직/원문 정책은 보존했다. 신규40/직접회귀7의 고유Python47건, 공유DOM12건, 변경5파일 Ruff/Bandit medium-high 통과다. 관련 파일·권한/인덱스 계약·실행 예시·9-D 승인/중단 조건은 docs/security_mall_9c_predeployment.md에 기록했다. SSH/VM/실제ES/키발급/서비스/DB/SQLi/브라우저는 미실행·미검증이며 기존 원본 브랜치·미추적87파일·PR14/Runtime-v2는 보존했다. 작업 브랜치 commit/push/새 PR만 요청 범위로 수행하고 CI 결과는 별도 확인한다.

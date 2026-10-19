@@ -70,7 +70,7 @@ def test_real_engine_compatibility_approval_export_and_no_active_change(store, t
     for e in other:e['organization']['id']='foreign'
     assert detect_events(other,loaded)==[]
     assert before=={f:hashlib.sha256((PROJECT_ROOT/'rules'/f).read_bytes()).hexdigest() for f in FILES}
-    assert len(catalog())==17
+    assert len(catalog())==19
     actions=[h['action'] for h in row['history']];assert actions==['created','validate','approve','apply']
     assert all(h['content_hash']==row['content_hash'] for h in row['history'])
     assert RuleDraftStore(store.path,store.organizations).detail(row['id'],ADMIN)['status']=='approved'

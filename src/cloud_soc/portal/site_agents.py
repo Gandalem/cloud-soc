@@ -12,7 +12,8 @@ def validate_sites(sites, platform):
         raise ValueError('웹 사이트는 최대 8개입니다.')
     result, paths, ids = [], set(), set()
     for site in sites:
-        if not isinstance(site, dict) or set(site) != {'id', 'name', 'server_type', 'log_path', 'start_at'}:
+        required = {'id', 'name', 'server_type', 'log_path', 'start_at'}
+        if not isinstance(site, dict) or not required <= set(site) or set(site) - required - {'modsecurity'}:
             raise ValueError('사이트 ID·이름·서버 종류·로그 경로·시작 시각을 입력하세요.')
         if not isinstance(site['id'], str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', site['id']):
             raise ValueError('사이트 ID는 영문·숫자·밑줄·하이픈 1~64자입니다.')
@@ -49,10 +50,26 @@ def validate_sites(sites, platform):
                 raise ValueError()
         except (AttributeError, TypeError, ValueError):
             raise ValueError('시간대가 포함된 수집 시작 시각을 선택하세요.') from None
+        modsecurity = None
+        if 'modsecurity' in site:
+            waf = site['modsecurity']
+            if (not isinstance(waf, dict) or set(waf) != {'log_path', 'timezone'}
+                    or not isinstance(waf['timezone'], str)
+                    or not re.fullmatch(r'[+-](?:0[0-9]|1[0-4]):[0-5][0-9]', waf['timezone'])
+                    or int(waf['timezone'][1:3]) == 14 and waf['timezone'][4:] != '00'):
+                raise ValueError('ModSecurity JSON 감사 경로와 로그 시각의 UTC 오프셋을 지정하세요.')
+            checked = validate_sites([{**{k: site[k] for k in required}, 'log_path': waf['log_path']}], platform)[0]
+            waf_key = checked['log_path'].lower() if platform == 'windows' else checked['log_path']
+            if waf_key in paths or waf_key == key:
+                raise ValueError('접근 로그와 WAF 감사 로그는 서로 다른 전용 파일이어야 합니다.')
+            paths.add(waf_key)
+            modsecurity = {'log_path': checked['log_path'], 'timezone': waf['timezone']}
         if key in paths or site['id'].lower() in ids:
             raise ValueError('같은 웹 로그 경로나 사이트 ID를 중복 설정할 수 없습니다.')
         paths.add(key); ids.add(site['id'].lower())
         result.append({**site, 'log_path': canonical, 'start_at': start.astimezone(timezone.utc).isoformat().replace('+00:00','Z')})
+        if modsecurity is not None:
+            result[-1]['modsecurity'] = modsecurity
     return result
 
 
@@ -73,5 +90,16 @@ def profile(spec):
                 {'drop_event':{'when':{'contains':{'tags':'_site_privacy_error'}}}},
                 {'timestamp':{'field':'web.occurred_at','layouts':['2006-01-02T15:04:05.999Z07:00']}},
                 {'drop_fields':{'fields':['web.occurred_at'],'ignore_missing':True}}]})
+        if site.get('modsecurity'):
+            from copy import deepcopy
+            waf_input = deepcopy(inputs[-1])
+            waf_input['id'] = 'cloud-soc-modsecurity-' + site['id']
+            waf_input['paths'] = [site['modsecurity']['log_path']]
+            waf_input['fields']['labels']['log_source'] = 'generic_modsecurity'
+            waf_input['processors'][0]['script']['params'] = {
+                **{k: v for k, v in site.items() if k != 'modsecurity'},
+                'stream': 'modsecurity', 'timezone': site['modsecurity']['timezone']}
+            inputs.append(waf_input)
+            exclusions.append(str(path_type(site['modsecurity']['log_path']).parent))
     return {'schema':1, 'system':spec.get('system', True), 'network':spec['network'],
             'web_inputs':inputs, 'web_exclusions':sorted(set(exclusions)), 'platform':spec['os']}

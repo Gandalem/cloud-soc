@@ -4,6 +4,9 @@ import json
 from http.server import ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 from preview_logs import Preview, ROOT
+from cloud_soc.detection.profiles import catalog
+from cloud_soc.detection.telemetry import runtime_manifest
+from cloud_soc.portal.runtime_rules import inventory
 
 
 class OperationsPreview(Preview):
@@ -11,6 +14,12 @@ class OperationsPreview(Preview):
         path = urlsplit(self.path)
         query = parse_qs(path.query)
         now = datetime.now(timezone.utc).isoformat()
+        if path.path == '/api/auth/me':
+            return self.reply(200, b'{"mode":"basic","role":"admin","user":"SYNTHETIC-ONLY"}', 'application/json')
+        if path.path == '/api/operations/status':
+            return self.reply(200, b'{"state":"success","coverage":{"state":"unknown","reason":"synthetic_ui_only"}}', 'application/json')
+        if path.path == '/api/cases':
+            return self.reply(200, b'{"rows":[],"counts":{"total":0,"open":0,"investigating":0,"unassigned":0},"has_next":false}', 'application/json')
         row = {"id": "synthetic-only", "timestamp": now, "title": "합성 검증: 로그인 실패 기록", "rule": "SYNTHETIC-ONLY", "severity": "high", "organization": "fixture"}
         if path.path == "/api/operations":
             start, end = query["start"][0], query["end"][0]
@@ -23,6 +32,13 @@ class OperationsPreview(Preview):
                         "buckets": [{"time": start, "count": count // 2}, {"time": end, "count": count - count // 2}]}
             sections = {"intake": section(120), "processing": section(105), "quality": section(3), "alerts": section(1),
                         "pipeline": {"state": "success", "last_success": now, "checkpoint": start}}
+            rules = {r['id']: r for r in catalog()}
+            workers = {'detector': {'state': 'success', 'last_success': now, 'checkpoint': now,
+                                   'runtime': runtime_manifest([rules['AUTH-001']], 'continuous')},
+                       'detector-additional': {'state': 'stale', 'runtime': runtime_manifest([rules['WEB-AUTH-01']], 'continuous')},
+                       'detector-retrospective': {'state': 'success', 'runtime': runtime_manifest([rules['WEB-ACCESS-01']], 'snapshot')},
+                       'detector-priority': {'state': 'not_started'}}
+            sections['pipeline'].update(detector=workers['detector'], rules=inventory(workers))
             if not empty:
                 sections["alerts"]["rows"] = [row]
                 sections["processing"]["statuses"] = [{"key": "normalized", "doc_count": 100}, {"key": "unsupported", "doc_count": 5}]
@@ -32,12 +48,14 @@ class OperationsPreview(Preview):
             if "evidence" in query:
                 data["evidence"] = {"state": "exact_reference", "raw": {"index": "soc-host-raw-fixture", "id": "fixture"}, "metadata": {"source_ip": "192.0.2.1", "user": "synthetic-user"}}
             return self.reply(200, json.dumps(data).encode(), "application/json")
-        assets = {"/index.html": "text/html", "/operations.js": "text/javascript", "/operations.css": "text/css"}
-        if path.path in assets:
-            data = (ROOT / "prototype" / path.path.lstrip("/")).read_bytes()
-            if path.path == "/index.html":
-                data = data.replace("관리자 전용 · 실제 데이터".encode(), "합성 UI 검증 · 운영 데이터 아님".encode())
-            return self.reply(200, data, assets[path.path])
+        name = path.path.lstrip('/')
+        asset = ROOT / 'prototype' / name
+        types = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml'}
+        if name and ('/' not in name or name == 'assets/mark.svg') and asset.is_file() and asset.suffix in types:
+            data = asset.read_bytes()
+            if asset.suffix == '.html':
+                data = data.replace(b'<main id="main"', '<p role="status">합성 UI 검증 · 운영 데이터 아님</p><main id="main"'.encode())
+            return self.reply(200, data, types[asset.suffix])
         super().do_GET()
 
 

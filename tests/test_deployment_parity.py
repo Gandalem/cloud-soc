@@ -260,8 +260,23 @@ def test_no_input_or_partial_live_search_cannot_pass_runtime_acceptance():
     client.search.return_value={'hits':{'hits':[],'total':{'value':0}},'_shards':{'failed':0}}
     result=evidence(client,BASE.isoformat(),now=NOW)
     assert not result['verified'] and 'new_live_normalization_absent' in result['issues']
+    alert_query = next(call.kwargs['query'] for call in client.search.call_args_list
+                       if call.kwargs['index'] == 'security-alerts')
+    assert {'range': {'@timestamp': {'gte': BASE.isoformat(), 'lte': NOW.isoformat()}}} in alert_query['bool']['filter']
     client.search.return_value={'timed_out':True}
     with pytest.raises(ValueError,match='Incomplete'):evidence(client,BASE.isoformat(),now=NOW)
+
+
+def test_future_worker_success_is_not_live_acceptance():
+    from cloud_soc.deployment.verify import evidence
+    client = Mock()
+    client.options.return_value = client
+    statuses = [{'_id': name, '_source': {'state': 'success', 'last_success': (NOW+timedelta(days=1)).isoformat(),
+                                        'checkpoint': NOW.isoformat()}} for name in WORKERS]
+    client.search.side_effect = [{'hits': {'hits': statuses}},
+                                {'hits': {'hits': [], 'total': {'value': 0}}}, {'hits': {'hits': []}}]
+    result = evidence(client, BASE.isoformat(), now=NOW)
+    assert not result['verified'] and all(not row['verified'] for row in result['workers'].values())
 
 
 @pytest.mark.parametrize('fault', ['none','migration','activation','interrupt','receipt','stale','modified_site','disk','ownership'])

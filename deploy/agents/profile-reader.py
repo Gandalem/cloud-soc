@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import sys
+import re
 
 
 def read(path):
@@ -21,10 +22,15 @@ def read(path):
                 profile[key]=data[key]
         web=data.get('web',{})
         if not isinstance(web,dict) or len(web)>8:raise ValueError('Invalid web switches')
-        known={x['id'][len('cloud-soc-site-'):] for x in profile['web_inputs']}
+        def site_id(value):
+            match = re.fullmatch(r'cloud-soc-(?:site|modsecurity)-([A-Za-z0-9][A-Za-z0-9_-]{0,63})', value)
+            if not match:
+                raise ValueError('Unknown web input identity')
+            return match[1]
+        known={site_id(x['id']) for x in profile['web_inputs']}
         if set(web)-known or any(type(v) is not bool for v in web.values()):raise ValueError('Unknown site switch')
         for x in profile['web_inputs']:
-            key=x['id'][len('cloud-soc-site-'):]
+            key=site_id(x['id'])
             if key in web:x['enabled']=web[key]
     return profile
 

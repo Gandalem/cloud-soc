@@ -99,7 +99,7 @@ def test_web_query_keeps_organization_authority_and_both_contract_versions():
     body=reader.body(filters,'synthetic-pit',None)
     clauses=body['query']['bool']['filter']
     assert {'terms':{'organization.id':['lab']}} in clauses
-    sources=['generic_web_access','web_access_metadata']
+    sources=['generic_web_access','web_access_metadata','generic_modsecurity']
     assert {'bool':{'minimum_should_match':1,'should':[{'terms':{'labels.log_source':sources}},{'terms':{'labels.log_source.keyword':sources}}]}} in clauses
     assert {'terms':{'soc_query_source':sources}} in clauses
     with pytest.raises(ValueError):parse_filters([('source_kind','arbitrary-raw')])

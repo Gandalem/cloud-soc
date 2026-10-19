@@ -1,0 +1,25 @@
+# Disposable local TLS cluster only. Never add central-server volumes or keys.
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.2
+    environment:
+      discovery.type: single-node
+      cluster.name: cloud-soc-integration-20261008
+      xpack.security.enabled: 'true'
+      xpack.security.http.ssl.enabled: 'true'
+      xpack.security.http.ssl.key: certs/server.key
+      xpack.security.http.ssl.certificate: certs/server.crt
+      xpack.security.http.ssl.certificate_authorities: certs/ca.crt
+      xpack.security.transport.ssl.enabled: 'false'
+      ELASTIC_PASSWORD_FILE: /run/secrets/bootstrap-password
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports: ['127.0.0.1:29443:9200']
+    volumes:
+      - ${SOC_TEST_FIXTURE:?Set an isolated test directory}/tls:/usr/share/elasticsearch/config/certs:ro
+      - ${SOC_TEST_FIXTURE:?Set an isolated test directory}/bootstrap-password:/run/secrets/bootstrap-password:ro
+      - data:/usr/share/elasticsearch/data
+    mem_limit: 2g
+    cpus: 2
+    security_opt: [no-new-privileges:true]
+volumes:
+  data:

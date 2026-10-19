@@ -16,7 +16,7 @@ from cloud_soc.detection import early
 from cloud_soc.elastic.repository import ensure_provenance_mapping, save_security_alert
 from cloud_soc.main import make_alert_id, build_security_alert
 from cloud_soc.processing.contract import NORMALIZED, STATUS
-from cloud_soc.detection.telemetry import evaluate, exclusion, stats_for, runs, queue_committed_runs, flush_outbox
+from cloud_soc.detection.telemetry import evaluate, exclusion, stats_for, runs, queue_committed_runs, flush_outbox, runtime_manifest
 from cloud_soc.detection.profiles import source_observed
 from cloud_soc.detection.sequence import retention_seconds
 
@@ -107,6 +107,7 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
             history_pending = db.execute('SELECT count(*) FROM telemetry_outbox').fetchone()[0]
             health = 'failed' if kind == 'failed' else 'delayed' if (now - utc(state['checkpoint'])).total_seconds() > 1200 else 'warning' if history_pending or state.get('excluded_total') or state['late_total'] or state.get('legacy_excluded') or counts.get('early_failed') or counts.get('early_final_reconcile_required') else 'healthy'
             client.index(index=STATUS, id=status_id, document={'@timestamp': now.isoformat(),
+                'runtime': runtime_manifest(rules, 'continuous'),
                 'state': kind, 'detection': ','.join(rule['id'] for rule in rules), 'checkpoint': state['checkpoint'],
                 'last_success': state['last_success'], 'error': error,
                 'health': health, 'legacy_excluded': state.get('legacy_excluded', 0),

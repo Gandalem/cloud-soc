@@ -23,6 +23,7 @@ from cloud_soc.detection.worker import run_once as detect_once
 from cloud_soc.detection.incremental import run_incremental
 from cloud_soc.detection.telemetry import RUNS, EXCLUSIONS
 from cloud_soc.portal.app import create_app
+from cloud_soc.acceptance import inspect as inspect_acceptance
 from cloud_soc.portal.reprocessing_history import INDEX as HISTORY
 
 
@@ -155,6 +156,12 @@ def validate(args, report):
         "reader": {"cluster": [], "indices": [{"names": [raw_index, NORMALIZED, RECORDS, STATUS,
             "security-alerts", RUNS, EXCLUSIONS, HISTORY], "privileges": ["read", "view_index_metadata"]}]}})
     monitor = Elasticsearch(args.es_url, api_key=monitor_key["encoded"], ca_certs=args.ca_file)
+    acceptance = inspect_acceptance(monitor, alert_id=alert['_id'], organization='team-a', rule_id='AUTH-001',
+                                    since=stamp(start), raw_indices=[raw_index])
+    check('selected_alert_read_only_acceptance', acceptance['pipeline_evidence'] == 'passed',
+          checks=acceptance['checks'])
+    check('stored_evidence_does_not_claim_browser_or_slack', acceptance['full_acceptance'] == 'unverified' and
+          acceptance['browser'] == 'unverified' and acceptance['slack_channel_receipt'] == 'unverified')
     hashed = generate_password_hash("synthetic-password", method="pbkdf2:sha256:1000")
     users = {name: {"role": role, "password_hash": hashed} for name, role in
              (("admin", "admin"), ("view", "viewer"), ("investigate", "analyst"), ("other", "analyst"))}
@@ -170,7 +177,7 @@ def validate(args, report):
                 "PUBLIC_URL": origin, "ENDPOINT": args.es_url, "ADMIN_USER": "admin", "ADMIN_HASH": hashed,
                 "LOG_ACCESS_POLICY": policy, "USERS_FILE": str(users_file)}
     app = create_app(settings, issuer=client, monitor=monitor)
-    server = make_server("127.0.0.1", 28865, app, threaded=True)
+    server = make_server(args.portal_bind, 28865, app, threaded=True)
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
     try:
@@ -243,6 +250,9 @@ def main():
     parser.add_argument("--password-file", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--serve-seconds", type=int, default=0)
+    # Explicit disposable container option; the default remains loopback.
+    parser.add_argument('--portal-bind', choices=('127.0.0.1', '0.0.0.0'), default='127.0.0.1',  # nosec B104
+                        help='Use 0.0.0.0 only inside a disposable Docker container with loopback-only publication')
     parser.add_argument("--reset", action="store_true")
     args = parser.parse_args()
     report = {"passed": False, "checks": [], "scope": "disposable synthetic TLS ES and actual HTTP API"}

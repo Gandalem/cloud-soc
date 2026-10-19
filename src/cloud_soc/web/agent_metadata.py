@@ -1,7 +1,7 @@
 """Protected Filebeat access events, independent of the existing DVWA contract."""
 from datetime import datetime
 from ipaddress import ip_address
-import re
+from cloud_soc.web.scope import valid_site_id
 
 VERSION = 'web-access-agent-v1'
 
@@ -15,7 +15,7 @@ def validate(source):
     web, service, http, event = (obj(k) for k in ('web','service','http','event'))
     if web != {'schema':VERSION,'server_type':web.get('server_type'),'ip_basis':'observed_peer'} or web['server_type'] not in ('apache','nginx','docker'):
         raise ValueError('invalid web metadata schema')
-    if set(service) != {'id','name'} or not isinstance(service['id'], str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}',service['id']) or not isinstance(service['name'],str) or not 1<=len(service['name'])<=64:
+    if set(service) != {'id','name'} or not valid_site_id(service['id']) or not isinstance(service['name'],str) or not 1<=len(service['name'])<=64:
         raise ValueError('invalid site identity')
     if set(http)-{'request','response'} or not isinstance(http.get('request'),dict) or set(http['request'])!={'method'} or http['request']['method'] not in ('GET','POST','PUT','DELETE','HEAD','OPTIONS','PATCH'):
         raise ValueError('invalid HTTP metadata')

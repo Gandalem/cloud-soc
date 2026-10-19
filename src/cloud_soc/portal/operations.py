@@ -8,18 +8,19 @@ from elasticsearch import NotFoundError
 from cloud_soc.portal.agent_status import iso, parse_time
 from cloud_soc.portal.log_contract import INDICES, SOURCE_FIELDS, field, parse_filters, document_reference, project_hit
 from cloud_soc.portal.log_query import LogQueryError, bounded_json
-from cloud_soc.portal.security_detail import DETAIL_FIELDS, security_detail, text
+from cloud_soc.portal.security_detail import DETAIL_FIELDS, security_detail, text, address
 from cloud_soc.processing.contract import NORMALIZED, RECORDS, STATUS
 from cloud_soc.processing.worker import checked
 from cloud_soc.detection.engine import event_fingerprint
 from cloud_soc.privacy import redact_metadata
 from cloud_soc.portal.mall_scope import validate_scope, scope_indices
+from cloud_soc.portal.runtime_rules import public_manifest, inventory as rule_inventory
 
 ALERT = "security-alerts"
 INDEX_PATH_BUDGET = 3000
 MAX_INDEX_BATCHES = 32
 SERIES_TIMEOUT = 12
-ALERT_FIELDS = ["@timestamp", "rule.id", "rule.name", "organization.id", "source.ip", "cloud_soc.severity",
+ALERT_FIELDS = ["@timestamp", "rule.id", "rule.name", "organization.id", "source.ip", "host.id", "service.id", "cloud_soc.severity",
                 "cloud_soc.alert_title", "cloud_soc.event_count", "cloud_soc.threshold", "cloud_soc.time_window_seconds",
                 "cloud_soc.window_start", "cloud_soc.window_end", "cloud_soc.provenance",
                 "cloud_soc.risk_score", "cloud_soc.risk_level", "cloud_soc.risk_version", "cloud_soc.risk_factors", "mitre"]
@@ -140,7 +141,8 @@ def alert_row(hit):
             "historical_review": field(source, "cloud_soc.provenance.review.mode") == "retrospective",
             "title": get("cloud_soc.alert_title") or get("rule.name"), "severity": get("cloud_soc.severity"),
             "organization": get("organization.id"), "source_ip": get("source.ip"),
-            "reason": get("cloud_soc.provenance.rule_snapshot.alert.message"), "service": None, "status": "stored",
+            "reason": get("cloud_soc.provenance.rule_snapshot.alert.message"), "service": get('service.id'),
+            "site_id": get('service.id'), "host_id": get('host.id'), "status": "stored",
             "event_count": field(source, "cloud_soc.event_count") if type(field(source, "cloud_soc.event_count")) is int else None,
             "risk_score": field(source, "cloud_soc.risk_score") if type(field(source, "cloud_soc.risk_score")) is int and 0 <= field(source, "cloud_soc.risk_score") <= 100 else None,
             "risk_level": get("cloud_soc.risk_level")}
@@ -254,7 +256,7 @@ class Operations:
     def worker_status(self, worker):
         if self.organizations is not None:
             return {"state": "unavailable"}
-        value = self.get(STATUS, worker, ["@timestamp", "state", "last_success", "checkpoint", "initial_start", "error", "detection", "health", "lag_seconds", "late_total", "legacy_excluded", "excluded_total", "history_pending", "pending_contexts", "progress", "counts"])
+        value = self.get(STATUS, worker, ["@timestamp", "state", "last_success", "checkpoint", "initial_start", "error", "detection", "health", "lag_seconds", "late_total", "legacy_excluded", "excluded_total", "history_pending", "pending_contexts", "progress", "counts", "runtime"])
         if value is None:
             return {"state": "not_started"}
         stamp = parse_time(value.get("@timestamp"))
@@ -279,6 +281,9 @@ class Operations:
                 "error": text(value.get('error'))}
         if early is not None:
             result["early"] = early
+        manifest = public_manifest(value.get('runtime'))
+        if manifest is not None:
+            result['runtime'] = manifest
         if parse_time(value.get("initial_start")) is not None:
             result["initial_start"] = iso(parse_time(value["initial_start"]))
         if "pending_contexts" in value:
@@ -310,10 +315,12 @@ class Operations:
         result["detection"] = result["detector"]["state"]
         result["coverage"] = analysis_coverage(result, result["detector"])
         if self.organizations is None:
+            workers = {'detector': result['detector']}
             try:
                 historical = self.worker_status("detector-retrospective")
             except Exception:
                 historical = {"state": "unavailable"}
+            workers['detector-retrospective'] = historical
             if historical.get("state") != "not_started":
                 result["late_review"] = historical
                 if historical.get("state") == "failed":
@@ -322,13 +329,14 @@ class Operations:
                 priority_worker = self.worker_status("normalizer-priority")
             except Exception:
                 priority_worker = {"state": "unavailable"}
+            try:
+                priority_detector = self.worker_status('detector-priority')
+            except Exception:
+                priority_detector = {'state': 'unavailable'}
+            workers['detector-priority'] = priority_detector
             if priority_worker.get("state") != "not_started":
                 result["priority_normalizer"] = priority_worker
                 result["realtime_coverage"] = analysis_coverage(priority_worker, result["detector"])
-                try:
-                    priority_detector = self.worker_status('detector-priority')
-                except Exception:
-                    priority_detector = {'state': 'unavailable'}
                 if priority_detector.get('state') != 'not_started':
                     result['priority_detector'] = priority_detector
                     result['realtime_coverage'] = analysis_coverage(priority_worker, priority_detector)
@@ -340,6 +348,7 @@ class Operations:
                 additional = self.worker_status("detector-additional")
             except Exception:
                 additional = {"state": "unavailable"}
+            workers['detector-additional'] = additional
             if additional.get("state") != "not_started":
                 result["additional_detector"] = additional
                 coverage = analysis_coverage(result, additional)
@@ -352,6 +361,7 @@ class Operations:
                     extra = analysis_coverage(result["priority_normalizer"], additional)
                     if priority[extra["state"]] > priority[current["state"]]:
                         result["realtime_coverage"] = {**extra, "reason": "additional_" + extra["reason"]}
+            result['rules'] = rule_inventory(workers)
         return result
 
     def backlog(self, checkpoint, priority_floor):
@@ -524,6 +534,29 @@ class Operations:
         if organization is not None and field(source, "organization.id") != organization:
             return {"state": "provenance_mismatch"}
         security = security_detail(source)
+        if field(norm, 'cloud_soc.detail.adapter') == 'modsecurity_audit_v1':
+            from cloud_soc.web.modsecurity import validate as validate_waf, VERSION as WAF_VERSION
+            try:
+                values = validate_waf(source)
+                if (field(norm, 'cloud_soc.normalizer_version') != WAF_VERSION
+                        or values != field(norm, 'cloud_soc.detail.fields')
+                        or values['source_ip'] != field(norm, 'source.ip')
+                        or parse_time(field(norm, '@timestamp')) != parse_time(field(source, '@timestamp'))
+                        or any(field(source, path) != field(norm, path) for path in (
+                            'organization.id', 'host.id', 'service.id', 'http', 'waf'))):
+                    return {'state': 'provenance_mismatch'}
+            except ValueError:
+                return {'state': 'provenance_mismatch'}
+        if field(norm, 'cloud_soc.detail.adapter') == 'web_access_site_v2':
+            from cloud_soc.web.scope import NORMALIZER_VERSION
+            if (security.get('adapter') != 'web_access_agent_v1'
+                    or field(norm, 'cloud_soc.normalizer_version') != NORMALIZER_VERSION
+                    or address(field(source, 'source.ip')) != field(norm, 'source.ip')
+                    or parse_time(field(norm, '@timestamp')) != parse_time(field(source, '@timestamp'))
+                    or any(field(norm, path) != field(source, path) for path in (
+                        'organization.id', 'host.id', 'service.id',
+                        'http.request.method', 'http.response.status_code'))):
+                return {'state': 'provenance_mismatch'}
         if security.get('adapter') == 'security_mall_edge_v1':
             values = security.get('fields', {})
             if (security.get('status') != 'recognized'
@@ -552,6 +585,9 @@ class Operations:
         return {"state": "exact_reference", "normalized": normalized, "raw": raw,
                 "integrity": integrity, "raw_integrity": 'not_hashed_at_detection',
                 "normalized_event": {"id": text(field(norm, "event.id")),
+                                     "organization": text(field(norm, 'organization.id')),
+                                     "host_id": text(field(norm, 'host.id')), "site_id": text(field(norm, 'service.id')),
+                                     "source_ip": text(field(norm, 'source.ip')),
                                      "timestamp": text(norm.get("@timestamp")), "action": text(field(norm, "event.action")),
                                      "outcome": text(field(norm, "event.outcome"))},
                 "http_status": field(source, 'http.response.status_code') if type(field(source, 'http.response.status_code')) is int else None,

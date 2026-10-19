@@ -8,8 +8,9 @@ from ipaddress import ip_address
 from cloud_soc.detection.engine import (build_group_key, event_evidence, event_fingerprint,
     get_field_value, parse_event_timestamp, rule_revision, ssh_collection_mirror)
 from cloud_soc.detection.behavior import conditions_status, scalar
+from cloud_soc.web.scope import valid_site_id
 
-FIELDS = {'organization.id', 'source.ip', 'destination.ip', 'destination.port', 'host.id', 'user.name',
+FIELDS = {'organization.id', 'source.ip', 'destination.ip', 'destination.port', 'host.id', 'service.id', 'http.request.id', 'user.name',
           'user.id', 'cloud.account.id', 'event.action', 'network.transport',
           'cloud_soc.detail.fields.logon_type', 'cloud_soc.detail.fields.flow_id',
           'cloud_soc.detail.fields.event_id', 'cloud_soc.detail.fields.identity_arn'}
@@ -17,6 +18,8 @@ NUMBERS = {'destination.port': (1, 65535), 'cloud_soc.detail.fields.logon_type':
 
 
 def valid_value(field, value):
+    if field == 'service.id':
+        return valid_site_id(value)
     if field in NUMBERS:
         low, high = NUMBERS[field]
         return type(value) is int and low <= value <= high
@@ -54,7 +57,17 @@ def evaluate_pattern(event, rule):
     if outcome != 'matched':
         return outcome, missing
     missing = [field for field in rule['required_fields'] if not valid_value(field, get_field_value(event, field))]
-    return ('unknown', missing) if missing else ('matched', [])
+    if missing:
+        return 'unknown', missing
+    if rule['id'] == 'WEB-SITE-WAF-001':
+        from cloud_soc.web.modsecurity import validate
+        try:
+            values = validate(event)
+            if values != get_field_value(event, 'cloud_soc.detail.fields'):
+                raise ValueError()
+        except ValueError:
+            return 'unknown', ['waf']
+    return 'matched', []
 
 
 def observation(event, rule):
@@ -123,6 +136,12 @@ def detect_pattern(events, rule, runtime=None):
                     'observed_count': len(pool), 'distinct_count': len(distinct),
                     'distinct_values': sorted(distinct), 'limitations': deepcopy(rule['limitations']),
                     'attack_success': 'not_established'}})
+            if rule['id'] == 'WEB-SITE-WAF-001':
+                result[-1]['assessment'].update(reason='site_scoped_crs_sqli_metadata', waf={
+                    'engine_modes': sorted({get_field_value(e, 'waf.engine_mode') for e in pool}),
+                    'interruption_states': sorted({get_field_value(e, 'waf.interruption') for e in pool}),
+                    'matched_rule_ids': sorted({value for e in pool for value in get_field_value(e, 'cloud_soc.detail.fields.sqli_rule_ids')}),
+                    'blocking_result': 'not_established', 'application_outcome': 'not_established'})
             last = stamp
         state.update(window=list(pool), last_alert=last.isoformat() if last else None)
     return result

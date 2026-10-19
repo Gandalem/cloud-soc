@@ -19,6 +19,7 @@ function occurred(text) {
 }
 function process(event) {
     try {
+        if (settings.stream==='modsecurity') { return processWaf(event); }
         var line=event.Get('message');
         if (typeof line!=='string' || line.length>8192) { throw new Error('invalid access line'); }
         if (settings.server_type==='docker') {
@@ -51,6 +52,49 @@ function process(event) {
         if (/^(\d{1,3}\.){3}\d{1,3}$/.test(m[1]) && m[1].split('.').every(function(v){return +v<=255;})) { event.Put('source.ip',m[1]); }
         else if (/^[0-9a-fA-F:]{3,45}$/.test(m[1]) && m[1].indexOf(':')>=0) { event.Put('source.ip',m[1]); }
         event.Put('labels.privacy_policy','web-access-agent-v1');
+    } catch (_) { event.Cancel(); }
+    return event;
+}
+function processWaf(event) {
+    try {
+        var raw=event.Get('message');
+        if (typeof raw!=='string' || raw.length>131072) { throw new Error('invalid audit size'); }
+        var envelope=JSON.parse(raw), tx=envelope.transaction;
+        if (!tx || !tx.request || !tx.response || !tx.producer || !Array.isArray(tx.messages) || !tx.messages.length || tx.messages.length>64) { throw new Error('invalid audit transaction'); }
+        var requestId=tx.unique_id, peer=tx.client_ip, method=tx.request.method, status=tx.response.http_code;
+        if (typeof requestId!=='string' || !/^[A-Za-z0-9_.:@-]{1,128}$/.test(requestId) || typeof peer!=='string' ||
+            !(/^(\d{1,3}\.){3}\d{1,3}$/.test(peer) || /^[0-9a-fA-F:]{3,45}$/.test(peer)) ||
+            ['GET','HEAD','POST','PUT','DELETE','OPTIONS','PATCH'].indexOf(method)<0 || typeof status!=='number' || status%1!==0 || status<100 || status>599) { throw new Error('invalid audit identity'); }
+        // ModSecurity v3 emits local asctime without a zone. The collector must
+        // supply its configured offset; never assume UTC from the host locale.
+        var match=/^[A-Z][a-z]{2} ([A-Z][a-z]{2}) +([0-9]{1,2}) ([0-9:]{8}) ([0-9]{4})$/.exec(tx.time_stamp);
+        if (!match || !/^[+-](?:0[0-9]|1[0-4]):[0-5][0-9]$/.test(settings.timezone)) { throw new Error('audit timezone required'); }
+        var time=occurred(('0'+match[2]).slice(-2)+'/'+match[1]+'/'+match[4]+':'+match[3]+' '+settings.timezone.replace(':',''));
+        if (time.getTime()<Date.parse(settings.start_at)) { event.Cancel(); return event; }
+        var mode=tx.producer.secrules_engine;
+        mode=mode==='Enabled'?'On':mode==='Disabled'?'Off':mode;
+        if (['On','Off','DetectionOnly'].indexOf(mode)<0) { throw new Error('unknown WAF engine mode'); }
+        var interruption=typeof tx.is_interrupted==='boolean'?(tx.is_interrupted?'observed':'not_observed'):'unknown';
+        if (mode!=='On' && interruption==='observed') { throw new Error('contradictory WAF intervention'); }
+        var rules=[], seen={};
+        tx.messages.forEach(function(message){
+            var details=message.details, id=details&&details.ruleId;
+            if (typeof id!=='string' || !/^[1-9][0-9]{0,7}$/.test(id)) { throw new Error('invalid WAF rule ID'); }
+            var version=typeof details.ver==='string'?/^(?:OWASP_CRS|CRS)\/([34]\.[0-9]{1,3}\.[0-9]{1,3})$/.exec(details.ver):null;
+            if (seen[id]) { if (seen[id]!==String(version&&version[1])) { throw new Error('conflicting WAF rule versions'); } return; }
+            seen[id]=String(version&&version[1]); rules.push({id:id,crs_version:version?version[1]:null});
+        });
+        ['message','url','user','http','event','source','destination','related','error','container','docker','transaction','waf'].forEach(function(k){
+            var value=event.Get(k); if (value!==null && value!==undefined && event.Delete(k)===false) { throw new Error('privacy removal failed'); }
+        });
+        event.Put('service.id',settings.id); event.Put('service.name',settings.name);
+        event.Put('event.category',['web']); event.Put('event.action','waf_rule_match');
+        event.Put('event.dataset','cloud_soc.modsecurity'); event.Put('event.outcome','unknown');
+        event.Put('http.request.id',requestId); event.Put('http.request.method',method); event.Put('http.response.status_code',status);
+        event.Put('source.ip',peer); event.Put('web.occurred_at',time.toISOString());
+        event.Put('waf.schema','modsecurity-metadata-v1'); event.Put('waf.engine_mode',mode);
+        event.Put('waf.interruption',interruption); event.Put('waf.rules',rules);
+        event.Put('labels.privacy_policy','modsecurity-metadata-v1');
     } catch (_) { event.Cancel(); }
     return event;
 }

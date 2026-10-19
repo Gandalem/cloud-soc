@@ -28,14 +28,14 @@ def project_list_hit(hit):
         "status": "unsupported", "adapter": None, "fields": {}}
     adapters = {"windows_event": {"windows_security_v1", "sysmon_v1"},
                 "web_access_metadata": {"web_access_metadata_v1"},
-                "generic_web_access": {"web_access_agent_v1"},
+                "generic_web_access": {"web_access_agent_v1"}, "generic_modsecurity": {"modsecurity_audit_v1"},
                 "network_packetbeat": {"packetbeat_metadata_v1"},
                 "aws_cloudtrail": {"aws_cloudtrail_metadata_v1"}, "oci_audit": {"oci_audit_metadata_v1"}}
     if detail["adapter"] not in adapters.get(row["source_kind"], set()):
         detail = {"status": "unsupported", "adapter": None, "fields": {}}
     fields = detail["fields"]
     row["interpretation"] = {"status": detail["status"], "adapter": detail["adapter"],
-        "fields": {key: fields[key] for key in ("action", "outcome", "actor", "target_user", "source_ip", "destination_ip", "http_method", "http_status")
+        "fields": {key: fields[key] for key in ("action", "outcome", "actor", "target_user", "source_ip", "destination_ip", "http_method", "http_status", "engine_mode", "interruption", "sqli_rule_ids")
                    if key in fields}}
     row["parse_status"] = detail["status"]
     return row
@@ -269,11 +269,17 @@ class LogReader:
         if self.organizations is not None:
             clauses.append({"terms": {"organization.id": list(self.organizations)}})
         runtime = {}
+        if filters.site is not None:
+            # Runtime keyword works with both protected keyword and Filebeat
+            # text+keyword mappings; the fixed script reads no request content.
+            runtime['soc_query_site'] = {'type': 'keyword', 'script': {'source': FIELD_HELPER +
+                "def v=value(params._source,'service.id'); if(v instanceof String) emit(v);"}}
+            clauses.append({'term': {'soc_query_site': filters.site}})
         if filters.source_kind == 'web':
             # Existing host indices have dynamic text+keyword labels while the
             # protected DVWA index uses keyword. Narrow with indexed terms first,
             # then confirm the exact source value on that small candidate set.
-            sources=['generic_web_access','web_access_metadata']
+            sources=['generic_web_access','web_access_metadata','generic_modsecurity']
             clauses.append({'bool':{'minimum_should_match':1,'should':[
                 {'terms':{'labels.log_source':sources}}, {'terms':{'labels.log_source.keyword':sources}}]}})
             runtime['soc_query_source']={'type':'keyword','script':{'source':FIELD_HELPER+"def v=value(params._source,'labels.log_source'); if(v instanceof String) emit(v);"}}
@@ -370,6 +376,8 @@ class LogReader:
                 identities.add(identity)
             rows = [project_list_hit(hit) for hit in hits[:filters.page_size]]
             if self.organizations is not None and any(row["organization"] not in self.organizations for row in rows):
+                raise unavailable()
+            if filters.site is not None and any(row['site_id'] != filters.site for row in rows):
                 raise unavailable()
             token = None
             if len(hits) > filters.page_size:

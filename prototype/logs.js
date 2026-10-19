@@ -2,6 +2,7 @@
 (() => {
   "use strict";
   const sources = { generic_web_access:"웹 사이트 접근 기록", web_access_metadata:"AWS DVWA 웹 접근 기록", windows_event: "Windows 이벤트", windows_file: "Windows 파일", linux_file: "Linux 파일", linux_journald: "Linux 저널", network_packetbeat: "네트워크", aws_cloudtrail: "AWS 관리 이벤트", oci_audit: "OCI 감사 이벤트", unknown: "미분류" };
+  sources.generic_modsecurity = 'ModSecurity WAF 메타데이터';
   const osNames = { windows: "Windows", linux: "Linux", cloud: "해당 없음 (클라우드 API)", unknown: "미확인" };
   const outcomes = { success: "성공", failure: "실패", unknown: "미확인" };
   const label = (map, value, fallback = "미확인") => Object.hasOwn(map, value) ? map[value] : fallback;
@@ -9,7 +10,7 @@
   const time = value => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(new Date(value)) : "미관측";
   function rowMarkup(row, index) {
     const cloudName = row.cloud_provider === "oci" ? "OCI" : row.source_kind === "aws_cloudtrail" ? "AWS" : "클라우드";
-    const origin = row.stream === "cloud" ? `${cloudName} ${row.cloud_account || "계정 미관측"} / ${row.cloud_region || "리전 미관측"}` : row.host_name;
+    const origin = row.stream === "cloud" ? `${cloudName} ${row.cloud_account || "계정 미관측"} / ${row.cloud_region || "리전 미관측"}` : [row.host_name || row.host_id, row.site_id ? `사이트 ${row.site_id}` : null].filter(Boolean).join(' / ');
     const interpreted = row.interpretation || {};
     const supported = ["recognized", "partial"].includes(interpreted.status);
     const fields = supported ? interpreted.fields || {} : {};
@@ -39,7 +40,7 @@
     }
     if (!Number.isFinite(+start) || !Number.isFinite(+end) || +end <= +start || +end - +start > 30 * 86400000) throw new Error("조회 기간은 0일 초과, 최대 30일입니다.");
     const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString(), time_basis: values.timeBasis, page_size: values.pageSize });
-    for (const name of ["host", "ip", "os", "collector"]) if (values[name].trim()) params.set(name, values[name].trim());
+    for (const name of ["host", "ip", "os", "collector", "site"]) if ((values[name] || '').trim()) params.set(name, values[name].trim());
     return "/api/logs?" + params;
   }
   function validPage(data) {
@@ -71,6 +72,8 @@
     read_data_or_list_directory: "데이터 읽기 / 디렉터리 열람", write_data_or_add_file: "데이터 쓰기 / 파일 추가", append_data_or_add_subdirectory: "데이터 추가 / 하위 디렉터리 추가", delete_right: "삭제 권한", write_dacl: "DACL 변경", write_owner: "소유자 변경"
   };
   const securityLimits = { not_a_detection: "이 해석은 공격 판정이나 탐지 경보가 아닙니다.", conflicting_event_code: "이벤트 코드가 서로 달라 해석하지 않았습니다.", privilege_assignment_not_use: "권한 할당은 실제 권한 사용을 의미하지 않습니다.", pid_not_stable_identity: "PID만으로 다른 시점의 프로세스를 연결하지 않습니다.", access_right_not_exfiltration_or_completed_delete: "접근 권한 사용만으로 유출이나 삭제 완료를 단정하지 않습니다.", not_file_read_audit: "이 이벤트는 파일 읽기 감사가 아닙니다.", no_process_or_file_attribution: "Packetbeat만으로 실행 프로세스나 유출 파일을 알 수 없습니다.", flow_counters_cumulative_do_not_sum_reports: "흐름 카운터는 누적값입니다. 중간 보고들을 합산하지 마세요." };
+  Object.assign(securityTerms, {waf_rule_match: 'WAF 규칙 관측'});
+  Object.assign(securityLabels, {engine_mode: 'ModSecurity 엔진 모드', interruption: '엔진 개입 관측', sqli_rule_ids: 'CRS SQLi 규칙 ID'});
   function securityEntries(value) {
     if (!value || value.version !== 1) return [["보안 이벤트 해석", "미제공 · 서버 버전 확인 필요"]];
     const entries = [["보안 이벤트 해석", label({ recognized: "지원 형식 확인", partial: "부분 해석 · 필드 누락", unsupported: "미지원 형식 또는 근거 부족" }, value.status)],
@@ -87,6 +90,8 @@
       else if (key === "access_rights") item = Array.isArray(item) ? item.slice(0, 6).map(v => label(securityTerms, v)) : null;
       else if (["start", "end"].includes(key)) item = time(item);
       else if (key === "flow_final") item = item === true ? "예" : item === false ? "아니요" : null;
+      else if (key === 'engine_mode') item = label({On:'활성', DetectionOnly:'탐지 전용 · 차단 미수행', Off:'비활성'}, item);
+      else if (key === 'interruption') item = label({observed:'엔진 개입 기록 있음', not_observed:'엔진 개입 기록 없음', unknown:'미관측'}, item);
       entries.push([title, item]);
     }
     entries.push(["미관측 / 보호된 필수 필드", Array.isArray(value.missing) ? value.missing.slice(0, 16).map(v => label(securityLabels, v)) : []]);
@@ -98,7 +103,7 @@
   const $ = selector => document.querySelector(selector);
   let pages = [], page = -1, offset = 0, generation = 0, detailGeneration = 0, pending = null, detailPending = null, busy = false;
   function values() {
-    return Object.fromEntries(Object.entries({ period: "log-period", start: "log-start", end: "log-end", timeBasis: "log-time-basis", pageSize: "log-page-size", host: "log-host", ip: "log-ip", os: "log-os", collector: "log-collector" }).map(([key, id]) => [key, $("#" + id).value]));
+    return Object.fromEntries(Object.entries({ period: "log-period", start: "log-start", end: "log-end", timeBasis: "log-time-basis", pageSize: "log-page-size", host: "log-host", site: "log-site", ip: "log-ip", os: "log-os", collector: "log-collector" }).map(([key, id]) => [key, $("#" + id).value]));
   }
   function controls() {
     $("#log-panel").setAttribute("aria-busy", String(busy));
@@ -169,6 +174,7 @@
     catch (error) { generation++; pending?.abort(); busy = false; fail(error); controls(); }
   }
   const detailLabels = { received_at: "서버 수신 시각", event_at: "로그 기준 시각", organization: "조직", agent_id: "수집기 ID", collector: "수집기", host_name: "수집 호스트", host_ips: "호스트 IP", os: "OS 분류", os_basis: "OS 분류 근거", os_name: "OS 이름", source_label: "소스 태그", channel: "채널", file_path: "파일 경로", dataset: "데이터셋", event_code: "이벤트 코드", provider: "이벤트 공급자", action: "원본 행위", user: "사용자", actor_id: "주체 ID / Windows SID", source_ip: "출발지 IP", destination_ip: "목적지 IP", transport: "전송 방식", protocol: "프로토콜", flow_final: "흐름 종료 보고" };
+  Object.assign(detailLabels, {site_id: '사이트 ID', service_name: '서비스 이름', host_id: '수집 호스트 ID'});
   async function detail(row) {
     const ticket = ++detailGeneration; detailPending?.abort(); detailPending = new AbortController();
     const controller = detailPending;

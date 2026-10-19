@@ -12,6 +12,8 @@ from cloud_soc.parsers.linux_operational import parse_linux_operational, VERSION
 from cloud_soc.normalizers.ecs import parse_syslog_timestamp
 from cloud_soc.normalizers.time_context import raw_time_context, parse_utc_offset
 from cloud_soc.web.metadata import VERSION as WEB_VERSION
+from cloud_soc.web.scope import NORMALIZER_VERSION as SITE_VERSION, NORMALIZED_ADAPTER as SITE_ADAPTER, LEGACY_VERSION
+from cloud_soc.web.modsecurity import VERSION as WAF_VERSION, ADAPTER as WAF_ADAPTER
 from cloud_soc.parsers.security_mall import ADAPTER as MALL_ADAPTER, VERSION as MALL_VERSION
 from cloud_soc.parsers.security_mall_edge import ADAPTER as EDGE_ADAPTER, VERSION as EDGE_VERSION
 
@@ -21,7 +23,9 @@ RECORDS = "soc-processing-v1"
 STATUS = "soc-pipeline-status"
 
 
-def normalize(hit, processed_at, *, ssh_v2_start=None):
+def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSION):
+    if web_version not in (SITE_VERSION, LEGACY_VERSION):
+        raise ValueError('Unsupported generic web normalizer version')
     reference = document_reference(hit.get("_index"), hit.get("_id"))
     if reference is None:
         raise ValueError("Invalid raw reference")
@@ -86,11 +90,26 @@ def normalize(hit, processed_at, *, ssh_v2_start=None):
             record["reason"] = "security_mall_time_mismatch"
             return identifier, record, None
         time_metadata = {"basis": "security_mall_audit_timestamp", "year_inferred": False}
+    if detail['adapter'] == WAF_ADAPTER:
+        identifier = hashlib.sha256(json.dumps([WAF_VERSION, reference], sort_keys=True).encode()).hexdigest()
+        record['version'] = WAF_VERSION
+        host_id = field(source, 'host.id')
+        if not isinstance(host_id, str) or not 0 < len(host_id) <= 128 or host_id != host_id.strip() or text(host_id) != host_id:
+            record.update(reason='web_collector_host_invalid', adapter=WAF_ADAPTER)
+            return identifier, record, None
+        time_metadata = {'basis': 'modsecurity_local_time_with_explicit_offset', 'year_inferred': False,
+                         'raw_is_protected_metadata': True}
     if detail['adapter'] == 'web_access_agent_v1':
-        version = 'web-access-agent-v1'
+        version = web_version
         identifier = hashlib.sha256(json.dumps([version, reference], sort_keys=True).encode()).hexdigest()
         record['version'] = version
         time_metadata = {'basis':'access_timestamp','year_inferred':False,'raw_is_protected_metadata':True}
+        if version == SITE_VERSION:
+            host_id = field(source, 'host.id')
+            if not isinstance(host_id, str) or not 0 < len(host_id) <= 128 or host_id != host_id.strip() or text(host_id) != host_id:
+                record.update(reason='web_collector_host_invalid', adapter=SITE_ADAPTER)
+                return identifier, record, None
+            detail['adapter'] = SITE_ADAPTER
     if detail['adapter'] == 'web_access_metadata_v1':
         identifier = hashlib.sha256(json.dumps([WEB_VERSION, reference], sort_keys=True).encode()).hexdigest()
         record['version'] = WEB_VERSION
@@ -161,6 +180,8 @@ def normalize(hit, processed_at, *, ssh_v2_start=None):
         return identifier, record, None
     expected = {MALL_ADAPTER: "soc-host-raw-", "web_access_agent_v1":"soc-host-raw-", "web_access_metadata_v1":"soc-host-raw-web-", "windows_security_v1": "soc-host-raw-", "sysmon_v1": "soc-host-raw-", "linux_ssh_v1": "soc-host-raw-", "linux_ssh_v2": "soc-host-raw-",
                 "linux_operational_v1": "soc-host-raw-", "linux_sudo_session_v1": "soc-host-raw-", "linux_unclassified_v1": "soc-host-raw-", "packetbeat_metadata_v1": "soc-network-", "aws_cloudtrail_metadata_v1": "soc-cloud-aws-", "oci_audit_metadata_v1": "soc-cloud-oci-"}
+    expected[SITE_ADAPTER] = 'soc-host-raw-'
+    expected[WAF_ADAPTER] = 'soc-host-raw-'
     if not reference["index"].startswith(expected[detail["adapter"]]):
         record.update(status="invalid", reason="source_scope_mismatch")
         return identifier, record, None
@@ -189,6 +210,17 @@ def normalize(hit, processed_at, *, ssh_v2_start=None):
         record.update(status="normalized", reason="recognized", adapter=MALL_ADAPTER,
                       normalized={"index": NORMALIZED, "id": identifier})
         return identifier, record, event
+    if detail['adapter'] in (SITE_ADAPTER, WAF_ADAPTER):
+        event['service'] = {'id': values['service_id']}
+        service_name = text(field(source, 'service.name'))
+        if service_name not in (None, REDACTED):
+            event['service']['name'] = service_name
+        event['http'] = {'request': {'method': values['http_method']},
+                         'response': {'status_code': values['http_status']}}
+        if detail['adapter'] == WAF_ADAPTER:
+            event['http']['request']['id'] = values['request_id']
+            event['waf'] = {'schema': WAF_VERSION, 'engine_mode': values['engine_mode'],
+                            'interruption': values['interruption'], 'rules': values['rules']}
     for name in ("source", "destination"):
         ip = address(values.get(name + "_ip") or field(source, name + ".ip"))
         if ip:

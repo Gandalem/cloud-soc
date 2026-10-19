@@ -91,9 +91,13 @@ internal static class DiscoveryTests {
             Check(webOnly.Contains("cloud-soc-site-fixture") && !webOnly.Contains("cloud-soc-event-") && !webOnly.Contains("cloud-soc-windows-files-"), "web-only input independence");
             Check(File.ReadAllText(Path.Combine(root, "health.ndjson")).Contains("collection"), "separate collection configuration report");
             string immutable = File.ReadAllText(profilePath);
+            var wafInput = Discovery.Map("type", "filestream", "id", "cloud-soc-modsecurity-fixture", "enabled", true, "paths", new[] { Path.Combine(logs, "waf.json") });
+            File.WriteAllText(profilePath, Discovery.Json.Serialize(Discovery.Map("schema", 1, "system", false, "network", false, "web_inputs", new[] { webInput, wafInput }, "web_exclusions", new[] { logs })), Discovery.Utf8);
+            immutable = File.ReadAllText(profilePath);
             File.WriteAllText(Path.Combine(root, "collection-switches.json"), Discovery.Json.Serialize(Discovery.Map("web", Discovery.Map("fixture", false))), Discovery.Utf8);
             Discovery.Refresh(root, new List<Dictionary<string,object>>());
             Check(File.ReadAllText(input).Contains("\"enabled\":false") && File.ReadAllText(profilePath) == immutable, "web switch preserves immutable installation profile");
+            Check(File.ReadAllText(input).Contains("cloud-soc-modsecurity-fixture"), "WAF input retains independent identity when site switches off");
             File.Delete(Path.Combine(root, "collection-switches.json"));
             File.Delete(profilePath);
             File.WriteAllText(Path.Combine(root, "collection-policy.txt"), "version=1\nroot=" + logs + "\nexclude=" + logs + "\n", Discovery.Utf8);

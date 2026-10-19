@@ -16,7 +16,7 @@ COOKIE = "soc_session"
 PUBLIC = {"login_page", "auth_asset", "login", "login_config"}
 READ_ENDPOINTS = {
     "index", "static_file", "auth_me", "logout", "case_list", "case_link", "case_detail",
-    "agent_status", "collection_health", "logs", "log_detail", "log_access", "operations_summary", "alert_detail",
+    "agent_status", "collection_health", "logs", "log_detail", "log_access", "operations_summary", "alert_detail", "alert_site_context",
     "detection_history", "reprocessing_history", "healthz", "operations_status", "dashboard_get", "dashboards_get", "notice_list", "notice_detail",
 }
 CASE_WRITES = {"case_create", "case_update"}

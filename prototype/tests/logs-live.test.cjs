@@ -12,6 +12,12 @@ const result = { contract_version: 1, rows: [row], next_cursor: null, raw_access
   filters: { start: '2026-09-22T01:00:00Z', end: '2026-09-22T02:00:00Z', time_basis: 'ingested' } };
 const defaults = { period: '60', timeBasis: 'ingested', pageSize: '25', host: '', ip: '', os: '', collector: '' };
 
+test('generic sites retain their configured identity in exact queries and rows',()=>{
+  const url=new URL(query({...defaults,site:'site-A'}),'http://localhost');
+  assert.equal(url.searchParams.get('site'),'site-A');
+  assert.match(rowMarkup({...row,site_id:'site-A',service_name:'Public website'},0),/사이트 site-A/);
+});
+
 test('protected DVWA rows show actual HTTP metadata without exposing a request target',()=>{
   const value={...row,source_kind:'web_access_metadata',collector:'web-collector',os:'linux',host_name:'aws-dvwa-fixture',
     interpretation:{status:'recognized',adapter:'web_access_metadata_v1',fields:{action:'http_access',outcome:'success',http_method:'GET',http_status:200}},outcome:'success'};

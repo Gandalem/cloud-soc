@@ -450,7 +450,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                 log_routes |= {"index", "case_list", "case_link", "case_detail", "case_create", "case_update", "dashboard_get", "dashboard_save", "dashboards_get", "dashboards_write"}
                 log_assets |= {"index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "workbench.html", "investigation.js", "mall-alerts.js"}
                 if principal.organizations:
-                    log_routes |= {"operations_summary", "operations_status", "alert_detail", "notice_list", "notice_detail"}
+                    log_routes |= {"operations_summary", "operations_status", "alert_detail", "alert_site_context", "notice_list", "notice_detail"}
             if request.endpoint not in log_routes and not (request.endpoint == "static_file" and (request.view_args or {}).get("filename") in log_assets):
                 abort(403)
 
@@ -686,6 +686,11 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     @app.get("/api/alerts/detail")
     def alert_detail():
         return log_response(operations_for(g.log_principal).detail)
+
+    @app.get('/api/alerts/site-context')
+    def alert_site_context():
+        from cloud_soc.portal.site_context import context
+        return log_response(lambda pairs: context(operations_for(g.log_principal), pairs))
 
     @app.get('/api/alerts/notices')
     def notice_list():

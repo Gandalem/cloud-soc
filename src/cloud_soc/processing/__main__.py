@@ -36,6 +36,7 @@ def main(argv=None):
                         help="Receipt window advance; 1..60, default 5. Existing partial windows finish first; "
                              "the 15-minute overlap and page budget are preserved.")
     parser.add_argument("--linux-ssh-v2-start", help="Pinned receipt-time floor for new SSH formats; preserve earlier processing records")
+    parser.add_argument('--web-site-v2-start', help='Opt-in site-preserving web normalization receipt floor; requires new explicit state')
     parser.add_argument("--max-pages", type=page_limit, default=1000,
                         help="Input page budget per cycle (200 documents/page); default 1000. "
                              "Larger receipt windows resume on the next cycle without skipping documents.")
@@ -51,6 +52,12 @@ def main(argv=None):
             ssh_start = parse_time(args.linux_ssh_v2_start)
             if ssh_start is None or not start <= ssh_start <= datetime.now(timezone.utc):
                 raise ValueError()
+        if args.web_site_v2_start is not None:
+            web_start = parse_time(args.web_site_v2_start)
+            if web_start is None or not start <= web_start <= datetime.now(timezone.utc):
+                raise ValueError()
+            if Path(args.state).resolve() == Path('state/processing/checkpoint.sqlite').resolve():
+                raise ValueError('Site normalization requires separate explicit state')
         if not args.run:
             print("Configuration valid. No network access. Detection requires a separate worker.")
             return 0
@@ -65,7 +72,7 @@ def main(argv=None):
             while True:
                 try:
                     result = run_once(client, state, args.start, max_pages=args.max_pages,
-                                      ssh_v2_start=args.linux_ssh_v2_start, window_minutes=args.window_minutes,
+                                      ssh_v2_start=args.linux_ssh_v2_start, web_site_v2_start=args.web_site_v2_start, window_minutes=args.window_minutes,
                                       status_id='normalizer-priority' if args.priority else 'normalizer')
                     print("normalization_" + result["state"] + " checkpoint=" + result["checkpoint"], flush=True)
                 except Exception:

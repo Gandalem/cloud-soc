@@ -125,10 +125,14 @@ internal static class Discovery {
                     if (switches.ContainsKey("web")) {
                         var webSwitches = switches["web"] as Dictionary<string, object>;
                         if (webSwitches == null || webSwitches.Count > 8) throw new InvalidDataException("invalid_web_switches");
-                        var byId = webInputs.Cast<Dictionary<string, object>>().ToDictionary(w => ((string)w["id"]).Substring("cloud-soc-site-".Length));
+                        var byId = webInputs.Cast<Dictionary<string, object>>().ToLookup(w => {
+                            var match = System.Text.RegularExpressions.Regex.Match((string)w["id"], @"^cloud-soc-(?:site|modsecurity)-([A-Za-z0-9][A-Za-z0-9_-]{0,63})$");
+                            if (!match.Success) throw new InvalidDataException("invalid_web_input_identity");
+                            return match.Groups[1].Value;
+                        });
                         foreach (var pair in webSwitches) {
-                            if (!byId.ContainsKey(pair.Key) || !(pair.Value is bool)) throw new InvalidDataException("unknown_web_switch");
-                            byId[pair.Key]["enabled"] = pair.Value;
+                            if (!byId.Contains(pair.Key) || !(pair.Value is bool)) throw new InvalidDataException("unknown_web_switch");
+                            foreach (var input in byId[pair.Key]) input["enabled"] = pair.Value;
                         }
                     }
                 }

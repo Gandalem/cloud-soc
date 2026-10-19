@@ -21,7 +21,7 @@ test('guide links exclude fenced code examples', () => {
   assert.deepEqual(localLinks(content), ['README.md', 'README.md#section']);
 });
 
-for (const name of ['README.md', 'deploy/server/README.md', 'docs/aws_windows_e2e_test.md', 'docs/agent_status.md', 'docs/portal_backup.md', 'docs/windows_install_recovery.md', 'docs/windows_native_discovery.md', 'docs/windows_discovery_update.md', 'docs/agent_key_management.md', 'docs/windows_log_loss_audit.md', 'docs/collection_protection.md', 'docs/local_development.md', 'docs/installation_reference.md']) {
+for (const name of ['README.md', 'docs/first_install_walkthrough.md', 'deploy/server/README.md', 'docs/aws_windows_e2e_test.md', 'docs/agent_status.md', 'docs/portal_backup.md', 'docs/windows_install_recovery.md', 'docs/windows_native_discovery.md', 'docs/windows_discovery_update.md', 'docs/agent_key_management.md', 'docs/windows_log_loss_audit.md', 'docs/collection_protection.md', 'docs/local_development.md', 'docs/installation_reference.md']) {
   test(`installation guide syntax and repository links: ${name}`, () => {
     const file = path.join(root, name);
     const content = fs.readFileSync(file, 'utf8');

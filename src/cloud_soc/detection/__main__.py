@@ -29,7 +29,7 @@ def main(argv=None):
     parser.add_argument("--include-sequence", action="store_true", help="Opt in to SSH repeated-failure then success detection")
     parser.add_argument("--include-attacks", action="store_true", help="Opt in to experimental metadata attack correlations; thresholds require real-data validation")
     parser.add_argument("--include-patterns", action="store_true", help="Opt in to enabled experimental metadata patterns; unverified candidates remain disabled")
-    parser.add_argument("--isolated-all", action="store_true", help="All 14 rules for isolated validation; writes require an explicit loopback HTTPS ES and separate state")
+    parser.add_argument("--isolated-all", action="store_true", help="All catalog rules including optional application extensions; writes require loopback HTTPS ES and separate state")
     parser.add_argument("--rules", help="Explicit comma-separated enabled rule IDs; AUTH-001 is retained; disabled candidates are refused")
     parser.add_argument("--additional-rules", help="Enabled rules excluding AUTH-001, in separate state/status; preserve existing AUTH worker")
     parser.add_argument("--retrospective", action="store_true",

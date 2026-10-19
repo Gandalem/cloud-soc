@@ -40,6 +40,8 @@
 
 ## 개발과 검증
 
+[독립 SOC 첫 경보 인수](operational_acceptance.md)는 실제 워커의 규칙/revision 보고, 읽기 전용 경보 근거 대조, 브라우저·Slack 실환경 인수 기준과 미완료 연결을 정리합니다.
+
 [로컬 개발](local_development.md), [공통 화면](portal_layout.md), [조회 계약](log_query_contract.md), [증분 탐지](incremental_detection.md), [수신→탐지 연결](intake_detection_bridge.md), [파이프라인 복구](pipeline_reliability.md), [조사 품질](investigation_quality.md), [공격 시나리오](p5_03_attack_scenarios.md)를 참고합니다. 테스트 통과는 실제 배포·수신 완료를 의미하지 않습니다.
 
 ## 과거 기록과 개인 자료
