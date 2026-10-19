@@ -506,6 +506,14 @@
 - 실제 실습 ES에 기존 Operations 조회 계층을 독립 읽기 프로세스로 실행해 ACCESS1/AUTH0·서비스/20low·정규화 해시/원본 참조·타 조직0/상세404·합성 범위 제외를 확인했다. 원본4/정규화4/실제 경보1의 본문/버전/seq_no/primary_term 불변이다. 증적은 state/security-mall-portal-5a-20261016/es-readonly-result.json과 VM portal-5a-readonly/result.json이다. 기존4-C 인증으로 조회만 했으며 신규 키 발급/권한 확대는 없다.
 - 실제 Flask API는 모의 ES와 임시 DB로 검증했고 실습 ES는 같은 조회 계층으로 확인했다. Portal 서버/브라우저 종단 간 화면·운영 배포는 미실행이다. 다음 단계는 별도 읽기 전용 키·CA·조직/사용자 정책·독립 상태 디렉터리·기존 Portal 필수 관리 설정을 준비하고 서버 기동/표시를 인수하는 것이다. 기존 서비스·ES 문서·쇼핑몰·수집/규칙·Slack/Git 원격 작업은 변경하지 않았다.
 
+## 2026-10-16 JEONGRIM-SEO VM 실제 인수·백업 복원 기록
+
+- [x] JEONGRIM-LIVE-20261016 완료(해당 VM의 Ubuntu AUTH·사건·재부팅 인수 범위): 사용자 실행 출력에서 공통 runtime migration 완료, 실제 Filebeat 수신, SSH 실패10회/정확근거10건/AUTH-001 경보, 자동 verify=true/issues=[]와 사용자 Slack 채널 수신·사건 생성/새 Basic 인증 후 저장 보존·재부팅 후 포털/워커 정상 및 동일 경보 유지 확인을 받았다. 세션 로그아웃·다른 OS/조직/룰·전체 중복 경보 부재는 별도다.
+- [x] JEONGRIM-RESTORE-20261016 완료(포털 로컬 DB와 Windows 사본 기반 ES 격리 복원 범위): 포털4DB backup/verify/restore/verify·missing0·사건DB 전체 스키마/행/컬럼 일치, ES9.5.2 업무10인덱스/10샤드 SUCCESS, GPG 암호화 Windows 사본 왕복 SHA 일치·복호화/406항목 검사·격리 복원 후 기존 AUTH 경보/근거10·원본정규화참조20·미할당primary0 PASS를 확인했다. dashboards/collections0행으로 저장된 개인 설정 복원은 미검증이다.
+- [ ] JEONGRIM-DR-REMAIN-20261016 진행 중/미완료: 같은 물리 디스크의 Windows 사본이므로 독립 디스크 장애 대비는 남는다. ES 전역/보안/Kibana 상태 복원, CA·비밀·서비스 설정·처리 체크포인트·Slack DB/암호화 키·에이전트 큐의 보호 복구, 전체 서비스 전환·자동화/RPO·RTO와 시험 자원 정리는 별도다. P2-02 및 기존 상위 체크는 유지한다.
+- 근거·실패/복구 과정·검증 수치·출처 한계: [2026-10-16 VM 검증 보고서](vm_validation_20261016.md). 사용자가 명령을 실행해 대화에 제공한 결과를 문서화했으며 에이전트의 서버 직접 접속 검증은 아니다. 이번 반영은 main fast-forward 동기화 후 문서2개만 커밋하며 운영 상태/DB/키/스냅샷/로그를 포함하지 않는다. 원격 CI·다른 서버 인수를 미리 완료 처리하지 않는다.
+
+
 ## 2026-10-15 검증 소스 GitHub 통합
 
 - [x] GIT-CI-OWNERSHIP-20261015 완료(2026-10-15 권한 시험 구현·격리/양 플랫폼 CI 인수 범위): 일반 사용자 단위 시험과 실제 root 배포 소유권 시험을 분리했고, 기존 실패18건을 모두 대조해 통과했다. `111b57f34ef4ede1cf22561ea79039f38e59643f`의 [Actions38594058246](https://github.com/Gandalem/cloud-soc/actions/runs/38594058246)에서 Ubuntu·Windows 두 job이 success다. 실제 Linux 소유권19검사·실패 시 원본/WAL/키/설정/발송 이력 보존과 보안 검사도 통과했다. 운영 src/Compose/Dockerfile·권한은 불변이며 새 skip/xfail/CI 비활성화가 없다. 코드/시험 인수와 GitHub 병합을 분리 기록한다. 이 결과 기록 커밋을 포함한 최종 HEAD의 양 CI를 다시 확인한 뒤 PR13을 병합하며, 실제 병합 SHA/상태는 PR의 병합 기록과 최종 보고를 따른다. 운영/학교 서버·Slack에는 접근하지 않았다.
