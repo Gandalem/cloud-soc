@@ -34,3 +34,10 @@ SQLite공식 https://www.sqlite.org/json1.html 문서의 json_each와JSON1(defau
 첫원격결과: run39458035104/code216943b의Windows는전체success이다. Ubuntu는Python2094pass/18skip/345subtestpass와뒤UI등을통과했으나Bandit1건으로실패했다. SQL변경의로컬영향13검사와Bandit/Ruff는통과했다.
 
 최신사용자요청으로Windows는수정/재실행하지않는다. workflow_dispatch에platform선택(all/ubuntu/windows)을추가해새SQL커밋에서Ubuntu만확인한다. 일반push/PR은기존양쪽검사를유지한다. Windows결과는216943b의결과이며후속SQL커밋까지Windows에서재검증했다고하지않는다.
+
+## 의존성 취약점 후속
+
+Ubuntu단일 run39459664377/code66d50fd는Python2102pass/18skip/345subtestpass 및Bandit을통과한뒤pip_audit에서aiohttp3.14.3의3건(CVE-2026-111064,GHSA-2g87-pp6c-29x5,CVE-2026-111063)으로실패했다. constraints.txt의aiohttp만최소수정3.14.4로올리고다른pin/취약점검사정책은유지한다.
+공식 https://pypi.org/project/aiohttp/3.14.4/ 와 https://github.com/aio-libs/aiohttp/releases/tag/v3.14.4 및PyPI JSON에서Python>=3.10/Apache-2.0 AND MIT/조회시취약점목록없음을확인했다. 영구무취약보장이아니며audit결과와시점을따로기록한다. 기존venv에설치하지않고dry-run resolver와고정목록audit후새Ubuntu runner에서실제설치/기존suite를확인한다. Windows/운영환경은재실행·업데이트하지않는다.
+
+의존성로컬결과: resolver dry-run 성공(aiohttp3.14.4만변경예정), 전체고정constraints audit는조회시알려진취약점없음. 기존venv에설치하지않았다. 다음Ubuntu실행에서실제설치결과와뒤단계를확인한다.
