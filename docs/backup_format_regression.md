@@ -25,3 +25,12 @@ tests/legacy_backup_fixtures.py에 format2의 packages/cases/source-access SQL�
 로컬 검사·원격 Actions·실제 운영 복원은 별개다. 전체 수동suite/전체브라우저·운영복원·배포·재부팅·main병합은 하지 않는다. 구체 결과는 docs/work_tracker.md와 Git 제외 state/ci-backup-regression에 보존한다.
 
 로컬 결과: 관련71항목의 최초70통과/시험 경로1실패를 기록했다. 원본 내부 백업을 차단하는 제품 계약을 유지하고 시험 대상 경로만 형제 디렉터리로 바꿔 해당1항목 통과했다. 변경 정적 진단에서 unused import1건을 제거하고 재확인했다. 전체 수동suite/운영복원은 하지 않았다. 최신 PR18 Actions 확인은 다음 단계이며 아직 전체CI 통과로 표시하지 않는다.
+
+## 뒤 단계 SQL 정적 지적
+
+첫원격 run39458035104에서Linux전체2094pass/18skip/345subtestpass 뒤Bandit B608이 새 원장조회 동적placeholder 문자열을 지적했다. 값은기존에도바인딩이었으나 statement자체도 고정하도록 `organization IN (SELECT value FROM json_each(?))`와 JSON배열 parameter로 바꾼다. 조직필터·전역ORDER/LIMIT1001·빈scope/전체관리scope는 유지하고 예외 억제를 추가하지 않는다.
+SQLite공식 https://www.sqlite.org/json1.html 문서의 json_each와JSON1(default SQLite3.38+)을 확인했다. Python패키지/DBschema변경은 없으며JSON함수가제외된별도SQLite build에서는 조회오류가명시실패하고 권한우회/전체조회로대체하지않는다. 영향범위는 tests/test_insight_record_scope.py의정확한scope/SQL특수문자/순서/전역한도와 기존 원장API·계정/평가 연결 검사 및 Bandit이다.
+
+첫원격결과: run39458035104/code216943b의Windows는전체success이다. Ubuntu는Python2094pass/18skip/345subtestpass와뒤UI등을통과했으나Bandit1건으로실패했다. SQL변경의로컬영향13검사와Bandit/Ruff는통과했다.
+
+최신사용자요청으로Windows는수정/재실행하지않는다. workflow_dispatch에platform선택(all/ubuntu/windows)을추가해새SQL커밋에서Ubuntu만확인한다. 일반push/PR은기존양쪽검사를유지한다. Windows결과는216943b의결과이며후속SQL커밋까지Windows에서재검증했다고하지않는다.

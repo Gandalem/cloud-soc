@@ -12,6 +12,8 @@
 
 # Current User Direction (2026-10-21)
 
+- Latest CI scope: Windows passed run39458035104 at216943b; preserve it and do not modify Windows-specific code or rerun Windows. For the follow-up fixed-SQL change, run Ubuntu only via a manual platform choice. Keep normal push/PR checks for both OSes; distinguish the Windows tested SHA from the follow-up Ubuntu SHA.
+
 - Latest user direction: implement CI-BACKUP-REGRESSION-01 with independent legacy fixtures and current format5 coverage. Finish writing before one scoped local review; rerun affected failures only. Commit/push on codex/operational-readiness and inspect PR18 Actions, repairing newly exposed failures in scope. No main merge, deployment, reboot or production data/key changes. This replaces midpoint/final review splitting for this task.
 
 - Latest user direction: implement the TEST-QUALITY-01 draft on codex/operational-readiness, preserving existing edits. Review only new/directly affected tests near 50% and 100%; repair and rerun affected failures. The request to update tests in Git authorizes committing/pushing this change to Gandalem/cloud-soc on the current branch. No main merge, deployment, full suite, live service changes or reboot.

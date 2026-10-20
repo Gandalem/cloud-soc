@@ -3,6 +3,10 @@
 ## 2026-10-21 PR18 Actions 실패 조사 — CI-BACKUP-REGRESSION-01
 
 - [ ] CI-BACKUP-REGRESSION-01 진행 중(2026-10-21): 최신 승인 초안에 따라 버전2/3/4 고정 스키마와 현재5를 독립 검사한다. 중간 검수 없이 작성 후 관련 백업 검사1회와 영향 실패만 재확인한다. 작업 브랜치 커밋/푸시와 PR18 Actions 결과 확인까지 진행하며 기존 미커밋 기록·운영 상태·키를 보존한다. main 병합/배포/재부팅은 제외한다.
+- 원격범위 변경: PR18은 작업중 closed/merged=false로 확인되어 재개/수정하지 않았다. 코드216943b가 origin에 반영됐음을 확인하고 동일 branch의 workflow_dispatch run39458035104를 실행했다. Linux 전체Python2094pass/18skip/345subtestpass로 기존백업실패는해결됐고 뒤Bandit이 insight_state.py:257의 동적 placeholder SQL을 B608로지적했다. 원래 값은 parameter binding이지만 문자열조합도제거하는 고정SQL과 조직격리/정렬/전역한도 영향검사를 후속범위로 추가한다. Windows는아직진행중이며최종결과를확정하지않는다.
+- [ ] CI-BACKUP-REGRESSION-01-SQL 진행 중: SQLite 공식json_each의 parameter array를 쓰는 고정SQL로 원장조회 문자열조합을 제거하고 단일/복수/빈조직/SQL특수문자/1000·1001전역한도 및 기존조직API검사만 확인한다. 검사제외/nosec추가나역할완화로해결하지않는다.
+- SQL 영향검사13항목과 변경파일 Bandit/Ruff 통과. 첫원격 run39458035104의Windows는전체success이며Ubuntu는백업/Python/UI통과후Bandit1건실패로종료됐다.
+- 최신사용자지시: Windows는통과한216943b결과를보존하고수정/재실행하지않는다. 공통SQL수정커밋에는Ubuntu만실행한다. workflow_dispatch의platform=all/ubuntu/windows선택을추가하며기존push/PR은항상양쪽matrix를유지한다. 이전run재실행은옛SHA를검사하므로새커밋의Ubuntu단일수동실행을사용한다. 최신SQL의Windows재확인은미실행으로구분한다.
 - 작성 완료/검수 전: tests/legacy_backup_fixtures.py의 독립 고정SQL/합성자료와 writer없는 과거manifest 생성, 현재5·과거3/4 dashboard 복원, 현재5·과거2/3/4 audit 복원을 작성했다. read-only 구조/행 비교를 Store 생성 전에 수행하고 현재5의 키제외/복원후재설정·이전키거부를 유지한다. 제품backup.py와 운영상태는 변경하지 않았다. docs/backup_format_regression.md에 범위/절차를 기록하고 이제 관련 검사1회로 전환한다.
 - [x] CI-BACKUP-REGRESSION-01-LOCAL 로컬 구현·관련 검수 완료(2026-10-21): 변경2파일/core backup/기존 복원 인증 검사71항목 중 최초70통과/1실패. 새 시험의 백업 경로가 source 내부였으므로 형제 디렉터리로 수정했고 해당1항목 통과했다. 제품 경로 제약은 완화하지 않았다. 제거된 파괴적 fixture 분기에서 남은 unused sqlite3 import1건도 제거하고 해당 정적 진단 통과. 고정SQL/독립manifest 구버전2·3·4와 현재5 정확한 복원·키무효화/원본불변을 확인했다. 전체 suite/운영복원은 수행하지 않았다. 부모 작업은 원격Actions 확인 전 미체크 유지한다.
 - 로컬 근거: Git 제외 state/ci-backup-regression/local.log·local.xml(70pass/1fail), affected.log·affected.xml(1pass). 현재 backup.py/실제 키/DB/서비스는 변경하지 않았다. 다음은 작업 브랜치 push 후 최신 PR18 Actions의 양쪽 결과 확인이다.

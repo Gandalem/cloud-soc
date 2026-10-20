@@ -253,8 +253,9 @@ class InsightStore:
                 rows=db.execute('SELECT body,actor,at FROM insight_records WHERE kind=? ORDER BY at,id LIMIT 1001',(kind,)).fetchall()
             elif not organizations:return []
             else:
-                placeholders=','.join('?' for _ in organizations)
-                rows=db.execute('SELECT body,actor,at FROM insight_records WHERE kind=? AND organization IN ('+placeholders+') ORDER BY at,id LIMIT 1001',
-                                (kind,*organizations)).fetchall()
+                # Bind the scope as data; keep the complete SQL statement fixed.
+                rows=db.execute('SELECT body,actor,at FROM insight_records WHERE kind=? '
+                                'AND organization IN (SELECT value FROM json_each(?)) ORDER BY at,id LIMIT 1001',
+                                (kind,json.dumps(organizations))).fetchall()
         if len(rows)>1000:raise InsightError('record_query_capacity',413)
         return [{'body':json.loads(r['body']),'actor':r['actor'],'recorded_at':r['at']} for r in rows]
