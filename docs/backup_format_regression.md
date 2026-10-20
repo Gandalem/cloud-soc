@@ -41,3 +41,10 @@ Ubuntu단일 run39459664377/code66d50fd는Python2102pass/18skip/345subtestpass �
 공식 https://pypi.org/project/aiohttp/3.14.4/ 와 https://github.com/aio-libs/aiohttp/releases/tag/v3.14.4 및PyPI JSON에서Python>=3.10/Apache-2.0 AND MIT/조회시취약점목록없음을확인했다. 영구무취약보장이아니며audit결과와시점을따로기록한다. 기존venv에설치하지않고dry-run resolver와고정목록audit후새Ubuntu runner에서실제설치/기존suite를확인한다. Windows/운영환경은재실행·업데이트하지않는다.
 
 의존성로컬결과: resolver dry-run 성공(aiohttp3.14.4만변경예정), 전체고정constraints audit는조회시알려진취약점없음. 기존venv에설치하지않았다. 다음Ubuntu실행에서실제설치결과와뒤단계를확인한다.
+
+## 최종 확인 — 2026-10-21
+
+- Ubuntu: 코드09f805934c0859533f2e0b390c691039b2fb3010의 https://github.com/Gandalem/cloud-soc/actions/runs/39461010692 전체success. Python2102pass/18skip/345subtestpass, 뒤UI/규칙/보안정적/의존성취약점(조회시알려진취약점없음)/Compose·이미지/격리권한/gateway까지통과했다.
+- Windows: 코드216943b의 https://github.com/Gandalem/cloud-soc/actions/runs/39458035104/job/118749924321 전체success. 이후SQL/의존성패치에서는사용자지시로Windows재실행을생략했다. 동일최신SHA에서양쪽이통과했다고표현하지않는다.
+- 최신main6925f8f는검사코드09f8059의조상이므로Git이력충돌은없다. 요청한검사범위에서는병합진행가능하다. PR18은닫힌상태(미병합)이므로재개/새PR은별도행동이다. 이번작업에서main병합·운영복원·서비스배포·재부팅은하지않았다.
+- 이결과를추가하는마지막커밋은문서만변경한다. CI검사대상코드는09f8059이며문서추가로검사를반복하지않는다. 실자료연결·전체실장치인수와기존미검증범위는해제하지않는다.
