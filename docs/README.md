@@ -65,3 +65,5 @@
 - 다음 작업: [대시보드 실제 자료 연결의 순서·필요 조건·인수 기준](dashboard_capabilities.md#후속-연결-계획--2026-10-21)
 
 - [계산·권한·조회·장치·폼 테스트 보강과 검수 범위](test_quality.md)
+
+- [백업 형식 2·3·4·5 호환성 회귀와 PR18 수정](backup_format_regression.md)

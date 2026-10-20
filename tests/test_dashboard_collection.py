@@ -1,7 +1,6 @@
 """Private configuration and recovery tests use disposable SQLite state only."""
 from copy import deepcopy
 import json
-import sqlite3
 import os
 from pathlib import Path
 import subprocess
@@ -13,6 +12,7 @@ from cloud_soc.portal.app import create_app
 from cloud_soc.portal.dashboards import DashboardStore, DashboardError, DEFAULT
 from cloud_soc.portal.dashboard_widgets import catalog, template, instance, valid_layout
 from cloud_soc.portal import backup
+from legacy_backup_fixtures import legacy_source, legacy_artifact, legacy_layout, collection, snapshot
 from test_integration_security import session_portal as session_portal, login
 from unittest.mock import Mock
 
@@ -193,30 +193,86 @@ print(json.dumps(response.json['dashboards']))
     assert json.loads(child.stdout) == result['dashboards']
 
 
-def test_legacy_and_multi_dashboard_backup_restore(session_portal, tmp_path):
+def test_current_multi_dashboard_and_insight_backup_restore(session_portal, tmp_path):
+    from cloud_soc.portal.insight_state import InsightStore, InsightError
+    from cloud_soc.portal.insight_metrics import validate_policy, validate_assessment, validate_evaluation
+    from test_dashboard_insights_decisions import policy, assessment, evaluation_run
+    from datetime import datetime, timezone
+
     app, _, settings, _ = session_portal
     store = app.extensions['dashboards']
     legacy = store.save('view', {'revision': 0, 'layout': DEFAULT})
+    other = store.save('other', {'revision': 0, 'layout': {**deepcopy(DEFAULT), 'name': 'Other settings', 'theme': 'dark'}})
     created = create(store, actor='view', key='cloud')
     copied = store.mutate('view', 'viewer', {'revision': 1, 'action': 'default', 'id': created['selected_id']})
     source = settings['STATE_DIR']
-    backup_path = tmp_path.parent / (tmp_path.name + '-backup')
-    restored_path = tmp_path.parent / (tmp_path.name + '-restored')
-    old_backup_path = tmp_path.parent / (tmp_path.name + '-old-backup')
-    old_restored_path = tmp_path.parent / (tmp_path.name + '-old-restored')
+    insights = app.extensions['insights']
+    now = 1900000000
+    insights.clock = lambda: now
+    key = insights.register({'request_id': 'backup-device', 'organization': 'org-a', 'label': 'synthetic',
+                             'interval': 30, 'days': 1}, 'admin')
+    body = {'generation': key['generation'], 'sequence': 1,
+            'generated_at': datetime.fromtimestamp(now, timezone.utc).isoformat(), 'collector': {'state': 'running'}}
+    insights.heartbeat(key['credential'], body)
+    insights.put_record('policy', policy(), 'admin', validate_policy)
+    assessment_body = {**assessment(), 'observed_at': '2020-01-01T00:00:00Z', 'expires_at': '2020-01-02T00:00:00Z'}
+    insights.put_record('assessment', assessment_body, 'admin', validate_assessment)
+    evaluation_body = {**evaluation_run(), 'started_at': '2020-01-01T00:00:00Z', 'completed_at': '2020-01-01T00:01:00Z'}
+    insights.put_record('evaluation', evaluation_body, 'admin', validate_evaluation)
+    names = {'packages.sqlite3', 'cases.sqlite', 'log-access.sqlite', 'dashboards.sqlite', 'dashboard-insights.sqlite'}
+    before = snapshot(source, names)
+    original_auth_key = (source / 'dashboard-report-auth.key').read_bytes()
+    backup_path = tmp_path.parent / (tmp_path.name + '-current-backup')
+    restored_path = tmp_path.parent / (tmp_path.name + '-current-restored')
     report = backup.backup(source, backup_path)
-    assert report['format'] == 4
-    backup.verify(backup_path)
-    backup.restore(backup_path, restored_path)
+    assert report['format'] == 5 and report['missing'] == []
+    assert {f['name'] for f in report['files']} == names
+    assert {p.name for p in backup_path.iterdir()} == names | {'manifest.json'}
+    assert backup.verify(backup_path) == report
+    assert backup.restore(backup_path, restored_path) == report
+    assert {p.name for p in restored_path.iterdir()} == names | {'manifest.json'}
+    assert snapshot(restored_path, names) == before
+    assert snapshot(source, names) == before
+    assert not (restored_path / 'dashboard-report-auth.key').exists()
     restored = DashboardStore(restored_path / 'dashboards.sqlite')
-    assert restored.get('view') == legacy
+    assert restored.get('view') == legacy and restored.get('other') == other
     assert restored.collection('view', 'viewer')['dashboards'] == copied['dashboards']
     assert restored.collection('view', 'viewer')['default_id'] == created['selected_id']
-    # A format-3 artifact with only the original table remains readable and restorable.
-    with sqlite3.connect(source / 'dashboards.sqlite') as db:
-        db.execute('DROP TABLE dashboard_collections')
-    old = backup.backup(source, old_backup_path)
-    assert old['format'] == 3
-    backup.restore(old_backup_path, old_restored_path)
-    assert DashboardStore(old_restored_path / 'dashboards.sqlite').get('view') == legacy
-    assert 'source.ip' not in json.dumps(copied)
+    restored_insights = InsightStore(restored_path / 'dashboard-insights.sqlite', clock=lambda: now)
+    assert (restored_path / 'dashboard-report-auth.key').read_bytes() != original_auth_key
+    assert restored_insights.fleet()['rows'][0]['state'] == 'credential_reset_required'
+    with pytest.raises(InsightError, match='authentication_failed'):
+        restored_insights.heartbeat(key['credential'], body)
+    assert snapshot(restored_path, names) == before
+    assert (source / 'dashboard-report-auth.key').read_bytes() == original_auth_key
+    assert backup.verify(backup_path) == report
+
+
+@pytest.mark.parametrize('version', [3, 4])
+@pytest.mark.parametrize('artifact', ['current_writer', 'frozen_manifest'])
+def test_legacy_dashboard_formats_restore_before_store_initialization(tmp_path, version, artifact):
+    source = legacy_source(tmp_path / 'legacy-source', version)
+    names = {'packages.sqlite3', 'cases.sqlite', 'log-access.sqlite', 'dashboards.sqlite'}
+    before = snapshot(source, names)
+    backup_path, restored_path = tmp_path / 'backup', tmp_path / 'restored'
+    report = (backup.backup(source, backup_path) if artifact == 'current_writer'
+              else legacy_artifact(source, backup_path, version))
+    assert report['format'] == version and report['missing'] == []
+    assert {f['name'] for f in report['files']} == names
+    assert backup.verify(backup_path) == report
+    assert backup.restore(backup_path, restored_path) == report
+    assert {p.name for p in restored_path.iterdir()} == names | {'manifest.json'}
+    assert snapshot(restored_path, names) == before
+    assert set(before['dashboards.sqlite']) == ({'dashboards'} if version == 3 else {'dashboards', 'dashboard_collections'})
+    store = DashboardStore(restored_path / 'dashboards.sqlite')
+    for actor in ('view', 'other'):
+        assert store.get(actor) == {'revision': 7, 'layout': legacy_layout(actor)}
+        view = store.collection(actor, 'viewer')
+        if version == 4:
+            assert view['revision'] == 9
+            assert view['default_id'] == collection(actor)['default_id']
+            assert view['dashboards'] == collection(actor)['dashboards']
+        else:
+            assert view['revision'] == 0 and view['default_id'] == 'legacy' and view['dashboards'] == []
+    assert snapshot(source, names) == before
+    assert backup.verify(backup_path) == report

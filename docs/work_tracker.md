@@ -1,5 +1,16 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-21 PR18 Actions 실패 조사 — CI-BACKUP-REGRESSION-01
+
+- [ ] CI-BACKUP-REGRESSION-01 진행 중(2026-10-21): 최신 승인 초안에 따라 버전2/3/4 고정 스키마와 현재5를 독립 검사한다. 중간 검수 없이 작성 후 관련 백업 검사1회와 영향 실패만 재확인한다. 작업 브랜치 커밋/푸시와 PR18 Actions 결과 확인까지 진행하며 기존 미커밋 기록·운영 상태·키를 보존한다. main 병합/배포/재부팅은 제외한다.
+- 작성 완료/검수 전: tests/legacy_backup_fixtures.py의 독립 고정SQL/합성자료와 writer없는 과거manifest 생성, 현재5·과거3/4 dashboard 복원, 현재5·과거2/3/4 audit 복원을 작성했다. read-only 구조/행 비교를 Store 생성 전에 수행하고 현재5의 키제외/복원후재설정·이전키거부를 유지한다. 제품backup.py와 운영상태는 변경하지 않았다. docs/backup_format_regression.md에 범위/절차를 기록하고 이제 관련 검사1회로 전환한다.
+- [x] CI-BACKUP-REGRESSION-01-LOCAL 로컬 구현·관련 검수 완료(2026-10-21): 변경2파일/core backup/기존 복원 인증 검사71항목 중 최초70통과/1실패. 새 시험의 백업 경로가 source 내부였으므로 형제 디렉터리로 수정했고 해당1항목 통과했다. 제품 경로 제약은 완화하지 않았다. 제거된 파괴적 fixture 분기에서 남은 unused sqlite3 import1건도 제거하고 해당 정적 진단 통과. 고정SQL/독립manifest 구버전2·3·4와 현재5 정확한 복원·키무효화/원본불변을 확인했다. 전체 suite/운영복원은 수행하지 않았다. 부모 작업은 원격Actions 확인 전 미체크 유지한다.
+- 로컬 근거: Git 제외 state/ci-backup-regression/local.log·local.xml(70pass/1fail), affected.log·affected.xml(1pass). 현재 backup.py/실제 키/DB/서비스는 변경하지 않았다. 다음은 작업 브랜치 push 후 최신 PR18 Actions의 양쪽 결과 확인이다.
+
+- 최신 PR18/run39454882184/head d6e9b2b의 Ubuntu/Windows 실패 로그를 읽었다. 양쪽 모두 백업 format 기대값 불일치가 원인이다. test_dashboard_collection.py:208은4를 기대하지만 현재 Portal이 dashboard-insights.sqlite를 생성하므로 backup.py는정상적으로5를 반환한다. test_source_access.py:103의format4/3/2 합성 fixture도 새 insight DB를 포함한 채 이전 버전을 기대해각각5!=4/3/2로 실패한다. Linux는2083pass/18skip/345subtestpass와실패4개(메서드1+subtest3)이며뒤Actions단계통과를의미하지않는다.
+- 필요한수정: 현재전체상태의format5백업/복원과실제이전형식2/3/4자료복원을분리한다. 과거형식fixture는폐기용새디렉터리에해당형식의DB/스키마만구성하고원본현재상태를축소하지않는다. 현재형식은dashboard-insights와대시보드설정·원본접근감사의정확한복원, 인증키백업제외/새복원자격증명무효화를확인한다. 단순히모든기대값을5로바꾸거나제품format을4로되돌리지않는다. 조사는코드/테스트변경·재실행·커밋/푸시·병합·배포없이수행했다. 기존TEST-QUALITY-01의제한검수통과를전체CI통과로확대하지않는다. 실제CI실패로그는Git제외state/ci-failure에보존한다.
+
+
 ## 2026-10-21 테스트 보강 — TEST-QUALITY-01
 
 - [x] TEST-QUALITY-01 구현·제한 검수 완료(2026-10-21): 승인 초안에 따라 CI 고정 UI 의존성 설치, 독립 기대값의 계산식, RBAC/CSRF 원인 분리, 다중 페이지/PIT 완전성, 장치 인증/로컬 TLS, 주요 폼 상태를 보강한다. 약50%와100%에 신규/직접 영향 검사만 두 차례 수행하고 수정 후 영향 실패만 재확인한다. 기존 미커밋 문서와 기능 계약을 보존하며 전체 테스트·실제 서비스·재부팅·이관·main 병합·자동 커밋/푸시는 제외한다. 최신 ‘깃에 수정’ 요청에 따른 이번 작업 브랜치 커밋/푸시는 명시 요청 범위로 수행하며 main/서비스는 변경하지 않는다.
