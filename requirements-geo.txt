@@ -1,0 +1,2 @@
+# Optional country lookup only. Database content is supplied separately under its own terms.
+maxminddb==3.2.0

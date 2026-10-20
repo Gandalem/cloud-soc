@@ -6,7 +6,7 @@ from cloud_soc.portal.collection_health import project as project_health
 
 KINDS = {
     'system':('soc-host-raw-*',['linux_file','linux_journald','windows_file','windows_event']),
-    'web':('soc-host-raw-*',['generic_web_access','web_access_metadata']),
+    'web':('soc-host-raw-*',['generic_web_access','web_access_metadata','generic_modsecurity']),
     'network':('soc-network-*',['network_packetbeat']),
 }
 

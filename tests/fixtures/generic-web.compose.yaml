@@ -1,0 +1,46 @@
+# Add to an isolated TLS ES test network; no host ports or production volumes.
+services:
+  web:
+    image: nginx:1.28.0-alpine
+    user: '1000:1000'
+    entrypoint: [nginx, -g, 'daemon off;']
+    volumes:
+      - ${SOC_GENERIC_FIXTURE:?Use an isolated directory}/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${SOC_GENERIC_FIXTURE:?Use an isolated directory}/logs:/fixture-logs
+    read_only: true
+    tmpfs: ['/tmp:uid=1000,gid=1000']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+  collector:
+    image: docker.elastic.co/beats/filebeat:9.5.2
+    user: '1000:1000'
+    command: [-e, --path.config, /fixture, --path.data, /beat-data, -c, filebeat.yml]
+    volumes:
+      - ${SOC_GENERIC_FIXTURE:?Use an isolated directory}:/fixture:ro
+      - ${SOC_GENERIC_FIXTURE:?Use an isolated directory}/logs:/fixture-logs:ro
+      - ${SOC_GENERIC_FIXTURE:?Use an isolated directory}/beat-data:/beat-data
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 384m
+  waf:
+    profiles: [waf]
+    image: ${SOC_TEST_WAF_IMAGE:-owasp/modsecurity-crs:nginx}
+    environment:
+      BACKEND: http://web:8080
+      PORT: '8080'
+      MODSEC_RULE_ENGINE: ${SOC_TEST_WAF_MODE:-DetectionOnly}
+      MODSEC_AUDIT_ENGINE: 'On'
+      MODSEC_AUDIT_LOG: /fixture-logs/waf.json
+      MODSEC_AUDIT_LOG_FORMAT: JSON
+      MODSEC_AUDIT_LOG_PARTS: AHZ
+      TZ: UTC
+    volumes:
+      - ${SOC_GENERIC_FIXTURE:?Use an isolated directory}/logs:/fixture-logs
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+networks:
+  default:
+    external: true
+    name: ${SOC_TEST_NETWORK:?Use only the disposable TLS test network}

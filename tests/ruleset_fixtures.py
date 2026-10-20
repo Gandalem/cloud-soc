@@ -25,6 +25,18 @@ def web(number):
     return result
 
 
+def site_web(number):
+    from test_site_agents import web_hit
+    from cloud_soc.web.scope import NORMALIZER_VERSION
+    hit = web_hit()
+    hit['_id'] = f'generic-site-{number}'
+    hit['_source']['http']['response']['status_code'] = 404
+    key, record, result = normalize(hit, BASE.isoformat(), web_version=NORMALIZER_VERSION)
+    assert record['status'] == 'normalized'
+    result['_cloud_soc_meta'] = {'index': NORMALIZED, 'document_id': key}
+    return result
+
+
 def oci():
     fixture = json.loads((Path(__file__).parent / 'fixtures/oci_audit.json').read_text(encoding='utf-8'))
     value = deepcopy(fixture['events'][2])
@@ -47,6 +59,9 @@ def positive(identifier):
         rows = [mall(0, action='order_view')]
     elif identifier == 'WEB-AUTH-01':
         rows = [mall(i) for i in range(5)] + [mall(5, outcome='success')]
+    elif identifier == 'WEB-SITE-WAF-001':
+        from test_generic_waf import normalized
+        rows = [normalized(i) for i in range(3)]
     elif identifier == 'AUTH-SPRAY-001':
         rows = [ssh(i) for i in range(10)]
     elif identifier == 'ATTACK-01':
@@ -64,7 +79,7 @@ def positive(identifier):
     elif identifier == 'OCI-IAM-001':
         rows = [oci()]
     else:
-        generator, count = {'WIN-AUTH-001': (windows, 10), 'WEB-404-001': (web, 20),
+        generator, count = {'WIN-AUTH-001': (windows, 10), 'WEB-404-001': (web, 20), 'WEB-SITE-404-001': (site_web, 20),
                             'NET-PORT-001': (flow, 15), 'AWS-CONSOLE-001': (console, 5)}[identifier]
         rows = [generator(i) for i in range(count)]
     # One consistent synthetic event/receipt timeline; no source bodies in alerts.

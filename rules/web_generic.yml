@@ -1,0 +1,46 @@
+# Generic access metadata only. Explicit opt-in; no application audit required.
+# A separate identity preserves the release-verified host-only WEB-404-001 rule.
+rules:
+  - id: WEB-SITE-WAF-001
+    name: Repeated CRS SQL injection metadata within one site
+    type: cardinality
+    enabled: true
+    severity: medium
+    conditions:
+      - {field: cloud_soc.detail.adapter, operator: equals, value: modsecurity_audit_v1}
+      - {field: cloud_soc.detail.fields.sqli, operator: equals, value: true}
+      - {field: waf.engine_mode, operator: in, value: ['On', DetectionOnly]}
+    group_by: [organization.id, host.id, service.id, source.ip]
+    threshold: {count: 3}
+    distinct: {field: http.request.id, count: 3}
+    time_window: {seconds: 300}
+    cooldown: {seconds: 300}
+    required_fields: [organization.id, host.id, service.id, source.ip, http.request.id]
+    dedup_fields: [organization.id, host.id, service.id, http.request.id]
+    limitations: [collector_configured_site_boundary, metadata_not_payload_analysis, interruption_not_application_outcome, request_id_not_authenticated, deployment_acceptance_required]
+    alert:
+      title: 사이트 내 반복적인 CRS SQLi 의심 요청 관측
+      message: 같은 조직·호스트·사이트·출발지에서 5분 이내 CRS SQLi 규칙 메타데이터를 가진 서로 다른 요청 3건을 관측했습니다. DetectionOnly와 엔진 개입 관측을 구분해 확인하세요. 실제 차단·애플리케이션 침해 성공을 단정하지 않습니다.
+      category: web
+      tags: [web, waf, modsecurity, site-scoped]
+  - id: WEB-SITE-404-001
+    name: Repeated HTTP not-found responses within one site
+    type: cardinality
+    enabled: true
+    severity: low
+    conditions:
+      - {field: cloud_soc.detail.adapter, operator: equals, value: web_access_site_v2}
+      - {field: http.response.status_code, operator: equals, value: 404}
+    group_by: [organization.id, host.id, service.id, source.ip]
+    threshold: {count: 20}
+    distinct: {field: source.ip, count: 1}
+    time_window: {seconds: 300}
+    cooldown: {seconds: 300}
+    required_fields: [organization.id, host.id, service.id, source.ip]
+    dedup_fields: []
+    limitations: [collector_configured_site_boundary, no_request_path_payload_or_vulnerability_signature, crawler_bad_links_healthchecks_can_match, deployment_acceptance_required]
+    alert:
+      title: 사이트 내 반복적인 HTTP 404 응답 관측
+      message: 같은 조직·호스트·사이트·출발지에서 5분 이내 HTTP 404 기록 20건 이상을 관측했습니다. 정상 크롤러·잘못된 링크·프록시를 조사하세요. URL·본문이나 앱 내부 인증·인가 결과는 판단하지 않습니다.
+      category: web
+      tags: [web, site-scoped, low-confidence]

@@ -7,6 +7,7 @@ import re
 from cloud_soc.portal.privacy import display, sensitive
 
 from cloud_soc.portal.agent_status import iso, parse_time
+from cloud_soc.web.scope import valid_site_id
 
 CONTRACT_VERSION = 1
 INDICES = ("soc-host-raw-*", "soc-network-*", "soc-cloud-aws-*", "soc-cloud-oci-*")
@@ -18,15 +19,17 @@ MAX_RESPONSE_BYTES = 256 * 1024
 MAX_DETAIL_BYTES = 64 * 1024
 MAX_CURSOR_LENGTH = 8192
 TIME_FIELDS = {"ingested": "event.ingested", "event": "@timestamp"}
-HOST_SOURCES = {"windows_event", "windows_file", "linux_file", "linux_journald", "web_access_metadata", "generic_web_access"}
+HOST_SOURCES = {"windows_event", "windows_file", "linux_file", "linux_journald", "web_access_metadata", "generic_web_access", "generic_modsecurity", "security_mall_audit", "security_mall_edge", "agent_health", "agent_collection_notice"}
 SOURCE_FIELDS = (
-    "@timestamp", "event.ingested", "organization.id", "agent.id", "agent.type", "labels.privacy_policy",
+    "@timestamp", "event.ingested", "organization.id", "agent.id", "agent.type", "labels.privacy_policy", "host.id", "service.id", "service.name",
     "host.name", "host.ip", "host.os.type", "host.os.name", "labels.log_source",
     "labels.sensor_platform", "winlog.channel", "log.file.path", "event.dataset",
     "event.code", "event.id", "event.action", "event.outcome", "event.provider", "user.name", "source.ip",
     "destination.ip", "network.transport", "network.protocol", "flow.final",
     "cloud.provider", "cloud.account.id", "cloud.region", "cloud.service.name", "user.id",
     "winlog.provider_name", "winlog.event_id", "winlog.user.identifier",
+    "systemd.unit", "systemd.transport", "journald.syslog.identifier", "process.name",
+    "labels.collection_policy", "labels.collection_status",
 )
 
 
@@ -41,6 +44,7 @@ class LogFilters:
     collector: str | None = None
     ip: str | None = None
     source_kind: str | None = None
+    site: str | None = None
 
     @property
     def time_field(self):
@@ -49,7 +53,7 @@ class LogFilters:
 
 def parse_filters(pairs, *, now=None):
     """Accept request.args.items(multi=True), rejecting duplicates before any I/O."""
-    allowed = {"start", "end", "time_basis", "page_size", "host", "os", "collector", "ip", "source_kind"}
+    allowed = {"start", "end", "time_basis", "page_size", "host", "os", "collector", "ip", "source_kind", "site"}
     values = {}
     for key, value in pairs:
         if key not in allowed or key in values:
@@ -93,7 +97,10 @@ def parse_filters(pairs, *, now=None):
             raise ValueError("Use a single IPv4 or IPv6 address, not a subnet") from None
     source_kind=values.get('source_kind')
     if source_kind not in (None,'web'): raise ValueError('Unsupported source kind')
-    return LogFilters(iso(start), iso(end), basis, int(size), host, os_type, collector, address, source_kind)
+    site = values.get('site')
+    if site is not None and not valid_site_id(site):
+        raise ValueError('Invalid configured site ID')
+    return LogFilters(iso(start), iso(end), basis, int(size), host, os_type, collector, address, source_kind, site)
 
 
 def document_reference(index, identifier):
@@ -214,7 +221,8 @@ def project_hit(hit):
         "source_label": source_name, "received_at": timestamp("event.ingested"),
         "event_at": timestamp("@timestamp"), "organization": string("organization.id"),
         "agent_id": string("agent.id"), "collector": string("agent.type"),
-        "host_name": string("host.name"), "host_ips": addresses("host.ip", many=True),
+        "host_name": string("host.name"), "host_id": string("host.id"), "host_ips": addresses("host.ip", many=True),
+        "site_id": string("service.id"), "service_name": string("service.name"),
         "os": os_type, "os_basis": os_basis, "os_name": string("host.os.name"),
         "channel": string("winlog.channel"), "file_path": string("log.file.path"),
         "dataset": string("event.dataset"), "event_code": code,
@@ -226,6 +234,9 @@ def project_hit(hit):
         "flow_final": final, "parse_status": "not_evaluated",
         "cloud_provider": string("cloud.provider"), "cloud_account": string("cloud.account.id"), "cloud_region": string("cloud.region"),
         "cloud_service": string("cloud.service.name"), "actor_id": actor_id,
+        "journal_unit": string("systemd.unit"), "journal_transport": string("systemd.transport"),
+        "journal_identifier": string("journald.syslog.identifier") or string("process.name"),
+        "collection_policy": string("labels.collection_policy"), "collection_status": string("labels.collection_status"),
     }
     row["quality"] = {"invalid_fields": sorted(set(invalid)), "truncated_fields": sorted(set(truncated))}
     return row

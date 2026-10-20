@@ -9,7 +9,7 @@
   const svg = (tag,attributes={}) => {const e=document.createElementNS('http://www.w3.org/2000/svg',tag);Object.entries(attributes).forEach(([k,v])=>e.setAttribute(k,String(v)));return e;};
   const severity = {critical:'긴급',high:'높음',medium:'중간',low:'낮음',unknown:'미기록'};
   const alertTitle = row => (row.historical_review===true ? '과거 로그 재평가 · ' : '')+(row.title||row.rule||'경보');
-  const chartNames = {line:'꺾은선',bar:'막대',heatmap:'히트맵',trend:'추이 카드',donut:'도넛',stacked:'누적 막대',table:'목록',timeline:'시간순 목록',graph:'관계 그래프',status:'상태 카드',kpi:'수치 카드'};
+  const chartNames = {line:'꺾은선',bar:'막대',heatmap:'히트맵',trend:'추이 카드',donut:'도넛',stacked:'누적 막대',table:'목록',timeline:'시간순 목록',graph:'관계 그래프',status:'상태 카드',kpi:'수치 카드',map:'국가 지도'};
   function compact(widgets) {
     let x=0,y=0,height=0;
     for(const w of widgets){if(x+w.w>12){x=0;y+=height;height=0;}w.x=x;w.y=y;x+=w.w;height=Math.max(height,w.h);}
@@ -22,11 +22,35 @@
     if(w.x<0||w.y<0||w.x+w.w>12||w.y>240||![3,6,12].includes(w.w)||w.h<2||w.h>8||candidate.some(other=>other.id!==id&&overlaps(w,other)))return null;
     return candidate.sort((a,b)=>a.y-b.y||a.x-b.x);
   }
+  // Move one widget, retaining unrelated coordinates and only pushing collisions down.
+  function relocate(widgets,id,destination) {
+    const candidate=copy(widgets),moving=candidate.find(w=>w.id===id);
+    if(!moving)return null;
+    if(destination.targetId){
+      const target=candidate.find(w=>w.id===destination.targetId);
+      if(!target||target.id===id||!['before','after'].includes(destination.side))return null;
+      moving.x=target.x;moving.y=target.y;
+      if(destination.side==='after'){
+        moving.x=target.x+target.w;
+        if(moving.x+moving.w>12){moving.x=0;moving.y=target.y+target.h;}
+      }
+      if(moving.x+moving.w>12)moving.x=12-moving.w;
+    }else{moving.x=destination.x;moving.y=destination.y;}
+    if(!Number.isInteger(moving.x)||!Number.isInteger(moving.y)||moving.x<0||moving.x+moving.w>12||moving.y<0||moving.y>240)return null;
+    const placed=[moving];
+    const others=candidate.filter(w=>w.id!==id).sort((a,b)=>a.y-b.y||a.x-b.x);
+    for(const other of others){
+      let blocked=placed.filter(p=>overlaps(other,p));
+      while(blocked.length){other.y=Math.max(...blocked.map(p=>p.y+p.h));if(other.y>240)return null;blocked=placed.filter(p=>overlaps(other,p));}
+      placed.push(other);
+    }
+    return candidate.sort((a,b)=>a.y-b.y||a.x-b.x);
+  }
   function plan(layout,catalog) {
     const sources=new Set(['status']);
     for(const w of layout.widgets){const meta=catalog.find(m=>m.type===w.type);if(!meta?.enabled)continue;
       const period=w.config.period||layout.period;
-      if(['operations','logs','notices','web'].includes(meta.source))sources.add(meta.source+':'+period);
+      if(['operations','logs','notices','web','cloud','geo','accounts','evaluation','cloud-alerts'].includes(meta.source))sources.add(meta.source+':'+period);
       else sources.add(meta.source);
       if(w.type==='overview')sources.add('cases');
     }
@@ -37,10 +61,19 @@
     let body;try{body=await response.json();}catch{throw Object.assign(new Error('서버 응답을 읽지 못했습니다.'),{status:response.status});}
     if(!response.ok)throw Object.assign(new Error(body.error||'데이터를 조회하지 못했습니다.'),{status:response.status});return body;
   }
+  function mergeResults(previous,fresh){
+    const values={...previous},failed=[];
+    for(const [key,value] of Object.entries(fresh||{})){
+      if(value.error){failed.push(key);values[key]=previous[key]?.body?{...copy(previous[key]),error:value.error,stale:true}:value;}
+      else values[key]=value;
+    }
+    return {values,failed};
+  }
   function pathFor(key,end) {
     const [source,raw]=key.split(':');
-    if(!['operations','logs','notices','web'].includes(source))return {cases:'/api/cases?status=open&sort=priority&page=1',agents:'/api/agents/status',collection:'/api/agents/components',status:'/api/operations/status'}[source];
+    if(!['operations','logs','notices','web','cloud','geo','accounts','evaluation','cloud-alerts'].includes(source))return {cases:'/api/cases?status=open&sort=priority&page=1',agents:'/api/agents/status',collection:'/api/agents/components',status:'/api/operations/status',fleet:'/api/dashboard-data/fleet'}[source];
     const period=Number(raw),params=new URLSearchParams({start:new Date(end-period*60000).toISOString(),end:new Date(end).toISOString()});
+    if(['cloud','geo','accounts','evaluation','cloud-alerts'].includes(source))return '/api/dashboard-data/'+source+'?'+params;
     if(source==='operations')return '/api/operations?'+params;
     if(source==='notices')return '/api/alerts/notices?'+params;
     if(source==='web')params.set('source_kind','web');
@@ -92,6 +125,8 @@
   function filteredLogs(rows,type){if(type==='web-events')return rows.filter(r=>['web_access_metadata','generic_web_access'].includes(r.source_kind));if(type.startsWith('cloud-')){rows=rows.filter(r=>['aws_cloudtrail','oci_audit'].includes(r.source_kind)&&['aws','oci'].includes(r.cloud_provider));if(type==='cloud-iam')rows=rows.filter(r=>iam.has(r.action));if(type==='cloud-audit')rows=rows.filter(r=>audit.has(r.action));}return rows;}
   function render(box,w,meta,result,extras={}) {
     if(!meta?.enabled){empty(box,meta?.reason||'미지원 위젯입니다.');return;}
+    if(window.CloudSOCInsights?.handles(meta)){window.CloudSOCInsights.render(box,w,meta,result,extras);return;}
+    if(result?.stale)box.append(node('p','갱신 실패 · 마지막 조회 내용입니다.','insight-note'));
     if(meta.renderer==='notices'){
       const rows=result?.body?.rows;
       const prepared=Array.isArray(rows)&&rows.length<=50?{...result,body:{...result.body,rows:[...rows].sort((a,b)=>(Date.parse(a.initial_at)-Date.parse(b.initial_at))*(w.config.sort==='oldest'?1:-1)).slice(0,w.config.limit)}}:result;
@@ -123,7 +158,7 @@
       rows.slice(0,Math.min(limit,5)).forEach(r=>{const panel=node('div',undefined,'builder-relation');panel.append(link(alertTitle(r),'workbench.html?'+new URLSearchParams({alert:r.id,return_page:'dashboard.html'})));if(r.source_ip){const graph=svg('svg',{viewBox:'0 0 360 110',class:'builder-entity-graph',role:'img','aria-label':'출발지 '+r.source_ip+'가 이 경보 문서에 기록됨'});graph.append(svg('line',{x1:75,x2:285,y1:35,y2:35}),svg('circle',{cx:75,cy:35,r:20}),svg('circle',{cx:285,cy:35,r:20}));for(const [x,label] of [[75,'출발지'],[285,'경보'],[75,r.source_ip],[285,r.rule||'저장 경보']]){const t=svg('text',{x,y:['출발지','경보'].includes(label)?40:83,'text-anchor':'middle'});t.textContent=label;graph.append(t);}panel.append(graph,node('span','동일 경보 문서에 기록된 출발지'));}else panel.append(node('span','출발지 미관측 · 연결하지 않음'));box.append(panel);});box.append(node('p','같은 문서의 명시적 관계만 표시합니다. 공격 귀속·같은 세션을 뜻하지 않습니다.','dash-subtitle'));return;
     }
     if(config.chart==='timeline'||w.type==='alert-timeline'){const list=node('ol',undefined,'builder-timeline');rows.slice(0,limit).forEach(r=>{const li=node('li');li.append(node('time',time(r.timestamp)),link(alertTitle(r),'workbench.html?'+new URLSearchParams({alert:r.id,return_page:'dashboard.html'})),node('span',severity[r.severity]||'미기록'));list.append(li);});if(!rows.length)empty(box,'표시할 경보가 0건입니다.');box.append(list,node('p','서로 다른 경보의 발생 구간 시각 순서이며 공격 인과관계를 추정하지 않습니다.','dash-subtitle'));}
-    else table(box,['규칙 ID','경보','서비스','발생 구간 시각 (KST)','계산 위험 등급','상태','관측 건수','조사'],rows.slice(0,limit).map(r=>[r.rule,alertTitle(r),r.service||'미관측',time(r.timestamp),severity[r.risk_level]||'미기록',r.status==='stored'?'저장됨':'미기록',number(r.event_count)?r.event_count:'미기록',link('근거 보기','workbench.html?'+new URLSearchParams({alert:r.id,return_page:'dashboard.html'}))]));
+    else table(box,['규칙 ID','경보','서비스','발생 구간 시각 (KST)','계산 위험 등급','상태','관측 건수','조사'],rows.slice(0,limit).map(r=>[r.rule,alertTitle(r),r.service||'미관측',time(r.timestamp),(r.risk_level==='unassessed'?'미평가':severity[r.risk_level]||'미기록'),r.status==='stored'?'저장됨':'미기록',number(r.event_count)?r.event_count:'미기록',link('근거 보기','workbench.html?'+new URLSearchParams({alert:r.id,return_page:'dashboard.html'}))]));
   }
-  window.CloudSOCWidgets={copy,node,time,link,number,compact,place,plan,load,query,render,chartNames,filteredAlerts,filteredLogs,alertTitle};
+  window.CloudSOCWidgets={copy,node,time,link,number,compact,place,relocate,plan,load,query,render,chartNames,filteredAlerts,filteredLogs,alertTitle,parts,mergeResults};
 })();

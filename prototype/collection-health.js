@@ -44,21 +44,22 @@
     if (m.scan_partial) paragraph(details, '통계 로그 읽기 범위 제한 · 원본 로그 수집 실패를 뜻하지 않음');
     transport.append(details);
   }
-  async function load(after = null) {
+  async function load(after = null, signal) {
     controller?.abort(); controller = new AbortController();
-    const active = controller;
+    const active = signal ? {signal,abort(){}} : controller;
     const request = ++generation;
     const timer = setTimeout(() => active.abort(), 15000);
-    rows.replaceChildren(); next.disabled = true; cursor = null; state.textContent = '조회 중';
+    state.textContent='조회 중 · 마지막 조회 내용 유지';
     try {
       const response = await fetch('/api/agents/health' + (after ? '?cursor=' + encodeURIComponent(after) : ''),
         {signal: active.signal, credentials: 'same-origin', cache: 'no-store'});
       if (!response.ok) { const error = new Error('request failed'); error.login = response.status === 401; throw error; }
       const data = await response.json();
-      if (request !== generation) return;
+      if (request !== generation || active.signal.aborted) return;
       if (!Array.isArray(data.rows) || data.rows.length > 50) throw new Error('잘못된 보고 응답입니다.');
+      const fragment=document.createDocumentFragment();
       for (const item of data.rows) {
-        const tr = document.createElement('tr');
+        const tr = document.createElement('tr');tr.dataset.liveKey=[item.organization,item.host].join('/');
         cell(tr, (item.host || '알 수 없음') + ' / ' + (item.organization || '-'));
         cell(tr, ({recent: '최근 수신', stale: '보고 지연', unknown: '판단 불가'})[item.report_state] || '판단 불가');
         cell(tr, `${item.selected} / ${item.excluded} / ${item.errors}`);
@@ -75,19 +76,22 @@
           const id = document.createElement('code'); id.textContent = source.id.slice(0, 12); id.title = source.id;
           line.append(id, ' : ' + (statuses[source.status] || '알 수 없음')); details.append(line);
         }
-        td.append(details); rows.append(tr);
+        td.append(details); fragment.append(tr);
       }
+      window.CloudSOCLive.children(rows,fragment.childNodes);
       cursor = data.next_cursor; next.disabled = !cursor;
       const attention = data.rows.filter(item => item.errors > 0 || [item.collector_metrics, item.network_collector_metrics].some(m => m?.queue_state === 'high' || m?.transport_state === 'error_observed')).length;
       const uncertain = data.rows.filter(item => item.report_state !== 'recent' || [item.collector_metrics, item.network_collector_metrics].some(m => m?.state !== 'recent')).length;
       state.textContent = data.rows.length ? `조회한 ${data.rows.length}개 보고 · 오류·적체 확인 ${attention}개 · 미확인·미측정 ${uncertain}개 · 통계 미보고 항목은 미측정` : '수신된 보고가 없습니다. 설치 상태와 전송 지연을 확인하세요.';
     } catch (error) {
       if (request !== generation) return;
-      rows.replaceChildren(); cursor = null; next.disabled = true;
-      state.textContent = error.name === 'AbortError' ? '조회 시간 초과. 다시 시도하세요.' : error.login ? '관리자 로그인이 필요합니다.' : '조회 실패: 서버·권한·보고 형식을 확인하세요.';
+      throw error;
     } finally { clearTimeout(timer); }
   }
-  document.querySelector('#refresh').addEventListener('click', () => load());
-  next.addEventListener('click', () => { if (cursor) load(cursor); });
-  load();
+  let after=null;
+  const live=window.CloudSOCLive.create({host:document.querySelector('.page-heading'),interval:10000,
+    load:signal=>load(after,signal),apply:()=>{},onError:error=>{state.textContent=error.login?'관리자 로그인이 필요합니다.':'갱신 실패 · 마지막 조회 내용을 표시합니다. 연결과 권한을 확인하세요.';}});
+  document.querySelector('#refresh').addEventListener('click',()=>{after=null;live.refresh(true);});
+  next.addEventListener('click',()=>{if(cursor){after=cursor;live.refresh(true);}});
+  live.start();
 })();

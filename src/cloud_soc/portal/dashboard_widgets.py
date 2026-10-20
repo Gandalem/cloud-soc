@@ -8,7 +8,7 @@ def widget(key, title, category, source, renderer, description, *, admin=False, 
     charts = {'series': ['line', 'bar', 'heatmap', 'trend'], 'parts': ['bar', 'donut', 'stacked'],
               'alerts': ['table', 'timeline'], 'cases': ['table'], 'logs': ['table'],
               'agents': ['table'], 'entities': ['graph'], 'status': ['status'], 'kpi': ['kpi'],
-              'overview': ['kpi'], 'notices': ['timeline']}[renderer]
+              'overview': ['kpi'], 'notices': ['timeline'], 'evidence': ['timeline'], 'fleet': ['table'], 'geo': ['map'], 'assessment': ['table'], 'evaluation': ['table']}[renderer]
     return dict(type=key, title=title, category=category, source=source, renderer=renderer,
                 description=description, charts=charts, admin=admin, enabled=reason is None, reason=reason)
 
@@ -33,22 +33,22 @@ CATALOG = [
     widget('entities', '경보와 관측 출발지', '조사', 'operations', 'entities', '동일 경보 문서에 실제 기록된 출발지 관계만 표시'),
     widget('cases', '진행 중인 사건', '조사', 'cases', 'cases', '현재 미종결 사건 목록. 최대 첫 페이지 25건'),
     widget('case-status', '미종결 사건 상태', '조사', 'cases', 'parts', '같은 권한·필터의 사건 전체 상태 집계'),
-    widget('cloud-events', '최근 AWS/OCI 이벤트', '클라우드', 'logs', 'logs', '최근 수신 로그 최대 50건에서 선별한 클라우드 이벤트 표본'),
-    widget('cloud-services', '최근 클라우드 API 서비스', '클라우드', 'logs', 'parts', '최근 수신 로그 표본에 관측된 서비스별 건수'),
-    widget('cloud-accounts', '최근 관측 클라우드 계정', '클라우드', 'logs', 'parts', '최근 수신 로그 표본에 나타난 계정. 등록 계정 총수가 아닙니다.'),
-    widget('cloud-iam', '최근 IAM 변경 이벤트', '클라우드', 'logs', 'logs', '최근 수신 표본의 명시적 IAM 변경 API만 표시'),
-    widget('cloud-audit', '최근 감사 설정 이벤트', '클라우드', 'logs', 'logs', '최근 수신 표본의 명시적 감사 설정 API만 표시'),
-    widget('cloud-alerts', '최근 클라우드 경보', '클라우드', 'operations', 'alerts', '최근 경보 표본의 AWS/OCI 규칙만 표시'),
+    widget('cloud-events', '최근 AWS/OCI 이벤트', '클라우드', 'cloud', 'logs', '서버에서 클라우드 범위를 먼저 적용한 최근 이벤트와 전체 건수'),
+    widget('cloud-services', '최근 클라우드 API 서비스', '클라우드', 'cloud', 'parts', '조회 기간의 전체 클라우드 서비스 집계'),
+    widget('cloud-accounts', '최근 관측 클라우드 계정', '클라우드', 'cloud', 'parts', '조회 기간의 조직·공급자·계정별 전체 집계. 등록 계정 총수와 다릅니다.'),
+    widget('cloud-iam', '최근 IAM 변경 이벤트', '클라우드', 'cloud', 'logs', '클라우드 범위에서 명시적 IAM 변경 API를 선별합니다.'),
+    widget('cloud-audit', '최근 감사 설정 이벤트', '클라우드', 'cloud', 'logs', '클라우드 범위에서 명시적 감사 설정 API를 선별합니다.'),
+    widget('cloud-alerts', '최근 클라우드 경보', '클라우드', 'cloud-alerts', 'alerts', 'AWS/OCI 규칙을 서버에서 먼저 선별한 최근 경보와 전체 집계'),
     widget('host-events', '최근 호스트 수신 로그', '수집', 'logs', 'logs', '최근 수신 로그 첫 페이지 표본과 실제 호스트'),
     widget('source-counts', '최근 수집 소스 분포', '수집', 'logs', 'parts', '최근 수신 로그 최대 50건의 소스별 분포'),
     widget('agents', '에이전트 마지막 수신', '운영', 'agents', 'agents', '관리자용 수신 활동 첫 페이지. 미수신은 오프라인 판정이 아닙니다.', admin=True),
     widget('pipeline', '분석 서비스 상태', '운영', 'operations', 'status', '현재 정규화·탐지 상태와 지연. 관리자 전용', admin=True),
     widget('processing', '정규화 처리 추이', '운영', 'operations', 'series', '처리 기록 전체 집계. 관리자 전용', admin=True),
-    widget('world-map', '접속 위치 지도', '보안', 'operations', 'parts', '신뢰할 수 있는 위치 자료 필요', reason='검증된 위치 데이터가 없습니다.'),
-    widget('offline-agents', '오프라인 에이전트', '운영', 'agents', 'parts', '별도 heartbeat 판단 필요', admin=True, reason='수신 활동만으로 연결 단절을 판단할 수 없습니다.'),
-    widget('success-rate', '탐지 성공률', '보안', 'operations', 'parts', '실제 정답 라벨과 평가 결과 필요', reason='실제 탐지 성공률 측정 자료가 없습니다.'),
-    widget('risk-score', '클라우드 계정 위험 점수', '클라우드', 'logs', 'parts', '승인된 계정 위험 계산 필요', reason='계정 위험 점수 산정 모델이 없습니다.'),
-    widget('attack-sequence', '공격 근거 시퀀스', '조사', 'operations', 'alerts', '경보 상세의 실제 일치 근거를 기존 조사 화면에서 확인', reason='위젯은 미지원입니다. 경보의 근거 보기에서 실제 단계·참조를 조회하세요.'),
+    widget('world-map', '국가별 접속 지도', '보안', 'geo', 'geo', '관측된 웹 접근의 국가별 추정 분포와 위치 확인 범위'),
+    widget('offline-agents', '에이전트 연결 상태', '운영', 'fleet', 'fleet', '등록 장치의 서버 수신 보고·지연·두절과 수집 오류를 구분합니다.', admin=True),
+    widget('success-rate', '탐지 성능 평가', '보안', 'evaluation', 'evaluation', '등록된 합성 시나리오 평가의 정밀도·재현율과 실행 실패'),
+    widget('risk-score', '클라우드 계정 보안 평가', '클라우드', 'accounts', 'assessment', '계정별 관측·평가 범위와 승인 정책의 위반 점수. 침해 확률과 다릅니다.'),
+    widget('attack-sequence', '탐지 근거 흐름', '조사', 'operations', 'evidence', '선택한 경보의 저장된 규칙 일치 근거와 정확한 원본 참조'),
 ]
 REGISTRY = {row['type']: row for row in CATALOG}
 PERIODS = (0, 60, 1440, 10080)

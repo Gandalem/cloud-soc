@@ -12,6 +12,12 @@ const result = { contract_version: 1, rows: [row], next_cursor: null, raw_access
   filters: { start: '2026-09-22T01:00:00Z', end: '2026-09-22T02:00:00Z', time_basis: 'ingested' } };
 const defaults = { period: '60', timeBasis: 'ingested', pageSize: '25', host: '', ip: '', os: '', collector: '' };
 
+test('generic sites retain their configured identity in exact queries and rows',()=>{
+  const url=new URL(query({...defaults,site:'site-A'}),'http://localhost');
+  assert.equal(url.searchParams.get('site'),'site-A');
+  assert.match(rowMarkup({...row,site_id:'site-A',service_name:'Public website'},0),/사이트 site-A/);
+});
+
 test('protected DVWA rows show actual HTTP metadata without exposing a request target',()=>{
   const value={...row,source_kind:'web_access_metadata',collector:'web-collector',os:'linux',host_name:'aws-dvwa-fixture',
     interpretation:{status:'recognized',adapter:'web_access_metadata_v1',fields:{action:'http_access',outcome:'success',http_method:'GET',http_status:200}},outcome:'success'};
@@ -23,19 +29,16 @@ const ok = data => () => ({ ok: true, json: async () => data });
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
 function browser(responses) {
+  const dom=require('./live-dom.cjs').dom();
   const elements = new Map(), windowEvents = {}, calls = [];
   const initial = { '#log-period': '60', '#log-time-basis': 'ingested', '#log-page-size': '25' };
-  function element(value = '') {
-    return { textContent: '', innerHTML: '', value, hidden: false, disabled: false, open: false, children: [], listeners: {},
-      addEventListener(name, fn) { this.listeners[name] = fn; }, setAttribute() {},
-      replaceChildren() { this.children = []; }, append(...nodes) { this.children.push(...nodes); },
-      close() { this.open = false; }, showModal() { this.open = true; }, reset() {} };
-  }
-  const get = selector => { if (!elements.has(selector)) elements.set(selector, element(initial[selector] || '')); return elements.get(selector); };
+  function element(value=''){return dom.element('div',value);}
+  const get = selector => { if (!elements.has(selector)){const node=element(initial[selector] || '');if(selector==='#log-empty')node.hidden=true;elements.set(selector,node);}return elements.get(selector); };
   const context = { document: { querySelector: get, createElement: () => element() },
     window: { addEventListener: (name, fn) => { windowEvents[name] = fn; } }, AbortController, URLSearchParams, Intl, Date, TypeError,
     setTimeout: () => 1, clearTimeout() {},
-    fetch: async (url, options) => { calls.push({ url, options }); return responses.shift()(); } };
+    fetch: async (url, options) => { if(url.startsWith("/api/logs/updates?"))return new Promise(()=>{});calls.push({ url, options }); return responses.shift()(); } };
+  dom.install(context);
   vm.runInNewContext(script, context);
   return { get, calls, windowEvents };
 }
@@ -57,7 +60,7 @@ test('untrusted table values cannot introduce HTML and missing fields remain unk
   assert.ok(!html.includes('<img'));
   assert.match(html, /&lt;img/);
   assert.match(html, /미분류/);
-  assert.match(html, /미관측/);
+  assert.match(html, /종류 미확인/);
   assert.match(html, /미평가/);
   assert.equal(time('not-a-date'), '미관측');
 });
@@ -72,8 +75,8 @@ test('generic Windows metadata does not display None as action or claim a parser
   const html = rowMarkup({...row, action:'None', event_code:'21', provider:'Microsoft-Windows-TerminalServices-LocalSessionManager',
     actor_id:'S-1-5-18', interpretation:{status:'unsupported',fields:{}}},0);
   assert.doesNotMatch(html,/None \/|undefined|NaN/);
-  assert.match(html,/행위 정보 없음 \/ 결과 정보 없음/);
-  assert.match(html,/21 \/ Microsoft-Windows-TerminalServices/);
+  assert.match(html,/이벤트 21/);
+  assert.equal((html.match(/<td/g)||[]).length,6);
   assert.match(html,/S-1-5-18/);
   assert.match(html,/메타데이터만 표시 · 행위 해석 미지원/);
   assert.doesNotMatch(html,/수집 실패|안전|로그인 성공/);
@@ -85,10 +88,10 @@ test('list distinguishes supported interpretation, target identity, partial and 
   assert.match(html,/로그인 \/ 실패/);
   assert.match(html,/대상 계정: fixture/);
   assert.match(html,/192.0.2.10/);
-  assert.match(html,/지원 이벤트 해석/);
+  assert.match(html,/형식 확인/);
   assert.match(rowMarkup({...row,interpretation:{...interpretation,status:'partial'}},0),/부분 해석 · 필드 누락/);
   assert.match(rowMarkup({...row,interpretation,user:'canonical',source_ip:'192.0.2.11',outcome:'success'},0),/canonical/);
-  assert.match(rowMarkup({...row,action:'CreateSection',interpretation:{status:'unsupported'}},0),/CreateSection \/ 결과 정보 없음/);
+  assert.match(rowMarkup({...row,action:'CreateSection',interpretation:{status:'unsupported'}},0),/CreateSection/);
   const malicious=rowMarkup({...row,interpretation:{status:'recognized',fields:{action:'<img src=x>',actor:'<img src=x>'}}},0);
   assert.doesNotMatch(malicious,/<img/);
   assert.match(malicious,/&lt;img/);
@@ -109,12 +112,12 @@ test('next fetches cursor only; previous and visited next use snapshot memory', 
   assert.equal(ui.calls[0].options.cache, 'no-store');
 });
 
-test('failed refresh clears old results, counters, details and navigation', async () => {
+test('failed refresh retains the last snapshot with a visible failure', async () => {
   const ui = browser([ok(result), () => { throw new TypeError('Failed to fetch'); }]);
   await settle();
   await ui.get('#log-refresh').listeners.click();
-  assert.equal(ui.get('#log-rows').innerHTML, '');
-  assert.equal(ui.get('#log-result').textContent, '-');
+  assert.match(ui.get('#log-rows').innerHTML, /fixture-host/);
+  assert.match(ui.get('#log-result').textContent, /현재 페이지 1건/);
   assert.equal(ui.get('#log-empty').hidden, true);
   assert.equal(ui.get('#log-error').hidden, false);
   assert.equal(ui.get('#log-next').disabled, true);
@@ -124,7 +127,7 @@ test('401, 403, 410, 413 and 503 remain errors without echoing upstream messages
   for (const status of [401, 403, 410, 413, 503]) {
     const ui = browser([() => ({ ok: false, status, json: async () => ({ error: 'PRIVATE_CANARY' }) })]);
     await settle();
-    assert.equal(ui.get('#log-state-label').textContent, '조회 실패');
+    assert.match(ui.get('#log-state-label').textContent, /조회 실패/);
     assert.ok(!ui.get('#log-error').textContent.includes('CANARY'));
     assert.equal(ui.get('#log-empty').hidden, true);
   }
@@ -180,7 +183,7 @@ test('security detail is Korean, text-only and ignores unapproved fields', async
   assert.match(text, /감사 비활성으로 단정할 수 없음/);
   assert.match(text, /PID만으로/);
   assert.ok(!text.includes('PRIVATE_CANARY'));
-  assert.ok(ui.get('#log-detail-fields').children.every(node => !node.innerHTML));
+  assert.ok(ui.get('#log-detail-fields').children.every(node => node.children.length===0));
 });
 
 test('unsupported and partial security states never look fully parsed', () => {
@@ -199,8 +202,8 @@ test('AWS records display account/Region without pretending they are hosts', () 
     host_name: null, cloud_account: '123456789012', cloud_region: 'us-east-1', actor_id: 'ROLE:fixture', user: null,
     action: 'ConsoleLogin', outcome: 'failure' };
   const html = rowMarkup(cloud, 0);
-  assert.match(html, /AWS 123456789012 \/ us-east-1/);
-  assert.match(html, /클라우드 API/);
+  assert.match(html, /AWS \/ 123456789012 \/ us-east-1/);
+  assert.doesNotMatch(html, /fixture-host/);
   assert.match(html, /AWS 관리 이벤트/);
   assert.match(html, /ROLE:fixture/);
   assert.match(rowMarkup({...cloud,interpretation:{status:'recognized',fields:{action:'management_api_call',outcome:'failure'}}},0),/ConsoleLogin \/ 실패/);
@@ -221,7 +224,7 @@ test('OCI records display tenancy and selected audit fields, not AWS labels', ()
   const cloud = { ...row, stream: 'cloud', os: 'cloud', cloud_provider: 'oci', source_kind: 'oci_audit', collector: 'oci-audit',
     cloud_account: 'ocid1.tenancy.oc1..fixture', cloud_region: 'ap-seoul-1', user: null, actor_id: 'fixture-principal' };
   const html = rowMarkup(cloud, 0);
-  assert.match(html, /OCI ocid1.tenancy/);
+  assert.match(html, /OCI \/ ocid1.tenancy/);
   assert.match(html, /OCI 감사 이벤트/);
   assert.ok(!html.includes('AWS'));
   const url = new URL(query({ ...defaults, collector: 'oci-audit', os: 'cloud' }), 'https://example.test');
@@ -235,4 +238,36 @@ test('OCI records display tenancy and selected audit fields, not AWS labels', ()
   assert.match(details, /403/);
   assert.match(details, /별도 수집/);
   assert.ok(!details.includes('AWS'));
+});
+
+
+test('compact web rows use observed HTTP data, not missing host-only columns',()=>{
+  const html=rowMarkup({...row,os:'unknown',source_kind:'security_mall_edge',log_type:{label:'쇼핑몰 웹 접근'},interpretation:{status:'recognized',fields:{stream:'access',action:'http_access',http_method:'GET',http_status:200,path:'/static',service_name:'security-mall',source_ip:'192.0.2.1'}}},0);
+  assert.equal((html.match(/<td/g)||[]).length,6);
+  assert.match(html,/GET · HTTP 200 · \/static/);
+  assert.match(html,/security-mall/);
+  assert.match(html,/192\.0\.2\.1/);
+  assert.match(html,/soc-host-raw-test \/ fixture-id/);
+  assert.doesNotMatch(html,/미관측|ID 미관측|공급자 미관측|결과 정보 없음|미확인<|성공/);
+  const waf=rowMarkup({...row,source_kind:'security_mall_edge',log_type:{label:'쇼핑몰 WAF 탐지'},interpretation:{status:'recognized',fields:{stream:'waf',action:'waf_rule_match',engine_mode:'DetectionOnly'}}},0);
+  assert.match(waf,/탐지 전용 · 차단 안함/);
+  assert.doesNotMatch(waf,/결과 정보 없음|성공/);
+});
+
+test('chosen time basis is retained and a fallback is explicit',()=>{
+  const both={...row,event_at:'2026-09-22T00:00:00Z'};
+  assert.match(rowMarkup(both,0,'event'),/09:00:00/);
+  assert.match(rowMarkup(both,0,'ingested'),/10:00:03/);
+  assert.match(rowMarkup(row,0,'event'),/수신 시각 · 로그 시각 없음/);
+});
+
+test('web details keep missing-required and limitations without irrelevant process fields',()=>{
+  const {securityEntries}=require('../logs.js');
+  const entries=securityEntries({version:1,status:'recognized',adapter:'security_mall_edge_v1',fields:{stream:'access',method:'GET',status_code:200,path:'/static'},missing:[],limitations:['not_a_detection','protected_projection_not_native_log','observed_peer_only','detection_only_not_blocked','application_request_link_unavailable']});
+  const text=JSON.stringify(entries);
+  assert.match(text,/HTTP 응답 코드.*200/);
+  assert.doesNotMatch(text,/감사 설정 상태|프로세스 연관 근거|미관측 \/ 보호된 필수 필드/);
+  assert.match(text,/공격 판정/);
+  assert.match(text,/동일 요청/);
+  assert.doesNotMatch(text,/추가 제한 사항 있음/);
 });

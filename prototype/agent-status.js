@@ -17,76 +17,25 @@
   }
   // Export pure helpers for offline tests without loading demo data into production.
   if (typeof module !== 'undefined' && module.exports) { module.exports = { rowsFor, rowMarkup, status }; return; }
-  const $ = selector => document.querySelector(selector);
-  const state = { snapshot: null, cursors: [null], page: 0, busy: false, healthy: false, controller: null };
-  function render() {
-    const rows = state.healthy ? state.snapshot.agents : [];
-    const shown = rowsFor(rows, $('#agent-search').value, $('#agent-filter').value);
-    $('#agent-rows').innerHTML = shown.map(rowMarkup).join('');
-    $('#count-all').textContent = state.healthy ? rows.length : '-';
-    $('#count-recent').textContent = state.healthy ? rows.filter(row => row.status === 'recent').length : '-';
-    $('#count-delayed').textContent = state.healthy ? rows.filter(row => row.status === 'delayed').length : '-';
-    $('#count-other').textContent = state.healthy ? rows.filter(row => !['recent', 'delayed'].includes(row.status)).length : '-';
-    $('#row-count').textContent = state.healthy ? `현재 페이지 ${rows.length}개 · 필터 결과 ${shown.length}개` : '조회 결과 없음';
-    $('#status-empty').hidden = state.busy || (state.healthy && shown.length > 0);
-    $('#empty-title').textContent = !state.healthy ? '수신 상태를 판단할 수 없습니다.' : rows.length ? '현재 페이지에서 일치하는 수집기가 없습니다.' : state.page ? '이후 수집기가 없습니다.' : '관측된 수집기가 없습니다.';
-    $('#empty-description').textContent = !state.healthy ? '새로고침 후 다시 확인하세요. 조회 실패로 오프라인을 판단할 수는 없습니다.' : rows.length ? '검색어나 상태 필터를 바꿔보세요.' : '최근 30일 내 데이터가 도착한 수집기만 표시합니다.';
-    $('#status-page').textContent = `${state.page + 1} 페이지`;
-    $('#status-previous').disabled = state.busy || state.page === 0;
-    $('#status-next').disabled = state.busy || !state.healthy || !state.snapshot.next_cursor;
-    const missing = state.healthy ? state.snapshot.unidentified_documents : 0;
-    $('#unidentified-note').hidden = !missing;
-    $('#unidentified-note').textContent = `조회 범위에 agent.id가 없는 문서 ${Number(missing).toLocaleString('ko-KR')}건이 있어 수집기 목록에서 제외했습니다.`;
+  const $=selector=>document.querySelector(selector);
+  const state={snapshot:null,cursors:[null],page:0,displayedPage:0,healthy:false};
+  function render(){
+    const rows=state.healthy?state.snapshot.agents:[],shown=rowsFor(rows,$('#agent-search').value,$('#agent-filter').value);
+    const body=document.createElement('tbody');body.innerHTML=shown.map(rowMarkup).join('');
+    [...body.children].forEach((r,i)=>r.dataset.liveKey=shown[i].agent_id||String(i));window.CloudSOCLive.children($('#agent-rows'),body.childNodes);
+    for(const[id,items]of [['count-all',rows],['count-recent',rows.filter(r=>r.status==='recent')],['count-delayed',rows.filter(r=>r.status==='delayed')],['count-other',rows.filter(r=>!['recent','delayed'].includes(r.status))]])$('#'+id).textContent=state.healthy?String(items.length):'-';
+    $('#row-count').textContent=state.healthy?'현재 페이지 '+rows.length+'개 · 필터 결과 '+shown.length+'개':'조회 결과 없음';
+    $('#status-empty').hidden=state.healthy&&shown.length>0;$('#empty-title').textContent=state.healthy?'일치하는 수집기가 없습니다.':'수신 상태를 판단할 수 없습니다.';$('#empty-description').textContent='검색 조건과 마지막 조회 시각을 확인하세요.';
+    $('#status-page').textContent=(state.displayedPage+1)+' 페이지';$('#status-previous').disabled=state.page===0;$('#status-next').disabled=!state.healthy||!state.snapshot.next_cursor;
+    const missing=state.snapshot?.unidentified_documents||0;$('#unidentified-note').hidden=!missing;$('#unidentified-note').textContent='agent.id가 없는 문서 '+missing+'건은 수집기 목록에서 제외했습니다.';
   }
-  async function load() {
-    if (state.busy) return;
-    state.busy = true;
-    state.healthy = false;
-    $('#status-refresh').disabled = true;
-    $('#status-panel').setAttribute('aria-busy', 'true');
-    $('#status-error').hidden = true;
-    $('#query-state').textContent = '조회 중';
-    render();
-    const controller = new AbortController();
-    state.controller = controller;
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    try {
-      const cursor = state.cursors[state.page];
-      const response = await fetch(`/api/agents/status${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, {
-        credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
-      });
-      const data = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(data?.error || (response.status === 401 ? '관리자 로그인이 필요합니다.' : '수신 현황 조회에 실패했습니다.'));
-      if (!data || !Array.isArray(data.agents) || !data.checked_at || data.basis !== 'server_ingestion') throw new Error('잘못된 조회 응답입니다. 중앙 서버 버전을 확인하세요.');
-      state.snapshot = data;
-      state.healthy = true;
-      // Live data can change the next cursor; invalidate previously visited later pages.
-      state.cursors.length = state.page + 1;
-      if (data.next_cursor) state.cursors.push(data.next_cursor);
-      $('#checked-at').textContent = date(data.checked_at);
-      $('#query-state').textContent = '조회 성공 · 수신 기록 기준';
-    } catch (error) {
-      state.snapshot = null;
-      $('#query-state').textContent = '조회 실패 · 상태 판단 불가';
-      $('#status-error').hidden = false;
-      $('#status-error').textContent = error.name === 'AbortError' ? '조회 시간이 초과됐습니다. 서버 연결을 확인하세요.' :
-        error.name === 'TypeError' ? '중앙 서버에 연결하지 못했습니다. 네트워크와 로그인을 확인하세요.' : error.message;
-    } finally {
-      clearTimeout(timeout);
-      state.controller = null;
-      state.busy = false;
-      $('#status-refresh').disabled = false;
-      $('#status-panel').setAttribute('aria-busy', 'false');
-      render();
-    }
-  }
-  $('#status-refresh').addEventListener('click', load);
-  $('#agent-search').addEventListener('input', render);
-  $('#agent-filter').addEventListener('change', render);
-  $('#status-previous').addEventListener('click', () => { if (!state.busy && state.page > 0) { state.page--; load(); } });
-  $('#status-next').addEventListener('click', () => { if (!state.busy && state.healthy && state.snapshot.next_cursor) { state.page++; load(); } });
-  setInterval(() => { if ($('#auto-refresh').checked && !document.hidden) load(); }, 30000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && $('#auto-refresh').checked) load(); });
-  window.addEventListener('pagehide', () => state.controller?.abort());
-  load();
+  const live=window.CloudSOCLive.create({host:document.querySelector('.status-controls'),interval:10000,
+    load:async signal=>{const cursor=state.cursors[state.page];const response=await fetch('/api/agents/status'+(cursor?'?cursor='+encodeURIComponent(cursor):''),{credentials:'same-origin',cache:'no-store',signal});
+      const data=await response.json();if(!response.ok)throw new Error(data.error||'수신 현황 조회 실패');if(!Array.isArray(data.agents)||!data.checked_at||data.basis!=='server_ingestion')throw new Error('잘못된 수신 현황 응답입니다.');return data;},
+    apply:data=>{state.snapshot=data;state.healthy=true;state.displayedPage=state.page;state.cursors.length=state.page+1;if(data.next_cursor)state.cursors.push(data.next_cursor);$('#checked-at').textContent=date(data.checked_at);$('#query-state').textContent='조회 성공 · 수신 기록 기준';$('#status-error').hidden=true;render();},
+    onError:error=>{state.page=state.displayedPage;$('#query-state').textContent='갱신 실패 · 마지막 조회 내용';$('#status-error').hidden=false;$('#status-error').textContent=error.name==='TypeError'?'중앙 서버에 연결하지 못했습니다.':error.message;}});
+  $('#status-refresh').addEventListener('click',()=>live.refresh(true));$('#agent-search').addEventListener('input',render);$('#agent-filter').addEventListener('change',render);
+  $('#status-previous').addEventListener('click',()=>{if(state.page>0){state.page--;live.refresh(true);}});
+  $('#status-next').addEventListener('click',()=>{if(state.snapshot?.next_cursor){state.page++;live.refresh(true);}});
+  render();live.start();
 })();

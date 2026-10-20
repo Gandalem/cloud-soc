@@ -81,8 +81,10 @@ def run_once(client, *, max_documents=20000, include_cloud=False, include_sequen
                            isolated_all=isolated_all, rule_ids=rule_ids)
 
     def status(state, **extra):
+        from cloud_soc.detection.telemetry import runtime_manifest
         stamp = datetime.now(timezone.utc).isoformat()
-        document = {"@timestamp": stamp, "state": state, "detection": ','.join(rule['id'] for rule in rules), **extra}
+        document = {"@timestamp": stamp, "state": state, "runtime": runtime_manifest(rules, 'snapshot'),
+                    "detection": ','.join(rule['id'] for rule in rules), **extra}
         if state == "success":
             document["last_success"] = stamp
         client.index(index=STATUS, id="detector", document=document, refresh=False)

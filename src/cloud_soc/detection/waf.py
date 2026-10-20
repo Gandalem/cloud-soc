@@ -19,7 +19,7 @@ GROUP = ['organization.id', 'service.name', 'host.id', 'source.ip']
 
 def validate_waf_rule(rule):
     spec = rule.get('waf_sqli')
-    if (rule.get('id') != 'WEB-WAF-01' or rule.get('type') != 'threshold'
+    if ((rule.get('id') != 'WEB-WAF-01' and rule.get('metadata_profile') != 'security_mall_edge_v1') or rule.get('type') != 'threshold'
             or rule.get('group_by') != GROUP or rule.get('threshold') != {'count': 1}
             or rule.get('cooldown') != {'seconds': 0}
             or not 1 <= rule['time_window']['seconds'] <= 300

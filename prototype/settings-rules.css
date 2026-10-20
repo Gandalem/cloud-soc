@@ -1,0 +1,11 @@
+.rule-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px;margin:16px 0}
+.rule-grid label,.slack-panel>label{display:flex;flex-direction:column;gap:7px}
+.rule-grid input,.rule-grid select,.rule-condition input,.rule-condition select,#rule-description{width:100%;min-width:0;box-sizing:border-box}
+.rule-heading{display:flex;justify-content:space-between;align-items:center;gap:16px}
+.rule-list{display:grid;gap:12px;margin-top:18px}.rule-card{padding:16px;border:1px solid var(--border-color,#dce2ea);border-radius:10px;overflow-wrap:anywhere}
+.rule-card h3{margin:0 0 8px}.rule-card p{margin:6px 0}.rule-condition{display:grid;grid-template-columns:1fr 1fr 1.5fr auto;gap:8px;margin-bottom:10px}
+.rule-groups{display:flex;flex-wrap:wrap;gap:16px}.rule-groups label{display:flex;gap:6px;align-items:center}
+.rule-preview{border-left:4px solid #3478d4;background:var(--panel-bg,#f3f6fc);padding:14px 18px;margin:20px 0}
+#rule-create fieldset{margin-top:18px;border:1px solid var(--border-color,#dce2ea);border-radius:8px;padding:16px}
+#rule-result:empty{display:none}#rule-result{padding:12px;overflow-wrap:anywhere}#rule-import-list{display:grid;gap:10px;margin:16px 0}
+@media(max-width:650px){.rule-condition{grid-template-columns:1fr}.rule-grid{grid-template-columns:1fr}.rule-heading{align-items:flex-start}.slack-actions{flex-wrap:wrap}}

@@ -4,16 +4,16 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>내 대시보드 | Cloud SOC</title>
 <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
-<script src="/theme.js"></script><script src="auth-client.js"></script>
+<script src="/theme.js"></script><link rel="stylesheet" href="live-refresh.css"><script src="live-refresh.js" defer></script><script src="auth-client.js"></script>
 <link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css"><link rel="stylesheet" href="shell.css"><link rel="stylesheet" href="dashboard.css"><link rel="stylesheet" href="dashboard-builder.css"><link rel="stylesheet" href="/theme.css">
 <link rel="stylesheet" href="alert-notices.css">
-<script src="shell.js" defer></script><script src="alert-notices.js" defer></script><script src="dashboard-widgets.js" defer></script><script src="dashboard-builder.js" defer></script>
+<script src="shell.js" defer></script><script src="alert-notices.js" defer></script><link rel="stylesheet" href="dashboard-insights.css"><script src="dashboard-insight-metrics.js" defer></script><script src="dashboard-insights.js" defer></script><script src="dashboard-widgets.js" defer></script><script src="dashboard-builder.js" defer></script>
 </head>
 <body class="agents-page dashboard-page builder-page" data-dashboard="personal" data-theme="light">
 <a class="skip-link" href="#main">본문으로 이동</a><div id="app-shell"></div>
 <main id="main" class="main-content dashboard-main">
 <div class="dashboard-heading"><div><p class="builder-eyebrow">내 관제 공간</p><h1 id="dashboard-title">내 대시보드</h1><p id="dashboard-description">목적에 맞는 위젯을 선택하고 이 계정의 화면으로 저장하세요.</p></div><div class="dash-actions"><a href="index.html">홈</a><button id="dashboard-edit" disabled>편집</button><button id="dashboard-create" class="dash-primary" disabled>＋ 새 대시보드</button></div></div>
-<div class="dash-toolbar"><label>조회 기간<select id="dashboard-period" disabled><option value="60">최근 1시간</option><option value="1440" selected>최근 24시간</option><option value="10080">최근 7일</option></select></label><button id="dashboard-refresh">새로고침</button><label class="builder-auto"><input id="dashboard-auto" type="checkbox" checked>자동 갱신 · 일반 60초 / 초기 통지 10초</label><span id="dashboard-updated" role="status">구성 조회 중</span></div>
+<div class="dash-toolbar"><label>조회 기간<select id="dashboard-period" disabled><option value="60">최근 1시간</option><option value="1440" selected>최근 24시간</option><option value="10080">최근 7일</option></select></label><button id="dashboard-refresh">새로고침</button><label class="builder-auto"><input id="dashboard-auto" type="checkbox" checked>데이터 자동 갱신</label><span id="dashboard-updated" role="status">구성 조회 중</span></div>
 <p id="dashboard-error" role="alert" hidden></p><p id="dashboard-coverage" class="dash-warning" role="status" hidden></p>
 <p id="dashboard-realtime" class="dash-subtitle" role="status" hidden></p>
 <p id="dashboard-backlog" class="dash-subtitle" role="status" hidden></p>
@@ -22,7 +22,8 @@
 <aside class="builder-list builder-panel" aria-label="내 대시보드 목록"><div class="builder-panel-heading"><h2>내 대시보드</h2><span id="dashboard-total"></span></div><div id="dashboard-list"></div><h2>기본 템플릿</h2><div id="dashboard-templates"></div><p class="dash-subtitle">개인 화면은 이 계정에만 저장됩니다. 기존 개인 설정도 그대로 보존됩니다.</p></aside>
 <section class="builder-canvas" aria-label="대시보드 캔버스">
 <div id="dashboard-manage" class="dash-actions"><button id="dashboard-favorite">즐겨찾기</button><button id="dashboard-default">기본 화면 지정</button><button id="dashboard-rename">이름 변경</button><button id="dashboard-duplicate">복제</button><button id="dashboard-delete">삭제</button></div>
-<section id="dashboard-editor" class="builder-editbar" hidden aria-label="화면 편집"><label>이름<input id="dashboard-name" maxlength="48"></label><div class="dash-actions"><button id="dashboard-save" class="dash-primary">구성 저장</button><button id="dashboard-cancel">취소·저장 구성 복원</button><button id="dashboard-undo">되돌리기</button><button id="dashboard-reset">템플릿으로 초기화</button></div><p id="dashboard-save-state" role="status">핸들로 이동·크기를 조정하거나 각 위젯의 버튼을 사용하세요.</p></section>
+<section id="dashboard-editor" class="builder-editbar" hidden aria-label="화면 편집"><label>이름<input id="dashboard-name" maxlength="48"></label><div class="dash-actions"><button id="dashboard-save" class="dash-primary">구성 저장</button><button id="dashboard-cancel">취소·저장 구성 복원</button><button id="dashboard-undo">되돌리기</button><button id="dashboard-reset">템플릿으로 초기화</button></div><p id="dashboard-save-state" role="status">제목을 끌어 옮기거나 위젯의 이동 버튼을 누른 뒤 원하는 자리를 선택하세요.</p></section>
+<div id="dashboard-movebar" class="builder-movebar" hidden><span id="dashboard-move-message" role="status" aria-live="polite"></span><button id="dashboard-move-cancel" type="button">이동 취소</button></div>
 <div id="dashboard-conflict" class="builder-editbar" hidden><p>현재 편집 내용은 유지됩니다. 서버 구성을 다시 불러오면 현재 편집을 취소합니다.</p><button id="dashboard-reload">서버 구성 다시 불러오기</button></div>
 <div id="platform-grid" class="platform-grid" aria-label="대시보드 위젯"></div>
 <p class="dash-footnote">KST 표시 · 로그는 서버 수신 시각,경보는 발생 구간 시각 기준입니다. 미종결 사건과 서비스 상태는 현재 상태입니다. 경보 수는 공격 성공 횟수가 아닙니다. <a href="logs.html">통합 로그</a> · <a href="cases.html">사건 조사</a></p>

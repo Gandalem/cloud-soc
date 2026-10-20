@@ -2,21 +2,37 @@
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>탐지 규칙 관리 | Cloud SOC</title><link rel="icon" href="assets/mark.svg" type="image/svg+xml">
 <script src="/theme.js"></script><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css">
-<link rel="stylesheet" href="shell.css"><link rel="stylesheet" href="settings-slack.css"><link rel="stylesheet" href="/theme.css">
-<script src="auth-client.js"></script><script src="shell.js" defer></script><script src="settings-rules.js" defer></script></head>
+<link rel="stylesheet" href="shell.css"><link rel="stylesheet" href="settings-slack.css"><link rel="stylesheet" href="settings-rules.css"><link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="live-refresh.css"><script src="live-refresh.js" defer></script><script src="auth-client.js"></script><script src="shell.js" defer></script><script src="rule-editor.js" defer></script></head>
 <body class="agents-page" data-theme="light"><a class="skip-link" href="#main">본문으로 이동</a><div id="app-shell"></div>
-<main id="main" class="main-content slack-settings"><h1>탐지 규칙 관리</h1>
-<p id="rule-state" role="status">상태 확인 중</p>
-<section class="slack-panel"><h2>수동 규칙 초안</h2>
-<p>수동 입력 가능 / AI 연동 대기. 자연어 메모를 YAML로 자동 변환하지 않습니다. 비밀정보와 실제 개인정보를 입력하지 마세요.</p>
-<form id="rule-create"><label for="rule-organization">조직</label><select id="rule-organization" required></select>
-<label for="rule-intent">자연어 탐지 조건 메모 (선택, UTF-8 1KiB)</label><textarea id="rule-intent" rows="2" cols="60" maxlength="1024"></textarea>
-<label for="rule-yaml">기존 엔진 형식 YAML (UTF-8 4KiB)</label><textarea id="rule-yaml" rows="20" cols="75" maxlength="4096" required spellcheck="false"></textarea>
-<div class="slack-actions"><button id="rule-example" type="button">임계값 예시 채우기</button><button id="rule-save" type="submit">초안 저장</button></div></form>
-<details><summary>지원 범위</summary><p>threshold / single 규칙만 지원합니다. 한 문서에 규칙 1개, 조직 equals 조건과 organization.id 그룹이 필수입니다. 형식 검증은 탐지 효과 검증이 아닙니다.</p><pre id="rule-fields"></pre></details></section>
-<section class="slack-panel"><h2>초안 및 승인 이력</h2><button id="rule-refresh" type="button">목록 새로고침</button><div id="rule-list"></div></section>
-<section class="slack-panel" id="rule-detail" hidden><h2>선택한 초안</h2><p id="rule-summary"></p><pre id="rule-preview"></pre>
-<p id="rule-validation"></p><p id="rule-approval"></p>
-<div class="slack-actions"><button id="rule-validate" type="button">형식 검증</button><button id="rule-approve" type="button">관리자 승인</button><button id="rule-reject" type="button">거부</button><button id="rule-apply" type="button">적용 요청 · 배포 대기</button><a id="rule-export" hidden>승인 YAML 내려받기</a></div>
-<p>승인·적용 요청은 운영 룰을 변경하지 않습니다. 기존 고정 규칙 프로필 검토와 별도 배포가 필요하며 자동 재시작하지 않습니다.</p><h3>검증·승인·적용 요청 이력</h3><div id="rule-history"></div></section>
-<p id="rule-result" role="status" aria-live="polite"></p></main></body></html>
+<main id="main" class="main-content slack-settings"><h1>탐지 규칙</h1>
+<p>로그와 조건을 선택해 경보를 설정하세요.</p><p id="rule-result" role="status" aria-live="polite"></p>
+<section class="slack-panel"><div class="rule-heading"><h2>내 규칙</h2><button id="rule-new" type="button">새 규칙</button></div>
+<div class="rule-grid"><label>검색<input id="rule-search" type="search" placeholder="이름·사이트·조건 검색"></label>
+<label>조직<select id="rule-filter-org"><option value="">전체 조직</option></select></label>
+<label>상태<select id="rule-filter-state"><option value="">전체 상태</option><option value="draft">초안</option><option value="approved">승인됨</option><option value="running">사용 중</option><option value="pending">반영 대기</option><option value="failed">오류</option></select></label></div>
+<div id="rule-list" class="rule-list"></div></section>
+<section class="slack-panel" id="rule-editor"><h2 id="rule-editor-title">새 규칙</h2>
+<form id="rule-create"><div class="rule-grid"><label>템플릿<select id="rule-template"></select></label><label>조직<select id="rule-organization" required></select></label>
+<label>규칙 이름<input id="rule-name" required maxlength="160"></label><label>규칙 ID<input id="rule-key" required pattern="[A-Z][A-Z0-9-]{2,63}" maxlength="64"></label></div>
+<div class="rule-grid"><label>로그 종류<select id="rule-source"></select></label><label>탐지 방식<select id="rule-kind"></select></label></div>
+<fieldset><legend>다음 조건을 모두 만족할 때</legend><div id="rule-conditions"></div><button id="rule-add-condition" type="button">조건 추가</button></fieldset>
+<fieldset><legend>같은 대상으로 묶기</legend><div id="rule-groups" class="rule-groups"></div><p>조직은 항상 분리하며 웹 로그는 호스트·사이트도 분리합니다.</p></fieldset>
+<div class="rule-grid"><label id="rule-count-label">탐지 횟수<input id="rule-count" type="number" min="1" max="10000" required></label>
+<label id="rule-window-label">집계 범위 (초)<input id="rule-window" type="number" min="1" max="3600" required></label>
+<label id="rule-cooldown-label">같은 대상의 알림 간격 (초)<input id="rule-cooldown" type="number" min="0" max="3600" required></label>
+<label id="rule-success-label" hidden>마지막 해당 실패 후 성공까지 (초)<input id="rule-success" type="number" min="1" max="3600"></label>
+<label>대응 우선순위<select id="rule-severity"><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option><option value="critical">긴급</option></select></label></div>
+<label for="rule-description">경보 설명</label><textarea id="rule-description" rows="3" maxlength="1000"></textarea>
+<div class="rule-preview"><strong>이 규칙이 하는 일</strong><p id="rule-summary"></p></div>
+<div class="slack-actions"><button id="rule-save" type="submit">초안 저장</button><button id="rule-cancel" type="button">새로 작성</button></div></form></section>
+<section class="slack-panel" id="rule-detail" hidden><h2 id="rule-detail-name"></h2><p id="rule-detail-summary"></p><p id="rule-detail-state"></p>
+<div class="slack-actions"><button id="rule-edit" type="button">수정</button><button id="rule-copy" type="button">복제</button><button id="rule-approve" type="button">승인</button><button id="rule-stop" type="button">사용 중지</button><button id="rule-delete" type="button">삭제</button></div>
+<div class="rule-grid"><label>적용 시작 시각<input id="rule-start" type="datetime-local" step="1"></label><button id="rule-apply" type="button">적용</button></div>
+<div id="rule-input-issues"></div><details><summary>변경 이력</summary><div id="rule-history"></div></details></section>
+<section class="slack-panel"><h2>여러 규칙 가져오기</h2><p>CSV 또는 JSON 파일을 선택한 뒤 등록할 항목을 확인하세요.</p>
+<div class="slack-actions"><a href="/api/settings/rule-library/template.csv" download>엑셀용 CSV 양식</a><a href="/api/settings/rule-library/export" download>내 규칙 JSON 내보내기</a></div>
+<label>등록할 조직<select id="rule-import-org"></select></label><label>규칙 파일<input id="rule-file" type="file" accept=".csv,.json"></label>
+<button id="rule-import-preview" type="button">목록 확인</button><div id="rule-import-list"></div><button id="rule-import-create" type="button" disabled>선택 항목 등록</button></section>
+<section class="slack-panel"><h2>기본 제공 규칙</h2><div id="rule-builtin-list" class="rule-list"></div></section>
+</main></body></html>

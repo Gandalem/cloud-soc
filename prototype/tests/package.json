@@ -1,0 +1,6 @@
+{
+  "name": "cloud-soc-ui-contract-tests",
+  "private": true,
+  "scripts": { "test": "node --test" },
+  "devDependencies": { "linkedom": "0.18.12" }
+}

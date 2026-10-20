@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="agents.css">
   <link rel="stylesheet" href="agent-status.css">
   <link rel="stylesheet" href="shell.css">
-  <script src="auth-client.js"></script>
+  <link rel="stylesheet" href="live-refresh.css"><script src="live-refresh.js" defer></script><script src="auth-client.js"></script>
   <script src="shell.js" defer></script>
   <script src="agent-status.js" defer></script>
 <link rel="stylesheet" href="/theme.css">
@@ -20,7 +20,7 @@
   <a class="skip-link" href="#main">본문으로 이동</a>
   <div id="app-shell"></div>
   <main id="main" class="main-content agents-main">
-    <div class="page-heading"><div><h1>에이전트 수신 현황</h1></div><div class="status-controls"><label><input id="auto-refresh" type="checkbox" checked>30초 자동 갱신</label><button id="status-refresh" class="primary-button">새로고침</button></div></div>
+    <div class="page-heading"><div><h1>에이전트 수신 현황</h1></div><div class="status-controls"><button id="status-refresh" class="primary-button">새로고침</button></div></div>
     <section class="status-explainer panel" aria-label="상태 판단 기준">
       <div><h2>마지막 수신 시각 기준</h2><p>미수신 상태만으로 오프라인을 판단할 수는 없습니다.</p></div>
       <div class="status-stamp"><span id="query-state" role="status">조회 중</span><span>마지막 성공 조회</span><time id="checked-at">아직 없음</time></div>

@@ -66,5 +66,5 @@ test('missing log index remains distinct from an actual zero result',()=>{
 });
 test('personal builder keeps settings out of browser storage and uses safe text rendering',()=>{
  for(const file of ['dashboard-builder.js','dashboard-widgets.js'])assert.doesNotMatch(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),/innerHTML|localStorage|eval\(/);
- const js=fs.readFileSync(path.join(__dirname,'../dashboard-builder.js'),'utf8');assert.match(js,/current!==generation/);assert.match(js,/controller\?\.abort/);assert.match(js,/revision:collection.revision/);
+ const js=fs.readFileSync(path.join(__dirname,'../dashboard-builder.js'),'utf8');assert.match(js,/CloudSOCLive.create/);assert.match(js,/enabled:/);assert.match(js,/revision:collection.revision/);
 });

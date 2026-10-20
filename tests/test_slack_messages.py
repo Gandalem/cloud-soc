@@ -104,7 +104,7 @@ def test_final_alert_uses_last_observed_window_time_not_send_time():
     hit['_source']['cloud_soc']['window_end'] = '2026-10-18T03:59:16.999999Z'
     payload = event(INDICES[0], hit)['payload']
     assert '발생 시각: 2026-10-18 12:59:16 KST' in payload['text']
-    assert '발생 시각\\n2026-10-18 12:59:16 KST' in visible(payload)
+    assert '발생 시각\n2026-10-18 12:59:16 KST' in visible(payload)
     assert '2026-10-18 23:30:00 KST' not in visible(payload)
 
 
@@ -126,7 +126,7 @@ def test_missing_or_invalid_occurrence_time_is_not_invented(value):
     hit['_source']['@timestamp'] = value
     payload = event(INDICES[0], hit)['payload']
     assert '발생 시각: 미기록' in payload['text']
-    assert '발생 시각\\n미기록' in visible(payload)
+    assert '발생 시각\n미기록' in visible(payload)
     assert 'SENSITIVE_TIME' not in json.dumps(payload)
     assert_block_limits(payload)
 

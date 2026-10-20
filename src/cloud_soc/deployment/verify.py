@@ -30,7 +30,7 @@ def evidence(client, since, *, probe=None, now=None):
     for name in WORKERS:
         row = rows.get(name)
         ok = bool(row and row.get('state') in ('success', 'waiting', 'running') and row.get('last_success')
-                  and (now-stamp(row['last_success'])).total_seconds() <= 300 and not row.get('error'))
+                  and 0 <= (now-stamp(row['last_success'])).total_seconds() <= 300 and not row.get('error'))
         if not ok:
             result['issues'].append(name + '_not_verified')
         result['workers'][name] = {'verified': ok, 'state': row.get('state') if row else 'missing',
@@ -57,7 +57,10 @@ def evidence(client, since, *, probe=None, now=None):
     result['exact_live_normalized_references'] = exact
     if not exact:
         result['issues'].append('new_live_normalization_absent')
-    query = {'bool': {'filter': [{'term': {'rule.id': 'AUTH-001'}}]}}
+    # Every acceptance requires a new alert; an old AUTH alert cannot certify
+    # today's installation merely because unrelated new logs were received.
+    query = {'bool': {'filter': [{'term': {'rule.id': 'AUTH-001'}},
+                                {'range': {'@timestamp': {'gte': since, 'lte': now.isoformat()}}}]}}
     if probe:
         query['bool']['filter'] += [{'term': {'source.ip': probe['source_ip']}}, {'range': {'@timestamp': {'gte': probe['started_at']}}}]
     alerts = search('security-alerts', size=20, query=query, sort=[{'@timestamp': 'desc'}])

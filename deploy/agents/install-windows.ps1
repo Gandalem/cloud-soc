@@ -38,7 +38,7 @@ $ConfigPath = Join-Path $Root 'filebeat.yml'
 $DataPath = Join-Path $Root 'data'
 $LogsPath = Join-Path $Root 'logs'
 $Hash = 'cdb07ad1e39e7c65cefcd7c71e1dfcfa4f92b00daafc132c78490e3e04f664f67403cdb925c5873a8441058d6de08d29790bf6776748edc63582f50174c508c8'
-$Channels = @('Application', 'Security', 'System') + $AdditionalChannel
+$Channels = @('Security', 'System') + $AdditionalChannel
 $LogRoots = @(Get-DefaultLogRoots) + $AdditionalLogRoot
 $CommonArgs = @('--path.home', $BeatHome, '--path.config', $Root, '--path.data', $DataPath, '--path.logs', $LogsPath, '-c', $ConfigPath)
 $ServiceCreated = $false
@@ -174,7 +174,7 @@ try {
     $config = Get-AgentConfig | ConvertTo-Json -Depth 12
     if ($DryRun) {
         $config
-        [Console]::Error.WriteLine('DRY RUN: automatic active event channels + recursive text log discovery every minute. No source inventory in this preview; generated on the server.')
+        [Console]::Error.WriteLine('DRY RUN: selected security event channels and firewall files; other discovered sources remain excluded. Inventory is generated on the device.')
         [Console]::Error.WriteLine('No download, writes, key prompt, OS/source checks, network or service changes.')
         exit 0
     }

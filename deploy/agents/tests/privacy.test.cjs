@@ -25,6 +25,13 @@ function run(source, fail = false) {
   context.process(event);
   return event;
 }
+test('generic file, journal and Docker mirrors cannot ship ModSecurity audit payloads',()=>{
+  const audit=JSON.stringify({transaction:{producer:{modsecurity:'fixture'},request:{uri:'/private-customer-path'},messages:[]}});
+  for(const message of [audit,JSON.stringify({log:audit})]) {
+    assert.equal(run({labels:{log_source:'linux_journald'},message}).cancelled,true);
+  }
+  assert.equal(run({labels:{log_source:'linux_file'},message:'native request body',log:{file:{path:'/var/log/modsecurity/audit.log'}}}).cancelled,true);
+});
 
 test('P5 SSH and PAM sudo metadata survive unchanged while sudo command logs stay masked', () => {
   const bodies = [

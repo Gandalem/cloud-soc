@@ -1,0 +1,11 @@
+{
+  "organizations": ["example-org"],
+  "normalized_indices": ["soc-normalized-v1"],
+  "raw_indices": ["soc-host-raw-example"],
+  "alerts_index": "security-alerts",
+  "revisions_index": "soc-managed-alert-revisions-v1",
+  "max_events": 10000,
+  "max_alerts": 100000,
+  "late_seconds": 300,
+  "future_seconds": 0
+}

@@ -32,6 +32,16 @@ SCHEMAS = {
 LEGACY_DATABASES = set(SCHEMAS) - {"log-access.sqlite", "dashboards.sqlite"}
 FORMAT_DATABASES = {1: LEGACY_DATABASES, 2: set(SCHEMAS) - {"dashboards.sqlite"}, 3: set(SCHEMAS)}
 FORMAT_DATABASES[4] = set(SCHEMAS)
+# Format 5 adds only the known insight state tables. The machine-auth key is deliberately excluded.
+SCHEMAS['dashboard-insights.sqlite'] = {
+    'insight_devices':'id organization label credential_hash generation expires interval paused revoked version created credential_epoch'.split(),
+    'insight_reports':'device generation sequence fingerprint received body'.split(),
+    'insight_requests':'request_id actor fingerprint device at'.split(),
+    'insight_audit':'seq actor action reference at'.split(),
+    'insight_records':'kind id organization fingerprint body actor at'.split(),
+}
+FORMAT_DATABASES[5] = set(SCHEMAS)
+
 COLLECTION_COLUMNS = 'actor revision body'.split()
 MAX_BYTES = 1024 ** 3
 MANIFEST = "manifest.json"
@@ -40,6 +50,47 @@ RULE_WORKFLOW_COLUMNS = {
     'rule_drafts': 'id organization yaml intent content_hash status application_state version rule_id validation created_at approved_by approved_at'.split(),
     'rule_history': 'seq draft_id actor at action version rule_id content_hash result'.split(),
 }
+MANAGED_LIBRARY_COLUMNS = {
+    'managed_rules': 'id organization rule_key version status definition content_hash generation desired observed observed_state observed_at created_at'.split(),
+    'managed_versions': 'rule_id version definition engine_rule content_hash actor approved_at'.split(),
+    'managed_releases': 'rule_id generation action version engine_rule effective_from actor at'.split(),
+    'managed_audit': 'seq rule_id actor action at version content_hash'.split(),
+    'managed_batches': 'request_id actor content_hash result'.split(),
+}
+MANAGED_WORKER_COLUMNS = {
+    'managed_worker_state':'rule_id generation body'.split(),
+    'managed_alerts':'id rule_id original content_hash'.split(),
+    'managed_alert_revisions':'id logical_id content_hash'.split(),
+    'managed_input_issues':'rule_id reference reason'.split(),
+}
+
+
+def case_schema(tables):
+    schema=dict(SCHEMAS['cases.sqlite'])
+    groups=[RULE_WORKFLOW_COLUMNS,MANAGED_LIBRARY_COLUMNS,MANAGED_WORKER_COLUMNS,
+            {'managed_heartbeat':'scope at failed'.split()}]
+    for group in groups:
+        if set(group)&tables:
+            if not set(group)<=tables:raise BackupError('Incomplete rule state schema.')
+            if group is MANAGED_WORKER_COLUMNS and not set(MANAGED_LIBRARY_COLUMNS)<=tables:
+                raise BackupError('Worker state without rule library.')
+            if 'managed_heartbeat' in group and not set(MANAGED_WORKER_COLUMNS)<=tables:
+                raise BackupError('Heartbeat without worker state.')
+            schema.update(group)
+    if tables!=set(schema):raise BackupError('Unsupported case state schema.')
+    return schema
+
+
+def allowed_count_tables(name,format_version,tables):
+    if name=='cases.sqlite':
+        try:case_schema(tables);return True
+        except BackupError:return False
+    allowed=[set(SCHEMAS[name])]
+    if name=='packages.sqlite3':allowed.append(set(SCHEMAS[name])|{'enrollments'})
+    if name=='dashboards.sqlite' and format_version>=4:allowed.append({'dashboards','dashboard_collections'})
+    return tables in allowed
+
+
 ENROLLMENT_COLUMNS = "id token_hash package_id package_sha256 spec target_label days created expires deadline state attempt_hash sealed nonce key_ids agents completed".split()
 
 
@@ -113,8 +164,8 @@ def inspect_database(path, name, budget):
             schema['dashboard_collections'] = COLLECTION_COLUMNS
         if name == "packages.sqlite3" and "enrollments" in tables:
             schema["enrollments"] = ENROLLMENT_COLUMNS
-        if name == 'cases.sqlite' and set(RULE_WORKFLOW_COLUMNS) <= tables:
-            schema.update(RULE_WORKFLOW_COLUMNS)
+        if name == 'cases.sqlite':
+            schema=case_schema(tables)
         if tables != set(schema):
             raise BackupError("Unsupported database schema; use the matching application version.")
         counts = {}
@@ -188,6 +239,8 @@ def backup(source, target, *, seconds=60, max_bytes=MAX_BYTES):
         names.append("log-access.sqlite")
     if os.path.lexists(source / "dashboards.sqlite"):
         names.append("dashboards.sqlite")
+    if os.path.lexists(source / "dashboard-insights.sqlite"):
+        names.append("dashboard-insights.sqlite")
     sizes = []
     for name in names:
         path = checked_path(source / name)
@@ -205,6 +258,7 @@ def backup(source, target, *, seconds=60, max_bytes=MAX_BYTES):
         with read_db(source / 'dashboards.sqlite', budget) as db:
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='dashboard_collections'").fetchone():
                 format_version = 4
+    if "dashboard-insights.sqlite" in names:format_version=5
     schema_names = FORMAT_DATABASES[format_version]
     report = {"format": format_version, "kind": "portal-sqlite-backup", "created_at": datetime.now(timezone.utc).isoformat(),
               "consistency": "per_database", "missing": sorted(schema_names - set(names)), "files": []}
@@ -258,11 +312,7 @@ def verify(source, *, seconds=60, max_bytes=MAX_BYTES):
         for entry in report["files"]:
             if (set(entry) != {"name", "bytes", "sha256", "counts"} or type(entry["bytes"]) is not int
                     or not 4096 <= entry["bytes"] <= max_bytes or not re.fullmatch("[0-9a-f]{64}", entry["sha256"])
-                    or set(entry["counts"]) not in (set(SCHEMAS[entry["name"]]),
-                        set(SCHEMAS[entry["name"]]) | ({"enrollments"} if entry["name"] == "packages.sqlite3" else set()),
-                        {'dashboards', 'dashboard_collections'} if entry['name'] == 'dashboards.sqlite' and report['format'] == 4 else set(),
-                        set(SCHEMAS[entry['name']]) | set(RULE_WORKFLOW_COLUMNS)
-                        if entry['name'] == 'cases.sqlite' else set())
+                    or not allowed_count_tables(entry['name'],report['format'],set(entry['counts']))
                     or any(type(n) is not int or n < 0 for n in entry["counts"].values())):
                 raise ValueError
     except (ValueError, TypeError, KeyError, AttributeError):
