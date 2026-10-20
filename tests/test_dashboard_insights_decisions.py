@@ -194,7 +194,7 @@ def test_new_read_api_scopes_records_and_denies_viewer_management(tmp_path):
     assert client.get('/api/dashboard-data/fleet',base_url='https://soc.test').status_code==403
     for asset in ('dashboard-insights.js','dashboard-insight-metrics.js','assets/world-countries-110m.json'):
         assert client.get('/'+asset,base_url='https://soc.test').status_code==200
-    assert client.post('/api/dashboard-records/policy',base_url='https://soc.test',json=policy(),headers={'X-Cloud-SOC':'portal'}).status_code==403
+    assert client.post('/api/dashboard-records/policy',base_url='https://soc.test',json=policy(),headers={'X-Cloud-SOC':'portal','X-CSRF-Token':app.extensions['sessions'].get(token)['csrf']}).status_code==403
 
 
 def test_cloud_alert_filter_is_applied_before_total_and_top_fifty():

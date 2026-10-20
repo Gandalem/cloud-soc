@@ -12,6 +12,8 @@
 
 # Current User Direction (2026-10-21)
 
+- Latest user direction: implement the TEST-QUALITY-01 draft on codex/operational-readiness, preserving existing edits. Review only new/directly affected tests near 50% and 100%; repair and rerun affected failures. The request to update tests in Git authorizes committing/pushing this change to Gandalem/cloud-soc on the current branch. No main merge, deployment, full suite, live service changes or reboot.
+
 - Latest user direction (2026-10-21): document the remaining dashboard connections and priorities, then commit and push the current development changes to https://github.com/Gandalem/cloud-soc.git on codex/operational-readiness. This supersedes earlier no-commit/no-push directions for this snapshot. Do not merge main, deploy, reboot or run additional feature checks for this documentation/Git request. Preserve historical verification limits and exclude secrets/runtime data from Git.
 
 - Latest user direction: implement the approved dashboard capability draft. Perform exactly two scoped review passes, near 50% and after implementation 100%, limited to major changed code and calculations/state decisions. No full test suite or general browser/E2E/reboot verification. Preserve existing changes; no commit/push.

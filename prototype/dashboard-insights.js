@@ -36,7 +36,7 @@
   interval.min='15';interval.max='300';days.min='1';days.max='90';org.maxLength=128;label.maxLength=80;
   const submit=N('button','등록');submit.type='submit';const result=N('div');form.append(submit,result);
   const requestId=crypto.randomUUID();
-  form.addEventListener('submit',async e=>{e.preventDefault();submit.disabled=true;result.replaceChildren();try{
+  form.addEventListener('submit',async e=>{e.preventDefault();if(submit.disabled)return;submit.disabled=true;result.replaceChildren();try{
    const reply=await request('/api/dashboard-devices',{method:'POST',headers:{'Content-Type':'application/json','X-Cloud-SOC':'portal'},body:JSON.stringify({request_id:requestId,organization:org.value.trim(),label:label.value.trim(),interval:Number(interval.value),days:Number(days.value)})});
    text(result,'발급됐습니다. 자격 증명은 이 응답에서 한 번만 표시됩니다. 상태 보고에는 HTTPS 연결을 사용하세요.');
    const secret=N('output',reply.credential,'insight-credential');result.append(secret);text(result,'장치 ID '+reply.id+' · 실행 세대 '+reply.generation);

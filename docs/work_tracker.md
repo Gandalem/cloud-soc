@@ -1,5 +1,36 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-21 테스트 보강 — TEST-QUALITY-01
+
+- [x] TEST-QUALITY-01 구현·제한 검수 완료(2026-10-21): 승인 초안에 따라 CI 고정 UI 의존성 설치, 독립 기대값의 계산식, RBAC/CSRF 원인 분리, 다중 페이지/PIT 완전성, 장치 인증/로컬 TLS, 주요 폼 상태를 보강한다. 약50%와100%에 신규/직접 영향 검사만 두 차례 수행하고 수정 후 영향 실패만 재확인한다. 기존 미커밋 문서와 기능 계약을 보존하며 전체 테스트·실제 서비스·재부팅·이관·main 병합·자동 커밋/푸시는 제외한다. 최신 ‘깃에 수정’ 요청에 따른 이번 작업 브랜치 커밋/푸시는 명시 요청 범위로 수행하며 main/서비스는 변경하지 않는다.
+- 50% 제한 검수: 신규 계산/권한/조회+기존 viewer 영향38항목 중 최초37통과/1실패. 신규 sort 기대값을 실제 date 정렬 계약으로 수정했다. 강제 supported mock을 제거하면서 드러난 AWS 합성 입력의 잘못된 host 인덱스/누락schema도 실제 cloud 계약으로 보완하고 영향 조회13항목 최종 통과했다. 제품 파서/권한/조회 성공 조건을 완화하지 않았다.
+- 작성100% 도달: 전반 독립 계산/CSRF/503건 다중페이지, 후반 새 장치키/상태 불변/실제 loopback TLS와 폼 핵심 검사를 작성했다. CI 고정 npm 설치와 Windows 신규검사 선택을 연결했다. 이제 최종 제한 검수로 전환하며 전체 테스트/실습·운영 연결/위치 이동 검사는 실행하지 않는다.
+- 최종 제한 검수: 후반 장치/실제 loopback TLS+직접 영향 Python35항목 통과(skip0). 전반과 영향 재검사까지 고유63항목 통과이며 전체 suite 결과가 아니다. Node 최초14항목 중11통과/중복 제출3실패를 확인해 제품 submit handler2곳에 저장 중 재진입 차단만 추가하고 해당3항목 통과. 계정 평가 폼의 조직/정책/KST/만료·근거 전달1항목도 통과해 고유JS15항목을 확인했다. 새 테스트에서 노출된 실제 중복 요청을 고쳤으며 서버 검증/규칙/기대값을 완화하지 않았다.
+- 정적/CI 연결: 변경 테스트의 fixture import shadowing F811을 명시적 module 바인딩으로 수정하고 영향2파일 진단 통과, 나머지 신규파일 최초 진단 정상. 변경 제품JS2파일 구문·고정 npm ci 설치 통과. workflow는 기존 검사/트리거를 보존하며 UI lockfile 설치와 Windows 새검사 선택만 추가했다. GitHub Actions 원격 실행/전체 통과나 실서비스 인수는 수행하지 않았다.
+- 정리/근거: 실제 loopback 시험 서버 shutdown/thread join과 새 인증서/개인키 제거 완료. 기존 서버/서비스/키/데이터·큐/체크포인트는 변경하지 않았다. state/test-quality/{midpoint,midpoint-affected,midpoint-query-fix,final,final-js,final-js-affected,final-assessment,final-output-affected} 로그/XML은 Git 제외로 보존한다. tests/{dashboard_quality_fixtures,test_dashboard_quality,test_dashboard_query_quality,test_dashboard_device_quality,test_device_heartbeat_tls}.py, 기존 test_dashboard_insights_decisions.py, prototype/tests/dashboard-insights-forms.test.cjs, 제품 dashboard-insights.js/dashboard-insight-metrics.js, .github/workflows/ci.yaml 및 docs/test_quality.md에 기록한다. main 병합/배포/전체검사/재부팅은 하지 않는다.
+
+
+## 2026-10-21 테스트 코드 검토 — TEST-REVIEW-01
+
+- 사용자 질문에 따라 최근 변경된 규칙/수집/대시보드 테스트와 CI 연결을 읽기 검토했다. 테스트 실행·코드/워크플로 수정·서버 변경·커밋/푸시는 하지 않았다. 아래는 제품 오류를 실행 재현한 결과가 아니라 테스트의 판별력/누락과 CI 실행 전제에 대한 판단이다.
+- 병합 전 우선: ci.yaml에 prototype/tests lockfile 설치가 없으므로 npm ci 연결이 필요하다. 현재 작업 브랜치 push는 CI 대상이 아니며 PR/수동 실행으로 최신 SHA 결과를 확인해야 한다.
+- 점수/비율 판별력: tests/test_dashboard_insights_decisions.py:114의 TP=FN=FP=TN=1은 precision/recall 모두50으로, 두 수식을 바꾸어도 통과한다. TP=3/FP=1/FN=2처럼 결과가 달라지는 입력 및 분모0/0%/100%를 각각 고정 기대값으로 확인할 후속 검사가 필요하다.
+- 새 조회 경로: 같은 파일46은 timed_out 실패만 확인하며 InsightReader.scan 정상 다중 페이지/같은 시각·다른 인덱스 동일ID/search_after·PIT 갱신/폐기/중복·범위 밖 문서·용량 초과를 직접 통과시키는 검사가 없다. cloud_summary70건 직접 입력은 검색 조회의 완전성 검사를 대신하지 않는다. 새 경로의 결정적 합성 HTTP 응답 검사를 우선 추가하고 실제 엔진 검증은 별도 범위로 둔다.
+- 권한 검사의 실패 원인 분리: 같은 파일197의 viewer 관리POST는 유효 CSRF가 없어 RBAC 차단이 없어져도 CSRF 등 후속 경계의403으로 통과할 수 있다. 유효 CSRF의 viewer 거부/유효 CSRF의 관리자 성공/관리자 CSRF 누락·오류 거부를 분리하고 저장 상태 불변을 확인해야 한다.
+- 장치/TLS: 같은 파일58은 빈 본문/인증 헤더 누락의 Flask 요청만 확인한다. 유효 장치 키+정상 보고, 유효 키의HTTP 거부, 비신뢰 프록시의XFP 위조/명시 신뢰 프록시, pause/만료·시계·순번/내용 충돌 경계와 보고기 인증서·호스트 이름 실패를 추가할 필요가 있다. Flask base_url=https 자체는 실제 TLS handshake 검사가 아니다. 이미 있는 원장 회전/폐기/응답 중복 검사는 유지한다.
+- 화면: 새 dashboard-insights-decisions.test.cjs는 출처별 갱신 병합과조회계획2개만 다루며 새 장치/정책/평가 폼의 제출·오류·일회성 비밀 표시/닫기·열린 폼의 자동갱신 보존은 검사하지 않는다. 해당 흐름은 후속 연결 작업의 핵심 DOM 검사 후보이며 사용자 지시로 미검증인 이동 동작을 이번에 임의 검사하지 않는다.
+- 유지할 검사: 승인 불변 버전/삭제 worker ack/응답 유실·로컬 저장 실패/중복 경보/조직 격리/계산 null·근거 미평가/복원 인증epoch 등 기존 검사의 의미는 유효하다. 문자열 존재 검사는 카탈로그 동기화 등 정적 계약에 유지하되 실제 실행/수집/보안 동작 인수라고 확대 해석하지 않는다. 우선 CI 실행 전제와 위 계산·권한·페이지 검사를 보완하는 방향을 제안하며 승인된 중간/최종 제한 검수 범위는 자동 확대하지 않는다.
+
+
+## 2026-10-21 main 병합 사전 확인 — MERGE-READINESS-01
+
+- 읽기 전용 조사 결과: origin/main=6925f8f, 작업/원격 codex/operational-readiness=3676082. main은 작업 브랜치의 조상이므로 현재 Git 이력상 충돌 없는 fast-forward 관계다. main 대비2커밋/157파일이며 직전103파일 커밋뿐 아니라 b014fe6의 범용 사이트/WAF 변경도 포함된다. 실제 병합은 수행하지 않았다.
+- 판단: 즉시 병합은 보류한다. 현재 브랜치에 열린/종료 PR 및 Actions 실행/최신 커밋 check-run이 없고 ci.yaml의 push 대상에 codex/operational-readiness가 없다. PR 이벤트 또는 명시 수동 실행 시 실행할 수 있는 설정이다. 기존 main의 최근 실행39178381679는 Linux/Windows 모두 Slack 발생 시각 줄바꿈 기대값 관련7검사 실패이며 해당 기대값은 작업 브랜치에서 수정되어 있으나 최신 SHA의 CI 재확인은 없다.
+- 새 CI 연결 문제: prototype/tests/live-dom.cjs는 linkedom을 require하고 prototype/tests/package-lock.json에 고정했지만 workflow는 Node 설치 후 npm ci 단계를 실행하지 않는다. 깨끗한 runner의 UI 단계에서 의존성을 찾지 못할 것으로 판단한다. npm ci --prefix prototype/tests --ignore-scripts 등 lockfile 설치 연결을 먼저 보완한 뒤 최신 커밋 기준 결과를 확인해야 한다. 이번에는 코드/워크플로 수정·새 실행·PR 생성·커밋/푸시·서버 변경·테스트 재실행을 하지 않았다.
+- Actions 범위: Linux Python 회귀/coverage, Windows 선택 탐지·에이전트/권한 회귀, 공통 배포/통지 계약, PowerShell 구문·오프라인 agent, Node DOM/UI 회귀, 합성 규칙/성능, Ruff/Bandit/의존성 취약점, Compose/이미지 빌드, 격리 컨테이너 권한 및 loopback gateway 허용 경계를 검사한다. 앞 단계 실패 시 뒤 단계는 실행되지 않으므로 빨간 실행을 모든 단계 수행으로 보지 않는다. 실제 실습 쇼핑몰/새 OS 설치/실장치 로그 수신/실제 cloud/GeoIP/화면 전체/재부팅/운영 배포 통과를 의미하지 않는다.
+- main은 현재 classic branch protection 및 적용 ruleset이 없어 GitHub의 병합 가능 표기만으로 필수 검사 통과를 보장하지 않는다. 후속: CI 의존성 설치 보완→main 대상 PR/최신 SHA Actions→실패 원인별 영향 보완→병합 판단. 전체 기능 검토 완료나 운영 배포 승인은 아니다.
+
+
 ## 2026-10-21 후속 연결 계획과 Git 보존
 
 - [x] DASHBOARD-CONNECTIONS-DOC-01 문서화 완료(2026-10-21): 남은 연결 작업의 우선순위·착수 조건·인수 기준을 docs/dashboard_capabilities.md에 기록하고 문서 색인에 연결했다. 최신 사용자 요청으로 현재 개발 변경을 Gandalem/cloud-soc의 codex/operational-readiness에 커밋·푸시하도록 승인받았다. 과거 커밋/푸시 금지는 이번 요청 범위에서 해제한다. main 병합·추가 개발·서비스 변경·추가 기능 검수·재부팅은 요청 범위에 포함하지 않는다. 기존 시험 결과와 미검증 제한은 그대로 보존한다.
