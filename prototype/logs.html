@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="agents.css">
   <link rel="stylesheet" href="logs.css">
   <link rel="stylesheet" href="shell.css">
-  <script src="auth-client.js"></script>
+  <link rel="stylesheet" href="live-refresh.css"><script src="live-refresh.js" defer></script><script src="auth-client.js"></script>
   <script src="shell.js" defer></script>
   <script src="logs.js" defer></script>
   <script src="source-view.js" defer></script>
@@ -22,7 +22,7 @@
   <a class="skip-link" href="#main">본문으로 이동</a>
   <div id="app-shell"></div>
   <main id="main" class="main-content agents-main logs-main">
-    <div class="page-heading"><div><h1>통합 로그</h1><p class="subheading">호스트 · 네트워크 · 클라우드 감사 로그</p></div><button id="log-refresh" class="primary-button" type="button">새로고침</button></div>
+    <div class="page-heading"><div><h1>통합 로그</h1><p class="subheading">호스트 · 웹 · 네트워크 · 클라우드 감사 로그</p></div><button id="log-refresh" class="primary-button" type="button">새로고침</button></div>
     <section class="panel log-workspace" id="log-panel" aria-labelledby="log-list-title" aria-busy="true">
       <div class="log-list-heading"><div><h2 id="log-list-title">로그 목록</h2><p>최신순 · 새 로그는 새로고침 후 표시</p></div><span id="log-state-label" role="status">조회 준비</span></div>
       <form id="log-filters" class="log-filters" role="search" aria-label="로그 메타데이터 검색">
@@ -40,13 +40,13 @@
       </form>
       <div class="log-query-summary"><span id="log-query-range">조회 범위 확인 중</span></div>
       <div id="log-error" role="alert" hidden></div>
-      <div class="table-scroll log-sheet-scroll" tabindex="0" aria-label="로그 표 가로 스크롤 영역">
-        <table class="log-sheet"><caption class="sr-only">수신된 로그의 제한된 메타데이터. 문서 ID를 누르면 상세를 조회합니다.</caption><thead><tr><th scope="col">문서 ID</th><th scope="col">서버 수신 시각 (KST)</th><th scope="col">로그 기준 시각 (KST)</th><th scope="col">호스트 / 클라우드 계정·리전</th><th scope="col">OS / 영역</th><th scope="col">수집기</th><th scope="col">소스</th><th scope="col">채널 / 파일 / 데이터셋</th><th scope="col">이벤트 ID / 공급자</th><th scope="col">출발지 IP</th><th scope="col">목적지 IP</th><th scope="col">사용자 / 주체 ID</th><th scope="col">행위 / 결과</th><th scope="col">해석 상태</th></tr></thead><tbody id="log-rows"></tbody></table>
+      <div class="table-scroll log-sheet-scroll" tabindex="0" aria-label="로그 목록">
+        <table class="log-sheet"><caption class="sr-only">로그 종류와 관측 정보를 표시합니다. 상세 버튼으로 출처와 문서 참조를 조회합니다.</caption><thead><tr><th scope="col">로그 종류</th><th scope="col">시각 (KST)</th><th scope="col">출처</th><th scope="col">IP · 주체</th><th scope="col">주요 내용</th><th scope="col">상세</th></tr></thead><tbody id="log-rows"></tbody></table>
       </div>
       <div id="log-empty" class="empty-state" hidden><strong>해당 조건의 로그가 없습니다.</strong><p>기간과 시간 기준을 확인하세요. 수신 시각이 없는 과거 문서는 로그 기준 시각으로 조회할 수 있습니다.</p></div>
       <div class="log-pagination"><span id="log-result" role="status">불러오는 중</span><div><button id="log-prev" type="button" disabled>이전</button><span id="log-page-label">1 페이지</span><button id="log-next" type="button" disabled>다음</button></div></div>
     </section>
-    <details class="usage-details"><summary>조회·해석 기준</summary><p>목록 건수는 현재 페이지 기준입니다. 전체 로그 수나 공격 수가 아닙니다. 해석 미지원은 수집 실패가 아니며, 기록에 없는 값은 ‘미관측’으로 표시합니다. 행위 해석이 없으면 원본 필드를 사용합니다.</p><p>Windows SID는 주체 ID입니다. IP 필터는 호스트·출발지·목적지 IP를 검색합니다. 본문 검색·열 정렬·내보내기는 제공하지 않습니다. 전체 원문은 제한되며 네트워크 기록은 흐름·DNS·TLS 정보입니다.</p><p>조회는 마지막 요청 후 90초, 최대 10분간 유지됩니다. 이전 페이지는 창을 닫으면 지워집니다.</p></details>
+    <details class="usage-details"><summary>조회·해석 기준</summary><p>목록 건수는 현재 페이지 기준입니다. 전체 로그 수나 공격 수가 아닙니다. 해석 미지원은 수집 실패가 아닙니다. 목록에는 관측된 핵심 정보만 표시하며 세부 출처와 필드 상태는 상세에서 확인할 수 있습니다. 행위 해석이 없으면 원본 필드를 사용합니다.</p><p>Windows SID는 주체 ID입니다. IP 필터는 호스트·출발지·목적지 IP를 검색합니다. 본문 검색·열 정렬·내보내기는 제공하지 않습니다. 전체 원문은 제한되며 네트워크 기록은 흐름·DNS·TLS 정보입니다.</p><p>조회는 마지막 요청 후 90초, 최대 10분간 유지됩니다. 이전 페이지는 창을 닫으면 지워집니다.</p></details>
   </main>
   <dialog id="log-detail-dialog" class="log-detail-dialog" aria-labelledby="log-detail-title">
     <div class="log-detail-heading"><div><h2 id="log-detail-title">로그 상세</h2></div><button id="log-detail-close" type="button">닫기</button></div>

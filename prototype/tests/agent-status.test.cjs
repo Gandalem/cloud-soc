@@ -28,36 +28,31 @@ test('all server metadata is escaped and unknown status cannot inject classes', 
 });
 
 function browser(responses) {
-  const elements = new Map();
-  const get = selector => {
-    if (!elements.has(selector)) elements.set(selector, { textContent: '', innerHTML: '', hidden: false,
-      value: selector === '#agent-filter' ? 'all' : '', checked: true, disabled: false, listeners: {},
-      addEventListener(event, fn) { this.listeners[event] = fn; }, setAttribute() {} });
-    return elements.get(selector);
-  };
+  const dom=require('./live-dom.cjs').dom(),elements=new Map();
+  const get=selector=>{if(!elements.has(selector)){const node=dom.element('div',selector==='#agent-filter'?'all':'');node.checked=true;elements.set(selector,node);}return elements.get(selector);};
   const calls = [];
   let interval;
   const context = { document: { querySelector: get, hidden: false, addEventListener() {} },
     window: { addEventListener() {} }, AbortController, Intl, Date,
     setTimeout: () => 1, clearTimeout() {}, setInterval: fn => { interval = fn; },
     fetch: async (url, options) => { calls.push({ url, options }); return responses.shift()(); } };
-  vm.runInNewContext(script, context);
-  return { get, calls, tick: () => interval(), context };
+  dom.install(context);vm.runInNewContext(script, context);
+  return { get, calls, tick: () => dom.tick(), context };
 }
 const ok = data => () => ({ ok: true, json: async () => data });
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
-test('failed refresh clears old rows and counters rather than retaining healthy status', async () => {
+test('failed refresh retains previous rows with an explicit stale state', async () => {
   const ui = browser([ok(result), () => { throw new TypeError('Failed to fetch'); }]);
   await settle();
-  assert.equal(ui.get('#count-recent').textContent, 1);
+  assert.equal(ui.get('#count-recent').textContent, '1');
   assert.ok(ui.get('#agent-rows').innerHTML.includes('test-PC'));
   await ui.get('#status-refresh').listeners.click();
-  assert.equal(ui.get('#agent-rows').innerHTML, '');
-  assert.equal(ui.get('#count-recent').textContent, '-');
+  assert.match(ui.get('#agent-rows').innerHTML, /test-PC/);
+  assert.equal(ui.get('#count-recent').textContent, '1');
   assert.equal(ui.get('#status-error').hidden, false);
   assert.match(ui.get('#status-error').textContent, /중앙 서버에 연결하지 못했습니다/);
-  assert.match(ui.get('#query-state').textContent, /판단 불가/);
+  assert.match(ui.get('#query-state').textContent, /갱신 실패/);
   assert.equal(ui.get('#status-next').disabled, true);
 });
 
@@ -85,11 +80,10 @@ test('refresh does not overlap and stops when hidden or disabled', async () => {
   ui.context.document.hidden = true;
   ui.tick();
   ui.context.document.hidden = false;
-  ui.get('#auto-refresh').checked = false;
+  ui.get('.status-controls').querySelector('.live-controls button').listeners.click();
   ui.tick();
   assert.equal(ui.calls.length, 1);
-  ui.get('#auto-refresh').checked = true;
-  ui.tick();
+  ui.get('.status-controls').querySelector('.live-controls button').listeners.click();
   await settle();
   assert.equal(ui.calls.length, 2);
 });

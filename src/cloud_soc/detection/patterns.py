@@ -59,7 +59,7 @@ def evaluate_pattern(event, rule):
     missing = [field for field in rule['required_fields'] if not valid_value(field, get_field_value(event, field))]
     if missing:
         return 'unknown', missing
-    if rule['id'] == 'WEB-SITE-WAF-001':
+    if rule['id'] == 'WEB-SITE-WAF-001' or rule.get('metadata_profile') == 'modsecurity_audit_v1':
         from cloud_soc.web.modsecurity import validate
         try:
             values = validate(event)
@@ -136,7 +136,7 @@ def detect_pattern(events, rule, runtime=None):
                     'observed_count': len(pool), 'distinct_count': len(distinct),
                     'distinct_values': sorted(distinct), 'limitations': deepcopy(rule['limitations']),
                     'attack_success': 'not_established'}})
-            if rule['id'] == 'WEB-SITE-WAF-001':
+            if rule['id'] == 'WEB-SITE-WAF-001' or rule.get('metadata_profile') == 'modsecurity_audit_v1':
                 result[-1]['assessment'].update(reason='site_scoped_crs_sqli_metadata', waf={
                     'engine_modes': sorted({get_field_value(e, 'waf.engine_mode') for e in pool}),
                     'interruption_states': sorted({get_field_value(e, 'waf.interruption') for e in pool}),

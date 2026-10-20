@@ -9,24 +9,23 @@ const section = {state:'ok',count:0,buckets:[],rows:[],statuses:[]};
 const data = {start:'2026-09-22T01:00:00Z',end:'2026-09-22T02:00:00Z',sections:{intake:section,processing:section,alerts:section,quality:section,pipeline:{state:'not_started'}}};
 const ok = value => () => ({ok:true,json:async()=>value});
 function browser(responses) {
+  const dom=require('./live-dom.cjs').dom();
   const elements = new Map(), calls = [], timers = new Map();
   let timerId = 0;
-  function element() { return {textContent:'',children:[],listeners:{},value:'60',hidden:false,open:false,
-    addEventListener(name, fn){this.listeners[name]=fn;},setAttribute(){},
-    append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this.children=nodes;},
-    showModal(){this.open=true;},close(){this.open=false;this.listeners.close?.();}}; }
+  function element(tag){return dom.element(tag);}
   const get = id => {if(!elements.has(id))elements.set(id,element());return elements.get(id);};
   const context={document:{getElementById:get,createElement:element,createElementNS:element},
     window:{addEventListener(){},setTimeout(fn){timers.set(++timerId,fn);return timerId;},clearTimeout(id){timers.delete(id);}},URLSearchParams,Date,fetch:async(url,options)=>{calls.push({url,options});return responses.shift()();}};
   // operations.html loads the shared Mall alert renderer before operations.js.
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../mall-alerts.js'),'utf8'),context);
+  dom.install(context);
   vm.runInNewContext(script,context);
   return {get,calls,timers};
 }
 function allText(element){return element.textContent+element.children.map(allText).join(' ');}
 function alertButton(ui){const rows=ui.get('ops-alert-rows').children;assert.equal(rows.length,1);return rows[0].children.at(-1).children[0];}
 
-test('site context refreshes while open, clears failed results and stops on close',async()=>{
+test('site context refreshes while open, retains failed results with status and stops on close',async()=>{
   const row={id:'site-alert',title:'사이트 404',timestamp:data.start,site_id:'site-A'};
   const context={state:'ok',checked_at:data.end,count:1,events:[{timestamp:data.start,method:'GET',status_code:404}]};
   const ui=browser([ok({...data,sections:{...data.sections,alerts:{...section,rows:[row]}}}),
@@ -38,7 +37,7 @@ test('site context refreshes while open, clears failed results and stops on clos
   assert.match(allText(ui.get('ops-detail-content')),/GET · HTTP 404/);
   assert.equal(ui.timers.size,1);
   const [id,tick]=ui.timers.entries().next().value;ui.timers.delete(id);await tick();await settle();
-  assert.doesNotMatch(allText(ui.get('ops-detail-content')),/GET · HTTP 404/);
+  assert.match(allText(ui.get('ops-detail-content')),/GET · HTTP 404/);assert.match(allText(ui.get('ops-detail-content')),/마지막 조회 내용 유지/);
   assert.match(allText(ui.get('ops-detail-content')),/503/);
   ui.get('ops-detail').close();assert.equal(ui.timers.size,0);
 });
@@ -159,12 +158,12 @@ test('successful zero, missing index and failed queries stay distinct',async()=>
  assert.match(allText(cards[0]),/0.*조회 성공/);assert.match(allText(cards[2]),/미확인.*인덱스 없음/);assert.match(allText(cards[3]),/조회 실패/);
   assert.match(ui.get('ops-pipeline').textContent,/실행 기록 없음/);
 });
-test('failed refresh clears old totals and does not echo server body',async()=>{
+test('failed refresh retains totals with a stale indicator and does not echo server body',async()=>{
   const ui=browser([ok(data),()=>({ok:false,status:503,json:async()=>({error:'PRIVATE_CANARY'})})]);await settle();
   ui.get('ops-filter').listeners.submit({preventDefault(){}});await settle();
-  assert.equal(ui.get('ops-metrics').children.length,0);assert.equal(ui.get('ops-error').hidden,false);
+  assert.equal(ui.get('ops-metrics').children.length,4);assert.equal(ui.get('ops-error').hidden,false);
   assert.ok(!ui.get('ops-error').textContent.includes('PRIVATE_CANARY'));
-  assert.match(allText(ui.get('ops-runtime-rules')),/실행 규칙 미확인 · 조회 실패/);
+  assert.match(ui.get('ops-error').textContent,/503/);
 });
 test('malformed responses cannot leave partially rendered counts',async()=>{
   const ui=browser([ok({...data,sections:{...data.sections,quality:{state:'ok',count:-1}}})]);await settle();

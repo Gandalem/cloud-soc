@@ -15,8 +15,8 @@ ROLES = {"admin", "analyst", "viewer"}
 COOKIE = "soc_session"
 PUBLIC = {"login_page", "auth_asset", "login", "login_config"}
 READ_ENDPOINTS = {
-    "index", "static_file", "auth_me", "logout", "case_list", "case_link", "case_detail",
-    "agent_status", "collection_health", "logs", "log_detail", "log_access", "operations_summary", "alert_detail", "alert_site_context",
+    "insight_data", "index", "static_file", "auth_me", "logout", "case_list", "case_link", "case_detail",
+    "agent_status", "collection_health", "logs", "log_updates", "log_detail", "log_access", "operations_summary", "alert_detail", "alert_site_context",
     "detection_history", "reprocessing_history", "healthz", "operations_status", "dashboard_get", "dashboards_get", "notice_list", "notice_detail",
 }
 CASE_WRITES = {"case_create", "case_update"}
@@ -44,7 +44,7 @@ def permitted(endpoint, method, role, filename=None):
     if role == "admin":
         return True
     if endpoint == "static_file":
-        return filename not in {"agents.html", "agents.js", "app.js", "demo-data.js", "settings-slack.html", "settings-slack.js", "settings-slack.css", "settings-rules.html", "settings-rules.js"}
+        return filename not in {"agents.html", "agents.js", "app.js", "demo-data.js", "settings-slack.html", "settings-slack.js", "settings-slack.css", "settings-rules.html", "settings-rules.js", "rule-editor.js", "settings-rules.css"}
     if endpoint in READ_ENDPOINTS and method in {"GET", "HEAD", "OPTIONS"}:
         return True
     if endpoint == "logout":

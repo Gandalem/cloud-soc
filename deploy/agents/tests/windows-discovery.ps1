@@ -34,8 +34,13 @@ try {
     $null = New-Item -ItemType Directory -Path $outside
     [IO.File]::WriteAllText((Join-Path $outside 'private.txt'), 'not a log')
     $null = New-Item -ItemType Junction -Path (Join-Path $logs 'linked') -Target $outside
+    $firewall = Join-Path $logs 'Windows\System32\LogFiles\Firewall'
+    $null = New-Item -ItemType Directory -Path $firewall -Force
+    [IO.File]::WriteAllText((Join-Path $firewall 'pfirewall.log'), "synthetic firewall`n", (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText((Join-Path $firewall 'pfirewall_Public.log'), "synthetic unicode`n", [Text.Encoding]::Unicode)
+    [IO.File]::WriteAllBytes((Join-Path $firewall 'pfirewall_Private.log'), [byte[]]@(0, 2, 0, 255))
     $first = Get-SourceDiscovery -LogRoots @($logs, $logs) -RequiredChannels @('Security')
-    Assert-True (@($first.inputs | Where-Object type -eq winlog).Count -eq 2) 'Wrong channel coverage'
+    Assert-True (@($first.inputs | Where-Object type -eq winlog).Count -eq 1) 'Wrong security channel coverage'
     $files = @($first.inputs | Where-Object type -eq filestream)
     Assert-True ($files.Count -eq 2) 'Expected UTF8 and UTF16 inputs'
     Assert-True (@($files.paths).Count -eq 2) 'Duplicates or unsafe files were collected'
@@ -44,7 +49,7 @@ try {
     Assert-True (@($first.report.entries | Where-Object status -eq binary).Count -eq 1) 'Binary file not rejected'
     Assert-True (@($first.report.entries | Where-Object status -eq reparse_point).Count -eq 1) 'Junction was followed'
     $oldIds = @($first.inputs.id)
-    [IO.File]::WriteAllText((Join-Path $logs 'created-later.log'), "new record`n", (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText((Join-Path $firewall 'pfirewall.log.1'), "new record`n", (New-Object Text.UTF8Encoding($false)))
     $second = Get-SourceDiscovery -LogRoots @($logs) -RequiredChannels @('Security')
     Assert-True (@(Compare-Object $oldIds @($second.inputs.id)).Count -eq 0) 'Input IDs changed on discovery'
     Assert-True (@(($second.inputs | Where-Object type -eq filestream).paths).Count -eq 3) 'New log not discovered'
@@ -52,8 +57,8 @@ try {
     $null = New-Item -ItemType Directory -Path (Join-Path $root 'inputs') -Force
     Update-SourceDiscovery -Root $root -LogRoots @($logs) -RequiredChannels @('Security')
     $config = Get-Content -LiteralPath (Join-Path $root 'inputs\discovered.yml') -Raw | ConvertFrom-Json
-    Assert-True (@($config).Count -eq 4) 'Reloadable JSON input list incorrect'
-    [IO.File]::WriteAllText((Join-Path $logs 'replace-test.log'), "refresh again`n", (New-Object Text.UTF8Encoding($false)))
+    Assert-True (@($config).Count -eq 3) 'Reloadable JSON input list incorrect'
+    [IO.File]::WriteAllText((Join-Path $firewall 'pfirewall.log.2'), "refresh again`n", (New-Object Text.UTF8Encoding($false)))
     Update-SourceDiscovery -Root $root -LogRoots @($logs) -RequiredChannels @('Security')
     $updated = Get-Content -LiteralPath (Join-Path $root 'inputs\discovered.yml') -Raw | ConvertFrom-Json
     Assert-True (@(($updated | Where-Object type -eq filestream).paths).Count -eq 4) 'Atomic replacement did not publish the new file'

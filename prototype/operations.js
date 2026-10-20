@@ -15,22 +15,21 @@
     if (className) element.className = className;
     return element;
   }
-  async function request(path) {
-    const response = await fetch(path, {cache: "no-store", credentials: "same-origin"});
+  async function request(path, signal) {
+    const response = await fetch(path, {cache: "no-store", credentials: "same-origin", signal});
     if (!response.ok) throw new Error("서버 연결·권한·조회 조건을 확인하세요. (" + response.status + ")");
     return response.json();
   }
   function runtimeRules(pipeline) {
     const target = $('ops-runtime-rules');
     if (!target) return;
-    target.replaceChildren();
     if (!Array.isArray(pipeline.rules)) {
-      target.append(node('p', '실행 규칙 정보를 확인할 수 없습니다. 전체 운영 상태 조회 권한과 워커 버전을 확인하세요.'));
+      target.replaceChildren(node('p', '실행 규칙 정보를 확인할 수 없습니다. 전체 운영 상태 조회 권한과 워커 버전을 확인하세요.'));
       return;
     }
     const states = {running:'상주 실행 관측', stale:'보고 만료', failed:'실행 실패',
       reported:'선택 보고만 확인', revision_mismatch:'현재 코드와 버전 다름', catalog_unavailable:'워커 선택 보고 있음 · 현재 규칙 파일 없음'};
-    const scopes = {general:'범용', application_audit:'선택 앱 감사', application_waf:'선택 앱 WAF'};
+    const scopes = {general:'범용', application_audit:'선택 앱 감사', application_waf:'선택 앱 WAF', managed:'사용자 규칙'};
     const table = node('table'), head = node('tr'), body = node('tbody');
     for (const label of ['규칙', '수집 범위', '실제 워커 보고', '버전·마지막 처리']) head.append(node('th', label));
     const thead = node('thead'); thead.append(head); table.append(thead, body);
@@ -48,7 +47,7 @@
       catalog.append(node('summary', '현재 코드 버전'), node('code', rule.catalog_revision || '카탈로그 없음')); versions.append(catalog);
       row.append(node('td', rule.id), node('td', scopes[rule.scope] || '미확인'), reports, versions); body.append(row);
     }
-    target.append(table);
+    window.CloudSOCLive.children(target,[table]);
   }
   function chart(target, section) {
     target.replaceChildren();
@@ -93,7 +92,7 @@
     }
     $("ops-pipeline").textContent = "정규화 처리기: " + (labels[pipeline.state] || "미확인");
     const detectorLabels = { ...labels, success: "최근 탐지 성공", running: "탐지 실행 중", failed: "탐지 실패" };
-    const detectorName = detector.detection?.includes('WEB-SITE-') ? '사이트별 웹 탐지기' : detector.detection?.includes("ATTACK-") ? "공격 행위 탐지기 (시험 프로필)" : detector.detection && detector.detection.includes(",") ? "SSH·클라우드 탐지기" : "SSH 탐지기";
+    const detectorName = detector.detection==='managed' ? '사용자 규칙 탐지기' : detector.detection?.includes('WEB-SITE-') ? '사이트별 웹 탐지기' : detector.detection?.includes("ATTACK-") ? "공격 행위 탐지기 (시험 프로필)" : detector.detection && detector.detection.includes(",") ? "SSH·클라우드 탐지기" : "SSH 탐지기";
     $("ops-pipeline").textContent += " · " + detectorName + ": " + (detectorLabels[detector.state] || "미확인");
     if ($("ops-pipeline-times")) $("ops-pipeline-times").textContent = "정규화 마지막 성공: " + fmt(pipeline.last_success) + " · 처리 위치: " + fmt(pipeline.checkpoint) + " · 탐지 마지막 성공: " + fmt(detector.last_success);
     const healthLabels = { failed: "탐지 장애: 처리 실패", stale: "탐지 장애: 상태 갱신 중단", delayed: "탐지 지연: 처리 위치 확인 필요", warning: "탐지 경고: 평가 범위·초기 통지 확인 필요" };
@@ -110,16 +109,17 @@
     $("ops-pipeline").setAttribute("role", "status");
     $("ops-pipeline").setAttribute("aria-live", "polite");
     chart($("ops-intake-chart"), sections.intake); chart($("ops-alert-chart"), sections.alerts);
-    const alerts = sections.alerts; $("ops-alert-rows").replaceChildren();
+    const alerts = sections.alerts; const freshRows=document.createDocumentFragment();
     $("ops-alert-state").textContent = alerts.state === "ok" ? (alerts.count ? "총 " + alerts.count + "건 · 최신 50건까지 표시" :
       limited ? '저장된 경보가 없습니다. 분석 상태가 불완전해 위험 없음으로 해석할 수 없습니다.' : '조회 기간에 저장된 경보가 없습니다. 지원 규칙과 수집 범위를 함께 확인하세요.') : labels[alerts.state];
     for (const row of alerts.rows || []) {
-      const tr = node("tr");
-      for (const value of [fmt(row.timestamp), row.risk_level, row.rule, row.title, row.service, row.organization,
+      const tr = node("tr");tr.dataset.liveKey=row.id;
+      for (const value of [fmt(row.timestamp), row.risk_level==='unassessed'?'미평가':row.risk_level, row.rule, row.title, row.service, row.organization,
                           row.status === 'stored' ? '저장됨' : '미기록', row.event_count]) tr.append(node("td", value ?? "미관측"));
       const td = node("td"), button = node("button", "상세 / 근거");
-      button.type = "button"; button.addEventListener("click", () => detail(row.id)); td.append(button); tr.append(td); $("ops-alert-rows").append(tr);
+      button.type = "button"; button.addEventListener("click", () => detail(row.id)); td.append(button); tr.append(td); freshRows.append(tr);
     }
+    window.CloudSOCLive.children($("ops-alert-rows"),freshRows.childNodes);
   }
   async function detail(id) {
     const version = ++detailGeneration;
@@ -144,7 +144,7 @@
         async function updateContext() {
           if (version !== detailGeneration || !$("ops-detail").open) return;
           if (!document.hidden) {
-            status.textContent = '사이트 주변 로그 조회 중'; rows.replaceChildren();
+            status.textContent = '사이트 주변 로그 조회 중 · 마지막 조회 내용 유지';
             try {
               const reply = await request('/api/alerts/site-context?' + new URLSearchParams({id}));
               if (version !== detailGeneration || !$("ops-detail").open) return;
@@ -153,7 +153,7 @@
               for (const item of reply.events) rows.append(node('p', fmt(item.timestamp) + ' · ' + item.method + ' · HTTP ' + item.status_code));
               if (!reply.events.length) rows.append(node('p', '조회 범위에 정규화된 주변 로그가 없습니다.'));
             } catch (error) {
-              if (version === detailGeneration) { rows.replaceChildren(); status.textContent = error.message; }
+              if (version === detailGeneration) { status.textContent = error.message+' · 마지막 조회 내용 유지'; }
             }
           }
           if (version === detailGeneration && $("ops-detail").open) contextTimer = window.setTimeout(updateContext, 15000);
@@ -238,27 +238,18 @@
       evidencePage(data);
     } catch (error) { if (version === detailGeneration) $("ops-detail-state").textContent = error.message; }
   }
-  async function refresh() {
-    const version = ++generation;
-    $("ops-error").hidden = true; $("ops-range").textContent = "조회 중";
-    if ($('ops-runtime-rules')) $('ops-runtime-rules').replaceChildren(node('p', '실행 규칙 조회 중'));
-    if ($("ops-pipeline-times")) $("ops-pipeline-times").textContent = "";
-    // Clear stale counts while loading a different interval or after failure.
-    for (const id of ["ops-metrics", "ops-intake-chart", "ops-alert-chart", "ops-alert-rows"]) $(id).replaceChildren();
-    $("ops-pipeline").textContent = "처리기 상태 조회 중"; $("ops-alert-state").textContent = "조회 중";
-    const end = new Date(), start = new Date(end.getTime() - Number($("ops-period").value) * 60000);
-    try {
-      const data = await request("/api/operations?" + new URLSearchParams({start: start.toISOString(), end: end.toISOString()}));
-      if (version === generation) render(data);
-    } catch (error) {
-      if (version !== generation) return;
-      for (const id of ["ops-metrics", "ops-intake-chart", "ops-alert-chart", "ops-alert-rows"]) $(id).replaceChildren();
-      $("ops-error").hidden = false; $("ops-error").textContent = error.message;
-      $("ops-range").textContent = "조회 실패"; $("ops-pipeline").textContent = "처리기 상태 미확인"; $("ops-alert-state").textContent = "조회 실패";
-      if ($('ops-runtime-rules')) $('ops-runtime-rules').replaceChildren(node('p', '실행 규칙 미확인 · 조회 실패'));
-    }
-  }
-  $("ops-filter").addEventListener("submit", (event) => {event.preventDefault(); refresh();});
+  let shownAlerts=null;
+  const pending=window.CloudSOCLive.notice($('ops-alert-rows').closest('section')||$('ops-alert-rows').parentElement,'새 경보');
+  const live=window.CloudSOCLive.create({host:$('ops-filter').parentElement,interval:10000,
+    load:signal=>{const end=new Date(),start=new Date(end-Number($('ops-period').value)*60000);return request('/api/operations?'+new URLSearchParams({start:start.toISOString(),end:end.toISOString()}),signal);},
+    apply:(data,{manual})=>{if(!data?.sections||data.sections.alerts?.state==='unavailable')throw new Error('관제 조회 실패 · 이전 내용을 표시합니다.');
+      const fresh=data.sections.alerts,added=(fresh.rows||[]).filter(r=>!(shownAlerts?.rows||[]).some(old=>old.id===r.id));
+      if(manual||!shownAlerts){shownAlerts=fresh;pending.clear();}
+      else if(added.length)pending.offer(added.length,()=>{shownAlerts=fresh;render(data);});
+      render({...data,sections:{...data.sections,alerts:{...fresh,rows:shownAlerts?.rows||[]}}});$('ops-error').hidden=true;},
+    onError:error=>{$('ops-error').hidden=false;$('ops-error').textContent=error.message;}});
+  function refresh(){pending.clear();return live.refresh(true);}
+  $("ops-filter").addEventListener("submit", (event) => {event.preventDefault(); live.cancel();shownAlerts=null;pending.clear();refresh();});
   $("ops-detail-close").addEventListener("click", () => $("ops-detail").close());
   $("ops-detail").addEventListener("close", () => {stopContext(); detailGeneration++; $("ops-detail-content").replaceChildren();});
   window.addEventListener("pagehide", () => {stopContext(); generation++; detailGeneration++; $("ops-detail-content").replaceChildren();});

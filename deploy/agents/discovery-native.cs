@@ -17,6 +17,34 @@ using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
 
 internal static class Discovery {
+// BEGIN SECURITY CHANNELS
+    internal static readonly Dictionary<string,string> SecurityChannels = new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase) {
+        { "Security", "1100,1102,4616,4624,4625,4634,4647,4648,4672,4688,4697,4698,4699,4700,4701,4702,4719,4720,4722,4723,4724,4725,4726,4728,4729,4732,4733,4738,4740,4756,4757,4767,4768,4769,4771,4776,4946,4947,4948,4950,5025" },
+        { "System", "104,6005,6006,6008,7040,7045" },
+        { "Microsoft-Windows-Windows Defender/Operational", "1006,1007,1008,1009,1010,1011,1116,1117,1118,1119,1121,1122,5001,5004,5007,5010,5012" },
+        { "Microsoft-Windows-CodeIntegrity/Operational", "3004,3033,3034,3076,3077,3089,3099" },
+        { "Microsoft-Windows-AppLocker/EXE and DLL", "8003,8004" },
+        { "Microsoft-Windows-AppLocker/MSI and Script", "8006,8007,8028,8029,8038" },
+        { "Microsoft-Windows-AppLocker/Packaged app-Execution", "8021,8022" },
+        { "Microsoft-Windows-Sysmon/Operational", "1,4,6,8,19,20,21,25" },
+        { "Microsoft-Windows-PowerShell/Operational", "4103,4104" },
+        { "PowerShellCore/Operational", "4103,4104" },
+        { "Microsoft-Windows-TaskScheduler/Operational", "106,140,141,142" },
+        { "Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational", "1149" },
+        { "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational", "21,22,23,24,25,39,40" },
+    };
+    internal static readonly Dictionary<string,string> SecurityNoise = new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase) {
+        { "Security", "5156,5158" },
+        { "Microsoft-Windows-Windows Defender/Operational", "1000,1001,1150" },
+        { "Microsoft-Windows-Sysmon/Operational", "3,5,7,11,22,23,26" },
+        { "Microsoft-Windows-AppLocker/EXE and DLL", "8002" },
+        { "Microsoft-Windows-AppLocker/MSI and Script", "8005" },
+        { "Microsoft-Windows-AppLocker/Packaged app-Execution", "8020,8023" },
+        { "Microsoft-Windows-PowerShell/Operational", "4105,4106" },
+        { "PowerShellCore/Operational", "4105,4106" },
+        { "Microsoft-Windows-TaskScheduler/Operational", "100,102,200,201" },
+    };
+// END SECURITY CHANNELS
     internal static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 16777216 };
     internal static readonly UTF8Encoding Utf8 = new UTF8Encoding(false, true);
     internal static string Stage = "arguments";
@@ -137,6 +165,15 @@ internal static class Discovery {
                     }
                 }
             }
+            var roles = new HashSet<string>(StringComparer.Ordinal);
+            string rolePath = Path.Combine(root, "security-roles.json");
+            if (File.Exists(rolePath)) {
+                var rp = Json.Deserialize<Dictionary<string,object>>(ReadBounded(rolePath,8192));
+                if (Convert.ToInt32(rp["schema"]) != 1 || rp.Keys.Any(k => k != "schema" && k != "roles")) throw new InvalidDataException("invalid_security_roles");
+                foreach (string role in Strings(rp["roles"])) {
+                    if (!new[] {"packages","sysmon_network","directory_service","application"}.Contains(role) || !roles.Add(role)) throw new InvalidDataException("invalid_security_roles");
+                }
+            }
             int version = 0;
             string policy = Path.Combine(root, "collection-policy.txt");
             if (File.Exists(policy)) {
@@ -156,9 +193,24 @@ internal static class Discovery {
             Stage = "channels";
             var entries = channels.ToList(); var inputs = new List<object>();
             var selected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var channel in entries.Where(c => (string)c["status"] == "selected")) {
+                string name=(string)channel["name"];
+                if (!systemEnabled || !SecurityChannels.ContainsKey(name) && !required.Contains(name,StringComparer.OrdinalIgnoreCase)
+                    && !(roles.Contains("application") && name == "Application")
+                    && !(roles.Contains("directory_service") && new[] {"Directory Service","DNS Server","DFS Replication"}.Contains(name))) channel["status"]="policy_excluded";
+            }
             foreach (var channel in entries.Where(c => systemEnabled && (string)c["status"] == "selected")) {
                 string name = (string)channel["name"]; if (!selected.Add(name)) continue;
                 inputs.Add(Map("type", "winlog", "id", "cloud-soc-event-" + Id(name), "name", name, "include_xml", false, "ignore_missing_channel", true, "fields_under_root", true, "fields", Map("labels", Map("log_source", "windows_event", "collection_mode", "auto_discovery"))));
+                var input=(Dictionary<string,object>)inputs[inputs.Count-1];
+                ((Dictionary<string,object>)((Dictionary<string,object>)input["fields"])["labels"])["collection_policy"]="security-focused-v1";
+                if (SecurityChannels.ContainsKey(name)) {
+                    string ids=SecurityChannels[name]+(name=="Microsoft-Windows-Sysmon/Operational" && roles.Contains("sysmon_network") ? ",3,11,22,26" : "");
+                    if (name=="Security" && roles.Contains("sysmon_network")) ids+=",5156,5158";
+                    string noise=SecurityNoise.ContainsKey(name)?SecurityNoise[name]:"";
+                    string filter="var allowed=[],noise=[]; function register(p){allowed=p.ids.split(',');noise=(p.noise||'').split(',');} function process(event){var id=event.Get('winlog.event_id');if(id===null||id===undefined)id=event.Get('event.code');if(/^(error|critical|warning|warn|alert|emerg)$/i.test(String(event.Get('log.level')))||event.Get('event.outcome')==='failure')return event;if(/^[0-9]{1,5}$/.test(String(id))&&noise.indexOf(String(id))>=0&&allowed.indexOf(String(id))<0)event.Cancel();return event;}";
+                    input["processors"]=new object[] {Map("script",Map("lang","javascript","source",filter,"params",Map("ids",ids,"noise",noise),"tag_on_exception","_security_selection_error"))};
+                }
             }
             if (systemEnabled && (selected.Count == 0 || required.Any(name => !selected.Contains(name)))) throw new InvalidDataException("required_channel_missing");
             Stage = "files";
@@ -183,6 +235,7 @@ internal static class Discovery {
                             else if ((attributes & FileAttributes.ReparsePoint) != 0) status = "reparse_point";
                             else if (Regex.IsMatch(path, "[\\x00-\\x1f$*?\\[\\]{}]")) status = "unsafe_path";
                             else if (kind == "directory") { pending.Push(path); continue; }
+                            else if (!Regex.IsMatch(path,@"[\\/]System32[\\/]LogFiles[\\/]Firewall[\\/]pfirewall(?:_(?:Domain|Private|Public))?\.log(?:\.[0-9]+)?$",RegexOptions.IgnoreCase)) status="policy_excluded";
                             else if (Regex.IsMatch(path, @"\.(evtx|etl|gz|zip|7z|cab|dmp|db|sqlite|pem|key|crt|cer|der|pfx|p12|docx?|xlsx?|pdf|kdbx)$|[\\/](\.env|id_rsa|id_ed25519|id_ecdsa|credentials|secrets?)(\.|[\\/]|$)", RegexOptions.IgnoreCase)) status = "binary_archive_or_secret";
                             else {
                                 string encoding = EncodingOf(path);
@@ -194,7 +247,7 @@ internal static class Discovery {
                     }
                 }
             }
-            foreach (var pair in files) inputs.Add(Map("type", "filestream", "id", "cloud-soc-windows-files-" + pair.Key + "-v2", "paths", pair.Value.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray(), "encoding", pair.Key, "prospector.scanner.symlinks", false, "file_identity.fingerprint", Map("growing", true), "fields_under_root", true, "fields", Map("labels", Map("log_source", "windows_file", "collection_mode", "auto_discovery"))));
+            foreach (var pair in files) inputs.Add(Map("type", "filestream", "id", "cloud-soc-windows-files-" + pair.Key + "-v2", "paths", pair.Value.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray(), "encoding", pair.Key, "prospector.scanner.symlinks", false, "file_identity.fingerprint", Map("growing", true), "fields_under_root", true, "fields", Map("labels", Map("log_source", "windows_file", "collection_mode", "auto_discovery", "collection_policy", "security-focused-v1"))));
             Stage = "publish";
             inputs.AddRange(webInputs);
             string generated = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);

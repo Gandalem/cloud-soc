@@ -12,13 +12,13 @@ const ok = data => () => ({ok: true, json: async () => data});
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const textOf = node => typeof node === 'string' ? node : node.textContent + node.children.map(textOf).join(' ');
 function browser(responses) {
+  const dom=require('./live-dom.cjs').dom();
   const elements = new Map(), calls = [];
-  function element() { return {textContent: '', children: [], listeners: {}, disabled: false,
-    addEventListener(name, fn) { this.listeners[name] = fn; },
-    replaceChildren() { this.children = []; }, append(...nodes) { this.children.push(...nodes); }}; }
+  function element(tag){return dom.element(tag);}
   const get = key => { if (!elements.has(key)) elements.set(key, element()); return elements.get(key); };
-  vm.runInNewContext(script, {document: {querySelector: get, createElement: element}, AbortController, Date,
-    setTimeout: () => 1, clearTimeout() {}, fetch: async (url, options) => { calls.push({url, options}); return responses.shift()(); }});
+  const context={document: {querySelector: get, createElement: element}, AbortController, Date,
+    setTimeout: () => 1, clearTimeout() {}, fetch: async (url, options) => { calls.push({url, options}); return responses.shift()(); }};
+  dom.install(context);vm.runInNewContext(script,context);
   return {get, calls};
 }
 test('health renders text nodes and uses the authenticated report endpoint', async () => {
@@ -28,11 +28,11 @@ test('health renders text nodes and uses the authenticated report endpoint', asy
   assert.equal(ui.calls[0].url, '/api/agents/health');
   assert.equal(ui.calls[0].options.credentials, 'same-origin');
 });
-test('failed refresh clears all stale data without leaking exception payload', async () => {
+test('failed refresh retains prior data and marks it stale without leaking exceptions', async () => {
   const ui = browser([ok(page), () => { throw Error('PRIVATE_CANARY'); }]); await settle();
   ui.get('#refresh').listeners.click(); await settle();
-  assert.equal(ui.get('#health-rows').children.length, 0);
-  assert.match(ui.get('#query-state').textContent, /조회 실패/);
+  assert.equal(ui.get('#health-rows').children.length, 1);
+  assert.match(ui.get('#query-state').textContent, /갱신 실패/);
   assert.ok(!ui.get('#query-state').textContent.includes('CANARY'));
 });
 test('cursor navigation and refresh do not permit stale requests to win', async () => {

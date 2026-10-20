@@ -1,6 +1,7 @@
 """Protected Filebeat access events, independent of the existing DVWA contract."""
 from datetime import datetime
 from ipaddress import ip_address
+import re
 from cloud_soc.web.scope import valid_site_id
 
 VERSION = 'web-access-agent-v1'
@@ -17,8 +18,10 @@ def validate(source):
         raise ValueError('invalid web metadata schema')
     if set(service) != {'id','name'} or not valid_site_id(service['id']) or not isinstance(service['name'],str) or not 1<=len(service['name'])<=64:
         raise ValueError('invalid site identity')
-    if set(http)-{'request','response'} or not isinstance(http.get('request'),dict) or set(http['request'])!={'method'} or http['request']['method'] not in ('GET','POST','PUT','DELETE','HEAD','OPTIONS','PATCH'):
+    if set(http)-{'request','response'} or not isinstance(http.get('request'),dict) or not {'method'}<=set(http['request']) or set(http['request'])-{'method','id'} or http['request']['method'] not in ('GET','POST','PUT','DELETE','HEAD','OPTIONS','PATCH'):
         raise ValueError('invalid HTTP metadata')
+    if 'id' in http['request'] and (not isinstance(http['request']['id'],str) or not re.fullmatch(r'[A-Za-z0-9_.:@-]{1,128}',http['request']['id'])):
+        raise ValueError('invalid request identity')
     response = http.get('response',{})
     if not isinstance(response,dict) or set(response)-{'status_code','body'} or type(response.get('status_code')) is not int or not 100<=response['status_code']<=599:
         raise ValueError('invalid HTTP status')

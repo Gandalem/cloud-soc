@@ -52,3 +52,14 @@
 - [포트폴리오](portfolio/demo.md): 당시 측정·시연 자료이며 현재 전체 인수 결과와 구분합니다.
 
 기존 DOCX 보고서·개인 소감·포트폴리오 이미지/측정값은 수정하거나 삭제하지 않았습니다. 보존/삭제·독립 백업 P2-02의 사용자 보류는 유지합니다.
+
+
+- [규칙 작성·일괄 등록·빠른 탐지 관리](rule_authoring.md)
+
+- [상시 처리·AJAX 갱신·실습 복구](live_ajax_runtime.md)
+
+- [보안 중심 수집 정책과 통합 로그 종류](security_collection_policy.md)
+
+- [대시보드 근거·연결 상태·국가 지도·계정 평가·성능 지표](dashboard_capabilities.md)
+
+- 다음 작업: [대시보드 실제 자료 연결의 순서·필요 조건·인수 기준](dashboard_capabilities.md#후속-연결-계획--2026-10-21)

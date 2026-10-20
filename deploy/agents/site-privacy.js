@@ -27,6 +27,7 @@ function process(event) {
             if (!wrapper || typeof wrapper.log!=='string') { throw new Error('invalid Docker JSON access line'); }
             line=wrapper.log;
         }
+        if (/^\s*\{/.test(line)) { return processCheckedAccess(event,JSON.parse(line)); }
         line=line.replace(/[\r\n]+$/, '');
         var m=/^(\S+) \S+ \S+ \[([^\]]+)\] "(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH) [^"\r\n]+ HTTP\/[0-9.]+" ([0-9]{3}) ([0-9]+|-)(?: "[^"\r\n]*" "[^"\r\n]*")?$/.exec(line);
         if (!m || +m[4]<100 || +m[4]>599) { throw new Error('unsupported access format'); }
@@ -52,7 +53,49 @@ function process(event) {
         if (/^(\d{1,3}\.){3}\d{1,3}$/.test(m[1]) && m[1].split('.').every(function(v){return +v<=255;})) { event.Put('source.ip',m[1]); }
         else if (/^[0-9a-fA-F:]{3,45}$/.test(m[1]) && m[1].indexOf(':')>=0) { event.Put('source.ip',m[1]); }
         event.Put('labels.privacy_policy','web-access-agent-v1');
+        event.Put('labels.collection_policy','security-focused-v1');
+        event.Put('labels.collection_status','retained_missing_security_context');
     } catch (_) { event.Cancel(); }
+    return event;
+}
+
+// Optional server-produced metadata contract, never values copied from client
+// headers. Legacy combined logs lack reliable WAF context and remain retained.
+function processCheckedAccess(event, value) {
+    var keys=['schema','timestamp','request_id','source_ip','method','status','route_kind','has_query','security_checked','security_matched'];
+    if (!value || Object.keys(value).sort().join('|')!==keys.sort().join('|') || value.schema!=='cloud-soc-web-security-v1' ||
+        !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?(?:Z|[+-]\d\d:\d\d)$/.test(value.timestamp) || isNaN(Date.parse(value.timestamp)) ||
+        typeof value.request_id!=='string' || !/^[A-Za-z0-9_.:@-]{1,128}$/.test(value.request_id) ||
+        typeof value.source_ip!=='string' || !/^[0-9a-fA-F:.]{3,45}$/.test(value.source_ip) ||
+        ['GET','HEAD','POST','PUT','DELETE','OPTIONS','PATCH'].indexOf(value.method)<0 ||
+        typeof value.status!=='number' || value.status%1!==0 || value.status<100 || value.status>599 ||
+        ['static','favicon','health','public','sensitive','other'].indexOf(value.route_kind)<0 ||
+        typeof value.has_query!=='boolean' || typeof value.security_checked!=='boolean' || typeof value.security_matched!=='boolean') {
+        throw new Error('invalid checked access metadata');
+    }
+    var stamp=/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.(\d{1,3}))?(Z|[+-]\d\d:\d\d)$/.exec(value.timestamp);
+    var zone=stamp[8]==='Z'?'+0000':stamp[8].replace(':','');
+    var checkedTime=occurred(stamp[3]+'/'+months[+stamp[2]-1]+'/'+stamp[1]+':'+stamp[4]+':'+stamp[5]+':'+stamp[6]+' '+zone);
+    if (checkedTime.getTime()+(stamp[7]?Number('0.'+stamp[7])*1000:0)!==Date.parse(value.timestamp)) { throw new Error('invalid checked time'); }
+    if (value.source_ip.indexOf(':')<0 && (!/^(\d{1,3}\.){3}\d{1,3}$/.test(value.source_ip) || value.source_ip.split('.').some(function(v){return +v>255;}))) { throw new Error('invalid peer IP'); }
+    if (Date.parse(value.timestamp)<Date.parse(settings.start_at)) { event.Cancel();return event; }
+    if (value.security_checked && !value.security_matched && !value.has_query &&
+        ['GET','HEAD'].indexOf(value.method)>=0 && [200,204,304].indexOf(value.status)>=0 &&
+        ['static','favicon','health'].indexOf(value.route_kind)>=0) { event.Cancel();return event; }
+    ['message','url','user','http','event','source','destination','related','error','container','docker'].forEach(function(k){
+        if (event.Get(k)!==null && event.Get(k)!==undefined && event.Delete(k)===false) { throw new Error('privacy removal failed'); }
+    });
+    event.Put('service.id',settings.id);event.Put('service.name',settings.name);
+    event.Put('web.schema','web-access-agent-v1');event.Put('web.server_type',settings.server_type);
+    event.Put('web.occurred_at',new Date(value.timestamp).toISOString());event.Put('web.ip_basis','observed_peer');
+    event.Put('event.category',['web']);event.Put('event.action','http_access');event.Put('event.dataset','cloud_soc.web_access');
+    event.Put('event.outcome',value.status>=400?'failure':'success');
+    event.Put('http.request.method',value.method);event.Put('http.response.status_code',value.status);
+    event.Put('source.ip',value.source_ip);event.Put('labels.privacy_policy','web-access-agent-v1');
+    event.Put('labels.collection_policy','security-focused-v1');event.Put('labels.collection_status','retained_checked_request');
+    // Keep request identity in its protected HTTP field, not event.id:
+    // legacy access positions and existing identifiers are not redefined.
+    event.Put('http.request.id',value.request_id);
     return event;
 }
 function processWaf(event) {
