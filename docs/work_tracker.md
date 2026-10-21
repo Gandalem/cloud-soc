@@ -1,5 +1,11 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-21 외부 작업폴더 재배포 — DEPLOY-WORKSPACE-03
+
+- [x] DEPLOY-WORKSPACE-03 로컬 수정·회귀 완료: 앞선 VM 적용 영수증은 명시한 outputs/cloud-soc의 compose.yaml을 기록하지만 active_command는 state의 원래 저장소 아래만 허용하여 다음 plan이 ValueError로 거부된다. 사용자 제공 계획 출력 전 실패와 앞선 성공 배포 경로를 대조한다. 명시 workspace와 state 저장소 아래 경로만 허용하고 symlink·영수증/label 불일치는 계속 거부한다. 관련 배포 수정·게시·적용 준비는 기존 승인 범위이며 기존 서비스/키/DB는 보존한다.
+
+- 재현/검사: 외부 release의 Compose 파일과 기존 state/runtime/site.json을 함께 기록한 정확한 영수증을 기존 호출이 거부하고, 명시 workspace를 전달한 수정 호출은 승인하는 것을 확인했다. 다른 workspace·영수증과 Docker label 불일치·허용 workspace 내부 symlink 거부도 확인했다. 배포 영향45항목 통과이며 실제 VM 재적용은 별도다.
+
 ## 2026-10-21 SSH Invalid user·호스트 시간대 — SSH-INTAKE-02
 
 - [x] SSH-INTAKE-02 코드 구현·로컬 검사 완료: 사용자 요청으로 journald Invalid user 지원과 Linux 파일 입력의 실제 호스트 시간대 기록을 구현한다. 명시적 UTC journal 시간과 파일의 시간대 없는 syslog 시간을 구분하고, 파일/journal 이중수집·연결종료 중복 집계를 방지한다. 기존 원본·처리기록·체크포인트·키를 변경하지 않으며 실제 반영/수신은 구현 검사와 구분한다.
