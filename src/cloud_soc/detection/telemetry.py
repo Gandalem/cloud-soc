@@ -8,6 +8,19 @@ RUNS = 'soc-detection-runs-v1'
 EXCLUSIONS = 'soc-detection-exclusions-v1'
 
 
+def runtime_manifest(rules, mode):
+    """Selected execution inventory, independent of enabled YAML/release policy.
+
+    A heartbeat is evidence of selection only. Committed evaluation evidence lives
+    in RUNS; a manifest must never be interpreted as an end-to-end acceptance.
+    """
+    if mode not in ('continuous', 'snapshot', 'retrospective'):
+        raise ValueError('invalid_runtime_mode')
+    return {'schema_version': 1, 'mode': mode, 'rules': [
+        {'id': rule['id'], 'revision': rule_revision(rule), 'engine_version': rule_engine_version(rule)}
+        for rule in rules]}
+
+
 def evaluate(event, rule):
     if 'waf_sqli' in rule:
         from cloud_soc.detection.waf import matches_waf

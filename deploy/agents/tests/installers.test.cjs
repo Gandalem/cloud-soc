@@ -159,10 +159,12 @@ function fixture(action) {
   }
 }
 
-test('Linux discovers nested logs and rotations, rejects binaries, and reports exclusions', () => fixture(dir => {
+test('Linux retains explicitly selected security files and rotations while excluding arbitrary nested logs', () => fixture(dir => {
   const nested = path.join(dir, ...Array(12).fill('deep'));
   mkdirSync(nested, { recursive: true });
   writeFileSync(path.join(dir, 'auth.log'), 'Sep 3 sshd: login test\n');
+  writeFileSync(path.join(dir, 'auth.log.1'), 'synthetic rotation\n');
+  writeFileSync(path.join(dir, 'auth.log.2'), '');
   writeFileSync(path.join(dir, 'app.log.1'), 'rotated text record\n');
   writeFileSync(path.join(nested, 'service output.log'), 'deep service record\n');
   writeFileSync(path.join(dir, 'archive.gz'), 'not processed even if text\n');
@@ -177,18 +179,18 @@ test('Linux discovers nested logs and rotations, rejects binaries, and reports e
   writeFileSync(path.join(dir, 'empty'), '');
   writeFileSync(path.join(dir, '$bad.log'), 'unsupported variable-like path\n');
   writeFileSync(path.join(dir, '[bad].log'), 'unsupported glob-like path\n');
-  const script = 'source ./discover-linux.sh; r=$TEST_ROOT; command -v cygpath >/dev/null && r=$(cygpath -u "$r"); discover_linux_logs "$r" "$r"; render_discovered_inputs; render_discovery_report';
+  const script = `source ./discover-linux.sh; r=$TEST_ROOT; command -v cygpath >/dev/null && r=$(cygpath -u "$r"); SECURITY_CORE_FILES='^'"$r"'/auth\\.log(\\.[0-9]+)?$'; discover_linux_logs "$r" "$r"; render_discovered_inputs; render_discovery_report`;
   const result = run(bash, ['-c', script], { TEST_ROOT: dir });
   assert.equal(result.status, 0, result.stderr);
   const [inputs, report] = result.stdout.trim().split(/\r?\n/).map(line => JSON.parse(line));
   assert.equal(inputs.length, 1);
   assert.equal(inputs[0].id, 'cloud-soc-linux-discovered-v2');
-  assert.equal(inputs[0].paths.length, 3);
-  assert.ok(inputs[0].paths.some(p => p.endsWith('service output.log')));
-  assert.ok(inputs[0].paths.some(p => p.endsWith('app.log.1')));
-  assert.ok(report.entries.some(e => e.status === 'unsupported_encoding_or_binary'));
+  assert.equal(inputs[0].paths.length, 2);
+  assert.ok(!inputs[0].paths.some(p => p.endsWith('service output.log')));
+  assert.ok(inputs[0].paths.some(p => p.endsWith('auth.log.1')));
+  assert.ok(report.entries.some(e => e.status === 'policy_excluded'));
   assert.ok(report.entries.some(e => e.status === 'empty_pending'));
-  assert.equal(report.selected_files, 3);
+  assert.equal(report.selected_files, 2);
   for (const name of ['autoinstall-user-data', 'user-data', 'user-data.txt', 'cloud-init.log', 'cloud-init-output.log.1']) {
     assert.ok(report.entries.some(e => e.path.endsWith('/' + name) && e.status === 'binary_archive_or_secret'), name);
   }
@@ -198,7 +200,7 @@ test('Linux discovers nested logs and rotations, rejects binaries, and reports e
   assert.equal(refreshed.status, 0, refreshed.stderr);
   const [newInputs] = refreshed.stdout.trim().split(/\r?\n/).map(line => JSON.parse(line));
   assert.equal(newInputs[0].id, inputs[0].id);
-  assert.equal(newInputs[0].paths.length, 4);
+  assert.equal(newInputs[0].paths.length, 2);
 }));
 
 test('Linux inventory escapes control characters without JSON injection', () => {
@@ -227,9 +229,16 @@ refresh_linux_inputs "$r/agent"
   assert.equal(result.status, 0, result.stderr);
   const summary = JSON.parse(readFileSync(path.join(dir, 'agent', 'health.ndjson'), 'utf8'));
   assert.equal(summary.policy_version, 3);
-  assert.equal(summary.selected, 0);
+  // Excluding this file leaves the independent security journal input active.
+  assert.equal(summary.selected, 1);
   assert.equal(summary.excluded, 1);
+  assert.equal(summary.total, 2);
   assert.equal(summary.sources[0].status, 'policy_excluded');
+  assert.equal(summary.sources[1].status, 'selected');
+  const discovered = JSON.parse(readFileSync(path.join(dir, 'agent', 'inputs', 'discovered.yml'), 'utf8'));
+  assert.deepEqual(discovered.map(input => input.type), ['journald']);
+  assert.equal(discovered[0].id, 'cloud-soc-journal-v2');
+  assert.ok(discovered[0].include_matches.match.includes('SYSLOG_IDENTIFIER=sshd'));
   assert.match(summary.sources[0].id, /^[a-f0-9]{64}$/);
   assert.ok(!JSON.stringify(summary).includes('app.log'));
   assert.equal(summary.queue_state, 'unknown');

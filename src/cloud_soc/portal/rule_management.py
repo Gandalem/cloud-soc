@@ -228,7 +228,8 @@ class RuleDraftStore:
 
     def validate(self, row, db):
         try:
-            reserved = {r['id'] for r in catalog()}
+            from cloud_soc.detection.profiles import APPLICATION_IDS
+            reserved = {r['id'] for r in catalog(include_applications=False)} | set(APPLICATION_IDS)
         except Exception:
             raise RuleError('rule_catalog_unavailable', 503) from None
         reserved.update(r[0] for r in db.execute("SELECT rule_id FROM rule_drafts WHERE status='approved' AND id<>?", (row['id'],)))

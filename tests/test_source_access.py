@@ -8,6 +8,8 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+
+import pytest
 from unittest.mock import Mock
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
@@ -16,6 +18,7 @@ from cloud_soc.portal.app import create_app
 from cloud_soc.portal.log_access import LogAccessPolicy, LogPrincipal
 from cloud_soc.portal.source_access import protected_fields, SOURCE_VIEW_FIELDS
 from cloud_soc.portal import backup
+from legacy_backup_fixtures import legacy_source, legacy_artifact, snapshot
 from test_log_query import client, FIXTURE, response, hits
 
 HASH=generate_password_hash('synthetic-password',method='pbkdf2:sha256:1000')
@@ -100,27 +103,46 @@ class SourceAccessTests(unittest.TestCase):
   r=self.post();self.assertEqual(r.status_code,503);self.assertNotIn('PRIVATE_CANARY',r.get_data(as_text=True));self.assertEqual(self.audit()[-1][2],'unavailable')
   for path in ['/api/logs/export','/api/logs/raw']:
    self.assertNotEqual(self.http.get(path,headers=auth()).status_code,200)
- def test_audit_backup_current_and_v2_restore(self):
+ def test_audit_backup_current_restore_preserves_all_state(self):
   self.assertEqual(self.post().status_code,200)
   extra=tempfile.TemporaryDirectory();self.addCleanup(extra.cleanup)
   root=Path(self.tmp.name)
-  for version in (4,3,2):
-   with self.subTest(format=version):
-    if version==3:
-     # Prior single-dashboard backups have no collection table.
-     with closing(sqlite3.connect(root/'dashboards.sqlite')) as db:
-      db.execute('DROP TABLE dashboard_collections')
-    if version==2:
-     # A pre-dashboard portal has the audit database but no preference database.
-     (root/'dashboards.sqlite').unlink()
-    out=Path(extra.name)/f'backup-v{version}';report=backup.backup(root,out)
-    self.assertEqual(report['format'],version)
-    names=[f['name']for f in report['files']]
-    self.assertIn('log-access.sqlite',names)
-    self.assertEqual('dashboards.sqlite'in names,version>=3)
-    self.assertEqual(backup.verify(out),report)
-    restored=Path(extra.name)/f'restored-v{version}';backup.restore(out,restored)
-    with closing(sqlite3.connect(restored/'log-access.sqlite'))as db:self.assertEqual(db.execute('SELECT outcome FROM source_access').fetchall(),[('granted',)])
+  names={'packages.sqlite3','cases.sqlite','log-access.sqlite','dashboards.sqlite','dashboard-insights.sqlite'}
+  before=snapshot(root,names)
+  out=Path(extra.name)/'current-backup';restored=Path(extra.name)/'current-restored'
+  report=backup.backup(root,out)
+  self.assertEqual(report['format'],5)
+  self.assertEqual(report['missing'],[])
+  self.assertEqual({f['name'] for f in report['files']},names)
+  self.assertEqual(backup.verify(out),report)
+  self.assertEqual(backup.restore(out,restored),report)
+  self.assertEqual(snapshot(restored,names),before)
+  self.assertEqual(snapshot(root,names),before)
+  with closing(sqlite3.connect(restored/'log-access.sqlite'))as db:
+   self.assertEqual(db.execute('SELECT actor,purpose,outcome,reference_sha256 FROM source_access ORDER BY seq').fetchall(),self.audit())
+  self.assertNotIn('dashboard-report-auth.key',{p.name for p in out.iterdir()})
+  self.assertNotIn('dashboard-report-auth.key',{p.name for p in restored.iterdir()})
+
+
+@pytest.mark.parametrize('version',[2,3,4])
+@pytest.mark.parametrize('artifact',['current_writer','frozen_manifest'])
+def test_legacy_audit_restore_has_independent_exact_version_data(tmp_path,version,artifact):
+ source=legacy_source(tmp_path/'source',version)
+ names={'packages.sqlite3','cases.sqlite','log-access.sqlite'}|({'dashboards.sqlite'}if version>=3 else set())
+ before=snapshot(source,names)
+ out,restored=tmp_path/'backup',tmp_path/'restored'
+ report=backup.backup(source,out)if artifact=='current_writer'else legacy_artifact(source,out,version)
+ assert report['format']==version and report['missing']==[]
+ assert {f['name']for f in report['files']}==names
+ assert backup.verify(out)==report
+ assert backup.restore(out,restored)==report
+ assert {p.name for p in restored.iterdir()}==names|{'manifest.json'}
+ assert snapshot(restored,names)==before
+ assert snapshot(source,names)==before
+ with closing(sqlite3.connect(restored/'log-access.sqlite'))as db:
+  assert db.execute('SELECT actor,purpose,outcome,reference_sha256 FROM source_access ORDER BY seq').fetchall()==[('investigate','investigation','granted','c'*64)]
+ assert not(restored/'dashboard-insights.sqlite').exists()
+
 
 class PureSourceTests(unittest.TestCase):
  def test_typed_bounds_unknown_objects_arrays_and_secret_option_forms(self):

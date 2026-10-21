@@ -9,9 +9,19 @@ function process(event) {
         // Web selection must not be bypassed through generic file discovery or
         // a journald/stdout duplicate. Dedicated web inputs remove message first.
         if (source.labels && /^(linux_file|linux_journald|windows_file)$/.test(source.labels.log_source || '') && typeof source.message === 'string') {
+            // Dedicated WAF inputs must project audit JSON before the queue.
+            // A generic file/journal mirror cannot bypass that privacy boundary.
+            var filePath=source.log&&source.log.file&&source.log.file.path;
+            if (typeof filePath==='string' && /[\\/](modsecurity|modsec)[\\/]|modsec[^\\/]*audit/i.test(filePath)) { event.Cancel(); return event; }
             var rawAccess = source.message;
             if (rawAccess.length <= 8192 && /^\s*\{/.test(rawAccess)) {
-                try { var wrapper=JSON.parse(rawAccess); if (wrapper && typeof wrapper.log==='string') { rawAccess=wrapper.log; } } catch (_) {}
+                try { var wrapper=JSON.parse(rawAccess);
+                    if (wrapper && wrapper.transaction && wrapper.transaction.producer && typeof wrapper.transaction.producer.modsecurity==='string' && wrapper.transaction.request) { event.Cancel(); return event; }
+                    if (wrapper && typeof wrapper.log==='string') { rawAccess=wrapper.log; }
+                } catch (_) {}
+            }
+            if (/^\s*\{/.test(rawAccess)) {
+                try { var audit=JSON.parse(rawAccess); if (audit && audit.transaction && audit.transaction.producer && typeof audit.transaction.producer.modsecurity==='string' && audit.transaction.request) { event.Cancel(); return event; } } catch (_) {}
             }
             if (accessLine.test(rawAccess)) { event.Cancel(); return event; }
         }

@@ -23,6 +23,7 @@ NETWORK_FILES = {
     "windows": ["install-network-windows.ps1", "packetbeat.base.json"],
     "ubuntu": ["install-network-ubuntu.sh", "packetbeat.base.json"],
 }
+for platform in ('windows','ubuntu'):FILES[platform].append('security-catalog.json')
 FILES['amazon_linux_2023'] = FILES['ubuntu']
 NETWORK_FILES['amazon_linux_2023'] = NETWORK_FILES['ubuntu']
 
@@ -135,6 +136,7 @@ def build_bundle(spec, source, ca):
     for name in names:
         data = (source / name).read_bytes()
         members[name] = data.replace(b"\r\n", b"\n") if name.endswith(".sh") else data
+    members['security-catalog.json'] = (source/'security-catalog.json').read_bytes()
     if 'system' in spec or 'sites' in spec:
         members['collection-profile.json'] = json.dumps(profile(spec), ensure_ascii=False).encode('utf-8')
         members['site-privacy.js'] = (source / 'site-privacy.js').read_bytes()

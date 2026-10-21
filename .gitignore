@@ -32,3 +32,4 @@ htmlcov/
 # Local browser verification artifacts (may contain authenticated fixture metadata)
 .playwright-cli/
 output/playwright/
+prototype/tests/node_modules/

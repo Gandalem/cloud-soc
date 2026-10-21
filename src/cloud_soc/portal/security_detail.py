@@ -11,6 +11,7 @@ from cloud_soc.portal.log_contract import field
 from cloud_soc.portal.privacy import display, REDACTED
 from cloud_soc.web.metadata import validate as validate_web
 from cloud_soc.web.agent_metadata import validate as validate_agent_web
+from cloud_soc.web.modsecurity import validate as validate_modsecurity, ADAPTER as WAF_ADAPTER, SOURCE_KIND as WAF_SOURCE
 from cloud_soc.parsers.security_mall_edge import (
     ADAPTER as EDGE_ADAPTER, SOURCE_KIND as EDGE_SOURCE, SOURCE_FIELDS as EDGE_FIELDS,
     EdgeError, validate_source as validate_edge,
@@ -30,6 +31,7 @@ WINDOWS_FIELDS = (
     "DestinationIp", "DestinationPort", "Protocol",
 )
 DETAIL_FIELDS = (
+    'waf.schema', 'waf.engine_mode', 'waf.interruption', 'waf.rules', 'http.request.id',
     *EDGE_FIELDS,
     *MALL_FIELDS,
     "event.category", "event.created", "agent.version", "service.id", "service.name", "container.id",
@@ -143,6 +145,15 @@ def security_detail(source):
             result.update(status=error.status, reason=error.reason)
         result["limitations"] += ["pseudonymous_account_requires_key_version", "ip_is_observed_socket_peer",
                                    "authorization_result_not_operation_result"]
+        return result
+    if get('labels.log_source') == WAF_SOURCE:
+        try:
+            values = validate_modsecurity(source)
+        except ValueError:
+            return result
+        result.update(adapter=WAF_ADAPTER, status='recognized', fields=values,
+                      limitations=['metadata_not_payload_analysis', 'intervention_not_application_outcome',
+                                   'collector_configured_site_boundary', 'not_a_detection'])
         return result
     if get('labels.log_source') == 'generic_web_access':
         try:

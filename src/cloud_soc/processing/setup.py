@@ -29,7 +29,11 @@ def prepare(client, *, update_role=True):
         NORMALIZED: {"@timestamp": DATE, "organization": {"properties": {"id": KEYWORD}},
                      "event": {"properties": {"ingested": DATE, **{k: KEYWORD for k in ("kind", "category", "action", "outcome", "code", "dataset", "provider")}}},
                      **{name: {"properties": {"ip": {"type": "ip"}, "port": {"type": "long"}}} for name in ("source", "destination")},
-                     **{name: {"properties": {"id": KEYWORD, "name": KEYWORD}} for name in ("host", "user")},
+                     **{name: {"properties": {"id": KEYWORD, "name": KEYWORD}} for name in ("host", "user", "service")},
+                     "http": {"properties": {"request": {"properties": {"method": KEYWORD, "id": KEYWORD}},
+                                               "response": {"properties": {"status_code": {"type": "long"}}}}},
+                     "waf": {"properties": {"schema": KEYWORD, "engine_mode": KEYWORD, "interruption": KEYWORD,
+                                              "rules": {"type": "object", "enabled": False}}},
                      "cloud": {"properties": {"provider": KEYWORD, "region": KEYWORD, "account": {"properties": {"id": KEYWORD}}}},
                      "network": {"properties": {"protocol": KEYWORD, "transport": KEYWORD}},
                      "process": {"properties": {"pid": {"type": "long"}, "executable": KEYWORD}},
@@ -40,6 +44,7 @@ def prepare(client, *, update_role=True):
                   **{k: KEYWORD for k in ("version", "status", "reason", "adapter")},
                   "raw": {"type": "object", "enabled": False}, "normalized": {"type": "object", "enabled": False}},
         STATUS: {"@timestamp": DATE, "last_success": DATE, "checkpoint": DATE,
+                 "runtime": {"type": "object", "enabled": False},
                  "health": KEYWORD, "lag_seconds": {"type": "long"}, "late_total": {"type": "long"},
                  "legacy_excluded": {"type": "long"},
                  "excluded_total": {"type": "long"},
@@ -56,9 +61,11 @@ def prepare(client, *, update_role=True):
             if set(found) != {name} or found[name]["mappings"].get("_meta", {}).get("contract") != name:
                 raise ValueError("Processing mapping conflict; manual review required")
             if name == NORMALIZED:
-                client.indices.put_mapping(index=name, properties={"cloud_soc": {"properties": {"normalized_at": DATE}}})
+                client.indices.put_mapping(index=name, properties={
+                    **{k: properties[k] for k in ('service', 'http', 'waf')},
+                    "cloud_soc": {"properties": {"normalized_at": DATE}}})
             if name == STATUS:
-                client.indices.put_mapping(index=name, properties={k: properties[k] for k in ('health', 'lag_seconds', 'late_total', 'legacy_excluded', 'excluded_total', 'history_pending', 'counts')})
+                client.indices.put_mapping(index=name, properties={k: properties[k] for k in ('health', 'lag_seconds', 'late_total', 'legacy_excluded', 'excluded_total', 'history_pending', 'counts', 'runtime')})
             if name in (RUNS, EXCLUSIONS):
                 client.indices.put_mapping(index=name, properties=properties)
     if update_role:

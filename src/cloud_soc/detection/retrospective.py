@@ -13,7 +13,7 @@ from cloud_soc.detection import staging
 from cloud_soc.detection.engine import (build_group_key, detect_rule, event_evidence,
     event_fingerprint, get_field_value, parse_event_timestamp, rule_revision)
 from cloud_soc.detection.incremental import utc
-from cloud_soc.detection.telemetry import evaluate
+from cloud_soc.detection.telemetry import evaluate, runtime_manifest
 from cloud_soc.detection.worker import approved_rules, ALERTS
 from cloud_soc.elastic.pagination import fetch_all_hits
 from cloud_soc.elastic.repository import ensure_provenance_mapping, save_security_alert
@@ -93,6 +93,7 @@ def run_retrospective(client, *, state_path, start, now=None, source_id='local',
         def publish(state, error=None):
             pending = db.execute('SELECT count(*) FROM review_jobs').fetchone()[0]
             client.index(index=STATUS, id='detector-retrospective', document={
+                'runtime': runtime_manifest(rules, 'retrospective'),
                 '@timestamp': now.isoformat(), 'state': state, 'mode': 'retrospective',
                 'detection': ','.join(by_id), 'checkpoint': current['checkpoint'],
                 'last_success': current['last_success'], 'counts': counts, 'pending_contexts': pending,

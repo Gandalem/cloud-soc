@@ -37,7 +37,7 @@ test('24 notice widgets share one bounded query per period and configured displa
 test('display uses safe DOM, latest response guards and separate ten-second refresh',()=>{
  const js=fs.readFileSync(path.join(__dirname,'../alert-notices.js'),'utf8');assert.doesNotMatch(js,/innerHTML|localStorage|eval\(/);
  assert.match(js,/currentEvidence!==evidenceGeneration/);assert.match(js,/!forbidden/);assert.match(js,/setTimeout\(refresh,10000\)/);
- const builder=fs.readFileSync(path.join(__dirname,'../dashboard-builder.js'),'utf8');assert.match(builder,/refreshNotices/);assert.match(builder,/current!==generation/);
+ const builder=fs.readFileSync(path.join(__dirname,'../dashboard-builder.js'),'utf8');assert.match(builder,/CloudSOCLive.create/);const live=fs.readFileSync(path.join(__dirname,'../live-refresh.js'),'utf8');assert.match(live,/ticket!==serial/);
 });
 test('null and malformed rows fail closed without a rendering exception',()=>{
  const w=scope(),box=node('div');for(const r of [null,1,{}, {...row,effective_state:'__proto__'}, {...row,observed_count:'10'}]){

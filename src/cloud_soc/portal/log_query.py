@@ -11,6 +11,7 @@ import threading
 
 from elasticsearch import NotFoundError
 from cloud_soc.portal.security_detail import DETAIL_FIELDS, security_detail
+from cloud_soc.portal.log_types import classification
 
 from cloud_soc.portal.log_contract import (
     CONTRACT_VERSION, INDICES, MAX_CURSOR_LENGTH, MAX_DETAIL_BYTES, MAX_RESPONSE_BYTES,
@@ -27,17 +28,22 @@ def project_list_hit(hit):
     detail = security_detail(hit.get("_source")) if row["source_kind"] != "unknown" else {
         "status": "unsupported", "adapter": None, "fields": {}}
     adapters = {"windows_event": {"windows_security_v1", "sysmon_v1"},
+                "security_mall_audit": {"security_mall_audit_v1"}, "security_mall_edge": {"security_mall_edge_v1"},
                 "web_access_metadata": {"web_access_metadata_v1"},
-                "generic_web_access": {"web_access_agent_v1"},
+                "generic_web_access": {"web_access_agent_v1"}, "generic_modsecurity": {"modsecurity_audit_v1"},
                 "network_packetbeat": {"packetbeat_metadata_v1"},
                 "aws_cloudtrail": {"aws_cloudtrail_metadata_v1"}, "oci_audit": {"oci_audit_metadata_v1"}}
     if detail["adapter"] not in adapters.get(row["source_kind"], set()):
         detail = {"status": "unsupported", "adapter": None, "fields": {}}
     fields = detail["fields"]
+    if row['source_kind']=='security_mall_edge' and detail['status']=='recognized':
+        fields={**fields,'action':'waf_rule_match' if fields['stream']=='waf' else 'http_access',
+                'http_method':fields.get('method'),'http_status':fields.get('status_code')}
     row["interpretation"] = {"status": detail["status"], "adapter": detail["adapter"],
-        "fields": {key: fields[key] for key in ("action", "outcome", "actor", "target_user", "source_ip", "destination_ip", "http_method", "http_status")
+        "fields": {key: fields[key] for key in ("action", "outcome", "actor", "target_user", "source_ip", "destination_ip", "http_method", "http_status", "engine_mode", "interruption", "sqli_rule_ids", "account_id", "resource_type", "authorization_reason", "request_id", "stream", "service_name", "path")
                    if key in fields}}
     row["parse_status"] = detail["status"]
+    row['log_type']=classification(row,detail)
     return row
 
 # Source-based runtime fields avoid keyword/text mapping differences without
@@ -269,11 +275,17 @@ class LogReader:
         if self.organizations is not None:
             clauses.append({"terms": {"organization.id": list(self.organizations)}})
         runtime = {}
+        if filters.site is not None:
+            # Runtime keyword works with both protected keyword and Filebeat
+            # text+keyword mappings; the fixed script reads no request content.
+            runtime['soc_query_site'] = {'type': 'keyword', 'script': {'source': FIELD_HELPER +
+                "def v=value(params._source,'service.id'); if(v instanceof String) emit(v);"}}
+            clauses.append({'term': {'soc_query_site': filters.site}})
         if filters.source_kind == 'web':
             # Existing host indices have dynamic text+keyword labels while the
             # protected DVWA index uses keyword. Narrow with indexed terms first,
             # then confirm the exact source value on that small candidate set.
-            sources=['generic_web_access','web_access_metadata']
+            sources=['generic_web_access','web_access_metadata','generic_modsecurity']
             clauses.append({'bool':{'minimum_should_match':1,'should':[
                 {'terms':{'labels.log_source':sources}}, {'terms':{'labels.log_source.keyword':sources}}]}})
             runtime['soc_query_source']={'type':'keyword','script':{'source':FIELD_HELPER+"def v=value(params._source,'labels.log_source'); if(v instanceof String) emit(v);"}}
@@ -321,12 +333,14 @@ class LogReader:
                 if kind not in allowed or not info.get("searchable") or (name == filters.time_field and not info.get("aggregatable")):
                     raise unavailable()
 
-    def page(self, pairs):
+    def page(self, pairs, *, preview=False):
         pairs = list(pairs)
         tokens = [value for key, value in pairs if key == "cursor"]
         pit, after, state = None, None, None
         try:
             if tokens:
+                if preview:
+                    raise invalid()
                 if len(pairs) != 1:
                     raise invalid()
                 state, filters = self.decode(tokens[0])
@@ -371,8 +385,10 @@ class LogReader:
             rows = [project_list_hit(hit) for hit in hits[:filters.page_size]]
             if self.organizations is not None and any(row["organization"] not in self.organizations for row in rows):
                 raise unavailable()
+            if filters.site is not None and any(row['site_id'] != filters.site for row in rows):
+                raise unavailable()
             token = None
-            if len(hits) > filters.page_size:
+            if len(hits) > filters.page_size and not preview:
                 token = self.encode({**state, "pit": pit, "after": hits[filters.page_size - 1]["sort"]})
             encoded = bounded_json(self.result(filters, rows, token))
             if token is None:

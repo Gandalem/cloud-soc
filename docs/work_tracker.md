@@ -1,5 +1,302 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-21 병합본 커밋·push 요청 — LOCAL-MERGE-PUBLISH-01
+
+- 최신 사용자 요청으로 앞선 로컬 한정·커밋/push 금지를 이번 통합본에 한해 해제하고 JEONGRIM-SEO에 커밋·일반 push한다. main 원격 변경·PR 생성·배포·기존 서비스 변경은 제외한다.
+- fetch 후 원격 main5759c8d / JEONGRIM-SEOf2e8260이 앞선 검증 기준과 동일함을 확인했다. 검증된 제품/시험 코드는 그대로 유지하고 AGENTS.md·LOCAL_RUN.md·이 기록의 현재 지시만 갱신한다. 문서 변경으로 전체 검사를 재실행하지 않는다.
+- 이미 통합 검증한 index tree에 두 원본 커밋을 부모로 기록하여 실제 병합 이력을 보존한다. 첫 부모는 대상 JEONGRIM-SEOf2e8260, 둘째 부모는 main5759c8d이며 강제 push 없이 대상 브랜치만 갱신한다. 커밋 SHA와 실제 push 성공은 최종 Git/원격 참조 확인으로 보고한다.
+
+## 2026-10-21 로컬 브랜치 통합 — LOCAL-MERGE-01
+
+- [x] LOCAL-MERGE-01 로컬 통합·회귀 검증 완료: 최신 사용자 요청에 따라 main과 JEONGRIM-SEO를 별도 로컬 브랜치에서 병합하고 비교 분석·로컬 회귀 검증을 수행한다. 이번 요청은 과거 작업별 검수 제한보다 우선한다. GitHub push/PR/원격 변경, 운영 배포와 기존 서비스 변경은 하지 않는다. 두 브랜치의 작업 기록과 기존 기능을 보존한다.
+- 기준: main5759c8d / JEONGRIM-SEOf2e8260 / 공통6925f8f. 양쪽8/4커밋, 변경170/13파일이며 유일한 공유변경 docs/work_tracker.md는 양쪽 추가기록을 함께 보존해 해결했다. 작업브랜치 local/merge-jeongrim-main에 미커밋 상태로 보존한다.
+- 추가 보완: 로그인 감사 배포 자산4종의 기존 계약 일치/패치 멱등성/불일치 원본보존3검사 추가. Linux health 검사는 파일제외 뒤 남는 보안 journal1개를 정확히 검사하도록 수정했다. TLS 합성 CA의0644를 명시해 umask0002에서도 실제TLS 성공/실패원인을 검사한다. 제품의 수집·권한·TLS 검증은 완화하지 않았다. 로컬 Compose 안내의dev override 누락과 Python3.12/constraints 사용을 보완하고 LOCAL_RUN.md를 추가했다.
+- 검증: Python 전체 최초2093pass/17skip/8fail/345subtestpass. 실패 TLS3건은fixture권한수정뒤 해당파일4pass, 지표5건은실행sandbox의 / 및 /tmp소유자가65534라 거부된것으로 확인했다. root소유상위경로의 네트워크차단/read-only소스/권한제한 Python3.12컨테이너에서 해당파일16pass/1skip으로확인했고 제품보안검사는유지했다. 새패키지3pass. 영향재검사합산 고유Python2104pass/17skip/345subtestpass이며 단일전체재실행결과로표현하지않는다.
+- Node 전체350건 최초292pass/44skip/14fail. Linux journal 기대값1건수정통과, pwsh누락/초기화경로문제13건은작업폴더의portable pwsh와XDG경로준비후관련18검사모두통과. 합산고유306pass/44skip. Windows실장치/.NET/PowerShell5.1·명시live검사와기존서비스연동은미검증이다.
+- Ruff(src/tests/tools/로그인배포Python), Bandit(src medium/high), pip check, 개발/production Compose config, git diff --check 통과. 기존서비스시작/재시작·운영DB/키·실제ES/쇼핑몰수신/Slack/브라우저E2E·이미지빌드는수행하지않았다. 전체검사성공만으로운영인수완료를주장하지않는다. 테스트로그는현재작업 work/에, 배포용소스/분석/patch/zip은outputs/에 보존한다.
+
+
+## 2026-10-21 PR18 Actions 실패 조사 — CI-BACKUP-REGRESSION-01
+
+- [x] CI-BACKUP-REGRESSION-01 구현·요청 범위 CI 확인 완료(2026-10-21): 최신 승인 초안에 따라 버전2/3/4 고정 스키마와 현재5를 독립 검사한다. 중간 검수 없이 작성 후 관련 백업 검사1회와 영향 실패만 재확인한다. 작업 브랜치 커밋/푸시와 PR18 Actions 결과 확인까지 진행하며 기존 미커밋 기록·운영 상태·키를 보존한다. main 병합/배포/재부팅은 제외한다.
+- 원격범위 변경: PR18은 작업중 closed/merged=false로 확인되어 재개/수정하지 않았다. 코드216943b가 origin에 반영됐음을 확인하고 동일 branch의 workflow_dispatch run39458035104를 실행했다. Linux 전체Python2094pass/18skip/345subtestpass로 기존백업실패는해결됐고 뒤Bandit이 insight_state.py:257의 동적 placeholder SQL을 B608로지적했다. 원래 값은 parameter binding이지만 문자열조합도제거하는 고정SQL과 조직격리/정렬/전역한도 영향검사를 후속범위로 추가한다. Windows는아직진행중이며최종결과를확정하지않는다.
+- [x] CI-BACKUP-REGRESSION-01-SQL 완료(2026-10-21): SQLite 공식json_each의 parameter array를 쓰는 고정SQL로 원장조회 문자열조합을 제거하고 단일/복수/빈조직/SQL특수문자/1000·1001전역한도 및 기존조직API검사만 확인한다. 검사제외/nosec추가나역할완화로해결하지않는다.
+- SQL 영향검사13항목과 변경파일 Bandit/Ruff 통과. 첫원격 run39458035104의Windows는전체success이며Ubuntu는백업/Python/UI통과후Bandit1건실패로종료됐다.
+- 후속Ubuntu run39459664377/code66d50fd는Python2102pass/18skip/345subtestpass와Bandit을통과했다. 이후pip_audit가aiohttp3.14.3의CVE-2026-111064/GHSA-2g87-pp6c-29x5/CVE-2026-111063를지적했다. 수정버전최소3.14.4를공식PyPI metadata/릴리스로확인(Python>=3.10,Apache-2.0 AND MIT,조회시metadata취약점목록없음).
+- [x] CI-BACKUP-REGRESSION-01-DEPS 완료(2026-10-21): 기존동일3.14계열의최소보안수정3.14.4로constraints1줄만변경하고resolver dry-run/고정목록audit후Ubuntu만실행한다. 취약점ignore/검사제외를추가하지않으며기존venv/서비스/운영설정은변경하지않는다. Windows전체검사는사용자지시대로재실행하지않고앞선SHA의성공으로구분한다.
+- DEPS 로컬 확인: 기존venv를변경하지않는resolver dry-run은aiohttp3.14.4만교체예정으로성공했다. 전체고정constraints목록의pip_audit(--no-deps --disable-pip)는조회시알려진취약점없음으로통과했다. 원격Ubuntu에서는실제설치환경의pip_audit와뒤이미지/권한/gateway검사까지확인하며Windows는재실행하지않는다. state/ci-backup-regression/dependency-{resolver,audit}.{log,json}에보존한다.
+- 최종원격결과: 코드09f805934c0859533f2e0b390c691039b2fb3010의Ubuntu단일 run39461010692는전체success. Python2102pass/18skip/345subtestpass, 뒤UI/규칙/보안정적/실제설치의존성audit(알려진취약점없음)/Compose·이미지/격리root권한/gateway까지완료했다. Windows는사용자지시대로추가실행없이216943b의 run39458035104/job118749924321 전체success를보존한다. 후속SQL·의존성패치가Windows최신환경에서도검증됐다고확대하지않는다.
+- 병합판단(2026-10-21): origin/main6925f8f는검사코드09f8059의조상이며0behind/6ahead로충돌없이반영가능하다. 승인한검사범위에서는병합진행가능하지만실장치/운영복원/미연결위젯인수전체완료는아니다. PR18은closed/merged=false여서재개또는현재branch기반새PR이필요하다. 사용자질문만으로PR재개/새PR/main병합/배포는하지않았다.
+- 문서마감: 이후커밋은이결과기록만변경한다. 실제CI검사대상코드SHA는09f8059로고정해표시하고문서변경때문에통과한검사를다시실행하지않는다. 첫실패2회와성공run의로그는Git제외state/ci-backup-regression에보존한다.
+- 최신사용자지시: Windows는통과한216943b결과를보존하고수정/재실행하지않는다. 공통SQL수정커밋에는Ubuntu만실행한다. workflow_dispatch의platform=all/ubuntu/windows선택을추가하며기존push/PR은항상양쪽matrix를유지한다. 이전run재실행은옛SHA를검사하므로새커밋의Ubuntu단일수동실행을사용한다. 최신SQL의Windows재확인은미실행으로구분한다.
+- 작성 완료/검수 전: tests/legacy_backup_fixtures.py의 독립 고정SQL/합성자료와 writer없는 과거manifest 생성, 현재5·과거3/4 dashboard 복원, 현재5·과거2/3/4 audit 복원을 작성했다. read-only 구조/행 비교를 Store 생성 전에 수행하고 현재5의 키제외/복원후재설정·이전키거부를 유지한다. 제품backup.py와 운영상태는 변경하지 않았다. docs/backup_format_regression.md에 범위/절차를 기록하고 이제 관련 검사1회로 전환한다.
+- [x] CI-BACKUP-REGRESSION-01-LOCAL 로컬 구현·관련 검수 완료(2026-10-21): 변경2파일/core backup/기존 복원 인증 검사71항목 중 최초70통과/1실패. 새 시험의 백업 경로가 source 내부였으므로 형제 디렉터리로 수정했고 해당1항목 통과했다. 제품 경로 제약은 완화하지 않았다. 제거된 파괴적 fixture 분기에서 남은 unused sqlite3 import1건도 제거하고 해당 정적 진단 통과. 고정SQL/독립manifest 구버전2·3·4와 현재5 정확한 복원·키무효화/원본불변을 확인했다. 전체 suite/운영복원은 수행하지 않았다. 부모 작업은 원격Actions 확인 전 미체크 유지한다.
+- 로컬 근거: Git 제외 state/ci-backup-regression/local.log·local.xml(70pass/1fail), affected.log·affected.xml(1pass). 현재 backup.py/실제 키/DB/서비스는 변경하지 않았다. 다음은 작업 브랜치 push 후 최신 PR18 Actions의 양쪽 결과 확인이다.
+
+- 최신 PR18/run39454882184/head d6e9b2b의 Ubuntu/Windows 실패 로그를 읽었다. 양쪽 모두 백업 format 기대값 불일치가 원인이다. test_dashboard_collection.py:208은4를 기대하지만 현재 Portal이 dashboard-insights.sqlite를 생성하므로 backup.py는정상적으로5를 반환한다. test_source_access.py:103의format4/3/2 합성 fixture도 새 insight DB를 포함한 채 이전 버전을 기대해각각5!=4/3/2로 실패한다. Linux는2083pass/18skip/345subtestpass와실패4개(메서드1+subtest3)이며뒤Actions단계통과를의미하지않는다.
+- 필요한수정: 현재전체상태의format5백업/복원과실제이전형식2/3/4자료복원을분리한다. 과거형식fixture는폐기용새디렉터리에해당형식의DB/스키마만구성하고원본현재상태를축소하지않는다. 현재형식은dashboard-insights와대시보드설정·원본접근감사의정확한복원, 인증키백업제외/새복원자격증명무효화를확인한다. 단순히모든기대값을5로바꾸거나제품format을4로되돌리지않는다. 조사는코드/테스트변경·재실행·커밋/푸시·병합·배포없이수행했다. 기존TEST-QUALITY-01의제한검수통과를전체CI통과로확대하지않는다. 실제CI실패로그는Git제외state/ci-failure에보존한다.
+
+
+## 2026-10-21 테스트 보강 — TEST-QUALITY-01
+
+- [x] TEST-QUALITY-01 구현·제한 검수 완료(2026-10-21): 승인 초안에 따라 CI 고정 UI 의존성 설치, 독립 기대값의 계산식, RBAC/CSRF 원인 분리, 다중 페이지/PIT 완전성, 장치 인증/로컬 TLS, 주요 폼 상태를 보강한다. 약50%와100%에 신규/직접 영향 검사만 두 차례 수행하고 수정 후 영향 실패만 재확인한다. 기존 미커밋 문서와 기능 계약을 보존하며 전체 테스트·실제 서비스·재부팅·이관·main 병합·자동 커밋/푸시는 제외한다. 최신 ‘깃에 수정’ 요청에 따른 이번 작업 브랜치 커밋/푸시는 명시 요청 범위로 수행하며 main/서비스는 변경하지 않는다.
+- 50% 제한 검수: 신규 계산/권한/조회+기존 viewer 영향38항목 중 최초37통과/1실패. 신규 sort 기대값을 실제 date 정렬 계약으로 수정했다. 강제 supported mock을 제거하면서 드러난 AWS 합성 입력의 잘못된 host 인덱스/누락schema도 실제 cloud 계약으로 보완하고 영향 조회13항목 최종 통과했다. 제품 파서/권한/조회 성공 조건을 완화하지 않았다.
+- 작성100% 도달: 전반 독립 계산/CSRF/503건 다중페이지, 후반 새 장치키/상태 불변/실제 loopback TLS와 폼 핵심 검사를 작성했다. CI 고정 npm 설치와 Windows 신규검사 선택을 연결했다. 이제 최종 제한 검수로 전환하며 전체 테스트/실습·운영 연결/위치 이동 검사는 실행하지 않는다.
+- 최종 제한 검수: 후반 장치/실제 loopback TLS+직접 영향 Python35항목 통과(skip0). 전반과 영향 재검사까지 고유63항목 통과이며 전체 suite 결과가 아니다. Node 최초14항목 중11통과/중복 제출3실패를 확인해 제품 submit handler2곳에 저장 중 재진입 차단만 추가하고 해당3항목 통과. 계정 평가 폼의 조직/정책/KST/만료·근거 전달1항목도 통과해 고유JS15항목을 확인했다. 새 테스트에서 노출된 실제 중복 요청을 고쳤으며 서버 검증/규칙/기대값을 완화하지 않았다.
+- 정적/CI 연결: 변경 테스트의 fixture import shadowing F811을 명시적 module 바인딩으로 수정하고 영향2파일 진단 통과, 나머지 신규파일 최초 진단 정상. 변경 제품JS2파일 구문·고정 npm ci 설치 통과. workflow는 기존 검사/트리거를 보존하며 UI lockfile 설치와 Windows 새검사 선택만 추가했다. GitHub Actions 원격 실행/전체 통과나 실서비스 인수는 수행하지 않았다.
+- 정리/근거: 실제 loopback 시험 서버 shutdown/thread join과 새 인증서/개인키 제거 완료. 기존 서버/서비스/키/데이터·큐/체크포인트는 변경하지 않았다. state/test-quality/{midpoint,midpoint-affected,midpoint-query-fix,final,final-js,final-js-affected,final-assessment,final-output-affected} 로그/XML은 Git 제외로 보존한다. tests/{dashboard_quality_fixtures,test_dashboard_quality,test_dashboard_query_quality,test_dashboard_device_quality,test_device_heartbeat_tls}.py, 기존 test_dashboard_insights_decisions.py, prototype/tests/dashboard-insights-forms.test.cjs, 제품 dashboard-insights.js/dashboard-insight-metrics.js, .github/workflows/ci.yaml 및 docs/test_quality.md에 기록한다. main 병합/배포/전체검사/재부팅은 하지 않는다.
+
+
+## 2026-10-21 테스트 코드 검토 — TEST-REVIEW-01
+
+- 사용자 질문에 따라 최근 변경된 규칙/수집/대시보드 테스트와 CI 연결을 읽기 검토했다. 테스트 실행·코드/워크플로 수정·서버 변경·커밋/푸시는 하지 않았다. 아래는 제품 오류를 실행 재현한 결과가 아니라 테스트의 판별력/누락과 CI 실행 전제에 대한 판단이다.
+- 병합 전 우선: ci.yaml에 prototype/tests lockfile 설치가 없으므로 npm ci 연결이 필요하다. 현재 작업 브랜치 push는 CI 대상이 아니며 PR/수동 실행으로 최신 SHA 결과를 확인해야 한다.
+- 점수/비율 판별력: tests/test_dashboard_insights_decisions.py:114의 TP=FN=FP=TN=1은 precision/recall 모두50으로, 두 수식을 바꾸어도 통과한다. TP=3/FP=1/FN=2처럼 결과가 달라지는 입력 및 분모0/0%/100%를 각각 고정 기대값으로 확인할 후속 검사가 필요하다.
+- 새 조회 경로: 같은 파일46은 timed_out 실패만 확인하며 InsightReader.scan 정상 다중 페이지/같은 시각·다른 인덱스 동일ID/search_after·PIT 갱신/폐기/중복·범위 밖 문서·용량 초과를 직접 통과시키는 검사가 없다. cloud_summary70건 직접 입력은 검색 조회의 완전성 검사를 대신하지 않는다. 새 경로의 결정적 합성 HTTP 응답 검사를 우선 추가하고 실제 엔진 검증은 별도 범위로 둔다.
+- 권한 검사의 실패 원인 분리: 같은 파일197의 viewer 관리POST는 유효 CSRF가 없어 RBAC 차단이 없어져도 CSRF 등 후속 경계의403으로 통과할 수 있다. 유효 CSRF의 viewer 거부/유효 CSRF의 관리자 성공/관리자 CSRF 누락·오류 거부를 분리하고 저장 상태 불변을 확인해야 한다.
+- 장치/TLS: 같은 파일58은 빈 본문/인증 헤더 누락의 Flask 요청만 확인한다. 유효 장치 키+정상 보고, 유효 키의HTTP 거부, 비신뢰 프록시의XFP 위조/명시 신뢰 프록시, pause/만료·시계·순번/내용 충돌 경계와 보고기 인증서·호스트 이름 실패를 추가할 필요가 있다. Flask base_url=https 자체는 실제 TLS handshake 검사가 아니다. 이미 있는 원장 회전/폐기/응답 중복 검사는 유지한다.
+- 화면: 새 dashboard-insights-decisions.test.cjs는 출처별 갱신 병합과조회계획2개만 다루며 새 장치/정책/평가 폼의 제출·오류·일회성 비밀 표시/닫기·열린 폼의 자동갱신 보존은 검사하지 않는다. 해당 흐름은 후속 연결 작업의 핵심 DOM 검사 후보이며 사용자 지시로 미검증인 이동 동작을 이번에 임의 검사하지 않는다.
+- 유지할 검사: 승인 불변 버전/삭제 worker ack/응답 유실·로컬 저장 실패/중복 경보/조직 격리/계산 null·근거 미평가/복원 인증epoch 등 기존 검사의 의미는 유효하다. 문자열 존재 검사는 카탈로그 동기화 등 정적 계약에 유지하되 실제 실행/수집/보안 동작 인수라고 확대 해석하지 않는다. 우선 CI 실행 전제와 위 계산·권한·페이지 검사를 보완하는 방향을 제안하며 승인된 중간/최종 제한 검수 범위는 자동 확대하지 않는다.
+
+
+## 2026-10-21 main 병합 사전 확인 — MERGE-READINESS-01
+
+- 읽기 전용 조사 결과: origin/main=6925f8f, 작업/원격 codex/operational-readiness=3676082. main은 작업 브랜치의 조상이므로 현재 Git 이력상 충돌 없는 fast-forward 관계다. main 대비2커밋/157파일이며 직전103파일 커밋뿐 아니라 b014fe6의 범용 사이트/WAF 변경도 포함된다. 실제 병합은 수행하지 않았다.
+- 판단: 즉시 병합은 보류한다. 현재 브랜치에 열린/종료 PR 및 Actions 실행/최신 커밋 check-run이 없고 ci.yaml의 push 대상에 codex/operational-readiness가 없다. PR 이벤트 또는 명시 수동 실행 시 실행할 수 있는 설정이다. 기존 main의 최근 실행39178381679는 Linux/Windows 모두 Slack 발생 시각 줄바꿈 기대값 관련7검사 실패이며 해당 기대값은 작업 브랜치에서 수정되어 있으나 최신 SHA의 CI 재확인은 없다.
+- 새 CI 연결 문제: prototype/tests/live-dom.cjs는 linkedom을 require하고 prototype/tests/package-lock.json에 고정했지만 workflow는 Node 설치 후 npm ci 단계를 실행하지 않는다. 깨끗한 runner의 UI 단계에서 의존성을 찾지 못할 것으로 판단한다. npm ci --prefix prototype/tests --ignore-scripts 등 lockfile 설치 연결을 먼저 보완한 뒤 최신 커밋 기준 결과를 확인해야 한다. 이번에는 코드/워크플로 수정·새 실행·PR 생성·커밋/푸시·서버 변경·테스트 재실행을 하지 않았다.
+- Actions 범위: Linux Python 회귀/coverage, Windows 선택 탐지·에이전트/권한 회귀, 공통 배포/통지 계약, PowerShell 구문·오프라인 agent, Node DOM/UI 회귀, 합성 규칙/성능, Ruff/Bandit/의존성 취약점, Compose/이미지 빌드, 격리 컨테이너 권한 및 loopback gateway 허용 경계를 검사한다. 앞 단계 실패 시 뒤 단계는 실행되지 않으므로 빨간 실행을 모든 단계 수행으로 보지 않는다. 실제 실습 쇼핑몰/새 OS 설치/실장치 로그 수신/실제 cloud/GeoIP/화면 전체/재부팅/운영 배포 통과를 의미하지 않는다.
+- main은 현재 classic branch protection 및 적용 ruleset이 없어 GitHub의 병합 가능 표기만으로 필수 검사 통과를 보장하지 않는다. 후속: CI 의존성 설치 보완→main 대상 PR/최신 SHA Actions→실패 원인별 영향 보완→병합 판단. 전체 기능 검토 완료나 운영 배포 승인은 아니다.
+
+
+## 2026-10-21 후속 연결 계획과 Git 보존
+
+- [x] DASHBOARD-CONNECTIONS-DOC-01 문서화 완료(2026-10-21): 남은 연결 작업의 우선순위·착수 조건·인수 기준을 docs/dashboard_capabilities.md에 기록하고 문서 색인에 연결했다. 최신 사용자 요청으로 현재 개발 변경을 Gandalem/cloud-soc의 codex/operational-readiness에 커밋·푸시하도록 승인받았다. 과거 커밋/푸시 금지는 이번 요청 범위에서 해제한다. main 병합·추가 개발·서비스 변경·추가 기능 검수·재부팅은 요청 범위에 포함하지 않는다. 기존 시험 결과와 미검증 제한은 그대로 보존한다.
+- Git 보존 범위: 기존 규칙 작성/일괄 등록·상시 처리/AJAX·수집 정책·통합 로그·대시보드 이동/기능 및 관련 도구/시험/문서를 현재 작업 상태로 함께 보존한다. 공개 후보103파일의 비밀/실행 자료 포함 여부를 확인했다. 탐지 후보4건은 환경변수 자리표시자와 합성 시험값으로 확인했으며 실제 키/인증값·state/·DB·로그·node_modules는 포함하지 않는다. 이번에는 기능 테스트·화면·서버 검사를 추가 실행하지 않았다. 대시보드 이동 미검증과 실제 자료 연결 미완료는 그대로 유지한다. 실제 커밋·푸시 성공은 Git 이력/원격 참조 및 최종 보고로 확인한다.
+- 후속 우선순위: DASHBOARD-CONNECT-01 경보/정확한 원본 → DASHBOARD-CONNECT-02 HTTPS 장치 보고/실제 로그 수신 구분 → DASHBOARD-CONNECT-03 정상·공격 시나리오 평가 → DASHBOARD-CONNECT-04 Country DB → DASHBOARD-CONNECT-05 승인 정책/계정 근거 → DASHBOARD-CONNECT-06 실제 AWS·OCI 수집. 외부 계정·위치 DB·실장치 연결 전제와 구현 범위는 docs/dashboard_capabilities.md의 후속 연결 계획에 기록한다. 후속 연결 항목은 모두 미착수이며 자료 부재를 정상0/안전/성능100%로 처리하지 않는다.
+
+
+## 2026-10-20 대시보드 기능 확장
+
+- [ ] DASHBOARD-FUNCTIONS-02 코드·제한 검수·실습 반영 완료 / 실자료 연결 인수 별도: 승인 초안의 근거 흐름, 클라우드 서버 조회, 장치 상태 원장/보고, 국가별 지도, 계정 보안 현황/평가 정책, 평가 실행 기록/정밀도·재현율을 구현한다. 기존 codex/operational-readiness 체크아웃과 미커밋 변경을 보존한다. 이전 검증 금지는 최신 지시로 대체하며 구현 50%와100%의 두 검수에서 큰 변경/계산·상태 판단만 확인한다. 전체 테스트·전반 브라우저/E2E·재부팅 인수는 실행하지 않는다. 코드/격리 검사/실습 반영/실수집을 구분하고 운영 환경·기존 키·데이터 이관·커밋·푸시는 변경하지 않는다.
+- 단계: 전반부 공통 조회/영속 계약+근거/클라우드/장치 상태 구현 뒤 50% 검수, 후반부 GeoIP/계정 평가/성능 평가+화면/문서 작성 뒤100% 검수. 외부 위치 DB·실제 클라우드 계정·실장치 heartbeat·합성 평가 실행의 부재를 정상0/안전으로 처리하지 않는다. 새 수신 API는 전용 장치 인증과 TLS를 사용하며 기존 엔진 관리 키를 재사용하지 않는다.
+- 2026-10-21 약50% 작성 도달: 공통 제한 조회/PIT 전체 집계, 기존 경보 근거 조회 재사용, 별도 장치 상태 원장·회전/폐기·HTTPS 보고 계약과 보고기, 전반부 위젯을 작성했다. 중간 검수는 신규 결정 함수/주요 API 경계와 변경 JS 구문으로 한정한다. 전체 회귀/브라우저/실장치 보고/평가 시나리오 실행은 하지 않는다.
+- 50% 검수 결과: 상태 경계/중복·내용 충돌·회전·폐기·비밀값 비저장/전체 클라우드 건수/PIT 부분 실패 종료/상태 API 인증·TLS의 합성10항목 통과. 큰 변경 Python 한정 진단에서 미사용 import3개를 제거했고 영향 파일만 재진단한다. 변경 JS3파일 구문 확인은 통과했다. 기존 전체 테스트·브라우저·실수집 검사는 실행하지 않았다.
+- 2026-10-21 구현 작성100%: 나머지 Country DB 어댑터/국가 도형·coverage/원본 drilldown, 승인 정책·수동 근거 평가·weighted score와 null/예외/만료, 버전별 평가 기록·정밀도/재현율, 새 상태 백업format5와 인증epoch, 관리자 구조화 폼/권한/부분 갱신 실패 보존·문서를 작성했다. 실제 위치 DB/클라우드 자격 증명/실장치 등록·평가 실행은 생성하지 않았다. 이제 최종 제한 검수로 전환한다.
+- 100% 제한 검수 결과: 후반/영향 계산·주요 경계11항목 통과(중간 단계에서 끝난8항목 제외). weighted score/미평가·만료·전부예외/null, 정밀도·재현율/실패 제외/분모0, 조직·평가버전 분리, GeoIP분모·특수주소, format5/새복원 인증epoch, 읽기API 조직/RBAC·정적 자산 권한, cloud 필터의 사전 적용, audit 실패 rollback을 합성 자료/격리 DB/가짜 검색응답으로만 확인했다. JS는 출처별 부분실패 보존·소스/기간 공유2항목 통과, 큰 변경4파일 구문 확인 통과. 미사용 test import1개와 코드 검토에서 찾은 fleet의 무의미한 기간 편집을 정리하고 영향 진단만 수행한다. 전체 테스트/브라우저/실제 GeoIP·cloud·장치/평가실행 검사는 하지 않았다.
+
+
+
+- [x] DASHBOARD-FUNCTIONS-02-CODE 완료(2026-10-21): 기존5개 비활성 위젯의 준비 코드/조건별 실제 상태와 cloud 조회 개선을 구현하고 요청된 두 제한 검수를 마쳤다. 첫 검수10항목, 최종11항목 및 계정 식별 누락/가림 계산 영향1항목, 출처 부분실패/기간 공유 JS2항목 통과. 큰 변경 Python 진단/JS 구문 확인 외 전체 회귀와 화면/E2E 인수는 하지 않았다. parent의 실자료 인수까지 완료했다고 간주하지 않는다.
+- 최종 코드 검토 보완: [REDACTED]/없는 계정 ID를 한 개의 계정으로 합산하지 않고 식별 불가 이벤트로 분리했다. 이 영향 계산1개만 재검사했으며 전체 재실행은 하지 않았다. fleet의 기간 설정은 현재 상태이므로 비활성화했다. 읽기/쓰기의 조직·관리자·CSRF와 기계 Bearer/TLS 경계를 유지했다.
+- 실습 반영(2026-10-21): /home/kopo/soc-mall-lab/releases/dashboard-capabilities-20261021을 이전 collection-policy-20261020에서 복사하고 source/assets/의존성 안내/문서20파일을 반영했다. 기존 source와 private Portal drop-in은 보존하고 실행 경로만 새 release로 바꿔 Portal을 재시작했다. 최종 계정 집계 영향3파일도 백업 후 반영했다. 기존 장치·엔진 키·서비스 설정 내용·운영 원본/큐/체크포인트를 수정하거나 이관하지 않았다. 새 상태 DB/보고 인증 키는 Portal의 별도 내부 상태로 생성하며 기존 DB 스키마는 이관하지 않는다.
+- 실제 기능 조건/남은 인수: 새 위젯은 개인 화면에서 사용자가 선택한다. 실장치 등록/HTTPS 보고기 연결, 실제 cloud 수집 자료/읽기 전용 설정 collector, 별도 Country DB와 선택 maxminddb 설치, 운영자가 승인할 평가 정책/실제 근거/합성 평가 결과가 필요하다. 이 자료/자격 증명을 임의로 생성하거나 기존 키로 우회하지 않았다. 수동 계정 평가는 operator_evidence_review, 평가 지표는 등록한 합성 결과의 계산이며 자동 cloud 설정 확인/실제 공격 평가 통과를 주장하지 않는다. SQLite 복원 합성 검사는 폐기용 새 디렉터리에서만 했으며 실제 DB 복원을 하지 않았다.
+- 제외: 전체 테스트·브라우저/화면/모바일 인수·실제 cloud/위치DB·실장치 보고·실제 평가 시나리오 실행·부하/HA·운영 백업/복원·재부팅은 실행하지 않았다. Portal 재시작 명령 성공을 신규 기능 전체의 실데이터 통과로 기록하지 않는다. 기존 미커밋 변경과 D:/cloud-soc 원본을 보존했고 커밋/푸시는 하지 않았다.
+- 근거/파일: docs/dashboard_capabilities.md, portal/{insight_state.py,dashboard_insights.py,insight_metrics.py,app.py,auth.py,dashboard_widgets.py,operations.py,backup.py}, prototype/dashboard-insights.js·dashboard-insight-metrics.js·dashboard-insights.css·dashboard-{builder,widgets}.js·dashboard.html, Natural Earth v5.1.2 도형/NOTICE, tools/device_heartbeat.py, optional requirements-geo.txt/pyproject geo extra, 좁은 tests/test_dashboard_insights_decisions.py와 prototype/tests/dashboard-insights-decisions.test.cjs. Git 제외 state/dashboard-functions/{midpoint.log,midpoint.xml,final.log,final.xml,final-js.log,final-lint.log,final-account-fix.log,deployment.json}에 제한 검수와 반영 기록을 보존한다.
+
+## 2026-10-20 내 대시보드 위치 이동 개선
+
+- [ ] DASHBOARD-MOVE-01 구현·실습 반영 완료 / 검증 생략: 제목 영역 드래그/착지 미리보기와 클릭 이동을 함께 구현한다. 최신 사용자 지시로 테스트·브라우저 확인·린트·구문 검사 등 검증은 전부 생략한다. 코드 작성·실습 정적 파일 반영과 실제 동작 검증은 구분하며 검증 전 완료 체크하지 않는다. 기존 저장 배치·위젯 ID/설정·권한·저장 revision·되돌리기/취소를 유지하고 위치 미리보기만으로 서버 저장하지 않는다. 기존 미커밋 변경과 원본 D:/cloud-soc를 보존하며 재부팅·커밋·푸시는 하지 않는다.
+
+- 구현 작성: 넓은 제목 핸들, 목적지 미리보기, 가장자리 스크롤, 앞/뒤 클릭 배치, Esc/이동 취소, 겹침 연쇄만 아래로 이동하는 공통 relocate 함수를 작성했다. 선택/미리보기만으로 저장하지 않으며 기존 메모리 편집/명시 저장/되돌리기/취소 복원에 연결했다. 작은 화면은 클릭 배치를 사용한다. 새 의존성·자동 정렬/그룹·데이터 이관은 추가하지 않았다.
+- 검증 상태: 사용자 지시대로 테스트·브라우저 확인·린트·구문 검사·실제 저장/복원 확인을 전부 수행하지 않았다. 구현 작성과 실제 동작 완료를 구분해 작업은 미체크 상태로 둔다. 설계/미검증 인수는 docs/dashboard_movement.md에 기록했다.
+
+- 실습 정적 파일 반영: 현재 Portal release collection-policy-20261020에 dashboard-widgets.js → dashboard-builder.css → dashboard.html → dashboard-builder.js 순서로 네 파일을 교체했다. 기존 파일은 VM 내부 live-runtime/dashboard-movement-backup-1792507140300119809에 보존했다. 서버 API/저장 데이터/키는 변경하지 않았고 서비스 재시작·재부팅·커밋·푸시는 하지 않았다. 파일 교체 이후 브라우저/HTTP/저장 조회/상태 확인이나 hash 대조도 수행하지 않았다. 배포 동작 완료와 실제 기능 검증을 구분한다.
+
+## 2026-10-20 보안 중심 수집 정책·통합 로그 종류 표시
+
+- [x] LOG-COLLECTION-VIEW-03 완료(2026-10-20): 최종 검수 중 사용자가 보낸 화면의 과도한 가로 폭과 웹 로그에 반복되는 OS/수집기/이벤트 ID 미관측 열을 개선한다. 목록은 공통 핵심 정보와 종류별 실제 관측 요약으로 정리하고 세부 출처/문서 참조는 상세에 유지한다. 없는 필드를 추측하지 않으며 사용자 요청을 기존 작업의 최신 범위로 기록한다. 이 보완도 작성 완료 후 영향 범위만 최종 검수하고 재부팅하지 않는다.
+
+- 화면 보완 작성 100% 도달: 여섯 열/관측 요약·시각 근거·관측 상세·검증된 웹 경로/HTTP 정보와 영향 단위/브라우저 인수 도구를 작성했다. 이제 이 변경의 최종 검수로 전환한다.
+- [x] LOG-COLLECTION-POLICY-02 완료(2026-10-20): 사용자 승인 초안을 Windows/Linux 일반 에이전트·웹 수집에 반영하고 통합 로그에 출처/이벤트 종류를 표시한다. 실제 브랜치는 codex/operational-readiness, 작업 경로는 work/cloud-soc-main이며 D:/cloud-soc 원본은 변경하지 않는다. 기존 미커밋 변경·키·조직 범위·미전송 로그·큐·체크포인트·원본/경보/해시/근거 참조를 보존한다. 구현100% 전 테스트·린트·빌드·실행 검사는 하지 않고 마지막에 집중 검수와 영향 실패 수정만 수행한다. 이번 최신 지시는 재부팅 인수를 명시 제외한다. 현재 실습 범위에만 배포하며 다른 실제 장치에 임의 배포하지 않는다. 코드/모의·실제 검사/배포/실장치 인수를 구분하고 커밋/푸시는 하지 않는다.
+- 구현 작성100% 도달: 단일 카탈로그/선택자 생성기, Windows native·PS 이벤트/파일 선별과 역할, Linux 경로/journal 선별, 기존 private 웹 계약 보존과 명시적 검사 메타데이터의 정상 요청 제외, 현재 실습 Apache 조건부 접근 기록의 적용/복구 도구, 통합 로그 첫열의 안전한 종류 표시/쇼핑몰 보호 파서 연결, 관련 최종 검사·실습/화면 인수 도구와 docs/security_collection_policy.md를 작성했다. 중간 테스트·린트·빌드·실행 검사는 하지 않았다. 이제 최종 집중 검수로 전환하며 실제 통과 전 작업은 완료 처리하지 않는다. 정보가 부족한 고전 access·공개 페이지/AJAX는 보존하고, 안전한 분류가 가능한 범위만 제외한다. 이는 보안 정보가 불충분한데200/확장자만으로 삭제하지 않는 승인 계약이다.
+
+- 최종 정책 코드 검사: 관련 Python 최초 135통과/1실패/31환경 오류/76 subtests 통과. 임시 경로 접근 거부는 체크아웃 내부 basetemp로 바꿨고, 새 카탈로그가 기존 비밀 정책 파일 차단 규칙에 걸린 문제는 차단을 완화하지 않고 security-catalog.json으로 이름을 바꿨다. 영향 32검사 전부 통과했다. 최종 카탈로그·선택자 영향 Python 19검사도 통과했다.
+- 최종 에이전트/화면 검사: 최초 Node 70항목 중66통과/3실패/1환경상 건너뜀. 임의 로그 전량 수집을 기대하던 이전 Linux/Windows/네이티브 fixture를 실제 보안 경로의 양성과 임의 경로의 음성으로 바꾸고, encoding/권한/상태 보존 검사는 유지했다. 영향 3검사 통과 후 최종 Windows 미지 ID/오류 보존·Linux 선택자 관련 8검사도 통과했다. Windows PS 실제 실행과 .NET fixture 컴파일·실행을 포함한다. 건너뛴 Linux health 검사를 실행 완료로 세지 않는다. Ruff/JS 구문/diff 공백 검사 통과. 새 제품 런타임 의존성은 없다.
+- 실제 Linux 구성 검수: 폐기 가능한 /tmp 전용 디렉터리에서 최신 생성기를 실행하고 기존 고정 Filebeat의 test config 결과 Config OK를 확인했다. journal 우선 선택 뒤 auth 파일이 나타나도 자동 전환하지 않음, 손상된 출처 고정 상태에서 마지막 정상 입력 보존을 확인했다. 실제 호스트 보안 로그를 읽거나 일반 Linux 에이전트를 설치한 검사가 아니다. 처음 사용자 홈 scratch는 기존 금지 경로 규칙에 의해 거부됐고 제약을 완화하지 않았다.
+- 실제 실습 적용: /home/kopo/soc-mall-lab/releases/collection-policy-20261020과 기존 live-runtime의 상태/키를 사용했다. 원래 release와 Apache proxy/after-crs backup을 보존한다. Portal만 새 release로 재시작하고 WAF는 syntax 확인 후 graceful reload했다. 기존 Filebeat/정규화/탐지의 큐·체크포인트·원본·키는 초기화하지 않았다. 제품 변경 14파일 SHA256 일치, 기존 9서비스 enabled/active를 확인했다. 일반 Windows/Linux 등록 장치에 원격 업데이트하지 않았다.
+- 실제 웹 인수: 정상 Host를 명시한 성공 정적 GET은 access.tsv/중앙 원본에 기록되지 않았고, 같은 정적 경로의 SQLi 쿼리·공격 헤더는 접근+WAF 원본 모두 남았다. 일반 페이지 접근도 보존했다. 첫 요청의 숫자 IP Host가 CRS920350에 걸린 것은 제외 대상이 아니므로 보존이 맞았고, CRS/임계값을 완화하지 않고 시험 Host만 바로잡아 해당 범위를 재검사했다. 별도 경로로 원본/정규화/경보를 직접 넣지 않았다. 실제 쇼핑몰→기존 Filebeat→TLS ES→정규화→관리 탐지→경보 3건과 정확한 근거 6참조의 조직/raw index/id/event_hash를 대조했다. 독립 원본 바이트/WORM 보장은 이번 브랜치 범위 밖이다.
+- 실제 UI 인수: 실습 관리자로 화면에서 AUTH/WAF 시험 규칙 2개 생성·승인·적용, 실제 실패 로그인 3건과 WAF 경보, 통합 로그의 쇼핑몰 로그인 감사/웹 접근/WAF 탐지 및 상세 조회를 확인했다. 시험 규칙 2개는 화면에서 삭제하고 워커 반영을 확인했다. 시험 계정/데이터 키를 새로 만들지 않았고 로그인 세션은 종료했다. 합성 시험 원본·경보·감사 이력은 삭제하지 않았다.
+- 사용자 화면 보완 최종 검사: 로그 조회/계약/보호 상세 관련 Python 74검사와63 subtests 통과. Node 23항목 중21통과 후 AWS/OCI의 이전 문자열·OS열 기대 2항목을 새 공통 요약 계약에 맞춰 수정하고 영향 2검사 통과. 상세 제한 문구의 영향 1검사도 통과했다. HTML 삽입 방지·시간 기준·정확한 문서 참조·미지원/부분 상태·기존 페이지/AJAX/취소/오류 보존 검사는 유지했다.
+- 실제 레이아웃 최종 인수: Edge에서 실습 포털 로그인·통합 조회·상세를 확인했다. 1440/1024px는 표 scrollWidth=clientWidth(1166/762)로 가로 넘침0, 390px는 페이지 폭390 유지·표 내부700px 스크롤이며 JS 오류0이다. 관측된 GET/HTTP200/보호 경로와 탐지 전용/차단 안함을 표시하고 웹에 해당하지 않는 빈 채널·공급자 등은 나열하지 않는다. 실제 인덱스/문서 참조와 중요한 해석 제한은 상세에 남는다. 마지막 상세 문구 수정도 조회 전용으로 확인했다. 정책/엔진 전체를 다시 반복 검수하지 않았다.
+- 종료/한계: 임시 CSS·일시 ProxyPass 예외와 Linux scratch 2개를 제거하고 최종 WAF 정책 hash 일치를 확인했다. 새 시험 비밀값을 파일/문서에 남기지 않았고 기존 상시 서비스 키는 보존했다. 상태/원본 데이터나 기존 SQLite를 이관하지 않았다. 이번 작업에서는 재부팅·재부팅 검증·커밋·푸시를 수행하지 않았다. 일반 Windows/Linux는 소스·합성/native/구성 검사 완료이며 타 실장치 배포·실제 수집 완료는 아니다. 알려지지 않은 이벤트는 보존하고 공개 페이지/AJAX 전량 제외는 비활성이다. 필드별 제외 통계/감소율/SLA/모든 공격 보존 보장은 별도 후속 범위다.
+- 근거: Git 제외 state/collection-policy의 python-final/affected/final-policy/view 로그/XML, js-final/affected/final-selectors/view 관련 로그, browser-rules.json, probes.json, evidence.json, generic-config-result.json, final-deployment.json, cleanup.json, compact-layout-result.json, compact-detail-result.json와 compact-log-list-{1440,1024,390}.png/compact-log-detail.png. 설계는 docs/security_collection_policy.md, 제품 경계는 deploy/agents/{security-catalog.json,discover-*.*,discovery-native.cs,site-privacy.js}, portal/{log_types.py,log_query.py,log_contract.py,packages.py}, web/agent_metadata.py, prototype/logs.*. 원본 D:/cloud-soc와 기존 상용화 보존본은 변경하지 않았다.
+
+## 2026-10-20 Windows/Linux 공통 보안 수집 기준 — 설계만
+
+- LOG-COLLECTION-POLICY-01 설계 결정: 사용자 중단 요청을 유지하고 일반 Windows/Linux 에이전트의 기본 수집/역할별 선택/기본 제외 기준만 정리했다. 구현·정책 적용·서비스 재시작·로그 삭제·검사는 하지 않았다. 앞선 쇼핑몰3종 설명과 일반 호스트 자동 발견 코드의 넓은 범위를 구분한다.
+- 확인: discover-windows.ps1와 discovery-native.cs는 활성 비분석/비Debug 이벤트 채널 대부분을 선택하며 Windows Logs/System32 LogFiles/inetpub logs/ProgramData logs 기본 루트의 텍스트 파일을 발견한다. discover-linux.sh는 지정 루트의 지원 텍스트 파일을 선택하고 system profile에서는 journald 전체(자기 Filebeat unit 제외)를 추가할 수 있다. 같은 이벤트의 file/journal 또는 전용 web/일반 발견 중복을 정책 단계에서 막아야 한다. 이 소스 코드 상태를 현재 모든 실장치의 배포·수집 상태로 간주하지 않는다.
+- 제안 기본: 로그인 성공/실패·관리자 권한·계정/감사 정책 변경·보안 제품 탐지/중단·서비스/작업 지속성·수집 중단/전송 실패. Windows는 Security와 관련 System/Defender 채널의 의미 있는 이벤트를 선별하고, Linux는 auth.log/secure/인증 journal 중 호스트별 대표 경로와 설정된 auditd를 사용한다. 감사 정책/프로그램 부재는 수집 성공이나 이벤트0으로 숨기지 않는다.
+- 역할별 선택: 설치된 Sysmon/PowerShell/RDP/AD/웹/WAF/DB/VPN/컨테이너 등의 보안 이벤트. 프로세스/스크립트·DB 쿼리·audit EXECVE 본문에는 비밀값이 섞일 수 있어 수집 필드·접근·보호 정책 없이 전량 원문 수집하지 않는다. 웹 정상 접근도 공격 문맥이 될 수 있으므로200/Information만으로 일괄 제외하지 않는다.
+- 기본 제외: 일반 debug/trace·반복 진행 알림·보안 신호 없는 정상 정적 파일/정상 상태 확인·원시 성능 수치 반복·임의 경로 자동 발견·자기 collector 재귀 수집·이미 전송한 데이터의 중복 사본. 필요한 rotation 미전송분/재시도 큐는 유지하며 wtmp/btmp/EVTX/journal 등 바이너리는 무가치 판정이 아니라 전용 리더 없이 텍스트 수집하지 않는다는 뜻이다. 비밀 파일/사용자 문서/셸 history/요청 본문·쿠키·비밀번호의 무차별 수집은 제외한다. 에이전트의 최소 상태 보고는 운영 경로에 유지한다.
+- 공식 근거: Microsoft audit-policy-recommendations, Sysinternals Sysmon, PowerShell about_Logging의 Protected Event Logging, Red Hat Understanding Audit Log Files, systemd journald.conf/journal-fields를 확인했다. 이는 제안 기준이며 수집 기능·정규화·실제 탐지 규칙 지원 여부는 각각 후속 구현 인수로 구분한다. 커밋/푸시 없음.
+
+## 2026-10-20 실습 포털 계정 변경
+
+- [x] LAB-PORTAL-ACCESS-01 완료(2026-10-20): 사용자 요청으로 현재 실습 Portal의 lab-admin 비밀번호만 변경했다. VM 내부 users.json의 해시만 private 임시 파일+원자 교체로 저장했고 이전 해시 설정은 VM private backup에 보존했다. 다른 계정·역할·서비스 키는 유지하고 해당 계정의 기존 세션/로그인 실패 잠금만 제거했다. Portal 재시작 후 실제 로그인200과 관리자 신원을 확인하고 확인용 세션을 제거했다. 평문 비밀번호는 문서·저장 파일·애플리케이션 로그에 기록하지 않았다. D:/cloud-soc 원본·제품 코드·운영 서버·커밋/푸시 변경 없음.
+
+## 2026-10-20 상시 처리·화면 부분 갱신
+
+- [x] LIVE-AJAX-01 완료(2026-10-20): 승인 초안의 최근 입력 우선 처리·과거 따라잡기, 공통 AJAX 갱신과 읽기/입력 상태 보존, 기존 실습 환경의 상시 Portal/관리 탐지/처리 상태 연결을 구현하고 아래 최종 검수·실제 VM 재부팅 인수를 마쳤다. 기존 미커밋 변경·데이터·체크포인트·키를 보존했다. 개발 중 테스트/린트/빌드/실행 검사는 하지 않았고 구현 완료 후 집중 검수와 영향 실패 수정·재검사만 수행했다. 최신 지시는 이전 중간 검수 지시를 대체한다. 실습 서비스 설정/상시 배포는 승인 범위이며 운영 환경·커밋·푸시는 제외했다.
+- 코드 구현, 최종 검수, 실습 배포, 재부팅 후 실제 인수는 각각 구분한다.
+- 2026-10-20 구현 작성 완료·아직 미검수: processing.scoped_service와 고정 receipt 정책/별도 상태·과거 burst 예산, managed heartbeat/범위 일치 Portal 상태, 공통 AJAX 취소/일시정지/부분 DOM 반영과 새 목록 알림, 로그 preview PIT 즉시 종료, 9개 화면 연결, 실습 user systemd 설치/rollback, 단위·브라우저·재부팅 전후 인수 도구 및 docs/live_ajax_runtime.md를 작성했다. 구현 중 테스트/린트/빌드/서비스 시험 실행은 하지 않았다. 이제 사용자 지시의 최종 집중 검수 단계로 전환하며, 통과 전 부모 작업은 완료 처리하지 않는다.
+- 최종 코드 검수: 전체 Python 1회 실행은1967통과/9실패/24건너뜀/335 subtests 통과였다. 새 관리 규칙 테이블이 기존 백업 허용 목록에 빠진 실제 결함을 수정하고 알려진 완전한 테이블 그룹만 허용했다. 영향7항목 재검사는6통과/네이티브1실패/3 subtests 통과, 이후 네이티브 scratch를 허용 경로로 지정한 검사+기존 백업 검사17통과, 신규 관리 상태 백업/알 수 없는 테이블 거부 검사1통과다. Windows launcher는 해당 시험 프로세스에만 실행 정책을 지정했고 시스템 정책/제품 보안 제약을 완화하지 않았다. 최종 미해결 실패는 없으며24건너뜀은 실제 실행 완료로 세지 않는다. 전체 재실행은 하지 않았다.
+- 최종 UI 검수: 최초 Node158항목은103통과/55실패였으며 공통 스크립트를 넣지 않은 기존 fake DOM과 이전 오류 시 목록 삭제 기대를 실제 새 계약에 맞췄다. 영향7파일84항목 중82통과 후 남은2항목을 수정·통과했고, 후속 로그 재연결/사건 링크/개인 대시보드 문맥 수정의 영향3파일42항목도 통과했다. 실제 Edge 브라우저 공통 갱신5검사(노드·입력·포커스·펼침 보존, 오래된 응답 무시, 일시정지, 수동 갱신, 오류 후 내용 보존) 통과. Ruff/변경 JS 구문/diff 공백 검사는 통과했다. UI 시험용 linkedom0.18.12(배포 LICENSE: ISC)을 devDependency와 lockfile로 고정했으며 제품 런타임 의존성은 추가하지 않았다.
+- 실제 상시 실습 배포: `/home/kopo/soc-mall-lab/releases/live-ajax-20261020` 소스와 `live-runtime` private 설정·기존 상태의 일관된 사본·복구 도구를 사용했다. 기존 normalizer의 EnvironmentFile이 새 PYTHONPATH보다 우선하는 충돌을 발견해 이번 drop-in에서만 해당 EnvironmentFile 상속을 해제했다. 원본 unit/설정/이전 키/과거 체크포인트는 보존했다. 신규 reader/normalizer/managed 키3개는 구체 인덱스·역할 분리·90일 만료이고 VM 밖으로 내보내지 않았다. app/WAF/Portal, 수집기3개, history/recent 정규화, 관리 탐지9개 서비스가 enabled/active다.
+- 실제 화면·쇼핑몰 인수(식별자4A211791): 화면에서 AUTH/ACCESS/WAF3규칙을 생성·승인·적용하고 실제 실패 로그인2건 음성/3건 양성, 관리자 접근401, DetectionOnly SQLi 요청200과 WAF 로그를 확인했다. 원래 Filebeat→TLS ES→상시 recent 정규화→상시 관리 탐지→실제 Portal을 사용했고 원본/정규화/경보를 직접 넣지 않았다. 경보에서 정확한 raw index/id·조직·정규화 event_hash와 화면 근거 조회를 대조했다. WAF 복수 경보와 cooldown0 시험의 새 threshold 경보는 서로 다른 원본/trigger이며 재전송 중복과 구분했다. 재시작만으로 기존 경보 수가 늘지 않았다.
+- 실제 AJAX 인수: 페이지 이동0, 새 경보 알림→사용자 반영, 작성 중 규칙 입력/미저장 로그 필터 보존, 다른6개 갱신 화면 로드, 통신 실패 시 기존 경보 목록 보존과 복구를 확인했다. 저장 목적지별 도착 시점이 다른데 첫 갱신 묶음에 모든 규칙 경보가 있어야 한다고 가정한 시험 대기를 수정하고 영향 구간만 이어서 확인했다. 전체 실제 경보 조회까지16.847초를 관측했으나 이는 요청3종 수행 시간을 포함한 단일 측정이며 지연 보장/순수 탐지 시간/화면 표시 지연으로 일반화하지 않는다. 화면은 별도10초 갱신이고5분 완료 대기를 추가하지 않았다.
+- 실제 VM 재부팅: 부팅 ID `96c73128-ef5a-403b-a5fb-f148a8094b8d`→`f793ccac-6b58-4738-b9f8-e7f558f06333`.9개 서비스 자동 복구·규칙 ID/generation·recent 최초 시작점 유지·체크포인트 전진·재시작 중복 경보0을 확인했다. Portal은 부팅 중 TLS/인증 준비 검사 실패를 닫힌 상태로 재시도하고 검색 저장소 준비 후 자동 기동했다. 너무 일찍 접속한 시험 도구에는 서비스 준비 대기를 추가했다. 재부팅 전 이벤트가 이동 창에서 빠질 수 있어 새 실패 로그인3건으로 양성을 확인했고 관리자/SQLi도 다시 실제 발생시켰다. 경보 수는 재부팅 전 AUTH2/ACCESS2/WAF4에서 새 이벤트 후4/3/6으로 증가했다.
+- 재부팅 후 삭제/정리:3규칙을 UI에서 삭제하고 워커 반영을 확인했다. 같은 이벤트의 수집/정규화는 계속되지만 삭제 후 경보 수는4/3/6으로 유지됐다. 시험 규칙은 남기지 않았으므로 실제 사용자는 원하는 규칙을 생성·승인·적용해야 하며 실행 규칙0개를 분석 정상 완료로 표시하지 않는다. 임시 사용자 overlay/평문 시험 로그인/해당 세션과 private 브라우저·라이브러리·폰트 환경을 제거했다. Portal 정리 재시작은 부팅 중 실패 횟수로 start-limit에 걸려 해당 서비스의 실패 카운터만 해제한 뒤 정상 시작했다. 기존 데이터/근거/감사는 보존하고 상시 서비스와 신규 상시 키3개는 유지했다. 최종9개 enabled/active, 로그인 설정 조회200, Windows loopback SSH 연결도200이다.
+- 결과 근거는 Git 제외 `state/live-ajax/{flow.json,pre-flow.json,pre-dashboard.png,pre-evidence.png,post-dashboard.png,post-deleted.png,python-*.log,python-*.xml,js-*.log}`와 VM 내부 `live-runtime/proof`다. 관련 코드는 processing/scoped_service.py·worker.py, detection/managed.py·managed_health.py, portal/app.py·operations.py·log_query.py·backup.py, prototype/live-refresh.* 및9화면, deploy/lab/*, tools/review_*와 tests/test_live_ajax_runtime.py다. 설계/남은 한계/후속 인수는 docs/live_ajax_runtime.md. D:/cloud-soc 원본·상용화 보존본·운영 서버는 변경하지 않았고 커밋/푸시는 하지 않았다.
+- 종료 확인: 변경된 제품/실습 설치 파일40개를 로컬과 VM release 사이 SHA256으로 대조해 불일치0을 확인했다(`state/live-ajax/deployed-sha256.json`). 최종 인수 도구/설치 도구 Ruff와 문서 포함 diff 공백 검사도 통과했다. 현재 PC용 SSH loopback 연결은 유지했으며 PC 재부팅 후 자동 연결은 범위 밖이다.
+
+## 2026-10-20 규칙 화면→실제 쇼핑몰→대시보드→삭제 통합 인수
+
+- [x] RULE-AUTHORING-LIVE-01 실제 실습 인수 완료(2026-10-20): 현재 실습 쇼핑몰 HTTP→기존 Filebeat→TLS Elasticsearch9.5.2→새 시험 상태의 기존 정규화 엔진→관리 규칙 워커→실제 Portal 브라우저→삭제/워커 중단→재발생을 확인했다. 화면에서4개 시험 규칙을 생성·승인·적용했고 로그인 실패2건 음성/3건 양성, 관리자 화면401, CRS942100 SQLi 의심 요청을 확인했다. 경보5건·시험 정규화19건·전체 근거10참조의 정규화SHA/원본 참조/조직 대조, 화면 근거 조회, 삭제4건의 desired/observed/status 일치, 삭제 후 같은 계정 로그인·관리자 접근·서로 다른 WAF2요청의 수집/정규화와 추가 경보0건, 과거 경보5건 보존, pageerror0이다. 실제 기존 상주 Portal/탐지 서비스 배포 완료와 구분한다.
+- 최초 계획은 기존 D:/cloud-soc/state/security-mall 읽기 및 새 복제본이었다. 이후 사용자가 **현재 사용 중인 실습 쇼핑몰**을 지정해 이 계획을 대체했다. Ubuntu VM kopo/192.168.235.128의 기존 쇼핑몰·WAF와 Filebeat 수집기를 사용한다. 사용자가 VM 콘솔에서 확인한 ED25519 지문을 작업 전용 known_hosts에 기록하고 기존 SSH 기록은 보존했다. 시작 전 비활성 app/WAF의 상태·오프라인 H2 사본을 VM 내부에 보존하고 시험 동안만 시작한다. 기존 Portal·원본 체크아웃·서비스 설정·키·DB 내용의 직접 수정/이관·커밋/푸시는 하지 않는다.
+- 실행 환경은 실제 TLS Elasticsearch9.5.2다. 기존 normalizer는 부팅 시 오류 이후 처리 성공으로 회복했지만 2026-10-18 체크포인트부터 과거 범위를 따라가고 있다. 기존 체크포인트를 건너뛰지 않고 새 정규화/처리/상태/경보 인덱스·새 SQLite 상태·유효기간2시간의 제한 키와 임시 Portal/관리 워커를 사용한다. 이것은 기존 상주 파이프라인 자체의 배포/수리 완료를 뜻하지 않는다. 실제 기존 수집기를 통한 새 로그의 연결을 인수하며 고정 데이터 주입이나 모의 ES로 대체하지 않는다.
+- 자동 승인 검토는 VM의 시험 관리자 평문 비밀번호 파일을 PC로 복사하는 단계와 기존 Normalizer.cycle의 수동 재처리를 거부했다. 해당 동작을 실행하지 않았다. 브라우저 및 계정은 VM 안에서만 사용하고 새 상태의 시험 정규화 경로로 진행한다. 브라우저/필수 공유 라이브러리는 새 시험 디렉터리에만 설치/압축 해제해 시스템 패키지 상태는 변경하지 않았다. 실제 결과·정리는 후속 기록에서 구분한다.
+- 결과/정리: 실행 식별자20261020-8f21d43f, 소스 묶음SHA256 eb00aef83be38d9a0c74d204a49607476efa6909190a74893d6a01c67fecaf42. 첫 묶음에서 마지막 양성 이벤트 발생 시작부터3종 경보 조회까지43.737초였다(단일 관측값, 지연 보장 아님). WAF2경보는 서로 다른 실제 Apache 요청ID2개와 일치하며 같은 요청의 중복 경보가 아니다. DetectionOnly HTTP200이며 침해 성공/실제 차단은 주장하지 않는다. 원본 바이트의 독립 보관/hash 검증은 이번 계약에 없고 정규화 hash와 정확한 원본 문서 참조만 확인했다.
+- 초기 시험 준비의 빈 ES권한 배열, 브라우저 필수 라이브러리/한국어 폰트 부재, 브라우저 로그인 이동 대기, 쇼핑몰 URL의 세션 경로, 시험 API의 position/evidence 매개변수 및 카드 선택자 오류를 바로잡고 영향 구간만 이어서 실행했다. 삭제 후 같은 계정 재발생용 시험 이름 보존 누락은 별도 시험 계정/규칙으로 로그인 양성·음성을 다시 인수했다. 제품 탐지 규칙·임계값·원본/경보를 성공을 위해 완화·덮어쓰지 않았다. 이전 전체 회귀는 반복하지 않았다.
+- 새 시험 키5개 모두 폐기/재조회 확인(active0), 평문 시험 비밀 파일/세션 제거, 임시 Portal/정규화/관리 워커 실행0, 새 브라우저 환경 제거. 기존 app/WAF/Portal은 시작 전 inactive로, 기존 수집기/정규화4개는 active로 복원했다. app 정상 종료143을 systemd가 실패로 기록해 해당 시험 시작 서비스의 실패 표지만 reset-failed로 제거했으며 서비스 설정/enablement는 변경하지 않았다. 실습 HTTP 요청의 로그는 기존 raw 인덱스에 추가됐고 삭제하지 않았다. 시험 경보/정규화/증거 및 VM 내부 보호된 시작 전DB 사본은 보존했다.
+- 근거: Git 제외 state/rule-live-access/{live-report.json,cleanup.json,dashboard-alerts.png,alert-evidence.png,rules-deleted.png}, VM 내부 rule-live-20261020/proof. 설계/제한은 docs/rule_authoring.md 후속 실습 기록. 커밋/푸시/운영 배포 없음. 다음 인수는 기존 상주 파이프라인의 과거 적체/현재 입력 우선 처리·Portal/관리 워커 배포·공통 상태 보고 연결이며, 이번 임시 시험 실행을 상시 설치 완료로 간주하지 않는다.
+
+
+## 2026-10-20 규칙 추가 편의 리팩토링 제안
+
+2026-10-20 20:21 KST 후속 읽기 전용 진단 — 사용자 요청으로 상시 연결을 한꺼번에 시작하지 않고 새 입력 지연부터 상세 검토한다. VM 설정/서비스/키/데이터/체크포인트와 제품 코드는 변경하지 않았다.
+
+- 20:21:24 KST 관측: normalizer active/health success이나 checkpoint는20일11:00:29 KST로 현재보다 약9시간21분 뒤였다. 마지막 raw 수신은20일20:05:31 KST, 마지막 정규화 시각은18일16:39:23 KST다. raw32·normalized11·checkpoint 이후 raw21건은 성공 상태만으로 현재 입력 처리 완료를 판단할 수 없음을 보여준다. app/WAF/Portal은 앞선 시험 정리대로 inactive였다.
+- 실습 주기는5초이며 run_once는 한 번에 checkpoint+5분까지만 전진한다. 빈 시간 범위도 주기를 반복하므로 데이터량이 적어도 과거 시간 범위를 따라가는 비용이 생긴다. 별도로 now-30초 상한이 있고, 대시보드는60초 주기 갱신이다. 이5분은 규칙 집계 창/필수 대기시간과 다르다. 과거43.737초는 별도 최근 입력 상태에서의 한 번 관측값으로 기존 상주 경로의 현재 지연을 대체하지 않는다.
+- 기존 processing CLI에는 --priority/별도 상태/normalizer-priority 보고가 이미 있다. 다만 해당 CLI는 run_once에 실습의 구체 source/output 인덱스 범위를 전달하지 않으므로 실습 범위를 그대로 재사용할 수 있는지 먼저 확인해야 한다. 기능을 새로 중복 구현하거나 옵션만 켜서 해결됐다고 판단하지 않는다.
+- 첫 구현의 제안 인수는 기존 과거 상태를 보존한 현재 입력 우선 처리, 겹치는 범위의 중복 방지/동일 정규화 계약, 부분 실패·재시작의 진행 상태 보존, 현재/과거 처리 상태의 분리다.30초 상한 완화는 검색 가시성·지연 수신 보존 계약을 확인한 뒤 결정한다. 아직 구현·서버 적용·새 실행 시험은 시작하지 않았다.
+
+- [ ] RULE-AUTHORING-01 구현 진행 중(2026-10-20): 최신 사용자 요청으로 codex/operational-readiness/b014fe6로 개발 기준을 전환했다. 최신 요청으로 합의 초안의 구현에 착수한다. 공통 모델/관리 저장소 구현 후 중간 검수1회, UI/일괄등록/워커 연결 후 최종 검수1회를 수행하고 수정 시 영향 실패만 재검사한다. CORE-INGEST-ALERT-01의 수집→경보 목표는 유지하되 규칙 작성·공통 정의 설계를 먼저 진행한다.
+- 실제 경로는 기존 work/cloud-soc-main이며 디렉터리 이름과 무관하게 현재 브랜치는 codex/operational-readiness다. 원본 D:/cloud-soc과 상용화 보존본은 변경하지 않았다. 기존 AGENTS.md·작업 목록 미커밋 원본은 인접 branch-transition-* 폴더에 백업하고 새 브랜치의 과거 이력과 병합 보존했다.
+- 현황: profiles.py의 파일/ID 목록·source_observed, rule_loader.py의 형식/연산자, registry.py의 엔진 유형, Portal의 별도 FIELDS/GROUPS/ROOT_FIELDS와 threshold/single 초안 검증, YAML 입력 화면, 고정 배포 규칙 해시가 각각 존재한다. runtime_rules.py는 워커 보고 관측이며 초안 활성화기가 아니다.
+- 제안1: 공통 규칙 모델·필드/출처/유형 capability 카탈로그와 기존 YAML 호환 로더를 도입한다. 조직 범위는 서버 권한으로 강제하고 사이트/호스트 집계와 실제 정규화 필드 지원을 확인한다. 새 규칙의 선언 추가와 새 파서/탐지 알고리즘 개발을 구분한다. 기존 규칙 revision·engine version의 산정은 자동 변경하지 않는다.
+- 제안2: 단일 이벤트/횟수 기반을 첫 편의 작성 범위로 제공하고 유형별 템플릿·복제 후 새 ID·조건/집계/시간 창/쿨다운 입력 폼과 서버 생성 YAML/한국어 요약을 제공한다. 고급 YAML도 같은 모델·형식 검사 경로를 사용하며 미지원 필드/유형을 조용히 삭제하지 않는다. 순서/카디널리티/WAF 특수 옵션은 capability가 선언된 후 별도 단계로 확장한다.
+- 제안3: 초안 수정·불변 승인 revision·낙관적 동시 수정·감사·버전별 내용 hash를 설계한다. 지원 로그가 없으면 입력 미지원/미관측으로 표시하고 형식 검사 통과를 탐지 성공이나 경보0건으로 표현하지 않는다. 점수 정책 참조/설명은 분리하며 새 임의 가중치를 도입하지 않는다.
+- 제안4(후속): 승인 revision→불변 적용 묶음→원자적 배포 요청→워커 수락/실행 보고를 연결한다. desired/observed generation·version mismatch·실패/미관측을 구분하고 기존 배포 정책을 우회하지 않는다. 현 runtime identity는 전체 규칙에 고정되므로 초기에는 기존 워커/상태를 보존하는 별도 실행을 설계하고 장기적으로 규칙 revision별 진행 상태를 분리한다. 적용 시작/이동 창 문맥/cooldown/중복 경보/롤백·부분 적용 정책 없이 체크포인트 삭제나 자동 새 상태 재생으로 해결하지 않는다.
+- 위 항목은 설계 당시 기록이다. 최신 구현/검수 결과는 아래 추가 기록과 docs/rule_authoring.md를 기준으로 구분한다.
+- 변경은 브랜치 메타데이터·프로젝트 방향/작업 기록뿐이다. 테스트·린트·빌드·서비스 실행/실제 수집 검증·배포·커밋·푸시는 하지 않았다. 작성 편의와 실제 활성화, 탐지 연결, 점수 개선은 별도 인수 범위이며 완료 처리하지 않는다.
+
+
+
+2026-10-20 RULE-AUTHORING-01 범위 추가 — 규칙 생성·삭제:
+
+- 사용자 추가 요청으로 규칙 생성·조회·초안 수정·복제·삭제를 작성 편의 리팩토링의 필수 범위로 포함한다. 현재는 요구·설계 반영이며 기능 구현 완료가 아니다.
+- 새 규칙은 초안으로 생성한다. 승인 버전은 불변으로 보존하고 수정은 새 초안/revision으로 작성한다. 삭제된 규칙은 기본 목록과 향후 적용 대상에서 제외하되, 경보의 rule snapshot·기존 증거·버전·감사 이력은 삭제하지 않는다.
+- 실행 중 규칙의 삭제는 비활성화 요청→해당 워커/버전의 중단 반영 확인→삭제 완료의 상태로 구분한다. 미반영·실패·워커 미관측은 삭제 대기/실패/미확인으로 표시하며 삭제 성공으로 처리하지 않는다. 서버측 상태 전이/동시 수정 검사로 승인·적용·삭제 경합을 막는다.
+- 조직/관리자 권한·CSRF·서버 소유권 검사·내용 hash/version 충돌 검사를 유지하고, 사용 중인 기본 제공 규칙도 비활성화와 코드 카탈로그 제거를 구분한다. 삭제 후 같은 ID 재사용으로 과거 경보가 다른 규칙에 연결되지 않도록 안정적 규칙 identity·버전 정책을 둔다.
+- 새 정책은 후속 구현 대상이다. 제품 코드/운영 규칙/기존 경보/서비스/DB는 변경하지 않았고 테스트·실행 검증·커밋·푸시는 하지 않았다.
+
+2026-10-20 RULE-AUTHORING-01 UI 문구 요구 추가:
+
+- 사용자는 페이지에 개발자가 검증하겠다는 약속, 미완성/개발 예정 등 개발 진행 상태를 표시하지 말고 문서에만 기록하도록 명시했다. 규칙 작성 UI는 문장형 입력·유형별 템플릿·한국어 조건 요약·생성/수정/복제/삭제 등 사용 목적과 행동을 중심으로 구성한다. 일반 사용 화면에 YAML 직접 입력을 요구하지 않는 방향으로 설계한다.
+- 개발 범위·미구현 항목·테스트 미실행·남은 제한은 설계 문서/작업 목록에서 관리한다. 실제 저장/적용의 결과나 오류를 성공으로 바꿔 표시하는 뜻은 아니며 사용자에게 필요한 동작 상태는 정확하게 전달한다.
+- 이번 변경은 프로젝트 지침·요구 기록이며 기존 제품 페이지 변경·테스트·실행 검증·배포·커밋·푸시는 하지 않았다.
+
+2026-10-20 RULE-AUTHORING-01 범위 추가 — 규칙 일괄 등록:
+
+- 사용자 요청으로 향후 여러 규칙을 쉽게 추가할 수 있는 일괄 등록을 필수 범위에 포함한다. 개별 작성과 같은 공통 규칙 모델·권한·형식/의미 검사 경로를 사용하며 YAML 직접 작성이 필수인 가져오기 방식으로 만들지 않는다.
+- 제안 입력: 엑셀 등에서 편집 가능한 UTF-8 CSV 템플릿(유형별 단순 조건)과 복합 조건/왕복 보존용 버전 명시 JSON. 화면에 양식 다운로드·파일 업로드·행/규칙별 미리보기·한국어 조건 요약·등록 결과를 제공한다. CSV로 표현할 수 없는 복합 조건은 임의 축약/유실 없이 JSON 또는 개별 폼으로 안내한다.
+- 서버 권한에 따른 조직·범위 바인딩, 파일 크기·규칙/조건 수 한도, 잘못된 유형/필드/값·파일 내부 중복·기존 ID 충돌을 항목별로 식별한다. 기존 규칙을 자동 덮어쓰거나 삭제하지 않는다. 생성은 초안 일괄 생성이며 승인·적용과 별도다.
+- 배치 요청 identity/내용 hash·항목별 결과를 보존해 재전송·부분 실패에서 중복 생성을 막는 계약을 설계한다. 기본은 선택 항목 전체의 사전 검사 후 단일 로컬 트랜잭션 생성이며 실패는 전체 미등록으로 처리하고, 실제 적용/워커 반영은 별도 요청/항목별 관측으로 구분한다. 결과를 불명확한 전체 성공으로 표시하지 않는다.
+- 개발 진행/미완성/검증 예정 문구는 제품 페이지에 넣지 않고 문서에 기록한다. 이번 변경은 요구/설계 기록뿐이며 기능 구현·테스트·실행 검증·운영 변경·커밋·푸시는 하지 않았다.
+
+2026-10-20 RULE-AUTHORING-01 범위 추가 — 경보 표시/확정 지연 개선:
+
+- 사용자가 최종 검증시간5분의 단축 방안을 요청했다. 규칙의5분은 이동 집계 창이며 전체5분 경과를 기다려야 한다는 뜻이 아니다. 코드상 기본 lateness는900초이고 incremental은 end=min(now-30초, checkpoint+5분), final=end-lateness로 처리한다. CLI 기본 poll60초/early-auth10초, 배포 생성은 detector10초다. 따라서 현재 서버의 실제5분 지연 원인을 측정한 결과는 아니며 rule window·조회 chunk·폴링·지연 수신 대기를 구분한다.
+- 제안: 단일/횟수/순서 등 실제로 필요한 조건이 관측된 시점부터 빠른 경보 경로를 제공한다.5분10건 규칙은10번째가 관측되면 판단하고 이동 창은 그대로 유지한다. 부재/기간종료 조건과 순서 규칙의 후속행동은 필요한 근거 없이 미리 성립시키지 않는다. 기존 빠른 경로는 AUTH-001 전용이므로 범용화는 새 구현 범위다.
+- 경보 표시의 수신 후10~30초를 우선 설계 목표로 두되 미달성/미측정 목표임을 문서에만 기록한다. 폴링·수집/정규화 지연·검색 refresh·UI 갱신·적체를 합산해서 보며 설정 변경만으로 지연을 보장하지 않는다. 빠른 경로와 최종 확정 경로를 구분하고 같은 논리 경보에 연결하며 증거/내용 변화는 불변 revision으로 기록해 기존 문서를 덮어쓰지 않는다. 통지 중복과 점수 반복 가산을 막는다.
+- 최종 확정은 단일이벤트/단조 증가 횟수조건과 순서/순서변경 민감 조건의 정책을 구분한다. 출처별 명시적 허용 지연/진행 신뢰도에 따라 단축하고900초를 임의로 전역 축소하지 않는다.30~60초 같은 짧은 대기값은 신규 빠른 경로 설계의 후보값이며 기존 min60초+30초 grace/폴링 계약에서 보장 가능한 최종 지연으로 주장하지 않는다. 범위 밖 지연은 별도 상태/조정 재처리로 보존하고 조용히 폐기하지 않는다.
+- 규칙/범위 identity와 기존 checkpoint를 자동 변경하거나 삭제하지 않는다. 기관/장치/사이트 사이 진행 격리, 미래 시각/중단 출처, 부분 실패/재시작/원격 저장 성공후로컬실패의 기존 계약을 보존하도록 설계한다. 사용자 UI에는 개발 검증/미완성 표현을 추가하지 않고 실제 경보·관측 내용·동작 결과를 표시한다.
+- 이번 작업은 소스 조사·설계 요구 기록만 수행했다. 기능/설정/운영 서비스 변경·테스트·실행 검증·커밋·푸시는 없다.
+
+2026-10-20 RULE-AUTHORING-01 경보 시간 정책 방향 정정:
+
+- 사용자가 공격 대응이 늦어질 수 있으므로5분 대기 등 고정 대기를 없애는 방안을 제안했다. 이미 성립한 양성 탐지조건의 최초 경보 표시를 전체 집계창 종료나 최종 frontier 확정까지 미루지 않는 방향을 우선한다. 수집/정규화/검색/전달 지연까지0초라고 보장하지 않는다.
+- 강제 대기와 사건 의미의 시간 조건을 구분한다. 단일 이벤트는 근거 수신 시, 횟수조건은 명시된 이동창 안에서 임계 횟수 관측 시, 순서조건은 필요한 후속행동 관측 시 판단한다. 최근5분 같은 집계 범위를 삭제하면 장기간 누적된 정상실패도 합쳐지므로 사용자 명시 선택 없이 규칙 의미를 바꾸지 않는다. 부재/기간종료형 조건은 종료 전 성립한다고 처리하지 않는다.
+- 늦은 입력과 역순 입력은 별도 조정/추가 증거 revision으로 보존하고, 동일 논리경보 연결·중복 통지 방지·cooldown·조직/사이트 격리를 설계한다. 기존 최종 처리/checkpoint를 삭제하거나 현재 운영 lateness를0으로 바꾸는 방식은 실행하지 않았다. 제품 UI에 개발 검증/미완성 문구를 추가하지 않는다.
+- 이번 변경은 요구 기록뿐이며 기능/설정/서비스 변경·테스트·실행 검증·커밋·푸시는 하지 않았다.
+## 2026-10-20 사용자 요청: main 기준 수집→경보 개발 재시작
+
+- [ ] CORE-INGEST-ALERT-01 진행 중(2026-10-20): Gandalem/cloud-soc main/6925f8f 기준으로 로그 수집→정규화→탐지→경보 저장→Portal 표시를 최우선으로 조사·보완한다. 상용화/OpenSearch PoC를 우선하지 않고 test-cs 보존본을 자동 적용하지 않는다. 현재 새 main 체크아웃과 기존 진입점/문서를 읽은 단계이며 기능 수정·배포·실제 수집 완료를 뜻하지 않는다.
+- 이전 지시 이력: 당시 개발 중 테스트·린트·실행 검증을 하지 않도록 요청했다. 최신 구현 요청에서 중간/최종 두 차례 검수를 명시 승인해 해당 범위로 변경했다. 구현/검수/운영 인수는 계속 구분한다.
+- 기존 상용화 작업170파일은 Gandalem/test-cs main의 878d94f(Archive commercial foundation PoCs before main restart)로 커밋·푸시했다. 새 경로는 C:/Users/rbals/Documents/Codex/2026-10-18/referenced-chatgpt-conversation-this-is-an-3/work/cloud-soc-main이다. 원본 D:/cloud-soc과 그 별도 미추적 작업은 유지한다.
+- 새 main 기능 커밋/푸시·서비스 실행·운영 서버·실데이터/키·이관은 하지 않았다. 아래 과거 완료 이력은 새 main의 현재 실수집 성공으로 추정하지 않는다.
+
+
+2026-10-20 규칙 적용 경로 코드 조사(테스트·실행 검증 미실행):
+
+- 사용자 질문에 대해 main의 RuleDraftStore·settings-rules UI·profiles/approved_rules·배포 worker·증분 상태 코드를 읽었다. 대시보드는 초안/형식 검사/승인/배포 대기·YAML 내보내기까지이며 active=false를 반환한다. apply는 pending_deployment 상태만 기록하고 탐지 worker에 전달하지 않는다.
+- 탐지기는 고정 파일/ID 카탈로그와 배포 정책의 규칙 hash를 사용한다. 증분 state identity에 규칙 전체/revision이 들어가므로 단순 규칙 추가·재시작이나 기존 state 삭제를 적용 방법으로 삼으면 안 된다. UI는 threshold/single 부분집합만 지원한다.
+- 검토 의견: 기존 조건/조직별 집계/이동 창/cooldown·증거 계약은 재사용하되, 대시보드 승인본→버전별 활성 규칙 묶음→worker 반영/응답→경보/원본 조회 연결이 필요하다. 원본에 필요한 필드가 실제 정규화되는지와 적용 시작 범위도 명시해야 한다. 이는 권장 방향이며 이번에 활성화·기능 수정·배포를 하지 않았다. 기존 작업 완료 상태는 변경하지 않는다.
+
+2026-10-20 브랜치별 탐지 연결 코드 조사(실행·테스트 없음):
+
+- 원격 main6925f8f, codex/operational-readiness b014fe6, codex/integration-runtime-v2-security-mall3598dde, JEONGRIM-SEO f2e8260과 원본 체크아웃의 로컬 브랜치 규칙 관리 파일을 읽었다. 기존 고정 규칙의 수집/정규화/탐지/경보 저장 경로와 대시보드 신규 규칙 자동 활성화는 구분한다.
+- operational-readiness는 main 위에 범용 사이트404/ModSecurity 규칙과 수집·정규화·탐지/증거 범위를 확장하고 worker가 보고한 규칙/revision을 운영 화면에 표시한다. runtime_rules.py는 실행 상태 관측 코드이며 승인 초안의 활성화 경로가 아니다. 해당 브랜치도 RuleDraftStore.active=false/apply=pending_deployment다. JEONGRIM-SEO·integration 역시 새 규칙 적용은 배포 대기이며, JEONGRIM의 detector registry는 규칙 유형 dispatcher다.
+- 기존 기록의 WSL/VM 결과를 이번 실제 운영 상태로 재확인하지 않았다. 브랜치 fetch/코드 읽기만 했고 checkout 전환·merge·기능 수정·서비스 실행/검증은 하지 않았다. main 개발 기준은 유지하며 기존 구현의 재사용과 신규 규칙 활성화 연결을 후속 후보로 기록한다.
+
+2026-10-20 쇼핑몰 공격 경보 미표시 제보 및 코드 조사(실행·테스트 없음):
+
+- 사용자가 실제 쇼핑몰 SQLi 및 대표 규칙 경보가 나타나지 않는다고 제보했다. 이전의 탐지 연결 설명은 기존 고정 규칙 코드 경로의 존재이며 쇼핑몰 상주 자동 탐지나 현 배포 성공을 뜻하지 않음을 정정한다.
+- main의 일반 탐지기는 기본 AUTH-001, soc-normalized-v1 입력, security-alerts 출력을 사용한다. 별도 Mall 정규화는 soc-normalized-mall-continuous-*를 사용하며 일반 증분 탐지의 입력 인덱스는 고정되어 있다. deploy/server/runtime-policy.json의 verified_rules에도 WEB-ACCESS-01/WEB-AUTH-01/WEB-WAF-01이 없다.
+- Mall 전용 mall_lab은 명시 범위의 일회성·기본 dry-run이고 --write-alerts에서만 별도 경보 인덱스에 저장한다. Portal도 MALL_LAB_SCOPE의 alerts/raw/normalized 및 읽기 권한 연결이 필요하다. 이 소스상 단절은 현 서버 실패 지점을 실행으로 특정한 결과가 아니다.
+- 규칙 의미는 타인 주문 접근 거부, 5분 내 로그인 실패5건 뒤 10분 내 성공, 허용 CRS3.3.5 SQLi 8ID의 WAF 메타데이터다. 일반 access 로그의 SQL 문자열만으로 WEB-WAF-01이 탐지한다고 가정하지 않는다. 수집→필드/정규화→명시 Mall 규칙의 상주 탐지→동일 경보 범위 Portal 연결을 우선 후속 범위로 기록한다. 규칙 완화/기능 수정/서비스 실행/배포/검증/커밋/푸시는 하지 않았다.
+
+2026-10-20 점수 합리성 제보 및 코드 조사(실행·테스트 없음):
+
+- 사용자가 현재 점수의 합당성 부족을 지적했다. detection/risk.py triage-v1은 severity 기본 low20/medium45/high65/critical85, threshold2배 이상+10, sequence+15이며 자산 중요도/관측 영향/대응 결과를 평가하는 모델이 아니다. 점수의 계산 재현성과 운영 판단의 타당성은 구분한다. 기존 문서도 초기 실습 정책이며 운영 효과·침해 확률 검증 모델이 아니라고 명시한다.
+- Mall ACCESS20, AUTH60, SQLi1요청45/2요청부터55다. SQLi 행동상 반복 기준은3요청이라 숫자 상승 기준과 반복 설명 기준이 다르다. triage/engine.py는 별도 ACCESS 반복 가산을 적용하며 미경보 관측은 기초점수 null이지만 조사점수0/low여서 안전·저위험으로 오해될 여지가 있다.
+- 후속 개선 범위에 탐지 사실/증거 신뢰도/조사 우선순위의 명시적 분리, 공격 유형별 설명 가능한 정책, 미평가 상태 표시, 중복 가산 방지·반복 조건 일치, 정책 버전 및 기존 경보 점수 보존을 포함한다. 자산·피해·공격 성공 정보가 없으면 추측 가산하지 않는다. 이번에는 점수/경보/UI/서비스를 변경하지 않았고 검증·커밋·푸시하지 않았다. 새 점수 숫자의 운영 타당성은 아직 미확립이다.
+
+## 2026-10-19 커밋·푸시 요청
+
+사용자가 현재 범용 SOC·ModSecurity·운영 관측/인수 구현과 관련 테스트·문서를 커밋하고 origin의 codex/operational-readiness 브랜치에 푸시하도록 요청했다. 기존 검증 결과와 남은 운영 인수 구분은 유지하며 state/·비밀·실제 시험 로그는 제외한다. 커밋 전 CI 단계의 run 들여쓰기를 수정하고 YAML 구문과 변경 파일을 확인한다. 실제 커밋·푸시 결과는 Git 이력과 원격 참조로 확인하며 운영 배포는 수행하지 않는다. 아래 commit/push 없음 표기는 당시 시점의 이력이다.
+
+## 2026-10-19 사용자 방향 정정 — 범용 SOC 우선
+
+2026-10-19 범용 구현·WSL 인수 결과: 아래 착수 진단 이후 사이트 ID/HTTP를 보존하는 선택 정규화 v2, 사이트별404/WAF2규칙, 공통 경보 scope·SHA/원본 대조, 조직 권한을 유지하는 사이트 필터·15초 주변 로그 갱신, 선택 ModSecurity v3 JSON 입력을 구현했다. 기존 규칙 revision·배포 검증7개·SQLite를 자동 교체하지 않으며 Mall 없이 기본 선택·인수·운영 조회·수동 초안 검증을 사용할 수 있다.
+
+- [x] GENERIC-SITE-CODE-01 구현·격리 인수 완료: 조직/호스트/사이트/IP 집계·쿨다운 분리, 명시한 적용 시점과 새 상태 파일 고정, 기존 버전 ID 보존·중복 경보 방지, 사이트 필터의 페이지 범위, 원본 시각·IPv6·사이트 변조 대조를 검증했다. Portal의 조직 제한 경로 누락도 수정해 자기 조직200/다른 조직404/임의 조직 파라미터400/비인증401을 확인했다.
+- [x] GENERIC-WAF-JSON-01 구현·격리 인수 완료: v3 JSON의 본문/헤더/매칭 내용 제거·명시 시간대·규칙 ID/CRS 버전·요청 중복 제거·모드/개입 관측 구분을 공통 경로에 연결했다. 패키지 폼과 Linux/Windows 사이트 입력·수집 중지의 접근/WAF 동시 전환을 연결했다. Windows C# 소스는 컴파일만 인수했으며 실제 Windows 런타임 인수는 완료하지 않았다.
+- [x] GENERIC-LIVE-WSL-01 실제 시험 환경 인수 완료: Nginx2사이트→실제 Filebeat9.5.2→상주 CLI→원본41/정규화41/경보2·재시작 중복0의54검사, 실제 ModSecurity/CRS SQLi3요청씩 DetectionOnly(백엔드200/WAF200·개입 없음)/On(백엔드200/WAF403·개입 있음)의12검사씩 통과했다. Chromium 실제19규칙/경보·SHA/15초갱신/사이트검색/패키지폼/타조직차단/모바일 확인, pageerror0/API실패0이다. 실제 새 범용 경보의 기존 Slack 메시지 계약 진입은 격리 검증이며 채널 수신은 미검증이다.
+
+회귀: WSL 전체1934pass/1fail/17skip·하위348pass에서 기존 웹 소스 목록 기대값에 WAF를 추가한1건을 수정·재검증했다. 후속 새 조직 경로·IPv6·범용 Slack 계약을 포함한 고유1939사례 통과(전체+영향 재검증 합계, 마지막 전체 재실행 아님). WSL 조직/권한45·최종 사이트/WAF70, Windows 영향78, JS/안내70(수집/화면54+안내16), Ruff·src/변경 도구 Bandit medium/high 통과다. C# 실행은 이 환경의 기존 .NET 예외로 중단해 한계를 보존했다. 초기 새 테스트의 들여쓰기/가정·시험 Compose 표기·최소 지연 값·브라우저 비동기/CSP 대기 오류는 수정했고 실패 자료도 보존했다. 운영 설정/방화벽/시스템 실행 정책은 변경하지 않았다.
+
+관련: rules/web_generic.yml, src/cloud_soc/{web/{scope,modsecurity,agent_metadata},processing/{contract,worker,setup,__main__},detection/{profiles,patterns,setup},pipeline/alerts,portal/{site_agents,site_context,log_contract,log_query,operations,app,auth,runtime_rules,rule_management,security_detail}}.py, deploy/agents/{site-privacy,privacy}.js·profile-reader.py·discovery-native.cs, prototype/{agents,logs,operations}.{html,js}, tests/test_generic_{sites,waf}.py와 기존 회귀, tools/validate_generic_{web,waf}.py. 범위/명령/제약은 docs/operational_acceptance.md에 기록했다. Git 제외 state/generic-e2e-summary.json·브라우저 근거·모드별 private WSL 보고서에 실제 결과를 보존한다. 시험 워커/웹/WAF/ES 종료, 활성 시험 키0·증거/DB/볼륨 보존을 확인했다. commit/push/운영 배포 없음이다.
+
+남은 인수: 호스트 설치 프로그램을 통한 새 Windows/Ubuntu 장치 설치·부분 설치 복구, 기존 중앙으로의 명시 배포/전환, ModSecurity v2 native의 범용 수집, 실제 Slack 채널 수신. 따라서 GENERIC-CORE-01·GENERIC-SITE-01·GENERIC-OPERATIONS-01·GENERIC-WAF-01 부모 항목은 운영 인수가 남아 unchecked 유지한다. 아래 착수 시점의 진단/이전 합성 인수는 이력으로 보존한다.
+
+2026-10-19 개발 재개: 사용자 요청에 따라 GENERIC-SITE-01·GENERIC-CORE-01·GENERIC-OPERATIONS-01을 진행 중으로 전환한다. 공통 사이트 식별 보존·사이트별 탐지/증거·선택 앱 확장 분리를 먼저 구현하고 관련 검증은 변경을 모은 뒤 수행한다. 기존 배포 검증 규칙과 운영 활성화는 구현 완료만으로 확대하지 않는다.
+
+- [ ] GENERIC-WAF-01 진행 중: 추가 사용자 요청으로 ModSecurity도 범용화한다. 사이트별 선택 JSON 감사 수집·본문 제거·조직/호스트/사이트/요청별 중복 제거·CRS SQLi 메타데이터 탐지·DetectionOnly/엔진 개입 관측 구분을 연결한다. 기존 Mall 전용 WAF 규칙과 시험 이력은 유지하고 실제 WAF 공격·차단 인수는 별도 증거로 기록한다.
+
+사용자는 이번 요청이 쇼핑몰 종속 기능 개발이 아니라 범용 SOC 개발임을 재명시했다. 최신 범위로 이전 후속 작업의 우선순위를 정정한다. 기존 Mall 구현·시험 이력은 보존하되 Mall 상주 연결·실제 Mall 로그인/SQLi 인수를 기본 SOC의 필수 완료 조건에 넣지 않는다. 기존 런타임 보고·지정 경보 검사 CLI도 특정 앱 없는 공통 수집/처리/경보 경로를 기준으로 유지한다.
+
+- [ ] GENERIC-CORE-01 우선: 쇼핑몰 없이 Windows/Ubuntu와 일반 Apache/Nginx/Docker 로그의 설치→수신→정규화→상주 탐지→경보/증거→통지 흐름을 인수한다. 현재 WSL 증거는 실제 ES/워커/브라우저를 사용했지만 합성 SSH 입력이므로 실제 에이전트·일반 웹 수집 인수를 대신하지 않는다.
+- [ ] GENERIC-SITE-01 우선: 조직·사이트·호스트 범위를 공통 이벤트에 보존하고 탐지/조회/연관에서 서로 섞이지 않는지 검증한다. 읽기 확인상 agent_metadata는 service.id를 받지만 일반 normalize는 service를 최상위 이벤트에 보존하지 않고 WEB-404-001은 organization.id/host.id/source.ip로 묶는다. 같은 호스트의 여러 사이트 분리와 기존 rule revision/상태/배포 인수의 호환성을 검토한 뒤 구현한다. 이 확인만으로 수정 완료나 실제 사이트 격리를 주장하지 않는다.
+- [ ] GENERIC-OPERATIONS-01 우선: 일반 규칙의 실제 실행 상태·증거·재시작/부분 설치 복구·실시간 범위별 연관·범용 신규 경보의 Slack 인수를 이어 간다. 앱 로그인 성공·주문 소유권은 일반 접근 로그에서 추정하지 않고 선택 앱 감사 계약으로 확장한다.
+
+이번 후속 응답은 개발 방향과 인수 우선순위를 정정한 기록이다. 새 기능 구현·기존 검증 재실행·운영 활성화는 수행하지 않았다. Mall 선택 확장과 기존 데이터/시험 기록은 삭제하지 않는다.
+
+## 2026-10-19 독립 SOC 운영 연결 보완
+
+- [ ] OPS-RUNTIME-01 진행 중: 최신 사용자 요청으로 기능 확장보다 설치→수신→정규화→상주 탐지→경보→Portal 인수 흐름을 우선한다. 워커의 실제 선택 규칙/revision/실행 결과와 미실행 카탈로그를 구분해 Portal에 표시한다. 기존 verified_rules를 실제 인수 없이 확대하지 않는다.
+- [ ] OPS-ACCEPTANCE-01 진행 중: Mall 없이 사용하는 읽기 전용 실제 경보 인수 CLI와 단계별 인수 기준을 추가한다. 원본/정규화 근거·조직·경보 버전·현재 워커를 확인하고 부족/조회 실패를 통과로 해석하지 않는다. 합성/격리 검증·실제 설치·브라우저·Slack 수신을 각각 기록한다.
+
+- [x] OPS-RUNTIME-CODE-01 구현·격리 인수 완료(2026-10-19): 연속/스냅샷/과거 검토 워커가 실제 선택 ID/revision/엔진/mode를 보고한다. Portal은 카탈로그·현재 관측·만료·실패·버전 차이를 구분하고 조직 제한 사용자의 전역 상태를 보존한다. 새로고침 실패 시 이전 표를 제거하며 모바일 가로 스크롤을 지원한다. 기존 verified_rules·탐지 identity·원본 권한은 보존했다.
+- [x] OPS-ACCEPTANCE-CODE-01 구현·격리 인수 완료(2026-10-19): 읽기 전용 지정 경보 CLI에 정확한 원본 범위·조직·정규화 SHA/재계산·처리 기록·신규 시각·현재 연속 워커/revision/체크포인트 대조와 독점 보고서를 추가했다. 기존 배포 검증의 과거 AUTH 경보/미래 성공 시각 허용을 보강했다. 실제 브라우저/Slack/전체 인수는 CLI 결과만으로 통과 처리하지 않는다.
+
+2026-10-19 WSL 최종 검증: 사용자가 WSL 시험을 요청해 Ubuntu24.04.3 전용 캐시 사본/venv·독립 Docker 프로젝트에서 ES9.5.2 TLS/실제 HTTP 28검사와 원본16/정규화14/처리16/경보1을 확인했다. 실제 최소 권한 연속 normalizer/detector CLI·같은 상태 재시작/중복0/identity·checkpoint·integrity를 검증했다. Chromium156 로그인·17규칙·실제 revision·미관측 WAF·SHA 근거·390px 통과/pageerror0/API실패0, 배포 이미지 빌드와 실제 Linux UID/GID19검사/WAL·키·설정·outbox 보존 통과다. 전체 Python 최초1837pass/7fail/17skip/하위348pass이며 기존 Slack의 문자\\n 기대값2곳을 실제 줄바꿈으로 수정한 영향7이 Linux/Windows 통과(합산 고유1844, 최종 전체 재실행 아님)다. DOM18·최종 안내/구문/링크16·Ruff/Bandit medium-high/pip check 통과다. WSL Node18/pwsh 부재 및 Windows 실행 정책/.NET의 광범위 스크립트 시험 실패는 미해결 환경 제한으로 보존한다.
+
+관련: src/cloud_soc/{acceptance.py,portal/runtime_rules.py,portal/operations.py,detection/{telemetry,incremental,worker,retrospective}.py,processing/setup.py,deployment/verify.py}, prototype/operations.{html,js,css}, tests/test_{runtime_rules,operational_acceptance,slack_messages,deployment_parity}.py, tests/fixtures/operational.compose.yaml, tools/validate_{integration.py,ui.cjs}, CI·README와 docs/first_install_walkthrough.md·operational_acceptance.md. 새 OS/에이전트 설치·실장치 수신·실제 Mall/SQLi·상시 연관 발행·다중 사이트 일반화·Slack 채널 수신·운영 중앙 배포는 미완료로 부모 항목을 unchecked 유지한다. 초기 WSL 임시 경로 유실/ES중단/TLS·브라우저 시간 초과는 별도 로그로 보존했고 같은 컨테이너 내 브라우저 인수로 최종 확인했다. Git 제외 근거 위치·재현 범위·남은 인수는 docs/operational_acceptance.md에 기록한다. commit/push 없음.
+
+2026-10-19 시작: 원격 main 6925f8f를 빈 D:\\cloud-soc에 새로 clone했다. 기존 설치/운영 상태/비밀은 내려받지 않았다. 현재 Windows Docker daemon은 연결되지 않으며 실제 중앙 서버 접속 정보는 아직 제공되지 않았다. commit/push는 요청되지 않았다.
+
+2026-10-19 정리: 최종 모바일 수정 포함 배포 이미지 빌드 통과. 시험 CLI/Portal/ES/브라우저 종료·남은 시험 API키5개 폐기, 증거/SQLite/시험 볼륨 보존. 기존 Windows/Linux 실행 정책과 시스템 패키지는 변경하지 않았다. 로컬 브랜치는 codex/operational-readiness이며 commit/push/운영 배포 없음이다.
 ## 2026-10-19 로그인 감사 배포 패키지
 
 - [x] MALL-LOGIN-PACKAGE 패키지 구현·로컬 검증 완료: deploy/security-mall/login-audit에 쇼핑몰 소스 패치·안전 적용기·Filebeat 연결/조회/재시작 스크립트·정적 수집 자산·설치 안내를 묶었다. 깨끗한 쇼핑몰 복제본에서 최초 적용/재적용 멱등성/Java 원본 일치, Python 구문 검사를 통과했다. 실제 state·DB·로그·HMAC/API 키는 제외하고 state를 Git ignore한다. 기존 실제HTTP3건/사용자 중앙실수신1건 증거는 README에 최소 요약했고 Kibana 구형브라우저 오류/최종화면·정규화·탐지 미검증을 유지한다. 사용자 요청으로 JEONGRIM-SEO 커밋·일반 merge·push를 진행하며 원격 결과는 최종 Git 참조로 확인한다.
@@ -1193,3 +1490,23 @@ MALL-AUDIT-03C 환경 미준비로 시작 전 중단(2026-10-16): 사용자 요�
 - `gradlew.bat test --tests com.security.securitymall.LoginAuditTests --console=plain`: **5 tests, 0 failures, 0 errors, 0 skipped**. 성공1건·실패1건(잘못된 비밀번호/미등록 계정), 실제 JSON 파일 파싱·필드 허용목록/민감 canary 부재·위조 전달 IP 헤더 무시·동일 계정/다른 계정/로거 재생성 후 가명 상관·키 검증·기존302/세션을 검증했다. 메모리 H2만 사용했으며 `testdb.mv.db` SHA256 `B78D56F854F3B98020B4F85A2CF75F2A9C39B77F46D29C28AE7EBD744E133342`는 변경 전후 동일하다. 기존 CRLF를 고려한 `git -c core.whitespace=cr-at-eol diff --check`도 통과했다. 성공 후 동일 테스트 반복·전체 테스트·대규모 정적 분석·성능/UI 시험은 실행하지 않았다.
 - 기본 로그 경로는 실행 디렉터리 기준 `./logs/security-audit.jsonl`이며 환경변수로 절대 경로를 지정할 수 있다. 키 관리·가명 계약·회전·접근 권한·파서/연관 키·파일 오류 시 유실 가능성을 대상 문서에 기록했다. 범위 외 기존 비밀번호 원문 비교/사용자 객체 세션 저장은 관찰만 기록하고 수정하지 않았다.
 - 이 완료는 로컬 구현/관련 테스트에 한정한다. 운영 배포·실제 파일 권한/디스크 장애·프록시 실제 배치·중앙 수집/정규화는 미검증이다. 다음 연동에는 절대 로그 경로/수집 계정 읽기 권한·회전 처리·schema_version1 필드 매핑·키 버전/신뢰 프록시 정책이 필요하다. 원격 서버/AWS/운영 서비스 접근·재시작·commit/push/PR/merge는 없으며 다음 단계 개발은 시작하지 않았다.
+
+
+2026-10-20 RULE-AUTHORING-01 중간 검수 완료/최종 검수 착수:
+
+- 공통 작성 모델·조직/출처/사이트 범위 강제·불변 승인본·생성/수정/삭제/일괄 저장·CSRF/동시 수정 계약과 기존 API의42항목이 통과했다. 최초27pass/15setup오류(Windows 임시폴더 권한), 전용폴더 부모 준비 후 해당15건만pass했다. 제품 기능 실패를 감추지 않고 검수 준비 오류도 보존한다.
+- 폼 UI·파일 선택등록·기본 규칙 보기/복제·별도 빠른 관리 워커·불변 증거 revision·미평가 점수 표시까지 구현했다. 최종 검수는 직접 영향 Python·기존 탐지/증거/조직 회귀, JS/구문, 실제 로컬 합성 Portal/Edge를 한 묶음으로 진행한다. 상세 계약과 운영 미배포/후속 제한은 docs/rule_authoring.md에 기록했다.
+
+
+2026-10-20 RULE-AUTHORING-01 구현·두 차례 집중 검수 결과:
+
+- [x] RULE-AUTHORING-CODE-01 로컬 구현/검수 완료: 공통 schema/출처·필드 capability/폼→기존 엔진 변환, 한국어 요약·템플릿, 생성/수정/복제/삭제/사용 중지, 불변 승인본과 workflow/요청·관측 세대, 관리자·조직·CSRF·동시 수정·입력 무결성 검사를 구현했다. 기본 제공19종은 읽기 목록, 폼으로 표현 가능한5종은 복제 가능하다. 기존 YAML 초안/사건/기존 CLI 프로필을 이관하거나 삭제하지 않았다.
+- [x] RULE-IMPORT-CODE-01 로컬 구현/검수 완료: CSV 양식/JSON 왕복·256KiB/100개·행별 미리보기/선택 등록·중복/충돌·요청 재전송·전체 로컬 rollback을 구현했다. 기존8KiB HTTP 기본 한도를 유지하면서 가져오기만 escape를 고려한 제한을 적용했다.
+- [x] RULE-FAST-WORKER-CODE-01 로컬 구현/모의 전송 검수 완료: 새 명시적 관리 워커가 기존 엔진을 사용해 조건 충족 cycle에 경보를 create한다. 강제5분대기/기존900초 frontier 변경 없이 별도 영속 버퍼/승인 버전·범위/엔드포인트 identity를 사용한다. 세대 변경·삭제와 DB lock으로 직렬화하고, 여러 정확 인덱스의 같은 ID·다른 장치 격리, 재시작/원격 응답 유실/로컬 저장 실패/부분 조회/권한 오류/순서 변경·cooldown을 검사했다. 원본/정규화/경보를 덮어쓰지 않고 추가 증거는 별도 revision에 원본 경보 index/id를 연결한다. 범위 밖 지연·미래시각·필수/집계 필드 오류는 따로 기록한다.
+- 점수: 기존 triage-v1 및 기존45/55/60/20은 그대로 보존한다. 새 관리 규칙은 evidence-first-v1로 임의 숫자를 부여하지 않고 위험도 null/unassessed, 사용자 지정 대응 우선순위·실제 관측 조건을 구분한다. 새로운 정량 위험도 보정 모델의 타당성을 입증한 것은 아니다.
+- 중간 검수42항목 통과. 최종 최초 Python208항목 중203pass/5fail, 수정 영향12항목pass. 추가 경계35항목 중33pass/2fail(시험용 출처 전환 집계 필드·예외를 삼키던 대역), 해당2수정pass다. JUnit 기록을 nodeid별 마지막 결과로 통합해 고유Python243항목이 모두pass이며 중간과 중복 합산하지 않는다. 최초 실패기록도 state에 남긴다. 전체243을 마지막에 일괄 재실행하지 않았으며 영향 항목만 재검사했다.
+- 최종 JS36항목·변경 Python Ruff·JS 구문·git diff --check 통과. 실제 Edge의 합성 Portal에서 폼/개발문구 없음·생성/승인/요청대기(미실행을사용중으로표시하지않음)·수정/복제/삭제·WAF 템플릿/선택 파일 등록·JSON 내보내기/390px의5검사군pass/pageerror0이다. 첫 브라우저는 새 static 허용목록 누락으로 중단했고 이를 수정한 뒤 해당 브라우저 흐름을 완료했다.
+- 제품 결함 수정: 새 JS/CSS 정적 허용목록, 초기 문맥 조회가5분chunk 때문에 판단을 늦추던 문제(완전 PIT로현재까지조회+명시문서수한도), 날짜/버전의점이있는concrete인덱스, 잘못된집계값의명시적입력이슈를 보완했다. 통과한 기존 회귀를 반복하지 않았다.
+- 근거: Git제외 state/rule-review-final-{python,affected,edge,edge-fix}.xml, state/rule-review-browser-fixed/browser-review.json 및 desktop/mobile PNG. 임시 HTTP/브라우저는 종료하고 합성 계정/DB 임시디렉터리를 정리했다. 저장된 근거는 합성 데이터뿐이며 기존 서비스/실제 키/로그를 사용하지 않았다.
+- 부모 RULE-AUTHORING-01/CORE-INGEST-ALERT-01은 운영 인수와 전체 범위가 남아 unchecked 유지한다. 실제 ES TLS/권한/최소 계정·매핑 준비·관리 워커 서비스 배포/기존 중앙 설정 연결·실장치/실제 쇼핑몰 공격 경보/Slack 수신은 이번에 실행하지 않았다. 기존 고정 워커의 기본 규칙을 화면에서 중단/삭제하는 기능, 폼으로 표현할 수 없는 전체19종의 편집, 자동 과거 재분석/사건 조정, 정량 점수 보정·HA·백업복원은 후속 범위다. 추가 증거 revision의 범용 조사 화면 확장은 별도이며 원래 경보 증거 조회는 기존 경로를 유지한다.
+- 관련 파일: docs/rule_authoring.md, config/managed-rules.example.json, detection/{authoring,managed,managed_cli,patterns,waf,risk}.py, portal/{rule_library,app,auth}.py, prototype/{settings-rules.html,settings-rules.css,rule-editor.js,investigation.js,operations.js,dashboard.js,dashboard-widgets.js}, tests/test_{rule_library,managed_rules}.py, tools/review_rule_editor.{py,cjs}. 새 의존성 없음. 작업 경로/브랜치는 유지하고 운영 변경·이관·커밋·푸시는 하지 않았다.

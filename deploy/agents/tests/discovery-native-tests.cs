@@ -57,6 +57,10 @@ internal static class DiscoveryTests {
             string root = Path.Combine(temp, "agent"), logs = Path.Combine(temp, "logs");
             Directory.CreateDirectory(root); Directory.CreateDirectory(Path.Combine(root, "inputs")); Directory.CreateDirectory(logs);
             MetricsTests(root);
+            string firewall=Path.Combine(logs,"Windows","System32","LogFiles","Firewall");Directory.CreateDirectory(firewall);
+            File.WriteAllText(Path.Combine(firewall,"pfirewall.log"),"synthetic firewall\n",Discovery.Utf8);
+            File.WriteAllText(Path.Combine(firewall,"pfirewall.log.1"),"synthetic rotation\n",Discovery.Utf8);
+            File.WriteAllText(Path.Combine(firewall,"pfirewall_Public.log"),"synthetic unicode\n",Encoding.Unicode);
             File.WriteAllText(Path.Combine(root, "discovery-settings.json"), Discovery.Json.Serialize(Discovery.Map("log_roots", new[] {logs}, "required_channels", new[] {"Security"})), Discovery.Utf8);
             File.WriteAllText(Path.Combine(logs, "auth.log"), "synthetic hello\n", Discovery.Utf8);
             File.WriteAllText(Path.Combine(logs, "auth.log.1"), "synthetic rotation\n", Discovery.Utf8);
@@ -70,7 +74,7 @@ internal static class DiscoveryTests {
             string input = Path.Combine(root, "inputs", "discovered.yml");
             string first = File.ReadAllText(input);
             Check(first.Contains("cloud-soc-event-" + Discovery.Id("Security")), "stable channel ID");
-            Check(first.Contains("cloud-soc-windows-files-utf-8-v2") && first.Contains("auth.log.1") && first.Contains("utf-16le-bom"), "file IDs/rotation/encoding");
+            Check(first.Contains("cloud-soc-windows-files-utf-8-v2") && first.Contains("pfirewall.log.1") && !first.Contains("auth.log") && first.Contains("utf-16le-bom"), "file IDs/rotation/encoding");
             Check(!first.Contains("private.key") && !first.Contains("binary.log") && !first.Contains("empty.log") && !first.Contains("bad-encoding.log"), "privacy filtering");
             Check(!File.ReadAllText(Path.Combine(root, "health.ndjson")).Contains(logs), "health path disclosure");
             Check(File.ReadAllText(Path.Combine(root, "health.ndjson")).Contains("collector_metrics"), "metric health integration");
@@ -91,9 +95,13 @@ internal static class DiscoveryTests {
             Check(webOnly.Contains("cloud-soc-site-fixture") && !webOnly.Contains("cloud-soc-event-") && !webOnly.Contains("cloud-soc-windows-files-"), "web-only input independence");
             Check(File.ReadAllText(Path.Combine(root, "health.ndjson")).Contains("collection"), "separate collection configuration report");
             string immutable = File.ReadAllText(profilePath);
+            var wafInput = Discovery.Map("type", "filestream", "id", "cloud-soc-modsecurity-fixture", "enabled", true, "paths", new[] { Path.Combine(logs, "waf.json") });
+            File.WriteAllText(profilePath, Discovery.Json.Serialize(Discovery.Map("schema", 1, "system", false, "network", false, "web_inputs", new[] { webInput, wafInput }, "web_exclusions", new[] { logs })), Discovery.Utf8);
+            immutable = File.ReadAllText(profilePath);
             File.WriteAllText(Path.Combine(root, "collection-switches.json"), Discovery.Json.Serialize(Discovery.Map("web", Discovery.Map("fixture", false))), Discovery.Utf8);
             Discovery.Refresh(root, new List<Dictionary<string,object>>());
             Check(File.ReadAllText(input).Contains("\"enabled\":false") && File.ReadAllText(profilePath) == immutable, "web switch preserves immutable installation profile");
+            Check(File.ReadAllText(input).Contains("cloud-soc-modsecurity-fixture"), "WAF input retains independent identity when site switches off");
             File.Delete(Path.Combine(root, "collection-switches.json"));
             File.Delete(profilePath);
             File.WriteAllText(Path.Combine(root, "collection-policy.txt"), "version=1\nroot=" + logs + "\nexclude=" + logs + "\n", Discovery.Utf8);

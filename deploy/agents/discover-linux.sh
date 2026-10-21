@@ -3,6 +3,12 @@
 # cloud-soc-policy-format: 1
 set -euo pipefail
 
+# BEGIN SECURITY FILES
+SECURITY_CORE_FILES='^/var/log/(auth\.log|secure|audit/audit\.log|ufw\.log|fail2ban\.log)(\.[0-9]+)?$'
+SECURITY_PACKAGE_FILES='^/var/log/(dpkg\.log|apt/history\.log|dnf\.rpm\.log|yum\.log)(\.[0-9]+)?$'
+# END SECURITY FILES
+SECURITY_PACKAGES_ENABLED=false
+
 json_string() {
     local value=${1//\\/\\\\} code character escaped octal
     value=${value//\"/\\\"}
@@ -56,7 +62,7 @@ discover_linux_logs() {
                 status=unsafe_path
             elif [[ -L $path ]]; then
                 status=symlink
-            elif [[ ! -f $path || ! -r $path ]]; then
+            elif [[ ( ! -f $path || ! -r $path ) && ( $path =~ $SECURITY_CORE_FILES || ( $SECURITY_PACKAGES_ENABLED == true && $path =~ $SECURITY_PACKAGE_FILES ) ) ]]; then
                 status=unreadable
             # Provisioning output can embed user-data, configuration and multiline
             # secrets. Exclude the whole source before reading or regex masking.
@@ -64,6 +70,8 @@ discover_linux_logs() {
                 status=binary_archive_or_secret
             elif [[ ${path,,} =~ \.(gz|xz|bz2|zip|zst|journal|journal~|db|sqlite|pem|key|crt|cer|der|p12|pfx|docx?|xlsx?|pdf|kdbx)$ || ${path,,} =~ /(wtmp|btmp|lastlog|faillog|tallylog|\.env|id_rsa|id_ed25519|id_ecdsa|credentials|secrets?)(\.|/|$) ]]; then
                 status=binary_archive_or_secret
+            elif [[ ! $path =~ $SECURITY_CORE_FILES ]] && { ! $SECURITY_PACKAGES_ENABLED || [[ ! $path =~ $SECURITY_PACKAGE_FILES ]]; }; then
+                status=policy_excluded
             else
                 encoding=$(file -b --mime-encoding -- "$path") || encoding=unreadable
                 case "$encoding" in us-ascii|utf-8) ;; *) status=unsupported_encoding_or_binary ;; esac
@@ -81,7 +89,7 @@ discover_linux_logs() {
                 HEALTH_SOURCES+=("{\"id\":\"$digest\",\"status\":\"$status\"}")
             fi
             DISCOVERY_REPORT+=("$(printf '{"path":%s,"status":%s}' "$(json_string "$path")" "$(json_string "$status")")")
-        done < <(find -P "$root" \( -type f -o -type l \) -print0 && printf 'DISCOVERY_COMPLETE\0')
+        done < <(find -P "$root" \( -type d ! -path "$root" ! -path /var/log/audit ! -path /var/log/apt -prune \) -o \( -type f -o -type l \) -print0 && printf 'DISCOVERY_COMPLETE\0')
         $complete || { printf 'Discovery failed; previous inputs retained: %s\n' "$root" >&2; return 1; }
     done
     if ((${#DISCOVERED_PATHS[@]})); then
@@ -93,6 +101,22 @@ publish_health_report() {
     local root=$1 version=0 entry separator= total metrics collection=
     version=${POLICY_VERSION:-0}
     [[ $version =~ ^[0-9]{1,9}$ ]] || return 1
+    if [[ -f $root/discovery-report.json && ! -L $root/discovery-report.json ]]; then
+        local summary
+        summary=$(python3 - "$root/discovery-report.json" <<'PY'
+import hashlib,json,sys
+rows=json.load(open(sys.argv[1]))['entries']
+print(sum(x['status']=='selected' for x in rows))
+print(sum(x['status'] not in ('selected','unreadable','enumeration_error') for x in rows))
+print(sum(x['status'] in ('unreadable','enumeration_error') for x in rows))
+for x in rows[:200]:print(json.dumps({'id':hashlib.sha256(x['path'].encode()).hexdigest(),'status':x['status']}))
+PY
+        ) || return 1
+        local -a summary_lines
+        mapfile -t summary_lines <<< "$summary"
+        HEALTH_SELECTED=${summary_lines[0]}; HEALTH_EXCLUDED=${summary_lines[1]}; HEALTH_ERRORS=${summary_lines[2]}
+        HEALTH_SOURCES=("${summary_lines[@]:3}")
+    fi
     [[ ! -L $root/health.ndjson && ! -L $root/health-previous.ndjson ]] || return 1
     # Bounded local spool; prolonged transport outages may lose older reports.
     if [[ -f $root/health.ndjson ]] && (($(stat -c %s "$root/health.ndjson") > 5242880)); then
@@ -135,7 +159,7 @@ render_discovered_inputs() {
         printf '{"type":"filestream","id":"cloud-soc-linux-discovered-v2","paths":['
         local path separator=
         for path in "${DISCOVERED_PATHS[@]}"; do printf '%s%s' "$separator" "$(json_string "$path")"; separator=,; done
-        printf '%s' '],"prospector.scanner.symlinks":false,"file_identity.fingerprint":{"growing":true},"fields_under_root":true,"fields":{"labels":{"log_source":"linux_file","collection_mode":"auto_discovery"}}}'
+        printf '%s' '],"prospector.scanner.symlinks":false,"file_identity.fingerprint":{"growing":true},"fields_under_root":true,"fields":{"labels":{"log_source":"linux_file","collection_mode":"auto_discovery","collection_policy":"security-focused-v1"}}}'
     fi
     printf ']\n'
 }
@@ -180,6 +204,19 @@ refresh_linux_inputs() {
     fi
     ((${#roots[@]} > 0)) || return 1
     local unified=false system_enabled=true
+    SECURITY_PACKAGES_ENABLED=$(python3 - "$root/security-roles.json" <<'PY'
+import json,os,sys
+from pathlib import Path
+p=Path(sys.argv[1]);roles=[]
+if p.exists() or p.is_symlink():
+    if p.is_symlink() or p.stat().st_size>8192 or p.stat().st_mode & 0o077:raise ValueError('Invalid security roles')
+    value=json.loads(p.read_text())
+    if set(value)!={'schema','roles'} or value['schema']!=1 or not isinstance(value['roles'],list):raise ValueError('Invalid security roles')
+    roles=value['roles']
+    if len(roles)!=len(set(roles)) or set(roles)-{'packages','sysmon_network','directory_service','application'}:raise ValueError('Invalid security roles')
+print(str('packages' in roles).lower())
+PY
+    ) || return 1
     if [[ -f $root/collection-profile.json ]]; then
         [[ ! -L $root/collection-profile.json ]] || return 1
         unified=true
@@ -192,21 +229,69 @@ refresh_linux_inputs() {
     local candidate report
     candidate=$(mktemp "$root/inputs/.candidate.XXXXXX")
     render_discovered_inputs > "$candidate"
-    if $unified; then
-        python3 - "$root/collection-profile.json" "$candidate" <<'PY'
-import json, sys, importlib.util
+    python3 - "$root/collection-profile.json" "$candidate" "$system_enabled" <<'PY'
+import json, sys, importlib.util, os, re, tempfile
 from pathlib import Path
-spec=importlib.util.spec_from_file_location('profile_reader',Path(sys.argv[1]).with_name('profile-reader.py'))
-module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);p=module.read(sys.argv[1])
+p={'system':sys.argv[3]=='true','web_inputs':[]}
+if Path(sys.argv[1]).exists():
+    spec=importlib.util.spec_from_file_location('profile_reader',Path(sys.argv[1]).with_name('profile-reader.py'))
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);p=module.read(sys.argv[1])
 inputs = json.loads(Path(sys.argv[2]).read_text())
 if p['system']:
-    inputs.append({'type':'journald','id':'cloud-soc-journal-v2','seek':'head','fields_under_root':True,'fields':{'labels':{'log_source':'linux_journald','collection_mode':'auto_discovery'}},'processors':[{'drop_event':{'when':{'equals':{'systemd.unit':'cloud-soc-filebeat.service'}}}}]})
+    # Retain the existing input identity/cursor. File authentication/audit sources
+    # take precedence; journal covers systems without the corresponding file.
+    paths=[x for i in inputs for x in i.get('paths',[])]
+    patterns={'auth_file':r'/var/log/(?:auth\.log|secure)(?:\.[0-9]+)?',
+              'audit_file':r'/var/log/audit/audit\.log(?:\.[0-9]+)?',
+              'firewall_file':r'/var/log/ufw\.log(?:\.[0-9]+)?'}
+    available={key:any(re.fullmatch(pattern,x) for x in paths) for key,pattern in patterns.items()}
+    preference=Path(sys.argv[1]).with_name('security-source-preference.json')
+    pinned={'schema':1,**available}
+    if preference.exists() or preference.is_symlink():
+        if preference.is_symlink() or preference.stat().st_size>8192 or preference.stat().st_mode & 0o077:raise ValueError('Invalid source preference')
+        pinned=json.loads(preference.read_text())
+        if set(pinned)!={'schema',*patterns} or pinned['schema']!=1 or any(type(pinned[k]) is not bool for k in patterns):raise ValueError('Invalid source preference')
+        if any(pinned[k] and not available[k] for k in patterns):raise ValueError('Pinned required file missing; explicit source cutover required')
+    else:
+        fd,tmp=tempfile.mkstemp(prefix='.source-preference-',dir=preference.parent)
+        try:
+            with os.fdopen(fd,'w') as out:json.dump(pinned,out);out.flush();os.fsync(out.fileno())
+            os.replace(tmp,preference)
+        finally:
+            if os.path.exists(tmp):os.unlink(tmp)
+    for entry in inputs:
+        if 'paths' in entry:entry['paths']=[x for x in entry['paths'] if not any(not pinned[k] and re.fullmatch(pattern,x) for k,pattern in patterns.items())]
+    inputs=[entry for entry in inputs if 'paths' not in entry or entry['paths']]
+    auth=pinned['auth_file'];audit=pinned['audit_file'];firewall=pinned['firewall_file']
+    identifiers=['polkitd','systemd-logind','cron','CRON','crond','setroubleshoot']
+    if not auth:identifiers+=['sshd','sudo','su']
+    if not audit:identifiers+=['audit','auditd']
+    matches=['SYSLOG_IDENTIFIER='+x for x in identifiers]+['+','_TRANSPORT=kernel']
+    if not audit:matches+=['+','_TRANSPORT=audit']
+    excluded=[]
+    if audit:excluded.append({'regexp':{'message':'^(?:audit: )?type=(?:AVC|USER_AVC|SYSCALL|PATH|CWD|USER_AUTH|USER_LOGIN)\\b'}})
+    if firewall:excluded.append({'contains':{'message':'[UFW '}})
+    processors=[{'drop_event':{'when':{'equals':{'systemd.unit':'cloud-soc-filebeat.service'}}}},
+      {'drop_event':{'when':{'and':[{'equals':{'systemd.transport':'kernel'}},{'not':{'regexp':{'message':'(?i)(apparmor=|avc:|selinux|\\[UFW |IN=.*OUT=|module verification failed|lockdown|audit:)'}}}]}}}]
+    if excluded:processors.append({'drop_event':{'when':{'or':excluded}}})
+    inputs.append({'type':'journald','id':'cloud-soc-journal-v2','seek':'head','include_matches':{'match':matches},'fields_under_root':True,'fields':{'labels':{'log_source':'linux_journald','collection_mode':'auto_discovery','collection_policy':'security-focused-v1'}},'processors':processors})
 inputs.extend(p['web_inputs'])
 Path(sys.argv[2]).write_text(json.dumps(inputs))
 PY
-    fi
+    if [[ $? != 0 ]]; then rm -f -- "$candidate"; return 1; fi
     report=$(mktemp "$root/.inventory.XXXXXX")
     render_discovery_report > "$report"
+    python3 - "$report" "$candidate" <<'PY'
+import json,sys
+from pathlib import Path
+p=Path(sys.argv[1]);value=json.loads(p.read_text());inputs=json.loads(Path(sys.argv[2]).read_text());active={x for i in inputs for x in i.get('paths',[])}
+for row in value['entries']:
+    if row['status']=='selected' and row['path'] not in active:row['status']='policy_excluded'
+value['selected_files']=sum(row['status']=='selected' for row in value['entries'])
+for entry in inputs:
+    if entry.get('type')=='journald':value['entries'].append({'path':'journal:'+entry['id'],'status':'selected','kind':'journal'})
+p.write_text(json.dumps(value))
+PY
     publish_discovery_file "$candidate" "$root/inputs/discovered.yml"
     publish_discovery_file "$report" "$root/discovery-report.json"
     publish_health_report "$root"

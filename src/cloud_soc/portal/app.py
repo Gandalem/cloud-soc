@@ -34,6 +34,10 @@ from cloud_soc.portal.source_access import ProtectedSourceReader, SourceAudit
 from cloud_soc.portal.mall_scope import read_scope, validate_scope
 from cloud_soc.portal.mall_investigation import MallInvestigation
 from cloud_soc.portal.rule_management import RuleDraftStore, RuleError
+from cloud_soc.portal.rule_library import RuleLibrary
+from cloud_soc.portal.insight_state import InsightStore, InsightError
+from cloud_soc.portal.dashboard_insights import InsightReader, evidence_flow
+from cloud_soc.portal.agent_status import parse_time as datetime_from_iso
 
 PROJECT = Path(__file__).resolve().parents[3]
 
@@ -45,6 +49,7 @@ def settings_from_environment():
             raise ValueError(f"Empty secret file: {name}")
         return value
 
+    from cloud_soc.processing.mall_runtime import private_json
     ca_path = Path(os.environ["SOC_CA_FILE"])
     ca = ca_path.read_bytes()
     # Reject malformed certificates before making downloadable bundles.
@@ -73,6 +78,10 @@ def settings_from_environment():
         "CA_FILE": str(ca_path),
         "MONITOR_PASSWORD": secret("SOC_MONITOR_PASSWORD_FILE") if os.environ.get("SOC_MONITOR_PASSWORD_FILE") else None,
         "PORTAL_READ_API_KEY": secret("SOC_PORTAL_READ_API_KEY_FILE") if os.environ.get("SOC_PORTAL_READ_API_KEY_FILE") else None,
+        "PROCESSING_SCOPE": private_json(os.environ['SOC_PROCESSING_SCOPE_FILE']) if os.environ.get('SOC_PROCESSING_SCOPE_FILE') else None,
+        "MANAGED_WORKER_CONFIG": private_json(os.environ['SOC_MANAGED_WORKER_CONFIG_FILE']) if os.environ.get('SOC_MANAGED_WORKER_CONFIG_FILE') else None,
+        "GEOIP_DATABASE": os.environ.get("SOC_GEOIP_DATABASE"),
+        "HEARTBEAT_TLS_PROXIES": tuple(x.strip() for x in os.environ.get("SOC_HEARTBEAT_TLS_PROXIES", "").split(",") if x.strip()),
         "MALL_LAB_SCOPE": read_scope(os.environ.get('SOC_MALL_LAB_SCOPE_FILE')),
         "MALL_TRIAGE_SNAPSHOT_FILE": os.environ.get('SOC_MALL_TRIAGE_SNAPSHOT_FILE'),
         "LOG_ACCESS_POLICY": read_policy(os.environ["SOC_LOG_ACCESS_POLICY_FILE"]) if os.environ.get("SOC_LOG_ACCESS_POLICY_FILE") else None,
@@ -251,11 +260,16 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
         mall_investigation = None
         app.logger.warning('Mall investigation snapshot unavailable; existing alert access retained.')
-    operations = Operations(monitor, mall_scope=mall_scope)
+    processing_scope=settings.get('PROCESSING_SCOPE')
+    managed_config=settings.get('MANAGED_WORKER_CONFIG')
+    managed_library=Path(settings['STATE_DIR'])/'cases.sqlite'
+    operations = Operations(monitor, mall_scope=mall_scope, processing_scope=processing_scope,
+                            managed_library=managed_library, managed_config=managed_config)
     def operations_for(principal):
         # Per-request instances ensure evidence hashes are rechecked, including for admins.
         return Operations(monitor, organizations=principal.organizations, mall_scope=mall_scope,
-                          mall_investigation=mall_investigation, principal=principal)
+                          mall_investigation=mall_investigation, principal=principal, processing_scope=processing_scope,
+                          managed_library=managed_library, managed_config=managed_config)
 
     case_organizations = None
     if users:
@@ -266,11 +280,17 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                       owners={name for name, row in users.items() if row["role"] != "viewer"} if users else None,
                       organizations=case_organizations)
     app.extensions["cases"] = cases
+    insights = InsightStore(Path(settings["STATE_DIR"]) / "dashboard-insights.sqlite")
+    app.extensions["insights"] = insights
+    insight_readers = {}
+    insight_lock = threading.Lock()
     rule_organizations = set(access_policy.admin_source_organizations)
     for policy_user in access_policy.users.values():
         rule_organizations.update(policy_user[2])
     rule_drafts = RuleDraftStore(cases.path, rule_organizations)
     app.extensions['rule_drafts'] = rule_drafts
+    rule_library = RuleLibrary(cases.path, rule_organizations)
+    app.extensions['rule_library'] = rule_library
 
     @app.errorhandler(RuleError)
     def rule_error(error):
@@ -279,6 +299,53 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def rule_request():
         if g.role != 'admin' or request.args:
             abort(403 if g.role != 'admin' else 400)
+
+    def library_response(operation, status=200):
+        rule_request()
+        # Preserve the small default on every other API. JSON file content can
+        # expand sixfold through escaping, while the decoded file stays <=256KiB.
+        request.max_content_length = 2 * 1024 * 1024 if request.endpoint == 'rule_library_import' else 65536
+        try:
+            return jsonify(operation()), status
+        except sqlite3.Error:
+            return jsonify(code='rule_storage_unavailable', error='규칙을 저장하거나 조회하지 못했습니다.'), 503
+
+    @app.get('/api/settings/rule-library')
+    def rule_library_list():
+        return library_response(lambda: rule_library.listing(g.log_principal))
+
+    @app.post('/api/settings/rule-library')
+    def rule_library_create():
+        return library_response(lambda: rule_library.create(request.get_json(), g.log_principal), 201)
+
+    @app.get('/api/settings/rule-library/<identifier>')
+    def rule_library_detail(identifier):
+        return library_response(lambda: rule_library.detail(identifier, g.log_principal))
+
+    @app.post('/api/settings/rule-library/<identifier>/<action>')
+    def rule_library_action(identifier, action):
+        return library_response(lambda: rule_library.action(identifier, action, request.get_json(), g.log_principal))
+
+    @app.post('/api/settings/rule-library/import/<mode>')
+    def rule_library_import(mode):
+        if mode not in ('preview', 'create'):
+            abort(404)
+        return library_response(lambda: rule_library.import_rules(request.get_json(), g.log_principal, preview=mode == 'preview'))
+
+    @app.get('/api/settings/rule-library/export')
+    def rule_library_export():
+        rule_request()
+        response = jsonify(rule_library.export(g.log_principal))
+        response.headers['Content-Disposition'] = 'attachment; filename="rules.json"'
+        return response
+
+    @app.get('/api/settings/rule-library/template.csv')
+    def rule_library_template():
+        rule_request()
+        from cloud_soc.detection.authoring import csv_template
+        response = app.response_class('\ufeff' + csv_template(), mimetype='text/csv')
+        response.headers['Content-Disposition'] = 'attachment; filename="rules-template.csv"'
+        return response
 
     @app.get('/api/settings/rules')
     def rule_management_list():
@@ -358,6 +425,16 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         request_origin = origins.get(request.host.lower())
         if request_origin is None:
             abort(400)
+        if request.endpoint=='insight_heartbeat':
+            if (request.method!='POST' or not request.is_json or request.args or request.cookies
+                    or request.headers.get('Origin') or request.headers.get('Sec-Fetch-Site')
+                    or request.headers.get('X-Cloud-SOC')!='heartbeat'):
+                abort(403)
+            secure=request.is_secure or (request.remote_addr in settings.get('HEARTBEAT_TLS_PROXIES',())
+                                         and request.headers.get('X-Forwarded-Proto')=='https')
+            if urlsplit(settings['PUBLIC_URL']).scheme!='https' or not secure:
+                return jsonify(code='heartbeat_tls_required',error='상태 보고에는 TLS 연결이 필요합니다.'),503
+            return
         # Only these machine endpoints use token authentication. Admin routes
         # retain Basic authentication and their existing CSRF/Origin checks.
         if request.endpoint in {"enrollment_exchange", "enrollment_receipt", "enrollment_abort"}:
@@ -443,14 +520,15 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             g.principal, g.role, g.csrf = principal.username, principal.role, None
         g.log_principal = principal
         if principal.role != "admin":
-            log_routes = {"logs", "log_detail", "log_access", "log_source", "auth_me", "logout", "auth_asset"}
-            log_assets = {"logs.html", "logs.js", "logs.css", "source-view.js", "auth-client.js", "styles.css", "agents.css", "shell.js", "shell.css", "assets/mark.svg"}
+            log_routes = {"logs", "log_updates", "log_detail", "log_access", "log_source", "auth_me", "logout", "auth_asset"}
+            log_assets = {"live-refresh.js", "live-refresh.css", "logs.html", "logs.js", "logs.css", "source-view.js", "auth-client.js", "styles.css", "agents.css", "shell.js", "shell.css", "assets/mark.svg"}
             if sessions:
                 # Session RBAC permits case writes only for analysts; all case data is tenant-scoped.
                 log_routes |= {"index", "case_list", "case_link", "case_detail", "case_create", "case_update", "dashboard_get", "dashboard_save", "dashboards_get", "dashboards_write"}
-                log_assets |= {"index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "workbench.html", "investigation.js", "mall-alerts.js"}
+                log_assets |= {"assets/world-countries-110m.json"}
+                log_assets |= {"index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-insights.js", "dashboard-insight-metrics.js", "dashboard-insights.css", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "workbench.html", "investigation.js", "mall-alerts.js"}
                 if principal.organizations:
-                    log_routes |= {"operations_summary", "operations_status", "alert_detail", "notice_list", "notice_detail"}
+                    log_routes |= {"operations_summary", "operations_status", "alert_detail", "alert_site_context", "notice_list", "notice_detail", "insight_data"}
             if request.endpoint not in log_routes and not (request.endpoint == "static_file" and (request.view_args or {}).get("filename") in log_assets):
                 abort(403)
 
@@ -610,6 +688,11 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def logs():
         return log_response(reader_for(g.log_principal).page)
 
+    @app.get('/api/logs/updates')
+    def log_updates():
+        # A disposable head snapshot; polling never creates a retained paging cursor.
+        return log_response(lambda pairs: reader_for(g.log_principal).page(pairs, preview=True))
+
     @app.get("/api/logs/detail")
     def log_detail():
         return log_response(reader_for(g.log_principal).detail)
@@ -654,6 +737,106 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         except LogQueryError as error:
             return jsonify(code=error.code, error=str(error)), error.status
 
+    @app.errorhandler(InsightError)
+    def insight_error(error):
+        messages = {
+            'credential_already_delivered_rotate_required':'이 요청의 자격 증명은 이미 발급됐습니다. 장치 목록에서 회전을 선택하세요.',
+            'request_conflict':'같은 요청 ID에 다른 내용이 사용됐습니다.',
+            'revision_conflict':'다른 작업에서 변경됐습니다. 목록을 새로 불러오세요.',
+            'query_event_capacity':'조회 범위를 줄여 주세요. 집계 한도를 넘었습니다.',
+            'query_time_limit':'조회 시간이 한도를 넘었습니다. 기간을 줄여 주세요.',
+            'record_conflict':'같은 식별자의 기존 기록과 내용이 다릅니다.',
+            'geo_database_required':'IP 위치 자료를 연결해 주세요.',
+            'geo_dependency_required':'위치 조회 구성 요소를 설치해 주세요.',
+            'device_authentication_failed':'장치 인증을 확인할 수 없습니다.',
+            'report_sequence_conflict':'보고 순서가 이전 기록과 충돌합니다.',
+            'stale_or_future_report':'장치 시각 또는 보고 시각을 확인하세요.'}
+        return jsonify(code=error.code,error=messages.get(error.code,'대시보드 자료를 처리하지 못했습니다. 입력·권한·연결 상태를 확인하세요.')),error.status
+
+    def insight_reader():
+        p=g.log_principal
+        with insight_lock:
+            if p.username not in insight_readers:insight_readers[p.username]=InsightReader(reader_for(p))
+            return insight_readers[p.username]
+
+    @app.get('/api/dashboard-data/<kind>')
+    def insight_data(kind):
+        if g.log_principal.organizations is not None and not g.log_principal.organizations:abort(403)
+        if kind=='fleet':
+            if g.role!='admin':abort(403)
+            offset=request.args.get('offset','0')
+            if set(request.args)-{'offset'} or len(request.args.getlist('offset'))>1 or not re.fullmatch(r'[0-9]{1,5}',offset):abort(400)
+            offset=int(offset);value=insights.fleet();value['display_limit']=50;value['offset']=offset
+            value['next_offset']=offset+50 if offset+50<value['total'] else None;value['rows']=value['rows'][offset:offset+50]
+            return jsonify(value)
+        if kind=='evidence':
+            if set(request.args)-{'id','offset'} or any(len(request.args.getlist(k))!=1 for k in request.args):abort(400)
+            offset=request.args.get('offset','0')
+            if not re.fullmatch(r'[0-9]{1,5}',offset):abort(400)
+            return jsonify(evidence_flow(operations_for(g.log_principal),request.args.get('id',''),int(offset)))
+        try:
+            if kind=='cloud-alerts':
+                from cloud_soc.portal.dashboard_insights import selection
+                f,values,offset=selection(request.args.items(multi=True))
+                if set(values)-{'start','end'}:raise InsightError('invalid_query')
+                delta=(datetime_from_iso(f.end)-datetime_from_iso(f.start)).total_seconds()
+                return jsonify({'state':'ok','sections':{'alerts':operations_for(g.log_principal).series(
+                    [operations_for(g.log_principal).alert_index],'@timestamp',f.start,f.end,
+                    '5m' if delta<=86400 else '1h',alerts=True,cloud_only=True)}})
+            if kind=='cloud':return jsonify(insight_reader().cloud(request.args.items(multi=True)))
+            if kind=='geo':
+                from cloud_soc.portal.insight_metrics import geographic
+                return jsonify(geographic(insight_reader(),request.args.items(multi=True),settings.get('GEOIP_DATABASE')))
+            if kind=='account-alerts':
+                from cloud_soc.portal.insight_metrics import account_alert_links
+                return jsonify(account_alert_links(insight_reader(),operations_for(g.log_principal),request.args.items(multi=True)))
+            if kind=='accounts':
+                from cloud_soc.portal.insight_metrics import account_overview
+                value=account_overview(insight_reader(),insights,g.log_principal.organizations,request.args.items(multi=True));value['can_manage']=g.role=='admin';return jsonify(value)
+            if kind=='evaluation':
+                from cloud_soc.portal.insight_metrics import evaluation_summary
+                value=evaluation_summary(insights,g.log_principal.organizations,request.args.items(multi=True));value['can_manage']=g.role=='admin';return jsonify(value)
+        except (InsightError,LogQueryError):raise
+        except Exception:
+            return jsonify(code='insight_unavailable',error='자료를 조회하지 못했습니다. 기존 표시 내용은 유지됩니다.'),503
+        abort(404)
+
+    @app.post('/api/dashboard-records/<kind>')
+    def insight_record(kind):
+        if g.role!='admin' or request.args:abort(403)
+        from cloud_soc.portal.insight_metrics import validate_policy,validate_assessment,validate_evaluation,assessment_score
+        validators={'policy':validate_policy,'assessment':validate_assessment,'evaluation':validate_evaluation}
+        if kind not in validators:abort(404)
+        body=request.get_json();validators[kind](body)
+        if kind=='assessment':
+            policies=[r['body'] for r in insights.records('policy',None) if r['body']['organization']==body['organization'] and r['body']['id']==body['policy_id']]
+            if not policies:raise InsightError('policy_missing',409)
+            assessment_score(policies[0],body)
+        if kind=='evaluation':
+            # Link only existing, visible alerts in the same organization. Absence is a reported verdict, not an inferred scan.
+            for case in body['cases']:
+                for alert_id in case.get('alert_ids',[]):
+                    detail=json.loads(operations_for(g.log_principal).detail([('id',alert_id)]))
+                    if detail['alert']['organization']!=body['organization'] or detail['alert']['rule']!=body['rule_id'] or detail['rule_version']!=body['rule_version']:
+                        raise InsightError('evaluation_alert_scope_mismatch',409)
+        return jsonify(insights.put_record(kind,body,g.principal,validators[kind])),201
+
+    @app.post('/api/dashboard-devices')
+    def insight_register():
+        if g.role!='admin' or request.args:abort(403)
+        return jsonify(insights.register(request.get_json(),g.principal)),201
+
+    @app.post('/api/dashboard-devices/<device>')
+    def insight_device_change(device):
+        if g.role!='admin' or request.args:abort(403)
+        return jsonify(insights.change_device(device,request.get_json(),g.principal))
+
+    @app.post('/api/dashboard-heartbeat')
+    def insight_heartbeat():
+        credential=request.headers.get('Authorization','')
+        if not credential.startswith('Bearer '):raise InsightError('device_authentication_failed',401)
+        return jsonify(insights.heartbeat(credential.removeprefix('Bearer '),request.get_json()))
+
     @app.get("/api/operations")
     def operations_summary():
         from cloud_soc.portal.operations import display_summary
@@ -686,6 +869,11 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     @app.get("/api/alerts/detail")
     def alert_detail():
         return log_response(operations_for(g.log_principal).detail)
+
+    @app.get('/api/alerts/site-context')
+    def alert_site_context():
+        from cloud_soc.portal.site_context import context
+        return log_response(lambda pairs: context(operations_for(g.log_principal), pairs))
 
     @app.get('/api/alerts/notices')
     def notice_list():
@@ -872,13 +1060,13 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     @app.get("/<path:filename>")
     def static_file(filename):
         # Never serve the repo, secrets, SQLite, source code, or arbitrary uploads.
-        allowed = {"reprocessing-history.html", "reprocessing-history.js", "agents.html", "agents.js", "agents.css", "styles.css", "shell.js", "shell.css", "assets/mark.svg",
-                   "settings-rules.html", "settings-rules.js",
+        allowed = {"live-refresh.js", "live-refresh.css", "reprocessing-history.html", "reprocessing-history.js", "agents.html", "agents.js", "agents.css", "styles.css", "shell.js", "shell.css", "assets/mark.svg", "assets/world-countries-110m.json",
+                   "settings-rules.html", "settings-rules.js", "rule-editor.js", "settings-rules.css",
                    "settings-slack.html", "settings-slack.js", "settings-slack.css",
                    "detection-history.html", "detection-history.js",
                    "agent-status.html", "agent-status.js", "agent-status.css",
                    "collection-health.html", "collection-health.js",
-                   "index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "mall-alerts.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css", "source-view.js"}
+                   "index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-insights.js", "dashboard-insight-metrics.js", "dashboard-insights.css", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "mall-alerts.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css", "source-view.js"}
         if filename not in allowed:
             abort(404)
         return send_from_directory(PROJECT / "prototype", filename)

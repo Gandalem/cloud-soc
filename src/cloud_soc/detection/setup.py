@@ -32,6 +32,16 @@ def prepare(client):
     if set(client.indices.get_mapping(index="security-alerts")) != {"security-alerts"}:
         raise ValueError("Expected concrete alert index")
     ensure_provenance_mapping(client, "security-alerts", apply=True)
+    mapping = client.indices.get_mapping(index='security-alerts')['security-alerts'].get('mappings', {}).get('properties', {})
+    missing = {}
+    for group in ('host', 'service'):
+        existing = mapping.get(group, {}).get('properties', {}).get('id')
+        if existing is None:
+            missing[group] = {'properties': {'id': {'type': 'keyword'}}}
+        elif existing.get('type') not in ('keyword', 'text'):
+            raise ValueError('Alert site mapping conflict; explicit review required')
+    if missing:
+        client.indices.put_mapping(index='security-alerts', properties=missing)
 
 
 def prepare_early(client):

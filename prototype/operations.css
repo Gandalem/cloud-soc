@@ -5,6 +5,11 @@
 .ops-notice { margin: 18px 0; padding: 20px; border-left: 4px solid #b48123; }
 .ops-notice h2 { font-size: 17px; }
 .ops-notice p { margin: 8px 0 0; line-height: 1.7; }
+#ops-runtime-rules table { width: 100%; min-width: 760px; border-collapse: collapse; }
+#ops-runtime-rules th, #ops-runtime-rules td { padding: 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+#ops-runtime-rules th:first-child, #ops-runtime-rules td:first-child { white-space: nowrap; }
+#ops-runtime-rules td:last-child { min-width: 260px; }
+#ops-runtime-rules code { display: block; max-width: 34em; overflow-wrap: anywhere; }
 .ops-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .ops-metrics article { padding: 20px; }
 .ops-metrics h2 { font-size: 14px; }

@@ -28,6 +28,16 @@ async function main() {
     assert.ok(await page.locator('#history-rows section h2').first().textContent().then(value => value.includes('AUTH-001')));
     report.checks.push('detection history reads actual API and filters AUTH-001');
     await page.screenshot({path: path.join(output, 'ui-detection-history.png'), fullPage: true});
+    await page.goto(origin + '/operations.html');
+    await page.getByText('실제 워커의 규칙·버전 확인', {exact: true}).click();
+    const runtimeRows = page.locator('#ops-runtime-rules tbody tr');
+    await runtimeRows.filter({hasText: 'AUTH-001'}).filter({hasText: '상주 실행 관측'}).waitFor();
+    assert.equal(await runtimeRows.count(), 19);
+    assert.ok((await runtimeRows.filter({hasText: 'WEB-WAF-01'}).textContent()).includes('실행 보고 없음'));
+    await runtimeRows.filter({hasText: 'AUTH-001'}).getByText('detector 버전', {exact: true}).click();
+    assert.match(await runtimeRows.filter({hasText: 'AUTH-001'}).locator('code').first().textContent(), /^[a-f0-9]{64}$/);
+    await page.screenshot({path: path.join(output, 'ui-runtime-rules.png'), fullPage: true});
+    report.checks.push('actual ES worker manifest: 19-rule catalog, continuous AUTH revision, unobserved optional Mall WAF');
     await page.goto(origin + '/reprocessing-history.html');
     await page.locator('#summary').filter({hasText: '전체 57건'}).waitFor();
     assert.equal(await page.locator('#rows tr').count(), 50);

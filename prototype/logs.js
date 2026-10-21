@@ -2,30 +2,36 @@
 (() => {
   "use strict";
   const sources = { generic_web_access:"웹 사이트 접근 기록", web_access_metadata:"AWS DVWA 웹 접근 기록", windows_event: "Windows 이벤트", windows_file: "Windows 파일", linux_file: "Linux 파일", linux_journald: "Linux 저널", network_packetbeat: "네트워크", aws_cloudtrail: "AWS 관리 이벤트", oci_audit: "OCI 감사 이벤트", unknown: "미분류" };
+  sources.generic_modsecurity = 'ModSecurity WAF 메타데이터';
+  Object.assign(sources,{security_mall_audit:'쇼핑몰 보안 감사',security_mall_edge:'쇼핑몰 웹·WAF',agent_health:'수집 상태 보고',agent_collection_notice:'수집 입력 오류'});
   const osNames = { windows: "Windows", linux: "Linux", cloud: "해당 없음 (클라우드 API)", unknown: "미확인" };
   const outcomes = { success: "성공", failure: "실패", unknown: "미확인" };
   const label = (map, value, fallback = "미확인") => Object.hasOwn(map, value) ? map[value] : fallback;
   const escape = value => String(value ?? "미관측").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const time = value => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(new Date(value)) : "미관측";
-  function rowMarkup(row, index) {
-    const cloudName = row.cloud_provider === "oci" ? "OCI" : row.source_kind === "aws_cloudtrail" ? "AWS" : "클라우드";
-    const origin = row.stream === "cloud" ? `${cloudName} ${row.cloud_account || "계정 미관측"} / ${row.cloud_region || "리전 미관측"}` : row.host_name;
+  function rowMarkup(row, index, timeBasis = 'ingested') {
     const interpreted = row.interpretation || {};
-    const supported = ["recognized", "partial"].includes(interpreted.status);
+    const supported = ['recognized', 'partial'].includes(interpreted.status);
     const fields = supported ? interpreted.fields || {} : {};
-    const rawAction = typeof row.action === "string" && !/^(none|null|-)$/i.test(row.action.trim()) ? row.action : null;
-    const actionText = ['generic_web_access','web_access_metadata'].includes(row.source_kind)&&supported ? `웹 접근 · ${fields.http_method||'메서드 미관측'} · HTTP ${fields.http_status??'상태 미관측'}` : row.stream === "cloud" && rawAction ? rawAction : fields.action ? label(securityTerms, fields.action, fields.action) : rawAction || "행위 정보 없음";
-    const outcome = row.outcome && row.outcome !== "unknown" ? row.outcome : fields.outcome || "unknown";
-    const outcomeText = outcome === "unknown" ? "결과 정보 없음" : label(outcomes, outcome, "결과 정보 없음");
-    const actor = row.user || row.actor_id || fields.actor || (fields.target_user ? `대상 계정: ${fields.target_user}` : null);
-    const interpretation = label({ recognized: "지원 이벤트 해석", partial: "부분 해석 · 필드 누락",
-      unsupported: "메타데이터만 표시 · 행위 해석 미지원" }, interpreted.status, "미평가 · 서버 갱신 필요");
-    const values = [time(row.received_at), time(row.event_at), origin, label(osNames, row.os), row.collector,
-      label(sources, row.source_kind, "미분류"), row.channel || row.file_path || row.dataset,
-      `${row.event_code || "ID 미관측"} / ${row.provider || "공급자 미관측"}`,
-      row.source_ip || fields.source_ip, row.destination_ip || fields.destination_ip, actor,
-      `${actionText} / ${outcomeText}`, interpretation];
-    return `<tr><td><button type="button" class="log-row-open" data-row="${index}" title="${escape(row.reference.id)}">${escape(row.reference.id)}</button></td>${values.map(value => `<td title="${escape(value)}">${escape(value)}</td>`).join("")}</tr>`;
+    const rawAction = typeof row.action === 'string' && !/^(none|null|-)$/i.test(row.action.trim()) ? row.action : null;
+    const isAccess = supported && (['generic_web_access','web_access_metadata'].includes(row.source_kind) || fields.stream === 'access');
+    const actionText = isAccess ? ['웹 접근',fields.http_method,fields.http_status != null ? `HTTP ${fields.http_status}` : null,fields.path].filter(Boolean).join(' · ') : row.stream === 'cloud' && rawAction ? rawAction : fields.action ? label(securityTerms,fields.action,fields.action) : rawAction || (row.event_code ? `이벤트 ${row.event_code}` : '행위 정보 없음');
+    const outcome = row.outcome && row.outcome !== 'unknown' ? row.outcome : fields.outcome || 'unknown';
+    const actor = row.user || row.actor_id || fields.actor || (fields.account_id ? `가명 계정: ${fields.account_id}` : null) || (fields.target_user ? `대상 계정: ${fields.target_user}` : null);
+    const interpretation = label({recognized:'형식 확인',partial:'부분 해석 · 필드 누락',unsupported:'메타데이터만 표시 · 행위 해석 미지원'},interpreted.status,'미평가 · 서버 갱신 필요');
+    const cloudName = row.cloud_provider === 'oci' ? 'OCI' : row.source_kind === 'aws_cloudtrail' ? 'AWS' : '클라우드';
+    const origin = row.stream === 'cloud' ? [cloudName,row.cloud_account,row.cloud_region].filter(Boolean).join(' / ') : [row.service_name || fields.service_name,row.host_name || row.host_id,row.site_id ? `사이트 ${row.site_id}` : null].filter(Boolean).join(' / ');
+    const source = label(sources,row.source_kind,'미분류');
+    const from = row.source_ip || fields.source_ip, to = row.destination_ip || fields.destination_ip;
+    const peer = from ? `${from}${to ? ` → ${to}` : ''}` : to ? `목적지 ${to}` : null;
+    const primaryTime = timeBasis === 'event' ? row.event_at : row.received_at;
+    const fallbackTime = timeBasis === 'event' ? row.received_at : row.event_at;
+    const timeLabel = primaryTime ? (timeBasis === 'event' ? '로그 시각' : '수신 시각') : fallbackTime ? (timeBasis === 'event' ? '수신 시각 · 로그 시각 없음' : '로그 시각 · 수신 시각 없음') : '시각 미관측';
+    const hint = fields.engine_mode ? label({DetectionOnly:'탐지 전용 · 차단 안함',On:'WAF 활성',Off:'WAF 비활성'},fields.engine_mode) : isAccess ? 'HTTP 응답 기준' : interpretation;
+    const summary = outcome !== 'unknown' ? `${actionText} / ${label(outcomes,outcome,'결과 정보 없음')}` : actionText;
+    const lines = (main,sub) => `<span class="log-cell-main" title="${escape(main)}">${escape(main)}</span>${sub ? `<small class="log-cell-sub" title="${escape(sub)}">${escape(sub)}</small>` : ''}`;
+    const reference = `${row.reference.index} / ${row.reference.id}`;
+    return `<tr><td class="log-kind">${lines(row.log_type?.label || '종류 미확인',supported ? null : interpretation)}</td><td>${lines(primaryTime || fallbackTime ? time(primaryTime || fallbackTime) : '시각 미관측',timeLabel)}</td><td>${lines(origin || source,origin ? source : row.channel || row.file_path || row.dataset)}</td><td>${lines(peer || actor || '기록 없음',peer ? actor : null)}</td><td>${lines(summary,hint)}</td><td class="log-open-cell"><button type="button" class="log-row-open" data-row="${index}" title="${escape(reference)}" aria-label="${escape(row.log_type?.label || '로그')} 상세 보기">상세</button></td></tr>`;
   }
   function query(values, now = Date.now()) {
     let start, end;
@@ -39,7 +45,7 @@
     }
     if (!Number.isFinite(+start) || !Number.isFinite(+end) || +end <= +start || +end - +start > 30 * 86400000) throw new Error("조회 기간은 0일 초과, 최대 30일입니다.");
     const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString(), time_basis: values.timeBasis, page_size: values.pageSize });
-    for (const name of ["host", "ip", "os", "collector"]) if (values[name].trim()) params.set(name, values[name].trim());
+    for (const name of ["host", "ip", "os", "collector", "site"]) if ((values[name] || '').trim()) params.set(name, values[name].trim());
     return "/api/logs?" + params;
   }
   function validPage(data) {
@@ -66,19 +72,34 @@
   };
   const securityTerms = {
     cloud: "클라우드 관리", management_api_call: "관리 API 호출",
-    authentication: "인증", privilege: "권한", process: "프로세스", account: "계정", group: "그룹", file: "파일", object: "객체", configuration: "설정 변경", network: "네트워크",
+    iam: "접근 권한", http_access: "웹 접근", waf_rule_match: "WAF 규칙 탐지", admin_view: "관리자 화면 접근", order_view: "주문 조회", authentication: "인증", privilege: "권한", process: "프로세스", account: "계정", group: "그룹", file: "파일", object: "객체", configuration: "설정 변경", network: "네트워크",
     login: "로그인", special_privileges_assigned: "특수 권한 할당", process_created: "프로세스 생성", account_created: "계정 생성", account_deleted: "계정 삭제", local_group_member_added: "로컬 그룹 구성원 추가", local_group_member_removed: "로컬 그룹 구성원 제거", access_right_used: "객체 접근 권한 사용", object_permissions_changed: "객체 권한 변경", service_installed: "서비스 설치", scheduled_task_created: "예약 작업 생성", scheduled_task_updated: "예약 작업 변경", audit_policy_changed: "감사 정책 변경", connection_observed: "연결 관측", file_created_or_overwritten: "파일 생성 또는 덮어쓰기", file_delete_detected: "파일 삭제 관측", traffic_observed: "통신 관측",
     read_data_or_list_directory: "데이터 읽기 / 디렉터리 열람", write_data_or_add_file: "데이터 쓰기 / 파일 추가", append_data_or_add_subdirectory: "데이터 추가 / 하위 디렉터리 추가", delete_right: "삭제 권한", write_dacl: "DACL 변경", write_owner: "소유자 변경"
   };
   const securityLimits = { not_a_detection: "이 해석은 공격 판정이나 탐지 경보가 아닙니다.", conflicting_event_code: "이벤트 코드가 서로 달라 해석하지 않았습니다.", privilege_assignment_not_use: "권한 할당은 실제 권한 사용을 의미하지 않습니다.", pid_not_stable_identity: "PID만으로 다른 시점의 프로세스를 연결하지 않습니다.", access_right_not_exfiltration_or_completed_delete: "접근 권한 사용만으로 유출이나 삭제 완료를 단정하지 않습니다.", not_file_read_audit: "이 이벤트는 파일 읽기 감사가 아닙니다.", no_process_or_file_attribution: "Packetbeat만으로 실행 프로세스나 유출 파일을 알 수 없습니다.", flow_counters_cumulative_do_not_sum_reports: "흐름 카운터는 누적값입니다. 중간 보고들을 합산하지 마세요." };
+  Object.assign(securityLimits,{
+    protected_projection_not_native_log:'보호된 메타데이터이며 서버의 전체 원문과 다릅니다.',
+    observed_peer_only:'출발지 IP는 관측된 연결 상대이며 실제 사용자 주소와 다를 수 있습니다.',
+    detection_only_not_blocked:'WAF는 탐지 전용으로 동작하며 차단하지 않습니다.',
+    application_request_link_unavailable:'앱 감사와 동일 요청이라는 연결 근거는 없습니다.',
+    pseudonymous_account_requires_key_version:'계정은 가명 ID이며 키 버전을 함께 확인해야 합니다.',
+    ip_is_observed_socket_peer:'출발지 IP는 앱이 관측한 연결 상대입니다.',
+    authorization_result_not_operation_result:'권한 확인 결과이며 실제 작업 완료를 보장하지 않습니다.',
+    request_id_is_unverified_correlation_hint:'요청 ID만으로 다른 출처의 동일 요청을 확정하지 않습니다.'
+  });
+  Object.assign(securityTerms, {waf_rule_match: 'WAF 규칙 관측'});
+  Object.assign(securityLabels, {service_name:'서비스',account_id:'가명 계정 ID',account_key_id:'가명 계정 키 버전',stream:'기록 종류',method:'HTTP 메서드',status_code:'HTTP 응답 코드',path:'보호된 경로 분류',duration_us:'처리 시간 (마이크로초)',engine_mode: 'ModSecurity 엔진 모드', interruption: '엔진 개입 관측', sqli_rule_ids: 'CRS SQLi 규칙 ID'});
   function securityEntries(value) {
     if (!value || value.version !== 1) return [["보안 이벤트 해석", "미제공 · 서버 버전 확인 필요"]];
-    const entries = [["보안 이벤트 해석", label({ recognized: "지원 형식 확인", partial: "부분 해석 · 필드 누락", unsupported: "미지원 형식 또는 근거 부족" }, value.status)],
-      ["감사 설정 상태", value.adapter === "aws_cloudtrail_metadata_v1" ? "관리 이벤트만 수집 · 데이터 이벤트는 미수집" : value.adapter === "oci_audit_metadata_v1" ? "OCI Audit 범위 · 객체 접근/Identity Domains 감사는 별도" : "미확인 · 로그 부재를 감사 비활성으로 단정할 수 없음"], ["해석기", value.adapter || "없음"],
-      ["프로세스 연관 근거", value.process_link === "guid_in_same_host_event" ? "같은 호스트 이벤트 내 GUID · 이벤트 간 자동 연결 아님" : "연결하지 않음"]];
+    const entries = [['보안 이벤트 해석',label({recognized:'형식 확인',partial:'부분 해석 · 필드 누락',unsupported:'미지원 형식 또는 근거 부족'},value.status)],['해석기',value.adapter || '없음']];
+    if (['aws_cloudtrail_metadata_v1','oci_audit_metadata_v1'].includes(value.adapter)) entries.push(['감사 범위',value.adapter==='aws_cloudtrail_metadata_v1' ? '관리 이벤트만 수집 · 데이터 이벤트는 미수집' : 'OCI Audit 범위 · 객체 접근/Identity Domains 감사는 별도']);
+    if (['windows_security_v1','sysmon_v1'].includes(value.adapter)) {
+      entries.push(['감사 설정 상태','미확인 · 로그 부재를 감사 비활성으로 단정할 수 없음']);
+      entries.push(['프로세스 연관 근거',value.process_link==='guid_in_same_host_event' ? '같은 호스트 이벤트 내 GUID · 이벤트 간 자동 연결 아님' : '연결하지 않음']);
+    }
     const fields = value.fields || {};
     for (const [key, title] of Object.entries(securityLabels)) {
-      if (!Object.hasOwn(fields, key)) continue;
+      if (!Object.hasOwn(fields,key) || fields[key]==null || fields[key]==='') continue;
       let item = fields[key];
       if (["category", "action"].includes(key)) item = label(securityTerms, item);
       else if (key === "outcome") item = label(outcomes, item);
@@ -87,18 +108,23 @@
       else if (key === "access_rights") item = Array.isArray(item) ? item.slice(0, 6).map(v => label(securityTerms, v)) : null;
       else if (["start", "end"].includes(key)) item = time(item);
       else if (key === "flow_final") item = item === true ? "예" : item === false ? "아니요" : null;
+      else if (key === 'stream') item = label({access:'웹 접근',waf:'WAF 탐지'},item);
+      else if (key === 'engine_mode') item = label({On:'활성', DetectionOnly:'탐지 전용 · 차단 미수행', Off:'비활성'}, item);
+      else if (key === 'interruption') item = label({observed:'엔진 개입 기록 있음', not_observed:'엔진 개입 기록 없음', unknown:'미관측'}, item);
       entries.push([title, item]);
     }
-    entries.push(["미관측 / 보호된 필수 필드", Array.isArray(value.missing) ? value.missing.slice(0, 16).map(v => label(securityLabels, v)) : []]);
+    if (Array.isArray(fields.rules)) entries.push(['관측 WAF 규칙',fields.rules.slice(0,64).map(rule=>String(rule.id))]);
+    if (value.missing?.length) entries.push(["미관측 / 보호된 필수 필드", Array.isArray(value.missing) ? value.missing.slice(0, 16).map(v => label(securityLabels, v)) : []]);
     entries.push(["해석 제한", Array.isArray(value.limitations) ? value.limitations.slice(0, 8).map(v => label({ ...securityLimits, protected_web_metadata_reference_not_apache_original:"근거는 보호된 웹 메타데이터이며 EC2의 Apache 원문과 다릅니다.", url_headers_and_body_excluded:"URL·쿼리·헤더·요청 본문은 저장하지 않습니다.", management_events_not_object_access: "관리 이벤트만 조회하며 S3 객체 접근 등 데이터 이벤트는 포함하지 않습니다.", api_result_not_resource_effect: "API 결과는 이후 자원 상태나 공격 여부의 확정 판정이 아닙니다.", resource_list_truncated: "자원 목록은 최대 20개로 제한되었습니다.", oci_audit_not_object_or_identity_domain_access: "OCI 객체 접근과 Identity Domains 로그인 감사는 별도 수집이 필요합니다.", region_from_collection_scope: "리전은 자원의 위치를 추측한 값이 아니라 Audit 조회 리전입니다." }, v, "추가 제한 사항 있음")) : []]);
     return entries;
   }
   if (typeof module !== "undefined") module.exports = { rowMarkup, query, validPage, time, securityEntries };
   if (typeof document === "undefined") return;
   const $ = selector => document.querySelector(selector);
+  let appliedValues=null,headRefs=[];
   let pages = [], page = -1, offset = 0, generation = 0, detailGeneration = 0, pending = null, detailPending = null, busy = false;
   function values() {
-    return Object.fromEntries(Object.entries({ period: "log-period", start: "log-start", end: "log-end", timeBasis: "log-time-basis", pageSize: "log-page-size", host: "log-host", ip: "log-ip", os: "log-os", collector: "log-collector" }).map(([key, id]) => [key, $("#" + id).value]));
+    return Object.fromEntries(Object.entries({ period: "log-period", start: "log-start", end: "log-end", timeBasis: "log-time-basis", pageSize: "log-page-size", host: "log-host", site: "log-site", ip: "log-ip", os: "log-os", collector: "log-collector" }).map(([key, id]) => [key, $("#" + id).value]));
   }
   function controls() {
     $("#log-panel").setAttribute("aria-busy", String(busy));
@@ -137,7 +163,7 @@
   function render() {
     const current = pages[page];
     $("#log-error").hidden = true;
-    $("#log-rows").innerHTML = current.rows.map(rowMarkup).join("");
+    $("#log-rows").innerHTML = current.rows.map((row,index)=>rowMarkup(row,index,current.filters.time_basis)).join("");
     $("#log-empty").hidden = current.rows.length !== 0;
     $("#log-result").textContent = `현재 페이지 ${current.rows.length}건 · 전체 건수 미집계`;
     $("#log-page-label").textContent = `${offset + page + 1} 페이지`;
@@ -148,27 +174,37 @@
   async function load(url, reset) {
     const ticket = ++generation;
     pending?.abort(); pending = new AbortController(); const controller = pending;
-    if (reset) { pages = []; page = -1; offset = 0; }
-    busy = true; clearRows(); controls();
+    busy = true; controls();
     $("#log-error").hidden = true; $("#log-state-label").textContent = "조회 중";
     try {
       const data = await fetchJson(url, controller);
       if (ticket !== generation) return;
       if (!validPage(data)) throw new Error("조회 응답 형식이 올바르지 않습니다. 중앙 서버 버전을 확인하세요.");
+      if(reset){pages=[];page=-1;offset=0;clearDetail();headRefs=data.rows.map(r=>JSON.stringify(r.reference));}
       pages.push(data); page = pages.length - 1;
       if (pages.length > 20) { pages.shift(); page--; offset++; }
-      render();
+      render();return true;
     } catch (error) {
-      if (ticket === generation) fail(new Error(error instanceof TypeError || error.name === "AbortError" ? "중앙 서버 연결에 실패했거나 응답 시간이 초과되었습니다. 새로고침하세요." : error.message));
+      if(ticket===generation){$("#log-state-label").textContent='조회 실패 · 마지막 조회 내용';$("#log-error").hidden=false;$("#log-error").textContent=(error.name==='AbortError'?'조회 시간이 초과됐습니다.':error.message)+' 마지막 조회 내용은 유지됩니다.';}return false;
     } finally {
       if (ticket === generation) { busy = false; pending = null; controls(); }
     }
   }
   function refresh() {
-    try { return load(query(values()), true); }
+    try { live.cancel();appliedValues=values();pendingRows.clear();return load(query(appliedValues), true).then(ok=>{live.refresh(false);return ok;}); }
     catch (error) { generation++; pending?.abort(); busy = false; fail(error); controls(); }
   }
+  const pendingRows=window.CloudSOCLive.notice($("#log-panel"),'새 로그');
+  const followLabel=document.createElement('label'),follow=document.createElement('input');follow.type='checkbox';follow.id='log-follow';followLabel.append(follow,' 실시간 따라보기');$("#log-panel").prepend(followLabel);
+  const live=window.CloudSOCLive.create({host:$("#log-panel"),interval:10000,enabled:()=>!busy&&!!appliedValues&&JSON.stringify(values())===JSON.stringify(appliedValues),
+    load:signal=>fetchJson(query(appliedValues).replace('/api/logs?','/api/logs/updates?'),{signal,abort(){}}),
+    apply:(data,{manual})=>{if(!validPage(data))throw new Error('잘못된 로그 갱신 응답입니다.');
+      if(manual||page<0){refresh();return;}
+      const added=data.rows.filter(r=>!headRefs.includes(JSON.stringify(r.reference))).length;
+      if(added){if(follow.checked&&page===0&&!$("#log-detail-dialog").open){refresh();}else pendingRows.offer(added,()=>refresh());}},
+    onError:error=>{$("#log-error").hidden=false;$("#log-error").textContent=error.message+' 마지막 조회 내용은 유지됩니다.';}});
   const detailLabels = { received_at: "서버 수신 시각", event_at: "로그 기준 시각", organization: "조직", agent_id: "수집기 ID", collector: "수집기", host_name: "수집 호스트", host_ips: "호스트 IP", os: "OS 분류", os_basis: "OS 분류 근거", os_name: "OS 이름", source_label: "소스 태그", channel: "채널", file_path: "파일 경로", dataset: "데이터셋", event_code: "이벤트 코드", provider: "이벤트 공급자", action: "원본 행위", user: "사용자", actor_id: "주체 ID / Windows SID", source_ip: "출발지 IP", destination_ip: "목적지 IP", transport: "전송 방식", protocol: "프로토콜", flow_final: "흐름 종료 보고" };
+    Object.assign(detailLabels, {site_id: '사이트 ID', service_name: '서비스 이름', host_id: '수집 호스트 ID',collection_policy:'수집 정책',journal_unit:'Linux 서비스',journal_identifier:'Linux 로그 제공자'});
   async function detail(row) {
     const ticket = ++detailGeneration; detailPending?.abort(); detailPending = new AbortController();
     const controller = detailPending;
@@ -179,7 +215,8 @@
       const data = await fetchJson("/api/logs/detail?" + new URLSearchParams(row.reference), controller);
       if (ticket !== detailGeneration) return;
       if (data.contract_version !== 1 || data.raw_access !== "restricted" || data.row?.reference?.id !== row.reference.id || data.row?.reference?.index !== row.reference.index) throw new Error("상세 응답의 문서 참조가 일치하지 않습니다.");
-      const entries = [["인덱스", data.row.reference.index], ["문서 ID", data.row.reference.id], ...securityEntries(data.security), ...Object.entries(detailLabels).map(([key, name]) => [name, key.endsWith("_at") ? time(data.row[key]) : data.row[key]]), ["원본 표준 필드 결과", label(outcomes, data.row.outcome)], ["목록 해석 상태", label({ recognized: "지원 이벤트 해석", partial: "부분 해석 · 필드 누락", unsupported: "메타데이터만 표시 · 행위 해석 미지원" }, data.row.parse_status, "미평가")], ["형식 오류 필드", data.row.quality?.invalid_fields], ["표시 제한 필드", data.row.quality?.truncated_fields]];
+      const observed = Object.entries(detailLabels).filter(([key])=>data.row[key]!=null && data.row[key]!=='' && (!Array.isArray(data.row[key]) || data.row[key].length));
+      const entries = [['로그 종류',data.row.log_type?.label || '종류 미확인'],['인덱스',data.row.reference.index],['문서 ID',data.row.reference.id],...securityEntries(data.security),...observed.map(([key,name])=>[name,key.endsWith('_at') ? time(data.row[key]) : key==='os' ? label(osNames,data.row[key]) : data.row[key]]),...(data.row.outcome && data.row.outcome!=='unknown' ? [['원본 표준 필드 결과',label(outcomes,data.row.outcome)]] : []),['목록 해석 상태',label({recognized:'형식 확인',partial:'부분 해석 · 필드 누락',unsupported:'메타데이터만 표시 · 행위 해석 미지원'},data.row.parse_status,'미평가')],...(data.row.quality?.invalid_fields?.length ? [['형식 오류 필드',data.row.quality.invalid_fields]] : []),...(data.row.quality?.truncated_fields?.length ? [['표시 제한 필드',data.row.quality.truncated_fields]] : [])];
       for (const [name, value] of entries) {
         const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = name;
         dd.textContent = Array.isArray(value) ? value.join(", ") || "없음" : value == null ? "미관측" : String(value);

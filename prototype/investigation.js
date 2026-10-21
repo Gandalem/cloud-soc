@@ -64,9 +64,9 @@
       }
       if(data.risk){
         const level={critical:'긴급',high:'높음',medium:'중간',low:'낮음'};
-        detail.append(node("p",data.risk.score===null?"위험 점수 미기록":"위험 점수 "+data.risk.score+" / 100 · "+(level[data.risk.level]||'미확인')));
+        detail.append(node("p",data.risk.score===null?(data.risk.level==='unassessed'?"위험 점수 미평가":"위험 점수 미기록"):"위험 점수 "+data.risk.score+" / 100 · "+(level[data.risk.level]||'미확인')));
         const scoring=node('details');scoring.append(node('summary','점수 계산'),node('p','계산 버전 '+data.risk.version));
-        const factors={rule_severity:'규칙 심각도',frequency_above_twice_threshold:'임계값 2배 초과',failure_then_success:'인증 실패 후 성공'};
+        const factors={rule_severity:'규칙 심각도',frequency_above_twice_threshold:'임계값 2배 초과',failure_then_success:'인증 실패 후 성공',observed_rule_conditions:'탐지 조건 관측',numeric_risk_not_assessed:'숫자 위험도 미평가'};
         if(Array.isArray(data.risk.factors))for(const factor of data.risk.factors)scoring.append(node("p",(factors[factor.name]||factor.name)+": +"+factor.points));
         detail.append(scoring);
       }
@@ -167,6 +167,13 @@
       await alertCard($("case-alerts"),alertId,data.alert,generation);
     }catch(failure){error(failure.message);}
   }
+  const changes=window.CloudSOCLive.notice($('case-summary').parentElement,'추가 근거');
+  let remoteSignature=null;
+  const live=window.CloudSOCLive.create({host:$('investigation-status').parentElement,interval:10000,enabled:()=>!saving&&!!(caseId||alertId),
+    load:signal=>request(caseId?'/api/cases/'+caseId:'/api/alerts/detail?'+new URLSearchParams({id:alertId}),{signal}),
+    apply:data=>{const signature=JSON.stringify(caseId?[data.case?.version,data.case?.updated_at,data.alerts]:[data.evidence_count,data.rule_version]);
+      if(remoteSignature!==null&&signature!==remoteSignature){changes.offer(0,()=>{const link=node('a','최신 내용 별도 창에서 보기');link.href=window.location.href;link.target='_blank';link.rel='noopener';$('investigation-status').replaceChildren(document.createTextNode('작성 중인 내용은 유지됩니다. '),link);});}
+      remoteSignature=signature;},onError:()=>error('변경 사항 조회 실패 · 읽던 내용과 작성 중인 입력은 유지됩니다.')});
   window.addEventListener("pagehide",()=>{generation++;$("work-note").value="";$("case-alerts").replaceChildren();$("case-history").replaceChildren();});
-  init();
+  init().then(()=>live.start());
 })();

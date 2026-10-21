@@ -40,6 +40,8 @@
 
 ## 개발과 검증
 
+[독립 SOC 첫 경보 인수](operational_acceptance.md)는 실제 워커의 규칙/revision 보고, 읽기 전용 경보 근거 대조, 브라우저·Slack 실환경 인수 기준과 미완료 연결을 정리합니다.
+
 [로컬 개발](local_development.md), [공통 화면](portal_layout.md), [조회 계약](log_query_contract.md), [증분 탐지](incremental_detection.md), [수신→탐지 연결](intake_detection_bridge.md), [파이프라인 복구](pipeline_reliability.md), [조사 품질](investigation_quality.md), [공격 시나리오](p5_03_attack_scenarios.md)를 참고합니다. 테스트 통과는 실제 배포·수신 완료를 의미하지 않습니다.
 
 ## 과거 기록과 개인 자료
@@ -50,3 +52,20 @@
 - [포트폴리오](portfolio/demo.md): 당시 측정·시연 자료이며 현재 전체 인수 결과와 구분합니다.
 
 기존 DOCX 보고서·개인 소감·포트폴리오 이미지/측정값은 수정하거나 삭제하지 않았습니다. 보존/삭제·독립 백업 P2-02의 사용자 보류는 유지합니다.
+
+
+- [규칙 작성·일괄 등록·빠른 탐지 관리](rule_authoring.md)
+
+- [상시 처리·AJAX 갱신·실습 복구](live_ajax_runtime.md)
+
+- [보안 중심 수집 정책과 통합 로그 종류](security_collection_policy.md)
+
+- [대시보드 근거·연결 상태·국가 지도·계정 평가·성능 지표](dashboard_capabilities.md)
+
+- 다음 작업: [대시보드 실제 자료 연결의 순서·필요 조건·인수 기준](dashboard_capabilities.md#후속-연결-계획--2026-10-21)
+
+- [계산·권한·조회·장치·폼 테스트 보강과 검수 범위](test_quality.md)
+
+- [백업 형식 2·3·4·5 호환성 회귀와 PR18 수정](backup_format_regression.md)
+
+- [Security Mall 로그인 감사 배포 패키지](../deploy/security-mall/login-audit/README.md): 별도 쇼핑몰 패치와 전용 수집기. HTTPS 중앙 ES가 필요하며 인증 없는 로컬 개발 Compose와 구분합니다.

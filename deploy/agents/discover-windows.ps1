@@ -4,6 +4,45 @@ param([switch]$Refresh, [string]$DiscoveryRoot)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# BEGIN SECURITY CHANNELS
+$script:SecurityChannels = @{
+    'Security' = '1100,1102,4616,4624,4625,4634,4647,4648,4672,4688,4697,4698,4699,4700,4701,4702,4719,4720,4722,4723,4724,4725,4726,4728,4729,4732,4733,4738,4740,4756,4757,4767,4768,4769,4771,4776,4946,4947,4948,4950,5025'
+    'System' = '104,6005,6006,6008,7040,7045'
+    'Microsoft-Windows-Windows Defender/Operational' = '1006,1007,1008,1009,1010,1011,1116,1117,1118,1119,1121,1122,5001,5004,5007,5010,5012'
+    'Microsoft-Windows-CodeIntegrity/Operational' = '3004,3033,3034,3076,3077,3089,3099'
+    'Microsoft-Windows-AppLocker/EXE and DLL' = '8003,8004'
+    'Microsoft-Windows-AppLocker/MSI and Script' = '8006,8007,8028,8029,8038'
+    'Microsoft-Windows-AppLocker/Packaged app-Execution' = '8021,8022'
+    'Microsoft-Windows-Sysmon/Operational' = '1,4,6,8,19,20,21,25'
+    'Microsoft-Windows-PowerShell/Operational' = '4103,4104'
+    'PowerShellCore/Operational' = '4103,4104'
+    'Microsoft-Windows-TaskScheduler/Operational' = '106,140,141,142'
+    'Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational' = '1149'
+    'Microsoft-Windows-TerminalServices-LocalSessionManager/Operational' = '21,22,23,24,25,39,40'
+}
+$script:SecurityNoise = @{
+    'Security' = '5156,5158'
+    'Microsoft-Windows-Windows Defender/Operational' = '1000,1001,1150'
+    'Microsoft-Windows-Sysmon/Operational' = '3,5,7,11,22,23,26'
+    'Microsoft-Windows-AppLocker/EXE and DLL' = '8002'
+    'Microsoft-Windows-AppLocker/MSI and Script' = '8005'
+    'Microsoft-Windows-AppLocker/Packaged app-Execution' = '8020,8023'
+    'Microsoft-Windows-PowerShell/Operational' = '4105,4106'
+    'PowerShellCore/Operational' = '4105,4106'
+    'Microsoft-Windows-TaskScheduler/Operational' = '100,102,200,201'
+}
+# END SECURITY CHANNELS
+
+function Get-SecurityRoles([string]$Root) {
+    $path = Join-Path $Root 'security-roles.json'
+    if (-not (Test-Path -LiteralPath $path)) { return @() }
+    if ((Test-ReparseAncestor $path) -or (Get-Item -LiteralPath $path).Length -gt 8192) { throw 'Invalid security role policy.' }
+    $p = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+    if ($p.schema -ne 1 -or $p.roles -isnot [array] -or @($p.PSObject.Properties.Name | Where-Object { $_ -notin @('schema','roles') }).Count -or
+        @($p.roles | Select-Object -Unique).Count -ne @($p.roles).Count -or @($p.roles | Where-Object { $_ -notin @('packages','sysmon_network','directory_service','application') }).Count) { throw 'Unknown security role.' }
+    return @($p.roles)
+}
+
 function Get-DiscoveryId([string]$Value) {
     $hash = [Security.Cryptography.SHA256]::Create()
     try { return ([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Value.ToLowerInvariant())))).Replace('-', '').ToLowerInvariant() }
@@ -11,8 +50,7 @@ function Get-DiscoveryId([string]$Value) {
 }
 
 function Get-DefaultLogRoots {
-    return @((Join-Path $env:SystemRoot 'Logs'), (Join-Path $env:SystemRoot 'System32\LogFiles'),
-        (Join-Path ($env:SystemDrive + '\') 'inetpub\logs'), (Join-Path $env:ProgramData 'logs'))
+    return @((Join-Path $env:SystemRoot 'System32\LogFiles\Firewall'))
 }
 
 function Assert-LogRoot([string]$Path) {
@@ -59,7 +97,7 @@ function Get-LogEncoding([string]$Path) {
     } finally { $stream.Dispose() }
 }
 
-function Get-SourceDiscovery([string[]]$LogRoots, [string[]]$RequiredChannels = @(), [string[]]$Exclusions = @()) {
+function Get-SourceDiscovery([string[]]$LogRoots, [string[]]$RequiredChannels = @(), [string[]]$Exclusions = @(), [string[]]$SecurityRoles = @()) {
     $entries = New-Object 'Collections.Generic.List[object]'
     $inputs = New-Object 'Collections.Generic.List[object]'
     $errors = @()
@@ -74,6 +112,9 @@ function Get-SourceDiscovery([string[]]$LogRoots, [string[]]$RequiredChannels = 
         if (-not $log.IsEnabled) { $status = 'disabled' }
         elseif ([string]$log.LogType -in @('Analytical', 'Analytic', 'Debug')) { $status = 'unsupported_direct_channel' }
         elseif ($name -match '[\x00-\x1f${}]') { $status = 'unsafe_name' }
+        elseif (-not $script:SecurityChannels.ContainsKey($name) -and $name -notin $RequiredChannels -and
+            -not ($SecurityRoles -contains 'application' -and $name -eq 'Application') -and
+            -not ($SecurityRoles -contains 'directory_service' -and $name -in @('Directory Service','DNS Server','DFS Replication'))) { $status = 'policy_excluded' }
         $entries.Add(@{ kind = 'channel'; name = $name; status = $status })
         if ($status -ne 'selected') { continue }
         $selected[$name] = $true
@@ -83,6 +124,17 @@ function Get-SourceDiscovery([string[]]$LogRoots, [string[]]$RequiredChannels = 
             fields_under_root = $true
             fields = [ordered]@{ labels = [ordered]@{ log_source = 'windows_event'; collection_mode = 'auto_discovery' } }
         })
+        $channelInput = $inputs[$inputs.Count - 1]
+        $channelInput.fields.labels.collection_policy = 'security-focused-v1'
+        if ($script:SecurityChannels.ContainsKey($name)) {
+            $ids = $script:SecurityChannels[$name]
+            if ($name -eq 'Microsoft-Windows-Sysmon/Operational' -and $SecurityRoles -contains 'sysmon_network') { $ids += ',3,11,22,26' }
+            if ($name -eq 'Security' -and $SecurityRoles -contains 'sysmon_network') { $ids += ',5156,5158' }
+            # Native Event Log queries have a limited condition budget. Filter
+            # inside Beats rather than split the stable input/bookmark identity.
+            $filter = "var allowed=[],noise=[]; function register(p){allowed=p.ids.split(',');noise=(p.noise||'').split(',');} function process(event){var id=event.Get('winlog.event_id');if(id===null||id===undefined)id=event.Get('event.code');if(/^(error|critical|warning|warn|alert|emerg)$/i.test(String(event.Get('log.level')))||event.Get('event.outcome')==='failure')return event;if(/^[0-9]{1,5}$/.test(String(id))&&noise.indexOf(String(id))>=0&&allowed.indexOf(String(id))<0)event.Cancel();return event;}"
+            $channelInput.processors = @(@{script=@{lang='javascript';source=$filter;params=@{ids=$ids;noise=$script:SecurityNoise[$name]};tag_on_exception='_security_selection_error'}})
+        }
     }
     if (-not $selected.Count) { throw 'No supported active event channels were discovered; previous configuration retained.' }
     foreach ($name in $RequiredChannels) {
@@ -113,6 +165,7 @@ function Get-SourceDiscovery([string[]]$LogRoots, [string[]]$RequiredChannels = 
                 elseif ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { $status = 'reparse_point' }
                 elseif ($path -match '[\x00-\x1f$*?\[\]{}]') { $status = 'unsafe_path' }
                 elseif ($item.PSIsContainer) { $pending.Push($path); continue }
+                elseif ($path -notmatch '[\\/]System32[\\/]LogFiles[\\/]Firewall[\\/]pfirewall(?:_(?:Domain|Private|Public))?\.log(?:\.[0-9]+)?$') { $status = 'policy_excluded' }
                 elseif ($path -match '\.(evtx|etl|gz|zip|7z|cab|dmp|db|sqlite|pem|key|crt|cer|der|pfx|p12|docx?|xlsx?|pdf|kdbx)$' -or $path -match '[\\/](\.env|id_rsa|id_ed25519|id_ecdsa|credentials|secrets?)(\.|[\\/]|$)') { $status = 'binary_archive_or_secret' }
                 else {
                     try { $encoding = Get-LogEncoding $path }
@@ -134,7 +187,7 @@ function Get-SourceDiscovery([string[]]$LogRoots, [string[]]$RequiredChannels = 
             'prospector.scanner.symlinks' = $false
             'file_identity.fingerprint' = [ordered]@{ growing = $true }
             fields_under_root = $true
-            fields = [ordered]@{ labels = [ordered]@{ log_source = 'windows_file'; collection_mode = 'auto_discovery' } }
+            fields = [ordered]@{ labels = [ordered]@{ log_source = 'windows_file'; collection_mode = 'auto_discovery'; collection_policy = 'security-focused-v1' } }
         })
     }
     return @{
@@ -175,7 +228,7 @@ function Update-SourceDiscovery([string]$Root, [string[]]$LogRoots, [string[]]$R
             }
             if (-not $LogRoots.Count) { throw 'No policy roots.' }
         }
-        $discovery = Get-SourceDiscovery -LogRoots $LogRoots -RequiredChannels $RequiredChannels -Exclusions $exclusions
+        $discovery = Get-SourceDiscovery -LogRoots $LogRoots -RequiredChannels $RequiredChannels -Exclusions $exclusions -SecurityRoles @(Get-SecurityRoles $Root)
         Write-DiscoveryFile (Join-Path $Root 'inputs\discovered.yml') (ConvertTo-Json -InputObject @($discovery.inputs) -Depth 16)
         Write-DiscoveryFile (Join-Path $Root 'discovery-report.json') ($discovery.report | ConvertTo-Json -Depth 8)
         Write-HealthReport -Root $Root -Report $discovery.report -Version $version

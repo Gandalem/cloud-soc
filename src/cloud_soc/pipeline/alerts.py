@@ -69,4 +69,14 @@ def build_security_alert(detection: dict[str, Any]) -> dict[str, Any]:
         document['cloud_soc']['provenance']['assessment'] = detection['assessment']
     if source_ip := detection["group"].get("source.ip"):
         document["source"] = {"ip": source_ip}
+    if site_id := detection['group'].get('service.id'):
+        from cloud_soc.web.scope import valid_site_id
+        host_id = detection['group'].get('host.id')
+        if not valid_site_id(site_id) or not isinstance(host_id, str) or not host_id:
+            raise ValueError('Site-scoped detection requires collector host and site identities')
+        document['service'] = {'id': site_id}
+        document['host'] = {'id': host_id}
+        document['cloud_soc']['provenance']['scope'] = {
+            'organization.id': organization_id, 'host.id': host_id, 'service.id': site_id,
+            'source.ip': detection['group'].get('source.ip')}
     return document

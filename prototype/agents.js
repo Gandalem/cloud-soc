@@ -261,6 +261,8 @@ if (typeof module !== 'undefined') module.exports = SocKeyHistory;
         const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(form.get('site_name')));
         const id = 'site-' + Array.from(new Uint8Array(digest)).map(n => n.toString(16).padStart(2,'0')).join('').slice(0,24);
         sites.push({id,name:form.get('site_name'),server_type:form.get('server_type'),log_path:form.get('log_path'),start_at:start.toISOString()});
+        const wafPath = (form.get('waf_log_path') || '').trim();
+        if (wafPath) sites[sites.length-1].modsecurity = {log_path: wafPath, timezone: (form.get('waf_timezone') || '').trim()};
       }
       const item = await api('/api/packages', { method: 'POST', data: { name: form.get('name'), os: form.get('os'), organization: form.get('organization'), description: form.get('description'), network: form.get('network') === 'on', system:form.get('system') === 'on', sites } });
       $('#add-dialog').close(); await load(); detail(item.id);

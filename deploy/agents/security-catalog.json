@@ -1,0 +1,51 @@
+{
+  "version": "security-focused-v1",
+  "windows_channels": {
+    "Security": "1100,1102,4616,4624,4625,4634,4647,4648,4672,4688,4697,4698,4699,4700,4701,4702,4719,4720,4722,4723,4724,4725,4726,4728,4729,4732,4733,4738,4740,4756,4757,4767,4768,4769,4771,4776,4946,4947,4948,4950,5025",
+    "System": "104,6005,6006,6008,7040,7045",
+    "Microsoft-Windows-Windows Defender/Operational": "1006,1007,1008,1009,1010,1011,1116,1117,1118,1119,1121,1122,5001,5004,5007,5010,5012",
+    "Microsoft-Windows-CodeIntegrity/Operational": "3004,3033,3034,3076,3077,3089,3099",
+    "Microsoft-Windows-AppLocker/EXE and DLL": "8003,8004",
+    "Microsoft-Windows-AppLocker/MSI and Script": "8006,8007,8028,8029,8038",
+    "Microsoft-Windows-AppLocker/Packaged app-Execution": "8021,8022",
+    "Microsoft-Windows-Sysmon/Operational": "1,4,6,8,19,20,21,25",
+    "Microsoft-Windows-PowerShell/Operational": "4103,4104",
+    "PowerShellCore/Operational": "4103,4104",
+    "Microsoft-Windows-TaskScheduler/Operational": "106,140,141,142",
+    "Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational": "1149",
+    "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational": "21,22,23,24,25,39,40"
+  },
+  "linux_core_files": "^/var/log/(auth\\.log|secure|audit/audit\\.log|ufw\\.log|fail2ban\\.log)(\\.[0-9]+)?$",
+  "linux_package_files": "^/var/log/(dpkg\\.log|apt/history\\.log|dnf\\.rpm\\.log|yum\\.log)(\\.[0-9]+)?$",
+  "windows_files": "(?i)[\\\\/]system32[\\\\/]logfiles[\\\\/]firewall[\\\\/]pfirewall(?:_(?:domain|private|public))?\\.log(?:\\.[0-9]+)?$",
+  "linux_journal_identifiers": [
+    "sshd",
+    "sudo",
+    "su",
+    "polkitd",
+    "systemd-logind",
+    "cron",
+    "CRON",
+    "crond",
+    "audit",
+    "auditd",
+    "setroubleshoot"
+  ],
+  "roles": [
+    "packages",
+    "sysmon_network",
+    "directory_service",
+    "application"
+  ],
+  "windows_noise": {
+    "Security": "5156,5158",
+    "Microsoft-Windows-Windows Defender/Operational": "1000,1001,1150",
+    "Microsoft-Windows-Sysmon/Operational": "3,5,7,11,22,23,26",
+    "Microsoft-Windows-AppLocker/EXE and DLL": "8002",
+    "Microsoft-Windows-AppLocker/MSI and Script": "8005",
+    "Microsoft-Windows-AppLocker/Packaged app-Execution": "8020,8023",
+    "Microsoft-Windows-PowerShell/Operational": "4105,4106",
+    "PowerShellCore/Operational": "4105,4106",
+    "Microsoft-Windows-TaskScheduler/Operational": "100,102,200,201"
+  }
+}

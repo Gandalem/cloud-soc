@@ -9,6 +9,9 @@ description = "Cloud SOC detection and investigation platform"
 requires-python = ">=3.12"
 dynamic = ["dependencies"]
 
+[project.optional-dependencies]
+geo = ["maxminddb==3.2.0"]
+
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
 
