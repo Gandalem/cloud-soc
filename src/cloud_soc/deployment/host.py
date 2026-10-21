@@ -80,7 +80,48 @@ def backup_database(source, target):
     target.chmod(0o600)
 
 
-def portal_rows(state):
+def backup_stopped_database(source, target):
+    """Snapshot a stopped writer's journal set; recover only disposable copies.
+
+    A process terminated during a rollback transaction can leave a hot journal.
+    Opening its live database mode=ro then fails with SQLITE_READONLY_ROLLBACK.
+    Preserve committed WAL frames too, but never copy stale shared-memory locks.
+    Caller must have stopped and verified every writer before invoking this.
+    """
+    source, target = Path(source), Path(target)
+    if target.exists() or target.is_symlink():
+        raise ValueError('Backup output already exists')
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    paths = [source, Path(str(source) + '-wal'), Path(str(source) + '-journal')]
+    def signature():
+        result = {}
+        for path in paths:
+            if path.is_symlink():
+                raise ValueError('Symlinked database journal refused')
+            if path.exists():
+                info = path.stat()
+                result[path.name] = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+        if source.name not in result:
+            raise ValueError('Stopped source database missing')
+        return result
+    before = signature()
+    with tempfile.TemporaryDirectory(prefix='.stopped-sqlite-', dir=target.parent) as temporary:
+        root = Path(temporary).resolve()
+        for path in paths:
+            if path.name in before:
+                shutil.copyfile(path, root / path.name)
+                (root / path.name).chmod(0o600)
+        if signature() != before:
+            raise ValueError('Stopped database changed during snapshot')
+        staged = root / source.name
+        # SQLite performs rollback/WAL recovery here, never on the live files.
+        with closing(sqlite3.connect(staged.as_uri() + '?mode=rw', uri=True)) as recovered:
+            if recovered.execute('pragma integrity_check').fetchall() != [('ok',)]:
+                raise ValueError('Stopped snapshot integrity failed')
+        backup_database(staged, target)
+
+
+def portal_rows(state, *, stopped=False):
     """Hash saved case/dashboard rows from online snapshots, excluding SQLite counters."""
     result = {}
     with tempfile.TemporaryDirectory(prefix='portal-preservation-', dir=Path(state).parent) as temporary:
@@ -88,7 +129,8 @@ def portal_rows(state):
             source = Path(state) / 'portal' / name
             if not source.exists():
                 continue
-            copy = Path(temporary) / name;backup_database(source, copy)
+            copy = Path(temporary) / name
+            (backup_stopped_database if stopped else backup_database)(source, copy)
             with closing(sqlite3.connect(copy)) as conn:
                 result[name] = sorted(hashlib.sha256(line.encode()).hexdigest() for line in conn.iterdump()
                     if line.startswith(('CREATE TABLE ', 'INSERT INTO ')) and '"sqlite_sequence"' not in line)
@@ -372,7 +414,7 @@ def copy_adopted_state(plan, runtime):
                         raise ValueError('Active managed state cannot be re-adopted')
                     # Preserve an unactivated copy before retrying from the resumed legacy DB.
                     os.replace(dest, folder / (dest.name + '.unactivated-' + datetime.now(timezone.utc).strftime('%H%M%S%f')))
-                backup_database(path, dest)
+                backup_stopped_database(path, dest)
                 if os.name == 'posix':
                     os.chown(dest, 1000, 1000)
         if os.name == 'posix':
@@ -427,8 +469,14 @@ def apply(engine, plan, *, poll=None):
                 engine.run(['compose', *active, 'stop', *stop])
             worker_inventory(engine, plan['project'], stopped=True)
             for p in databases(state):
-                backup_database(p, run / 'stopped' / p.relative_to(state))
-            saved_rows = portal_rows(state)
+                try:
+                    backup_stopped_database(p, run / 'stopped' / p.relative_to(state))
+                except sqlite3.Error as error:
+                    atomic_json(run / 'backup-failed.json', {
+                        'phase': 'stopped', 'database': p.relative_to(state).as_posix(),
+                        'sqlite_error': getattr(error, 'sqlite_errorname', None)})
+                    raise
+            saved_rows = portal_rows(state, stopped=True)
             saved_docs = {} if plan['fresh'] else immutable_documents(engine, state, plan['image'], plan['project'])
             atomic_json(run / 'preservation-before.json', {'portal_rows': saved_rows, 'documents': saved_docs})
             if not old_contract:

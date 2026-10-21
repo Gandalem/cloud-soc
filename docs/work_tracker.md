@@ -1,5 +1,12 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-21 중지 직후 SQLite 백업 — DEPLOY-SQLITE-04
+
+- [x] DEPLOY-SQLITE-04 코드 보완·로컬 재현 검사 완료: 사용자 제공 결과에서 apply 중 stopped 백업이 7/14개에서 OperationalError로 종료됐고 기존 실행 복구·14개 live DB 무결성/복원 성공을 확인했다. 중지 직후 hot rollback journal이 남으면 mode=ro 백업이 복구 쓰기를 거부하는 경로를 재현한다. 중지한 DB의 main+WAL/rollback journal을 보호 임시 복사하고 그 사본에서만 SQLite 복구/검사를 수행하도록 보완하며 원본과 키·큐·체크포인트는 덮어쓰지 않는다. 실제 실패의 SQLite 상세 코드는 남지 않았으므로 재현 원인과 운영 증거를 구분한다.
+
+- 실제 subprocess를 rollback transaction 도중 종료해 기존 mode=ro 조회가 OperationalError로 실패하는 것을 재현했다. 새 중지 백업은 main+WAL/rollback journal만 0700/0600 임시영역으로 복사하고 사본에서 복구한 뒤 DELETE standalone 백업을 만든다. stale shm은 복사하지 않으며 원본 bytes/sidecar는 그대로 보존한다. 복사 전후 inode/크기/mtime 변화와 symlink는 거부한다. 중지 portal 보존검사와 최초 상태 adoption에도 같은 방식을 적용한다. 실행 중 온라인 백업은 기존 SQLite backup API를 유지한다.
+- 영향49항목 통과: hot rollback의 미커밋 변경 제외·원본/journal 불변, unclean WAL의 마지막 커밋 보존, portal 행 보존, 기존 목적지 덮어쓰기 거부 및 기존 배포 회귀45항목. 원래 운영 실패의 세부 코드가 없어 hot journal을 당시 원인으로 단정하지 않으며, 재발 시 안전한 SQLite 코드와 실패 DB 상대경로를 보호 영수증에 남긴다. 실제 VM 적용/새 SSH 수신/Slack 수신은 아직 미확인이다.
+
 ## 2026-10-21 외부 작업폴더 재배포 — DEPLOY-WORKSPACE-03
 
 - [x] DEPLOY-WORKSPACE-03 로컬 수정·회귀 완료: 앞선 VM 적용 영수증은 명시한 outputs/cloud-soc의 compose.yaml을 기록하지만 active_command는 state의 원래 저장소 아래만 허용하여 다음 plan이 ValueError로 거부된다. 사용자 제공 계획 출력 전 실패와 앞선 성공 배포 경로를 대조한다. 명시 workspace와 state 저장소 아래 경로만 허용하고 symlink·영수증/label 불일치는 계속 거부한다. 관련 배포 수정·게시·적용 준비는 기존 승인 범위이며 기존 서비스/키/DB는 보존한다.

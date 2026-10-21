@@ -110,4 +110,8 @@ if __name__ == '__main__':
     try:
         raise SystemExit(main())
     except Exception as error:
-        raise SystemExit('Runtime operation stopped (' + type(error).__name__ + '); protected state retained; credentials omitted.') from None
+        code = getattr(error, 'sqlite_errorname', None)
+        safe_code = (' sqlite=' + code if isinstance(code, str) and code.startswith('SQLITE_')
+                     and all(c.isupper() or c == '_' or c.isdigit() for c in code) else '')
+        raise SystemExit('Runtime operation stopped (' + type(error).__name__ + safe_code
+                         + '); protected state retained; credentials omitted.') from None
