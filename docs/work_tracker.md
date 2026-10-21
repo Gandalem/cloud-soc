@@ -1,5 +1,24 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-21 AWS 변경 게시 — AWS-SYDNEY-PUBLISH-01
+
+- 사용자 `commit && push` 지시로 현재 AWS·Security Mall 변경을 JEONGRIM-SEO에 게시한다. 이전 미커밋/미push 기록은 당시 상태이며 이번 지시로 대체한다. main 변경은 제외한다.
+- 관련 검사48건·Ruff 통과, 실제 새 EC2의 세 화면200·서비스3개 active·CloudWatch 접근≥5/오류1/감사1 수신, S3 CloudTrail2/VPC Flow4/ALB1 객체 도착을 확인했다. 중앙 ES/Portal·CloudWatch→S3 전달·T-Pot·대용량 성능은 미완료로 유지한다.
+- 실제 추가 승인에는 전용 EC2 역할 및 지정 로그 쓰기+SSM 연결이 포함됐다. 구체적 승인 전 제한을 적은 아래 항목은 이력이며 최신 추가 승인 기록을 함께 적용한다.
+
+## 2026-10-21 승인 범위 확대와 Security Mall 연결 — AWS-SYDNEY-DEPLOY-01
+
+- [ ] AWS-SYDNEY-DEPLOY-01 진행 중: 사용자 명시 승인으로 계정897722691159/ap-southeast-2에 비공개S3버킷1·StandardSQS/DLQ2 생성과 기존VPC Flow/ALB 접근로그 활성화를 수행한다. 최신 요청으로 CloudTrail의 시드니 저장도 포함한다. 새 EC2는 사용자가 생성하며 기존CI runner는 변경하지 않는다. IAM identity 권한/인스턴스역할 추가·공개포트는 승인 범위 밖이다.
+- 공유 채팅 https://chatgpt.com/share/6ad81a55-7778-83ee-b850-15309a2c35cd 의4명/동일계정/개인IAM사용자/웹3화면/CloudWatch수집 요구를 읽었다. 서울 예시는 최신사용자지시의 시드니로 대체한다. IAM사용자와역할을 구분하고 웹은 ZIYA0614/security-mall의 /·/login·/board를 대상으로 한다. 참고채팅에 나오는 광범위 정책·공개SG·기존서비스재시작을 자동승인으로 취급하지 않는다.
+- Security Mall 소스기준 aba2b423157cdcb4562fb0eaab3694e379b900e4, Java17/SpringBoot4.1.1/Gradle9.7.1을 확인했다. 앱 원문/입력 비밀번호를 웹수집으로 복사하지 않으며 기존 로그인 HMAC감사패치와 접근·오류로그를 구분한다. 새수집기·사이트계층의코드는미커밋/미push로 유지한다.
+
+## 2026-10-21 시드니 AWS·T-Pot 수집 — AWS-SYDNEY-INGEST-01
+
+- [ ] AWS-SYDNEY-INGEST-01 진행 중: 사용자 요청에 따라 ap-southeast-2의 CloudTrail/VPC Flow/ALB/서비스 로그와 T-Pot 수집 계층을 구현·격리 검증한다. 기존 LookupEvents 수집기는 보존하고 S3/SQS 버퍼 기반 추가 경로와 역할/리소스별 출처 설정을 준비한다.
+- 배포 범위·AWS 계정/프로필/Role·기존 VPC/ALB/T-Pot 자원은 사용자 응답 대기다. 우선 AWS 변경 없는 코드·오프라인 검증을 진행한다. 실제 리소스 생성/비용발생·공개 허니팟 포트·로그발생 부하·기존 서버 변경·새 작업 자동 commit/push는 수행하지 않는다. 앞선 push 승인은 앞선 병합본에만 해당한다.
+- 출처 원칙: CloudTrail은 검증한 issuer Role로 팀을 구분하며, VPC Flow/ALB는 IAM 호출 Role이 직접 기록되지 않으므로 전용 리소스·prefix/운영 바인딩으로 구분한다. T-Pot은 별도 허니팟 source이며 AWS 범용 수집기로 취급하지 않는다.
+
+
 ## 2026-10-21 병합본 커밋·push 요청 — LOCAL-MERGE-PUBLISH-01
 
 - 최신 사용자 요청으로 앞선 로컬 한정·커밋/push 금지를 이번 통합본에 한해 해제하고 JEONGRIM-SEO에 커밋·일반 push한다. main 원격 변경·PR 생성·배포·기존 서비스 변경은 제외한다.
@@ -1510,3 +1529,5 @@ MALL-AUDIT-03C 환경 미준비로 시작 전 중단(2026-10-16): 사용자 요�
 - 근거: Git제외 state/rule-review-final-{python,affected,edge,edge-fix}.xml, state/rule-review-browser-fixed/browser-review.json 및 desktop/mobile PNG. 임시 HTTP/브라우저는 종료하고 합성 계정/DB 임시디렉터리를 정리했다. 저장된 근거는 합성 데이터뿐이며 기존 서비스/실제 키/로그를 사용하지 않았다.
 - 부모 RULE-AUTHORING-01/CORE-INGEST-ALERT-01은 운영 인수와 전체 범위가 남아 unchecked 유지한다. 실제 ES TLS/권한/최소 계정·매핑 준비·관리 워커 서비스 배포/기존 중앙 설정 연결·실장치/실제 쇼핑몰 공격 경보/Slack 수신은 이번에 실행하지 않았다. 기존 고정 워커의 기본 규칙을 화면에서 중단/삭제하는 기능, 폼으로 표현할 수 없는 전체19종의 편집, 자동 과거 재분석/사건 조정, 정량 점수 보정·HA·백업복원은 후속 범위다. 추가 증거 revision의 범용 조사 화면 확장은 별도이며 원래 경보 증거 조회는 기존 경로를 유지한다.
 - 관련 파일: docs/rule_authoring.md, config/managed-rules.example.json, detection/{authoring,managed,managed_cli,patterns,waf,risk}.py, portal/{rule_library,app,auth}.py, prototype/{settings-rules.html,settings-rules.css,rule-editor.js,investigation.js,operations.js,dashboard.js,dashboard-widgets.js}, tests/test_{rule_library,managed_rules}.py, tools/review_rule_editor.{py,cjs}. 새 의존성 없음. 작업 경로/브랜치는 유지하고 운영 변경·이관·커밋·푸시는 하지 않았다.
+
+- 2026-10-21 AWS-SYDNEY-DEPLOY-01 실행: S3/SQS 전달 정책·알림, 두 VPC Flow ACTIVE/SUCCESS, ALB 접근 로그, Sydney Trail 실제 S3 도착 확인. Security Mall 새 EC2 배포, 세 화면200·서비스3개 active·CloudWatch access≥5/error1/audit1 수신. Python48건 통과. CloudWatch→S3 및 중앙 worker/T-Pot 연결은 남음. 미커밋/미push.

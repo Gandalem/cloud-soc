@@ -69,3 +69,5 @@
 - [백업 형식 2·3·4·5 호환성 회귀와 PR18 수정](backup_format_regression.md)
 
 - [Security Mall 로그인 감사 배포 패키지](../deploy/security-mall/login-audit/README.md): 별도 쇼핑몰 패치와 전용 수집기. HTTPS 중앙 ES가 필요하며 인증 없는 로컬 개발 Compose와 구분합니다.
+
+- [시드니 AWS·T-Pot 수집 계층](aws_sydney_ingestion.md): S3/SQS 대량 수집, 팀 Role/리소스 바인딩, 읽기 전용 조사와 실행 전제.

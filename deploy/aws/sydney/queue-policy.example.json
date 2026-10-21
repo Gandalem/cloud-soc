@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OnlyApprovedBucketNotifications",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "s3.amazonaws.com"
+      },
+      "Action": "sqs:SendMessage",
+      "Resource": "arn:aws:sqs:ap-southeast-2:123456789012:replace-existing-ingest-queue",
+      "Condition": {
+        "StringEquals": {
+          "aws:SourceAccount": "123456789012"
+        },
+        "ArnEquals": {
+          "aws:SourceArn": "arn:aws:s3:::replace-with-existing-sydney-log-bucket"
+        }
+      }
+    }
+  ]
+}

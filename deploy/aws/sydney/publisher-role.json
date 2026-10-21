@@ -1,0 +1,14 @@
+{
+  "cluster": [],
+  "indices": [
+    {
+      "names": [
+        "soc-ingest-aws-*",
+        "soc-ingest-tpot-*"
+      ],
+      "privileges": [
+        "auto_configure", "create_doc"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "collector_account": "123456789012",
+  "organization": "cloud-soc-team",
+  "region": "ap-southeast-2",
+  "queue_url": "https://sqs.ap-southeast-2.amazonaws.com/123456789012/replace-existing-ingest-queue",
+  "sources": [
+    {
+      "bucket": "replace-with-existing-sydney-log-bucket",
+      "prefix": "cloudtrail/AWSLogs/123456789012/CloudTrail/",
+      "format": "cloudtrail",
+      "account_id": "123456789012",
+      "bucket_owner": "123456789012",
+      "source_id": "account-audit"
+    },
+    {
+      "bucket": "replace-with-existing-sydney-log-bucket",
+      "prefix": "vpc/team-a/",
+      "format": "vpc_flow_v2",
+      "account_id": "123456789012",
+      "bucket_owner": "123456789012",
+      "source_id": "team-a-vpc",
+      "team": "team-a"
+    },
+    {
+      "bucket": "replace-with-existing-sydney-log-bucket",
+      "prefix": "alb/team-a/",
+      "format": "alb",
+      "account_id": "123456789012",
+      "bucket_owner": "123456789012",
+      "source_id": "team-a-alb",
+      "team": "team-a",
+      "resource_id": "app/replace-alb-name/0123456789abcdef"
+    },
+    {
+      "bucket": "replace-with-existing-sydney-log-bucket",
+      "prefix": "services/shared/",
+      "format": "cloudwatch",
+      "account_id": "123456789012",
+      "bucket_owner": "123456789012",
+      "source_id": "shared-services"
+    },
+    {
+      "bucket": "replace-with-existing-sydney-log-bucket",
+      "prefix": "tpot/team-a/cowrie/",
+      "format": "tpot_cowrie",
+      "account_id": "123456789012",
+      "bucket_owner": "123456789012",
+      "source_id": "team-a-tpot",
+      "team": "team-a"
+    },
+    {
+      "bucket": "replace-with-existing-sydney-log-bucket",
+      "prefix": "tpot/team-a/suricata/",
+      "format": "tpot_suricata",
+      "account_id": "123456789012",
+      "bucket_owner": "123456789012",
+      "source_id": "team-a-tpot",
+      "team": "team-a"
+    }
+  ],
+  "role_teams": {
+    "arn:aws:iam::123456789012:role/CloudSOC-TeamA": "team-a",
+    "arn:aws:iam::123456789012:role/CloudSOC-TeamB": "team-b"
+  },
+  "user_teams": {
+    "arn:aws:iam::123456789012:user/replace-team-1": "team-1",
+    "arn:aws:iam::123456789012:user/replace-team-2": "team-2",
+    "arn:aws:iam::123456789012:user/replace-team-3": "team-3",
+    "arn:aws:iam::123456789012:user/replace-team-4": "team-4"
+  }
+}
