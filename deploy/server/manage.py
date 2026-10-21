@@ -11,7 +11,8 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'src'))
 from cloud_soc.deployment.contract import SERVICES
-from cloud_soc.deployment.host import Docker, apply, containers, recover, snapshot, summary, worker_inventory
+from cloud_soc.deployment.dependencies import DependencyError, check as check_dependencies
+from cloud_soc.deployment.host import Docker, DockerCommandError, apply, containers, recover, snapshot, summary, worker_inventory
 from cloud_soc.deployment.migrations import atomic_json
 from cloud_soc.deployment.verify import portal
 
@@ -27,7 +28,25 @@ def ready(engine, name, project):
         if obj['State']['Running'] and obj['State'].get('Health', {}).get('Status', 'healthy') == 'healthy':
             return
         time.sleep(2)
-    raise ValueError('Required service readiness deadline exceeded')
+    raise ValueError('필수 서비스의 기동 대기 시간이 초과됐습니다')
+
+
+def prepare_install_images(engine, workspace, state, environment):
+    """Prepare registry images before activation, retaining cached versions."""
+    print('[설치] Elasticsearch·Kibana·게이트웨이 이미지를 준비합니다. 다운로드 진행은 아래에 표시됩니다.', flush=True)
+    for service, image in (
+        ('Elasticsearch', 'docker.elastic.co/elasticsearch/elasticsearch:9.5.2'),
+        ('Kibana', 'docker.elastic.co/kibana/kibana:9.5.2'), ('게이트웨이', 'caddy:2.11.4-alpine'),
+    ):
+        present = engine.run(['image', 'ls', '--filter', 'reference=' + image, '--format', '{{.ID}}']).strip()
+        if present:
+            print('[설치] ' + service + ': 검증된 호환 이미지가 있어 재사용합니다.', flush=True)
+        else:
+            print('[설치] ' + service + ': 검증 버전 이미지가 필요해 다운로드합니다. 다른 버전은 자동 대체하지 않습니다.', flush=True)
+    engine.run(['compose', '--project-name', 'cloud-soc-central', '--env-file', str(state / 'compose.env'),
+                '-f', str(workspace / 'deploy/server/compose.yaml'),
+                'pull', '--policy', 'missing', 'elasticsearch', 'kibana', 'gateway'],
+               env=environment, timeout=1800, stream=True)
 
 
 def main():
@@ -59,15 +78,23 @@ def main():
         print(json.dumps(summary(p)))
         return int(not p['resources']['ok'])
     if args.action in ('apply', 'install'):
+        if args.action == 'install':
+            check_dependencies(engine)
         if args.build:
             if args.action != 'install':
                 raise ValueError('Build the upgrade candidate before reviewing its plan')
-            engine.run(['build', '--pull=false', '-f', str(args.workspace / 'deploy/server/Dockerfile'), '-t', args.image,
-                        str(args.workspace)], timeout=600)
+            print('[설치] Cloud SOC 이미지를 빌드합니다. 최초 설치는 몇 분 걸릴 수 있습니다.', flush=True)
+            engine.run(['build', '--progress=plain', '--pull=false', '-f', str(args.workspace / 'deploy/server/Dockerfile'), '-t', args.image,
+                        str(args.workspace)], timeout=600, stream=True)
+        print('[설치] 소스·설정·서버 자원을 확인합니다.', flush=True)
         p = (snapshot(engine, args.workspace, state, args.image) if args.action == 'install'
              else json.loads(args.plan.read_text()) if args.plan else None)
         if not p or (args.action == 'install' and not p['fresh']):
             raise ValueError('Use a reviewed plan to upgrade an existing server')
+        if not p['resources']['ok']:
+            raise ValueError('Server resource preflight failed; no activation performed')
+        if args.action == 'install':
+            prepare_install_images(engine, args.workspace, state, p['compose_environment'])
         print(json.dumps(apply(engine, p, poll=ready)))
         return 0
     runtime = state / 'runtime';current = json.loads((runtime / 'current.json').read_text())
@@ -109,5 +136,7 @@ def main():
 if __name__ == '__main__':
     try:
         raise SystemExit(main())
+    except (DockerCommandError, DependencyError) as error:
+        raise SystemExit(str(error)) from None
     except Exception as error:
-        raise SystemExit('Runtime operation stopped (' + type(error).__name__ + '); protected state retained; credentials omitted.') from None
+        raise SystemExit('서버 작업이 중단됐습니다 (' + type(error).__name__ + '). 기존 설정은 보존됐으며 인증 정보는 출력하지 않습니다.') from None

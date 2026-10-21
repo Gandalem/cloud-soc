@@ -35,7 +35,7 @@ def validate_host(host):
 
 def validate_password(password):
     if not password:
-        raise PreparationError("Portal administrator password must not be empty")
+        raise PreparationError("Portal 관리자 비밀번호는 비워 둘 수 없습니다")
 
 
 def read_admin_password():
@@ -43,16 +43,16 @@ def read_admin_password():
     with warnings.catch_warnings():
         warnings.simplefilter("error", getpass.GetPassWarning)
         for _ in range(3):
-            password = getpass.getpass("Portal admin password: ")
+            password = getpass.getpass("Portal 관리자 비밀번호 (입력 내용은 표시되지 않습니다): ")
             try:
                 validate_password(password)
             except PreparationError as error:
-                print(f"{error}. Please try again.", file=sys.stderr)
+                print(f"{error}. 다시 입력하세요.", file=sys.stderr)
                 continue
-            if password == getpass.getpass("Confirm password: "):
+            if password == getpass.getpass("비밀번호 확인: "):
                 return password
-            print("Passwords do not match. Please enter both again.", file=sys.stderr)
-    raise PreparationError("Password entry failed after 3 attempts; no server state was created by this attempt")
+            print("비밀번호가 일치하지 않습니다. 두 값을 다시 입력하세요.", file=sys.stderr)
+    raise PreparationError("비밀번호 입력에 3회 실패했습니다. 이번 시도로 서버 상태를 생성하지 않았습니다")
 
 
 def password_hash(password):
@@ -122,10 +122,10 @@ def prepare(host, bind_ip, state, password, *, agent_host=None):
     }
     (state / "kibana.yml").write_text(json.dumps(kibana, indent=2), encoding="utf-8")
     (state / "kibana.yml").chmod(0o644)
-    (state / "compose.env").write_text(f"SOC_PUBLIC_HOST={host}\nSOC_AGENT_ENDPOINT=https://{agent_host}:9200\nSOC_BIND_IP={bind_ip}\nSOC_STATE_DIR={state.as_posix()}\n", encoding="utf-8")
-    print(f"Protected server state created: {state}")
-    print(f"CA SHA256: {hashlib.sha256(ca_crt.read_bytes()).hexdigest()}")
-    print("No services started. Trust the public CA via an authenticated channel; never distribute private/ or secrets/.")
+    (state / "compose.env").write_text(f"SOC_PUBLIC_HOST={host}\nSOC_AGENT_ENDPOINT=https://{agent_host}:9200\nSOC_BIND_IP={bind_ip}\nSOC_STATE_DIR={state.as_posix()}\nSOC_ENROLLMENT_ENABLED=1\n", encoding="utf-8")
+    print(f"서버 인증서와 보호 설정을 생성했습니다: {state}")
+    print(f"공개 CA 파일 SHA256: {hashlib.sha256(ca_crt.read_bytes()).hexdigest()}")
+    print("인증서 준비가 끝났습니다. 서버 기동은 다음 단계에서 진행합니다. private/와 secrets/는 외부에 전달하지 마세요.")
 
 
 def main():
@@ -136,21 +136,21 @@ def main():
     parser.add_argument("--state", type=Path, default=ROOT / "state" / "server")
     args = parser.parse_args()
     if os.name != "posix" or os.geteuid() != 0:
-        parser.error("Run with sudo on the Ubuntu central server")
+        parser.error("Ubuntu 중앙 서버에서 sudo로 실행하세요")
     try:
         password = read_admin_password()
         options = {"agent_host": args.agent_host} if args.agent_host else {}
         prepare(args.host, args.bind_ip, args.state, password, **options)
     except PreparationError as error:
-        parser.exit(1, f"Preparation failed: {error}. Existing/partial state was not removed.\n")
+        parser.exit(1, f"인증서 준비 실패: {error}. 기존 설정과 부분 설치 상태는 보존됐습니다.\n")
     except getpass.GetPassWarning:
-        parser.exit(1, "Secure password input is unavailable. Use an interactive SSH terminal; do not pipe passwords.\n")
+        parser.exit(1, "안전한 비밀번호 입력을 사용할 수 없습니다. 대화형 SSH 터미널에서 직접 입력하세요.\n")
     except EOFError:
-        parser.exit(1, "Password input ended. No server state was created by this attempt.\n")
+        parser.exit(1, "비밀번호 입력이 종료됐습니다. 이번 시도로 서버 상태를 생성하지 않았습니다.\n")
     except KeyboardInterrupt:
-        parser.exit(130, "Preparation interrupted. Existing/partial state was not removed.\n")
+        parser.exit(130, "인증서 준비를 중단했습니다. 기존 설정과 부분 설치 상태는 보존됐습니다.\n")
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
-        parser.exit(1, f"Preparation failed ({type(error).__name__}). Protected partial state is retained; no automatic overwrite.\n")
+        parser.exit(1, f"인증서 준비 실패 ({type(error).__name__}). 부분 설치 상태를 보존했으며 덮어쓰지 않았습니다.\n")
 
 
 if __name__ == "__main__":

@@ -4,19 +4,19 @@ set -eu
 
 usage() {
     printf '%s\n' \
-        'Usage: sudo sh deploy/server/install-ubuntu.sh [options]' \
-        '  --host HOST        Dashboard DNS/IPv4' \
-        '  --agent-host HOST  Agent-reachable DNS/IPv4 for HTTPS 9200 (default: --host)' \
-        '  --bind-ip IP       IPv4 on this Ubuntu host (default: prompt / loopback)' \
-        '  --dry-run          Print the plan only; no root, writes, downloads or checks' \
-        '  --prepare-only     Install dependencies and prepare state; do not start the SOC stack' \
-        '  --yes              Confirm host changes (admin password still requires a terminal)' \
-        '  --help             Show this help' \
-        'Ubuntu Server 22.04, 24.04 and 26.04 LTS (amd64/arm64, systemd).' \
-        'Existing server state is never overwritten. No firewall rules are changed.'
+        '사용법: sudo sh deploy/server/install-ubuntu.sh [옵션]' \
+        '  --host HOST        대시보드 접속 DNS/IPv4' \
+        '  --agent-host HOST  에이전트가 접속할 HTTPS 9200 주소 (기본: --host)' \
+        '  --bind-ip IP       이 Ubuntu 서버에 실제 할당된 IPv4' \
+        '  --dry-run          설치 계획만 표시. 변경·다운로드·환경 검사는 실행하지 않음' \
+        '  --prepare-only     필수 프로그램과 인증서만 준비. SOC 서버는 시작하지 않음' \
+        '  --yes              설치 확인 생략. 관리자 비밀번호는 터미널에서 직접 입력' \
+        '  --help             도움말 표시' \
+        '지원: Ubuntu Server 22.04·24.04·26.04 LTS (amd64/arm64, systemd).' \
+        '기존 서버 설정을 덮어쓰거나 방화벽 규칙을 변경하지 않습니다.'
 }
 
-die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+die() { printf '오류: %s\n' "$*" >&2; exit 1; }
 has_command() { command -v "$1" >/dev/null 2>&1; }
 path_exists() { [ -e "$1" ] || [ -L "$1" ]; }
 installed() { [ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null || true)" = 'install ok installed' ]; }
@@ -56,30 +56,30 @@ validate_addresses() {
 
 show_plan() {
     printf '%s\n' \
-        "Public host: ${HOST:-<prompt required>}" \
-        "Agent receiver host: ${AGENT_HOST:-${HOST:-<same as public host>}}" \
-        "Local bind IP: ${BIND_IP:-<prompt; blank selects 127.0.0.1>}" \
-        "State: $STATE" \
-        "Ubuntu release/suite: ${UBUNTU_VERSION:-<checked at install>} / ${UBUNTU_SUITE:-<checked at install>}" \
-        '1. Require Ubuntu 22.04/24.04/26.04 LTS, systemd, root, the versioned runtime memory budget (8 GiB class) and >=10 GiB free disk.' \
-        '2. Reject existing state/stack, occupied TCP 443/5601/9200, nonlocal bind IP.' \
-        '3. Install missing ca-certificates, curl, git, python3 and openssl using APT.' \
-        '4. Reuse a running local Docker + Compose plugin, or install Docker CE from its official signed APT repository.' \
-        '5. Raise vm.max_map_count to 1048576 if needed; never lower a higher value.' \
-        '6. Prompt for the admin password; generate CA, secrets and a public CA export.'
+        "대시보드 주소: ${HOST:-<입력 필요>}" \
+        "에이전트 수신 주소: ${AGENT_HOST:-${HOST:-<대시보드와 동일>}}" \
+        "서버 바인딩 IP: ${BIND_IP:-<입력 필요; 빈 값은 127.0.0.1>}" \
+        "설정 저장 위치: $STATE" \
+        "Ubuntu 버전/코드명: ${UBUNTU_VERSION:-<설치 시 확인>} / ${UBUNTU_SUITE:-<설치 시 확인>}" \
+        '1. Ubuntu LTS·systemd·관리자 권한·런타임 메모리 예산(8 GiB급)·디스크 여유 10 GiB 이상을 확인합니다.' \
+        '2. 기존 설치와 TCP 443/5601/9200 포트 충돌을 확인합니다.' \
+        '3. 누락된 ca-certificates·curl·git·python3·openssl을 설치합니다.' \
+        '4. 기존 로컬 Docker/Compose를 사용하거나 공식 서명 저장소에서 설치합니다.' \
+        '5. 필요하면 vm.max_map_count를 1048576으로 올립니다.' \
+        '6. Portal 관리자 비밀번호와 인증서를 준비하고 신규 에이전트 설치 토큰 기능을 활성화합니다.'
     if [ "$PREPARE_ONLY" = yes ]; then
-        printf '%s\n' '7. Stop before starting the SOC containers (a newly installed Docker daemon will run).'
+        printf '%s\n' '7. SOC 컨테이너 기동 전 종료합니다. 새로 설치한 Docker 서비스는 실행됩니다.'
     else
-        printf '%s\n' '7. Build the common image; run versioned migrations and all six required workers; verify local HTTPS endpoints.'
+        printf '%s\n' '7. 이미지를 빌드·다운로드하고 필수 워커와 서버를 시작한 뒤 HTTPS를 확인합니다.'
     fi
     printf '%s\n' \
-        'Restrict AWS security groups to approved source IPs BEFORE installation.' \
-        'No agent installation, packet capture, firewall changes, package removal or data deletion.'
+        '클라우드 환경에서는 설치 전에 보안그룹의 접속 허용 IP를 설정하세요.' \
+        '에이전트 설치·패킷 수집·방화벽 변경·기존 프로그램 및 데이터 삭제는 수행하지 않습니다.'
 }
 
 confirm_installation() {
     [ "$YES" != yes ] || return 0
-    printf 'APT packages, Docker and host settings may change. Confirm approved IP restrictions and type y/yes/INSTALL (default: no): '
+    printf '필수 프로그램·Docker·호스트 설정을 변경합니다. 접속 허용 범위를 확인했다면 y/yes/INSTALL 입력 (기본: 취소): '
     read -r CONFIRM || die 'Installation was not confirmed; no changes made.'
     case "$CONFIRM" in
         [Yy]|[Yy][Ee][Ss]|INSTALL) ;;
@@ -151,14 +151,19 @@ compose() (
 )
 
 check_docker_stack() {
-    docker_local info >/dev/null 2>&1 || die 'Existing local Docker must be running and accessible. No remote Docker context is used.'
-    docker_local compose version >/dev/null 2>&1 || die 'Existing Docker requires a working Compose v2+ plugin; install it through the approved repository first.'
+    docker_local info >/dev/null 2>&1 || die '로컬 Docker가 실행 중이고 접근 가능해야 합니다. 오래된 CLI라면 Docker를 업데이트하세요. 원격 Docker는 사용하지 않습니다.'
+    docker_local compose version >/dev/null 2>&1 || die 'Docker Compose v2.24.0 이상이 필요합니다. 공식 저장소를 통해 플러그인을 설치·업데이트하세요.'
+    check_runtime_compatibility
     EXISTING=$(docker_local ps -aq --filter label=com.docker.compose.project=cloud-soc-central) || die 'Cannot inspect Docker containers.'
     [ -z "$EXISTING" ] || die 'Existing cloud-soc-central containers found; use the recovery/upgrade procedure.'
     VOLUMES=$(docker_local volume ls --format '{{.Name}}') || die 'Cannot inspect Docker volumes.'
     if printf '%s\n' "$VOLUMES" | grep -q '^cloud-soc-central_'; then
         die 'Existing central volumes found. Keep their credentials and data; do not initialize a new CA/password set.'
     fi
+}
+
+check_runtime_compatibility() {
+    python3 "$ROOT/deploy/server/check-dependencies.py"
 }
 
 render_docker_source() {
@@ -272,7 +277,7 @@ prepare_state() {
     # The export remains inside protected state; the guide copies only this public file.
     openssl x509 -in "$STATE/tls/ca.crt" -outform DER -out "$STATE/tls/ca.cer"
     chmod 0644 "$STATE/tls/ca.cer"
-    printf '%s\n' 'Public DER certificate SHA-256 (not a private key):'
+    printf '%s\n' '공개 DER 인증서 SHA-256 (개인키가 아닙니다):'
     sha256sum "$STATE/tls/ca.cer"
 }
 
@@ -286,6 +291,7 @@ http_status() {
 }
 
 check_ready() {
+    printf '%s\n' '[설치] 서버 구성과 HTTPS 접속 준비를 확인합니다.'
     python3 "$ROOT/deploy/server/manage.py" verify --state "$STATE" --startup-only
     DEADLINE=$(($(date +%s) + 300))
     while [ "$(date +%s)" -lt "$DEADLINE" ]; do
@@ -293,12 +299,12 @@ check_ready() {
         PORTAL_CODE=$(http_status 443 /api/portal)
         KIBANA_CODE=$(http_status 5601 /login)
         if [ "$ES_CODE" = 401 ] && [ "$PORTAL_CODE" = 401 ] && [ "$KIBANA_CODE" = 200 ]; then
-            printf '%s\n' 'Local TLS/HTTP startup checks passed. Log in to the portal and verify remote ingestion separately.'
+            printf '%s\n' '서버의 TLS/HTTP 기동 확인을 통과했습니다. 다음으로 Portal에서 에이전트를 등록하고 실제 수신을 확인하세요.'
             return 0
         fi
         sleep 5
     done
-    die 'HTTPS startup checks timed out. State is preserved; inspect Compose logs and do not regenerate credentials.'
+    die 'HTTPS 기동 확인 시간이 초과됐습니다. 기존 설정은 보존됐습니다. Compose 로그를 확인하고 인증서를 다시 만들지 마세요.'
 }
 
 finish() {
@@ -309,8 +315,8 @@ finish() {
         rmdir "$TEMP" 2>/dev/null || true
     fi
     if [ "$RESULT" -ne 0 ]; then
-        printf 'Stopped during: %s. Existing/partial state was not removed.\n' "${STAGE:-arguments}" >&2
-        printf '%s\n' 'For a prepared server, use the Compose config/up/logs commands in deploy/server/README.md.' >&2
+        printf '설치 중단 단계: %s. 기존 설정과 부분 설치 상태는 보존됐습니다.\n' "${STAGE:-arguments}" >&2
+        printf '%s\n' '인증서 준비 후 실패했다면 deploy/server/README.md의 공통 관리자 복구 절차를 따르세요.' >&2
     fi
     exit "$RESULT"
 }
@@ -348,7 +354,7 @@ main() {
         HOST=$PUBLIC_HOST
     fi
     if [ "$DRY_RUN" = yes ]; then
-        printf '%s\n' 'DRY RUN: plan only; actual OS, addresses, files, ports and dependencies have NOT been checked.'
+        printf '%s\n' '미리보기: 계획만 표시합니다. 실제 OS·주소·파일·포트·필수 프로그램은 검사하지 않았습니다.'
         show_plan
         return 0
     fi
@@ -362,12 +368,12 @@ main() {
     case "$ROOT" in *[!a-zA-Z0-9_./-]*) die 'Use a repository path without spaces, special characters or non-ASCII text.' ;; esac
     [ -t 0 ] && [ -t 1 ] || die 'Use an interactive SSH terminal; passwords cannot be passed as command-line arguments or piped input.'
     if [ -z "$HOST" ]; then
-        printf 'Public DNS/IPv4 reachable by your PC (without https://): '
+        printf 'PC에서 접속할 대시보드 DNS/IPv4 (https:// 제외): '
         read -r HOST
     fi
     if [ -z "$BIND_IP" ]; then
         ip -4 -brief address
-        printf 'Local bind IPv4 (EC2 private IPv4; blank = 127.0.0.1): '
+        printf '이 서버의 바인딩 IPv4 (EC2는 사설 IP, 빈 값은 127.0.0.1): '
         read -r BIND_IP
         BIND_IP=${BIND_IP:-127.0.0.1}
     fi
@@ -387,22 +393,32 @@ main() {
     detect_docker
     check_kernel_config
     STAGE=packages
+    printf '%s\n' '[설치 1/5] 필수 프로그램을 준비합니다.'
     install_packages
     STAGE=docker
+    printf '%s\n' '[설치 2/5] Docker 서비스를 준비합니다.'
     install_docker
     STAGE=kernel
+    printf '%s\n' '[설치 3/5] 서버 커널 설정을 준비합니다.'
     configure_kernel
     STAGE=certificates
+    printf '%s\n' '[설치 4/5] 관리자 비밀번호와 인증서를 준비합니다.'
     prepare_state
     if [ "$PREPARE_ONLY" != yes ]; then
         STAGE=compose
+        printf '%s\n' '[설치 5/5] 이미지를 준비하고 Cloud SOC 서버를 시작합니다.'
         start_stack
         STAGE=readiness
         check_ready
     fi
-    printf '\nPortal: https://%s\nKibana: https://%s:5601\nReceiver: https://%s:9200\n' "$HOST" "$HOST" "${AGENT_HOST:-$HOST}"
-    printf '%s\n' 'Trust the verified public CA first. Keep private/ and secrets/ on the server.' \
-        'Next: docs/aws_windows_e2e_test.md section 6 (Windows CA trust and agent testing).'
+    if [ "$PREPARE_ONLY" = yes ]; then
+        printf '\n인증서와 필수 프로그램 준비가 완료됐습니다. SOC 서버는 아직 시작하지 않았습니다.\n'
+    else
+        printf '\nCloud SOC 서버 설치와 기동 확인이 완료됐습니다.\n'
+    fi
+    printf 'Portal 접속: https://%s\nKibana 접속: https://%s:5601\n로그 수신: https://%s:9200\n' "$HOST" "$HOST" "${AGENT_HOST:-$HOST}"
+    printf '%s\n' '공개 CA 인증서의 지문을 확인하고 접속 PC에서 신뢰 등록하세요. private/와 secrets/는 서버에 보관하세요.' \
+        '다음 단계: Portal에서 에이전트 설치 파일과 설치 토큰을 발급하고 실제 수신을 확인하세요.'
 }
 
 # RUN INSTALLER

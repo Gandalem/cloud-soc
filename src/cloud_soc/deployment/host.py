@@ -10,6 +10,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tempfile
 
 from cloud_soc.deployment.contract import (ALL_WORKERS, APP_SERVICES, SERVICES, WORKERS, build_contract, digest,
@@ -17,17 +18,52 @@ from cloud_soc.deployment.contract import (ALL_WORKERS, APP_SERVICES, SERVICES, 
 from cloud_soc.deployment.migrations import atomic_json
 
 
+class DockerCommandError(RuntimeError):
+    """Allowlisted diagnostics only; Docker output may contain runtime secrets."""
+
+    def __init__(self, args, *, returncode=None, timed_out=False, stderr=''):
+        if args[0] == 'build':
+            operation = 'image build'
+        elif args[0] == 'compose':
+            operation = 'compose ' + next((v for v in ('pull', 'config', 'up', 'run', 'stop') if v in args), 'operation')
+        else:
+            operation = args[0] if args[0] in ('run', 'inspect', 'info', 'stats', 'ps', 'image', 'stop', 'exec') else 'operation'
+        reason = 'Docker 서비스와 해당 단계의 출력을 확인하세요'
+        lowered = stderr.lower()
+        for patterns, hint in (
+            (('no such image', 'image is not present locally'), '필요한 이미지가 서버에 없습니다'),
+            (('manifest unknown', 'not found: manifest'), '저장소에서 해당 이미지 버전을 찾을 수 없습니다'),
+            (('no space left on device',), '디스크 여유 공간이 부족합니다'),
+            (('permission denied',), 'Docker 또는 연결 파일의 접근 권한이 없습니다'),
+            (('cannot connect to the docker daemon',), 'Docker 서비스에 연결할 수 없습니다'),
+            (('no such host', 'network is unreachable', 'i/o timeout', 'tls handshake timeout'), '이미지 저장소 또는 네트워크 연결에 실패했습니다'),
+            (('healthcheck', 'unhealthy'), '필수 컨테이너의 상태 확인에 실패했습니다'),
+        ):
+            if any(pattern in lowered for pattern in patterns):
+                reason = hint
+                break
+        status = '시간 초과' if timed_out else '실패 (종료 코드 ' + str(returncode) + ')'
+        super().__init__('Docker ' + operation + ' ' + status + ': ' + reason + '. 기존 설정은 보존됐습니다.')
+
+
 class Docker:
     def __init__(self):
         self.env = {k: v for k, v in os.environ.items() if not k.startswith(('DOCKER_', 'COMPOSE_', 'SOC_'))}
         self.prefix = ['docker', '--host', 'unix:///var/run/docker.sock']
 
-    def run(self, args, *, input=None, env=None, timeout=180):
-        p = subprocess.run(self.prefix + args, input=input, text=True, capture_output=True,
-                           env={**self.env, **(env or {})}, timeout=timeout)
+    def run(self, args, *, input=None, env=None, timeout=180, stream=False):
+        # Only public build/pull operations may inherit terminal output. JSON,
+        # bootstrap and migration responses remain captured to protect secrets.
+        if stream and (input is not None or not (args[0] == 'build' or args[0] == 'compose' and 'pull' in args)):
+            raise ValueError('Streaming is restricted to public image build/pull commands')
+        try:
+            p = subprocess.run(self.prefix + args, input=input, text=True, capture_output=not stream,
+                               env={**self.env, **(env or {})}, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise DockerCommandError(args, timed_out=True) from None
         if p.returncode:
-            raise RuntimeError('docker_command_failed_' + str(p.returncode))
-        return p.stdout
+            raise DockerCommandError(args, returncode=p.returncode, stderr=p.stderr or '')
+        return p.stdout or ''
 
     def json(self, args, **kw):
         return json.loads(self.run(args, **kw))
@@ -437,10 +473,13 @@ def apply(engine, plan, *, poll=None):
                 if rendered['services'][name]['image'] != plan['image']:
                     raise ValueError('Mixed application image versions refused')
             if plan['fresh']:
+                print('[설치] Elasticsearch를 시작하고 준비 상태를 기다립니다.', file=sys.stderr, flush=True)
                 engine.run(canonical + ['up', '-d', '--no-deps', '--no-build', '--pull', 'never', 'elasticsearch'], env=env)
                 if poll:
                     poll(engine, 'elasticsearch', plan['project'])
+                print('[설치] 최초 서버 계정을 준비합니다.', file=sys.stderr, flush=True)
                 engine.run(canonical + ['--profile', 'initialization', 'run', '--rm', '--no-deps', '--pull', 'never', 'bootstrap'], env=env)
+            print('[설치] 처리 워커와 데이터 구성을 준비합니다.', file=sys.stderr, flush=True)
             keys = {name: Path(row['key_source']).read_text().strip() for name, row in plan['adoption'].items() if 'key_source' in row}
             password = (state / 'secrets/elastic_password').read_text().strip()
             migration = engine.json(['run', '--rm', '-i', '--network', plan['project'] + '_default', '--user', '0:0',
@@ -450,6 +489,7 @@ def apply(engine, plan, *, poll=None):
                 input=json.dumps({'password': password, 'policy': plan['policy'], 'contract': contract, 'existing_keys': keys}))
             contract['prepared'] = True
             atomic_json(runtime / 'contract.json', contract, uid=1000)
+            print('[설치] Portal과 수집·탐지 워커를 시작합니다.', file=sys.stderr, flush=True)
             engine.run(canonical + ['up', '-d', '--no-build', '--pull', 'never', *SERVICES], env=env, timeout=300)
             if poll:
                 for name in SERVICES:

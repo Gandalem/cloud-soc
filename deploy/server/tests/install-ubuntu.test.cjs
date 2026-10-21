@@ -58,6 +58,7 @@ docker() { forbidden docker "$@"; }
 systemctl() { forbidden systemctl "$@"; }
 sysctl() { forbidden sysctl "$@"; }
 python3() { forbidden python3 "$@"; }
+check_runtime_compatibility() { :; }
 openssl() { forbidden openssl "$@"; }
 mkdir -p "$ROOT/deploy/server" "$APT_ROOT/sources.list.d" "$APT_ROOT/keyrings"
 touch "$ROOT/deploy/server/prepare.py" "$ROOT/deploy/server/compose.yaml" "$ROOT/deploy/server/Dockerfile"
@@ -79,8 +80,8 @@ test('POSIX sh syntax, LF checkout and help', () => {
 
 test('dashboard and receiver addresses are independent, without any installation', () => {
   const output = ok(run([script, '--dry-run', '--host', 'dashboard.example.test', '--agent-host', '192.168.32.60', '--bind-ip', '10.0.0.5']));
-  assert.match(output, /Public host: dashboard\.example\.test/);
-  assert.match(output, /Agent receiver host: 192\.168\.32\.60/);
+  assert.match(output, /대시보드 주소: dashboard\.example\.test/);
+  assert.match(output, /에이전트 수신 주소: 192\.168\.32\.60/);
   for (const value of ['https://receiver:9200', 'bad-.test', 'receiver/path', '0.0.0.0', 'host\nOTHER=value']) {
     // Windows argument transport can split a newline; either path must stop.
     fail(run([script, '--dry-run', '--agent-host', value]), /Host|DNS|host|IPv4|Unknown option/);
@@ -97,7 +98,7 @@ YES=no
 printf '%s\\n' ${quote(answer)} | confirm_installation
 printf '\\nCONFIRMED\\n'
 `));
-    assert.match(output, /type y\/yes\/INSTALL \(default: no\)/);
+    assert.match(output, /y\/yes\/INSTALL 입력 \(기본: 취소\)/);
     assert.match(output, /\nCONFIRMED\n$/);
   }
 });
@@ -166,25 +167,25 @@ install_packages
 test('dry-run does not require root, OS validation, network or state writes', () => {
   const before = fs.existsSync(path.join(root, 'state/server'));
   const result = ok(run([script, '--dry-run', '--host', 'SOC.EXAMPLE.INVALID', '--bind-ip', '10.0.0.5']));
-  assert.match(result, /DRY RUN/);
-  assert.match(result, /Public host: soc.example.invalid/);
-  assert.match(result, /have NOT been checked/);
+  assert.match(result, /미리보기/);
+  assert.match(result, /대시보드 주소: soc.example.invalid/);
+  assert.match(result, /검사하지 않았습니다/);
   assert.equal(fs.existsSync(path.join(root, 'state/server')), before);
-  assert.match(ok(run([script, '--dry-run', '--prepare-only'])), /Stop before starting/);
+  assert.match(ok(run([script, '--dry-run', '--prepare-only'])), /SOC 컨테이너 기동 전/);
 });
 
 for (const host of ['https://soc.example', 'soc.example:9200', 'user@host', '-bad.example', 'bad-.example', 'a..b', 'a.', '256.0.0.1', '01.2.3.4', '0.0.0.0', '::1', '${HOME}', 'name\nother', 'a'.repeat(64) + '.com']) {
   test(`reject malformed public host: ${JSON.stringify(host)}`, () => {
-    fail(run([script, '--dry-run', '--host', host]), /ERROR:/);
+    fail(run([script, '--dry-run', '--host', host]), /오류:/);
   });
 }
 
 test('reject malformed bind IPs, duplicate options and password flags', () => {
   for (const ip of ['0.0.0.0', '1.2.3', '01.2.3.4', '10.0.0.256', 'host', '::1']) {
-    fail(run([script, '--dry-run', '--bind-ip', ip]), /ERROR:/);
+    fail(run([script, '--dry-run', '--bind-ip', ip]), /오류:/);
   }
   for (const args of [['--host'], ['--bind-ip'], ['--host', 'a', '--host', 'b'], ['--password', 'secret']]) {
-    fail(run([script, '--dry-run', ...args]), /ERROR:/);
+    fail(run([script, '--dry-run', ...args]), /오류:/);
   }
 });
 
@@ -196,7 +197,7 @@ install_docker() { forbidden docker; }
 prepare_state() { forbidden state; }
 start_stack() { forbidden compose; }
 main --dry-run
-`)), /DRY RUN/);
+`)), /미리보기/);
 });
 
 test('existing state and incomplete checkouts fail closed', () => {
@@ -232,7 +233,7 @@ printf '%s\n' "$INSTALL_DOCKER"
 });
 
 test('Docker failures, existing central containers/volumes and conflicting packages stop installation', () => {
-  fail(fixture('docker_local() { return 1; }; check_docker_stack'), /must be running/);
+  fail(fixture('docker_local() { return 1; }; check_docker_stack'), /실행 중/);
   fail(fixture('docker_local() { case "$1" in compose) return 1;; esac; }; check_docker_stack'), /Compose v2/);
   fail(fixture('docker_local() { case "$1" in ps) printf "existing";; esac; }; check_docker_stack'), /containers found/);
   fail(fixture('docker_local() { case "$1" in volume) printf "cloud-soc-central_es-data\\n";; esac; }; check_docker_stack'), /volumes found/);
@@ -333,7 +334,7 @@ test('readiness requires managed worker startup and all three authenticated TLS 
 python3() { printf '%s\n' 'runtime ready; ingestion not verified'; }
 http_status() { case "$1" in 9200|443) printf 401;; 5601) printf 200;; esac; }
 `;
-  assert.match(ok(fixture(setup + '\ncheck_ready')), /startup checks passed/);
+  assert.match(ok(fixture(setup + '\ncheck_ready')), /TLS\/HTTP 기동 확인을 통과/);
   const failed = fixture(setup + '\npython3() { return 42; }; check_ready');
   assert.equal(failed.status, 42);
   fail(fixture(setup + `
@@ -341,7 +342,7 @@ http_status() { printf 200; }
 date() { if [ -f "$ROOT/timed-out" ]; then printf 301; else printf 0; fi; }
 sleep() { touch "$ROOT/timed-out"; }
 check_ready
-`), /timed out/);
+`), /시간이 초과/);
   const output = ok(fixture('curl() { printf "%s\\n" "$*"; }; http_status 443 /api/portal'));
   assert.match(output, /--cacert .*\/tls\/ca.crt --resolve soc.example.invalid:443:10.0.0.5/);
   assert.doesNotMatch(output, /--insecure| -k /);
@@ -350,5 +351,5 @@ check_ready
 test('failure trap preserves original nonzero exit status', () => {
   const result = fixture('STAGE=test; trap finish 0; exit 42');
   assert.equal(result.status, 42);
-  assert.match(result.stderr, /Stopped during: test/);
+  assert.match(result.stderr, /설치 중단 단계: test/);
 });

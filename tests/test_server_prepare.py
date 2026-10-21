@@ -44,9 +44,9 @@ class ServerPreparationTests(unittest.TestCase):
     def test_empty_password_retries_before_confirmation_and_creates_no_state(self):
         code, output, prompt, action = self.run_main(["", PASSWORD, PASSWORD])
         self.assertEqual(code, 0)
-        self.assertIn("password must not be empty", output)
+        self.assertIn("비밀번호는 비워 둘 수 없습니다", output)
         self.assertNotIn(PASSWORD, output)
-        self.assertEqual(prompt.call_args_list[1].args[0], "Portal admin password: ")
+        self.assertEqual(prompt.call_args_list[1].args[0], "Portal 관리자 비밀번호 (입력 내용은 표시되지 않습니다): ")
         action.assert_called_once_with("soc.example.test", "10.0.0.5", self.state, PASSWORD)
         self.assertFalse(self.state.exists())
 
@@ -54,7 +54,7 @@ class ServerPreparationTests(unittest.TestCase):
         code, output, prompt, action = self.run_main([PASSWORD, "different-canary", PASSWORD, PASSWORD])
         self.assertEqual(code, 0)
         self.assertEqual(prompt.call_count, 4)
-        self.assertIn("Passwords do not match", output)
+        self.assertIn("비밀번호가 일치하지 않습니다", output)
         self.assertNotIn("different-canary", output)
         self.assertNotIn(PASSWORD, output)
         action.assert_called_once()
@@ -64,13 +64,13 @@ class ServerPreparationTests(unittest.TestCase):
             with self.subTest(entries=len(entries)):
                 code, output, _prompt, action = self.run_main(entries)
                 self.assertEqual(code, 1)
-                self.assertIn("failed after 3 attempts", output)
+                self.assertIn("3회 실패", output)
                 self.assertNotIn("different-canary", output)
                 self.assertNotIn(PASSWORD, output)
                 action.assert_not_called()
 
     def test_boundary_password_length(self):
-        with self.assertRaisesRegex(prepare.PreparationError, "must not be empty"):
+        with self.assertRaisesRegex(prepare.PreparationError, "비워 둘 수 없습니다"):
             prepare.validate_password("")
         for length in (1, 4, 8, 11, 12, 15, 16, 64):
             prepare.validate_password("x" * length)
@@ -85,7 +85,7 @@ class ServerPreparationTests(unittest.TestCase):
 
     def test_direct_empty_password_does_not_hash_or_write(self):
         with patch.object(prepare, "password_hash") as hash_password:
-            with self.assertRaisesRegex(prepare.PreparationError, "must not be empty"):
+            with self.assertRaisesRegex(prepare.PreparationError, "비워 둘 수 없습니다"):
                 prepare.prepare("soc.example.test", "10.0.0.5", self.state, "")
             hash_password.assert_not_called()
         self.assertFalse(self.state.exists())
@@ -185,6 +185,7 @@ class ServerPreparationTests(unittest.TestCase):
                 patch.object(Path, "chmod", autospec=True), redirect_stdout(io.StringIO()):
             prepare.prepare("dashboard.example.test", "10.0.0.5", self.state, PASSWORD, agent_host="10.0.0.5")
         extensions = (self.state / "private/server.ext").read_text(encoding="ascii")
+        self.assertIn("SOC_ENROLLMENT_ENABLED=1\n", (self.state / "compose.env").read_text())
         self.assertIn("DNS:dashboard.example.test,IP:10.0.0.5", extensions)
         env = (self.state / "compose.env").read_text(encoding="utf-8")
         self.assertIn("SOC_PUBLIC_HOST=dashboard.example.test\n", env)
@@ -224,7 +225,7 @@ class ServerPreparationTests(unittest.TestCase):
             with self.subTest(error=type(error).__name__):
                 code, output, _prompt, _action = self.run_main([PASSWORD, PASSWORD], error)
                 self.assertEqual(code, 1)
-                self.assertIn(f"Preparation failed ({type(error).__name__})", output)
+                self.assertIn(f"인증서 준비 실패 ({type(error).__name__})", output)
                 self.assertNotIn("SECRET_CANARY", output)
                 self.assertNotIn(PASSWORD, output)
 

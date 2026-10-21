@@ -88,9 +88,44 @@ sudo ls -ld state/server
 
 `No such file or directory`이면 인증서 준비 상태가 없는 것입니다. Git 변경을 보존하며 `git pull --ff-only origin main`으로 수정본을 받고 설치기를 다시 실행합니다. 기존 Docker는 재사용하며 삭제할 필요가 없습니다. **폴더가 존재하거나 권한 오류 등 다른 결과이면 지우거나 덮어쓰지 말고 먼저 검토합니다.** 예상 가능한 검증 오류는 비밀번호를 노출하지 않는 구체적 메시지로 안내하며, 알 수 없는 암호화·OS·OpenSSL 오류의 원문은 계속 숨깁니다.
 
-**`state/server/compose.env`까지 정상 생성된 뒤 이미지 다운로드·기동·준비 확인이 실패했다면 설치기를 다시 실행하지 않습니다.** 아래 3절의 `config --quiet`, `up -d --build`, `ps -a`, `logs`로 같은 상태를 재사용합니다. 인증서 준비 자체가 실패해 `compose.env`가 없다면 상태를 보존하고 원인을 검토합니다. CA·비밀번호를 임의로 다시 만들거나 `down -v`로 데이터를 삭제하지 않습니다.
+신규 공통 설치는 애플리케이션 이미지 빌드와 Elasticsearch·Kibana·Caddy의 누락 이미지 다운로드를 자동 수행한 뒤 런타임을 시작합니다. 이미 있는 인프라 이미지는 교체하지 않으며 활성화 단계는 계속 `--pull never`를 사용합니다. 공개 이미지 빌드·다운로드 진행은 터미널에 표시하고, 계정 준비·마이그레이션 등 민감한 응답은 원문 대신 단계와 제한된 오류 사유만 표시합니다.
+
+기존 Docker CLI/Engine은 이 설치 경로의 최소 지원선 24.0.0, Compose는 2.24.0과 필수 기능(`pull --policy`, 빌드 `--progress`)을 확인합니다. 호환되면 재사용하고, 오래됐거나 기능이 없으면 인증서 생성 전에 업데이트 안내와 함께 중단합니다. 기존 프로그램을 자동 업그레이드하지 않습니다. 인프라 이미지는 Compose에 고정한 검증 버전만 재사용하며, 다른 버전만 있다면 검증 버전이 필요하다고 안내하고 해당 이미지를 별도로 받습니다.
+
+신규 인증서 준비 시 `SOC_ENROLLMENT_ENABLED=1`을 저장해 Portal의 설치 토큰 발급을 사용할 수 있습니다. 기존 서버 설정은 자동 변경하지 않습니다. 기능을 명시적으로 끈 서버의 정리 워커는 API 호출 없이 대기하며 반복 종료하지 않습니다.
+
+**`state/server/compose.env`까지 정상 생성된 뒤 이미지 다운로드·기동·준비 확인이 실패했다면 최초 설치기를 다시 실행하지 않습니다.** 아래 공통 관리자 명령으로 같은 상태를 이어갑니다. 기존 운영 서버 업그레이드는 [공통 런타임 안내](../../docs/runtime_deployment.md)의 plan/apply 절차를 따릅니다.
+
+```bash
+sudo python3 deploy/server/manage.py recover
+sudo python3 deploy/server/manage.py install --build
+sudo python3 deploy/server/manage.py verify --startup-only
+```
+
+인증서 준비 자체가 실패해 `compose.env`가 없다면 상태를 보존하고 원인을 검토합니다. CA·비밀번호를 임의로 다시 만들거나 `down -v`로 데이터를 삭제하지 않습니다. 실행 준비 확인은 실제 에이전트 수신·탐지 인수를 대신하지 않습니다.
 
 ## 1. 준비 (수동 설치)
+
+### 제거
+
+제거기는 기본적으로 계획만 표시합니다. 소스 저장소와 Apache·다른 프로젝트는 보존합니다. 중앙 컨테이너·네트워크를 제거하며 기본값은 ES 볼륨과 인증서·비밀번호 보존입니다.
+
+```bash
+# 계획 확인
+sudo sh deploy/server/uninstall-ubuntu.sh
+# 중앙 실행 구성 제거, 데이터 보존
+sudo sh deploy/server/uninstall-ubuntu.sh --apply
+# 중앙 데이터·인증서와 공통 이미지까지 제거 (새 설치를 위한 초기화)
+sudo sh deploy/server/uninstall-ubuntu.sh --purge-data --remove-images --apply
+# 이 Ubuntu에 설치한 에이전트 제거 (중앙 Portal에서 발급 키도 별도 폐기)
+sudo sh deploy/server/uninstall-ubuntu.sh --component agent --purge-data --apply
+```
+
+`--component all`은 같은 호스트의 중앙과 에이전트를 함께 정리합니다. `--remove-docker`는 다른 컨테이너·볼륨·사용자 네트워크가 없는 경우에만 공식 Docker CE 패키지를 추가 제거합니다. `/var/lib/docker`·`/var/lib/containerd` 등 공용 저장소, 공식 이미지 캐시, 다른 APT 패키지, 사용자 Docker 설정·저장소 키, Apache/WAF와 내려받은 소스는 자동 삭제하지 않습니다. 전역 prune/autoremove를 사용하지 않습니다. `--yes`는 실제 제거 시 확인 입력만 생략하며 `--apply`가 없으면 삭제하지 않습니다. 제거 전 보존할 데이터는 별도 백업하세요.
+
+완전 데이터 제거는 Cloud SOC 전용 `90-cloud-soc.conf`도 내용이 원래 값과 일치할 때 제거합니다. 실행 중인 커널의 `vm.max_map_count`는 다른 서비스에 영향을 주지 않도록 낮추지 않습니다. 수정된 설정 파일은 임의 삭제하지 않고 중단합니다.
+
+같은 프로젝트 이름의 다른 저장소 설치·변경된 서비스 파일·공유 이미지/리소스·심볼릭 링크가 감지되면 중단합니다. 중단 후에도 기존 상태는 임의 초기화하지 않습니다. 기본 제거 후 데이터를 보존한 서버는 최초 설치기가 아니라 공통 관리자로 재개합니다.
 
 - 위 목록의 Ubuntu LTS 서버, Docker Engine와 Compose v2, Git, Python 3, OpenSSL이 필요합니다. Python 패키지는 컨테이너 안에 설치되므로 호스트 가상환경은 필요 없습니다.
 - 소규모 실습의 시작점으로 메모리 8GB와 여유 디스크를 권장합니다. 실제 필요량은 수집량에 따라 측정해야 합니다. 현재 ES 힙은 1GB, 컨테이너 한도는 ES 2GB/Kibana 1GB입니다.
