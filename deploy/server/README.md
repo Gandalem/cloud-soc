@@ -110,6 +110,8 @@ sudo python3 deploy/server/manage.py verify --startup-only
 
 제거기는 기본적으로 계획만 표시합니다. 소스 저장소와 Apache·다른 프로젝트는 보존합니다. 중앙 컨테이너·네트워크를 제거하며 기본값은 ES 볼륨과 인증서·비밀번호 보존입니다.
 
+`--apply` 실행 시 제거 계획을 확인한 뒤 `y` 또는 `yes`를 입력합니다. 대소문자는 구분하지 않으며 빈 입력이나 다른 답은 취소합니다.
+
 ```bash
 # 계획 확인
 sudo sh deploy/server/uninstall-ubuntu.sh

@@ -230,7 +230,7 @@ def main():
         if not args.apply:
             print('아직 삭제하지 않았습니다. 실제 제거는 같은 옵션에 --apply를 추가하세요.')
             return
-        if not args.yes and input('위 항목을 제거하려면 삭제 입력: ').strip() != '삭제':
+        if not args.yes and input('위 항목을 제거할까요? y/yes 입력 (기본: 취소): ').strip().lower() not in ('y', 'yes'):
             print('제거를 취소했습니다.')
             return
         apply(args, expected)
