@@ -14,9 +14,9 @@ AWS EC2에 처음 배포하고 Windows PC에서 검증하는 경우에는 [AWS U
   선택한 NIC: Packetbeat     -> soc-network-*
 ```
 
-**지금 가능한 것:** 실제 설치 묶음 생성·조회·검색·다운로드·삭제, 서버별 만료형 수집 키 발급·폐기. 화면만 있는 데모가 아닙니다.
+Portal에서 설치 묶음 생성·다운로드, 서버별 수집 키 발급·폐기, 조건을 갖춘 설치 토큰 등록, 에이전트 접속 현황, 통합 로그·경보 근거·사건 조사를 제공합니다. 각 화면의 현재 수신·처리 상태를 기준으로 확인하세요. 패키지 생성이나 컨테이너 기동만으로 실제 수집·탐지 인수를 완료 처리하지 않습니다.
 
-**아직 없는 것:** 원격 자동 설치, 에이전트 접속/헬스 현황, 정책 배포, 자동 업그레이드, 서명된 EXE, 실데이터 관제 메인/조사 화면, 신규 로그·네트워크 탐지 연동. 기존 관제 화면은 데모로 명확히 구분합니다. 탐지 규칙은 이번 단계에서 추가하지 않습니다.
+에이전트는 수집 대상의 관리자 터미널에서 설치합니다. 원격 자동 설치·자동 바이너리 업그레이드·서명된 EXE는 제공하지 않습니다. Apache·Nginx·ModSecurity·OWASP CRS를 중앙/에이전트 설치기가 자동 설치하지 않으며, 웹/WAF 수집에는 대상 서버의 실제 로그 경로를 설정해야 합니다.
 
 ## 빠른 설치: Git + sh (권장)
 
@@ -26,7 +26,7 @@ AWS EC2에 처음 배포하고 Windows PC에서 검증하는 경우에는 [AWS U
 # git이 없을 때만 실행: 저장소를 받으려면 Git 자체는 먼저 필요합니다.
 sudo apt-get update
 sudo apt-get install -y --no-remove --no-upgrade git
-git clone https://github.com/Gandalem/cloud-soc.git
+git clone --branch main https://github.com/Gandalem/cloud-soc.git
 cd cloud-soc
 git rev-parse HEAD
 less deploy/server/install-ubuntu.sh
@@ -38,7 +38,7 @@ sudo sh deploy/server/install-ubuntu.sh
 
 | 자동 처리 | 조건·제약 |
 | --- | --- |
-| 사전 검사 | Ubuntu 22.04·24.04·26.04 LTS + systemd, amd64/arm64, root, 대화형 터미널, RAM 6GiB 이상, 체크아웃 디스크 여유 10GiB 이상 |
+| 사전 검사 | Ubuntu 22.04·24.04·26.04 LTS + systemd, amd64/arm64, root, 대화형 터미널, 디스크 여유 10GiB 이상. 기본 RAM 검사 후 실제 런타임 메모리 예산(최소7GiB·가용 메모리)을 추가 확인하며 8GiB 이상 권장 |
 | 필수 패키지 | 누락된 `ca-certificates`, `curl`, `git`, `python3`, `openssl`만 APT 설치. 전체 시스템 업그레이드 없음 |
 | Docker | 기존 로컬 Docker·Compose는 실행 가능한 경우 재사용. 없으면 OS 코드명에 맞는 공식 서명 APT 저장소의 Docker CE·Compose 플러그인 설치·데몬 활성화 |
 | 기존 설정 보호 | 충돌하는 Docker 패키지/저장소, 기존 `state/server`, 중앙 컨테이너·볼륨, 사용 중인 443·5601·9200, 비로컬 바인딩 IP는 중단 |
@@ -104,9 +104,7 @@ sudo python3 deploy/server/manage.py verify --startup-only
 
 인증서 준비 자체가 실패해 `compose.env`가 없다면 상태를 보존하고 원인을 검토합니다. CA·비밀번호를 임의로 다시 만들거나 `down -v`로 데이터를 삭제하지 않습니다. 실행 준비 확인은 실제 에이전트 수신·탐지 인수를 대신하지 않습니다.
 
-## 1. 준비 (수동 설치)
-
-### 제거
+## 제거
 
 제거기는 기본적으로 계획만 표시합니다. 소스 저장소와 Apache·다른 프로젝트는 보존합니다. 중앙 컨테이너·네트워크를 제거하며 기본값은 ES 볼륨과 인증서·비밀번호 보존입니다.
 
@@ -129,8 +127,18 @@ sudo sh deploy/server/uninstall-ubuntu.sh --component agent --purge-data --apply
 
 같은 프로젝트 이름의 다른 저장소 설치·변경된 서비스 파일·공유 이미지/리소스·심볼릭 링크가 감지되면 중단합니다. 중단 후에도 기존 상태는 임의 초기화하지 않습니다. 기본 제거 후 데이터를 보존한 서버는 최초 설치기가 아니라 공통 관리자로 재개합니다.
 
+기본 제거 후 실행 구성을 복원할 때는 보존한 설정과 소스에 맞는 공통 관리자를 사용합니다. 제거한 데이터 볼륨은 이 절차로 복구되지 않습니다.
+
+```bash
+sudo python3 deploy/server/manage.py recover
+sudo python3 deploy/server/manage.py install --build
+sudo python3 deploy/server/manage.py verify --startup-only
+```
+
+## 1. 준비 (수동 설치)
+
 - 위 목록의 Ubuntu LTS 서버, Docker Engine와 Compose v2, Git, Python 3, OpenSSL이 필요합니다. Python 패키지는 컨테이너 안에 설치되므로 호스트 가상환경은 필요 없습니다.
-- 소규모 실습의 시작점으로 메모리 8GB와 여유 디스크를 권장합니다. 실제 필요량은 수집량에 따라 측정해야 합니다. 현재 ES 힙은 1GB, 컨테이너 한도는 ES 2GB/Kibana 1GB입니다.
+- 소규모 실습의 시작점으로 메모리 8GiB 이상과 여유 디스크를 권장합니다. 실제 필요량은 수집량에 따라 측정해야 합니다. 현재 ES 힙은1536MiB/컨테이너 한도3072MiB, Kibana Node heap은1024MiB/컨테이너 한도1536MiB입니다. 전체 워커와 여유 메모리를 포함한 정책 예산을 추가 확인합니다.
 - 관리자와 에이전트가 실제 접근할 DNS 또는 IPv4 하나를 정합니다. 예시 `soc.example.com`, 서버 내부 IP `10.0.0.10`을 그대로 사용하지 말고 실제 값으로 바꿉니다. IPv6는 이 설치기에서 지원하지 않습니다.
 - 모든 대상 서버에서 공식 Elastic 배포처로 HTTPS 다운로드가 가능해야 합니다. Windows 네트워크 수집에는 승인된 Npcap을 별도로 준비합니다.
 - 호스트 로그에는 개인정보·인증 관련 기록이 포함될 수 있습니다. 수집 권한, 저장 기간, 대상 서버와 네트워크 범위를 먼저 승인받습니다.

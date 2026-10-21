@@ -31,7 +31,7 @@
 
 | 목적 | 문서 |
 | --- | --- |
-| 중앙 설치·업데이트 | [서버 가이드](../deploy/server/README.md) · [실제 시험 절차](aws_windows_e2e_test.md) |
+| 중앙 설치·업데이트·제거 | [빠른 설치·복구·제거](../README.md) · [서버 상세](../deploy/server/README.md) · [실제 시험 절차](aws_windows_e2e_test.md) |
 | 분석 기동·진단 | [처리 운영](processing_operations.md) · [탐지 배포](detection_deployment_runbook.md) |
 | 수집 오류·큐·보고 | [수집 계측](p2_collection_metrics.md) · [수집 보호](collection_protection.md) · [Windows 유실 감사](windows_log_loss_audit.md) |
 | 보호 백업·복구 | [포털 백업](portal_backup.md) · [저장량/백업 설계](p2_capacity_backup.md) · [독립 백업 준비](p2_backup_readiness.md) |

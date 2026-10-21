@@ -45,7 +45,8 @@ flowchart LR
 | 구분 | 준비 사항 |
 | --- | --- |
 | 중앙 서버 | 새 Ubuntu Server 22.04/24.04/26.04 LTS, systemd, amd64/arm64 |
-| 권장 자원 | RAM 8GiB 이상(설치기 최소 6GiB), 여유 디스크 10GiB 이상 + 로그 저장 공간, 소규모 실습 2 vCPU부터 |
+| 권장 자원 | RAM 8GiB 이상(실제 런타임 예산 최소7GiB 및 가용 메모리 확인), 여유 디스크 10GiB 이상 + 로그 저장 공간, 소규모 실습 2 vCPU부터 |
+| 기존 Docker | CLI/Engine24.0.0 이상·Compose2.24.0 이상 및 필수 기능 확인. 호환 버전은 재사용, 낮거나 기능이 없으면 업데이트 안내 후 중단 |
 | 중앙 서버 접속 | `sudo` 권한, SSH 또는 직접 터미널, GitHub·Ubuntu APT·Docker·Elastic 다운로드 가능 |
 | 주소 | 관리자 PC가 접속할 DNS/IPv4와 Ubuntu 서버에 **실제로 할당된** 바인딩 IPv4 |
 | 관리자 네트워크 | HTTPS 443(Portal), 5601(Kibana) |
@@ -67,7 +68,7 @@ flowchart LR
 ```bash
 sudo apt-get update
 sudo apt-get install -y git
-git clone https://github.com/Gandalem/cloud-soc.git
+git clone --branch main https://github.com/Gandalem/cloud-soc.git
 cd cloud-soc
 
 # 서버에 실제 할당된 IPv4 확인
@@ -96,6 +97,10 @@ sudo sh deploy/server/install-ubuntu.sh \
 - `--bind-ip`: 중앙 서버 NIC에 실제로 할당된 IPv4. AWS EC2는 **공인 NAT 주소가 아닌 프라이빗 IPv4**를 사용합니다.
 
 설치 중 호스트 변경 승인과 **Portal 관리자 비밀번호 설정**을 요청합니다. 비밀번호는 터미널에서 직접 입력하며 명령 인자나 파일에 적지 않습니다. 설치기는 필요한 패키지·Docker/Compose·TLS 인증서·중앙 상태를 준비하고 공통 런타임을 기동한 뒤 로컬 HTTPS 시작 상태를 확인합니다.
+
+설치 확인은 `y`/`yes`로 응답하며 대소문자는 구분하지 않습니다. Ubuntu의 `sudo` 비밀번호와 새 Portal 비밀번호는 별개입니다. 보안 입력에는 글자나 별표가 보이지 않습니다. 한국어로 표시되는 단계에 따라 진행하며 이미지 빌드·다운로드는 외부 도구의 원문 출력을 함께 표시합니다. Elasticsearch·Kibana·Caddy의 검증 버전 이미지가 있으면 재사용하고, 없다면 자동으로 준비합니다.
+
+인증서와 `state/server/compose.env` 생성 후 중단됐다면 설정을 지우거나 최초 설치기를 반복하지 말고 [부분 설치 복구](../README.md#7-문제-해결기존-설치)를 따르세요. `runtime_ready: true`는 서버 실행 준비 통과이며, `existing_keys_replaced: false`는 기존 키 보존을 뜻합니다. `live_acceptance: not_verified`는 실제 에이전트 수집·탐지가 아직 확인되지 않았다는 뜻입니다.
 
 **설치 완료 후 확인:**
 
@@ -159,6 +164,12 @@ Import-Certificate -FilePath $ca -CertStoreLocation 'Cert:\CurrentUser\Root'
 5. 수집 대상별로 **키 발급**을 진행합니다. 로그 수집 키와 네트워크 수집 키는 서로 다릅니다. 수집 키는 설치 도중 보안 프롬프트에 입력하며, 패키지·명령 인자·소스 코드에 포함하지 않습니다.
 
 패키지에는 수신 주소·조직·**공개 CA 인증서**와 설치 스크립트가 포함됩니다. Filebeat/Packetbeat 바이너리는 설치 중 공식 배포처에서 내려받아 검증하므로 인터넷 접속이 필요합니다. **ZIP/tar.gz 안의 파일은 전부 같은 폴더에 풀어야 합니다.**
+
+설치 토큰을 선택한 경우에는 [등록 토큰 안내](agent_enrollment.md)의 서버·대상 OS 조건을 먼저 확인하고 Portal의 토큰 화면에 표시된 명령을 사용하세요. 토큰과 API 수집 키는 서로 다른 값이므로 설치 방식에 맞는 값을 입력합니다. 토큰은15분 안에 한 번 사용하며 패키지나 명령 인자에 저장하지 않습니다.
+
+Apache·Nginx·ModSecurity·OWASP CRS는 자동 설치하지 않습니다. 웹 서버에 별도 설치·설정한 웹/WAF의 실제 로그 경로를 패키지에 지정합니다. SOC 설치와 웹사이트/WAF 구성은 별도 단계입니다.
+
+중앙/Ubuntu 에이전트 제거는 [README의 제거 안내](../README.md#8-제거)를 따릅니다. `--apply` 전에는 계획만 표시하며 실제 제거 확인은 `y`/`yes`입니다. 기본 제거는 데이터를 보존하고, `--purge-data --remove-images`를 추가한 경우에만 중앙 데이터·인증서·비밀번호와 공통 이미지 태그를 제거합니다.
 
 ### 4-2. Ubuntu 에이전트
 
