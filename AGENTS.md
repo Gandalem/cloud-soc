@@ -1,3 +1,8 @@
+# Current incident direction (2026-10-21)
+
+- User selected the October 16 Elasticsearch snapshot baseline and rejected partial salvage/recollection as the operating recovery path. Preserve forensic copies; do not promote salvaged documents or rewind live checkpoints implicitly.
+- User explicitly requested commit/push of subsequent programming changes to JEONGRIM-SEO. Archive source only; exclude private logs, databases, credentials, host-generated configuration and executables. Distinguish publication from VM recovery/deployment.
+
 # Work Tracking
 
 - Read `docs/work_tracker.md` before starting project implementation or review.
