@@ -1,5 +1,13 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-21 SSH Invalid user·호스트 시간대 — SSH-INTAKE-02
+
+- [x] SSH-INTAKE-02 코드 구현·로컬 검사 완료: 사용자 요청으로 journald Invalid user 지원과 Linux 파일 입력의 실제 호스트 시간대 기록을 구현한다. 명시적 UTC journal 시간과 파일의 시간대 없는 syslog 시간을 구분하고, 파일/journal 이중수집·연결종료 중복 집계를 방지한다. 기존 원본·처리기록·체크포인트·키를 변경하지 않으며 실제 반영/수신은 구현 검사와 구분한다.
+
+- 결과: 별도 linux-ssh-invalid-user-v1 식별자로 journald/ISO 및 명시적 시간대가 있는 RFC3164 Invalid user를 정규화한다. ssh_invalid_user/failure/unknown 인증방식으로 구분하며 연결종료는 미지원으로 유지한다. 상대 journal/파일만 동일 호스트·PID·계정·출발지·포트·행위·시간 정밀도에 따라 중복 제외한다. 같은 출처 또는 다른 연결은 합치지 않는다.
+- 파일 발견 입력에는 add_locale(format=offset)를 추가해 실행 호스트 시간대를 event.timezone에 기록한다. UTC/KST를 가정하지 않고 시간대 없는 기존 원본은 계속 추측 변환하지 않는다. 기존 원본/처리기록은 재작성하지 않는다.
+- 영향 Python80항목·7subtest 통과, 변경파일 Ruff 통과. 실제 생성한 파일 입력 JSON에 locale processor가 포함되는 것을 확인했다. Node 설치기 검사는 이 셸에 node가 없어 실행하지 못했다. 실제 배포/새 원본·정규화·Slack 수신은 아직 미확인이다. 앞선 관련 GitHub 게시/VM배포 승인에 따른 후속 반영을 준비한다.
+
 ## 2026-10-21 새 로그 분석 중단 조사 — INTAKE-STALL-01
 
 - [x] INTAKE-STALL-01 원인 확인·코드 수정 완료(2026-10-21, 실서비스 미적용): 사용자 요청으로 JEONGRIM-SEO의 새 로그 분석 중단 경로를 조사·수정하고 commit한다. 기존 작업·키·체크포인트·서비스는 보존하며 배포/재시작/push는 이번 요청에 포함하지 않는다.
