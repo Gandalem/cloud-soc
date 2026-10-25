@@ -4,6 +4,7 @@
 
 - [ ] INSTALL-DEVICE-UX-01-NATIVE-MERGE 진행 중: 최신 사용자 요청으로 codex/install-device-experience의 기존 설치/WSL 오류 수정·Windows 네이티브 구현·검사·문서를 커밋해 Gandalem/cloud-soc의 같은 브랜치에 푸시하고, main 대상 PR의 충돌·검사·리뷰 조건을 확인한 뒤 병합 가능한 경우 병합한다. 이 요청에 한해 기존 커밋/푸시/main 병합 보류를 해제한다. 강제 푸시·검사/보호 우회·운영 배포·재부팅은 하지 않는다. 시험 EXE/개인키/상태/로그는 Git에서 제외한다. 기존 실제 VM/WSL 결과를 재실행하지 않고 PR CI를 따른다. Windows CI에 신규 네이티브 계약·장치 관리/TLS 회귀를 추가하여 이번 기능을 검사한다. 운영 서명/릴리스와 미검증 복구/GUI 범위는 남은 상태로 유지한다.
 - 2026-10-25: 08a99c3333d816bd445d8ecd4d9f0d3b5ccf37de를 커밋/푸시하고 main 대상 PR20을 생성·연결했다. main34c2139와 충돌/추가 보호 규칙은 없으며 PR 검사 결과를 기다린다. 첫 Actions40202778240의 Windows는 테스트 전 pip check에서 runner 기본 pipx1.18.4(filelock>=4.2)와 프로젝트 filelock4.0.10의 충돌로 실패했다. 프로젝트 pin/검사를 바꾸지 않고 RUNNER_TEMP의 독립 venv와 GITHUB_PATH를 양 OS에 적용해 시스템 패키지 간섭을 제거한다. 실제 수집 시험이나 시스템 실행 정책은 다시 변경하지 않는다.
+- e0bdc39/Actions40203086679에서 양 OS 의존성 검사와 Windows 신규 native 계약 검사가 통과했다. Ubuntu Python2146pass/22skip·355subtests, 공통 회귀207pass 후 UI179개 중2개가 LinkeDOM의 미구현 setCustomValidity로 실패했다. 기존 reset/showModal 보완과 같은 fixture 경계에 메시지/유효성을 보존하는 shim을 추가하고, Windows network 요청 전 차단·선택 보존·OS 변경 시 유효성 복원 검사를 추가한다. 제품의 범위 차단을 제거하거나 기대값을 완화하지 않는다. 영향 UI만 로컬 재검사 후 같은 PR에 반영한다.
 
 ## 2026-10-25 Windows 네이티브 설치 — INSTALL-DEVICE-UX-01-WINDOWS-NATIVE
 

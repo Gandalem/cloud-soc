@@ -14,6 +14,13 @@ function fixture(){
   const window={document,crypto:{},Event:domWindow.Event,sessionStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)}};
   for(const select of document.querySelectorAll('select'))Object.defineProperty(select,'value',{configurable:true,get(){return(this.querySelector('option[selected]')||this.querySelector('option'))?.value||'';},set(v){for(const option of this.querySelectorAll('option'))option.toggleAttribute('selected',option.value===v);}});
   for(const input of document.querySelectorAll('input[type=checkbox]'))Object.defineProperty(input,'checked',{configurable:true,get(){return this.hasAttribute('checked');},set(v){this.toggleAttribute('checked',v);}});
+  // LinkeDOM omits browser constraint validation, just as it omits reset/showModal.
+  // Retain the message and validity so a missing/ineffective scope guard still fails.
+  for(const input of document.querySelectorAll('input')){
+    let message='';input.setCustomValidity=value=>{message=String(value);};
+    Object.defineProperty(input,'validationMessage',{get(){return message;}});
+    input.checkValidity=()=>message==='';
+  }
   for(const dialog of document.querySelectorAll('dialog')){Object.defineProperty(dialog,'open',{get(){return this.hasAttribute('open');}});dialog.showModal=()=>dialog.setAttribute('open','');dialog.close=()=>dialog.removeAttribute('open');}
   for(const form of document.querySelectorAll('form')){
     const elements={};for(const field of form.querySelectorAll('[name]'))elements[field.name]=field;
@@ -66,6 +73,28 @@ test('duplicate submit while pending sends a single create and preserves the for
     assert.match(JSON.parse(f.window.sessionStorage.getItem('soc-device-add')).id,/^[a-f0-9]{32}$/);
     release();await until(()=>!f.window.document.querySelector('#device-download').hidden);
   }finally{if(release)release();f.close();}
+});
+test('Windows capture scope is rejected before requests and OS changes restore validity without altering selection',async()=>{
+  const f=fixture();try{
+    await until(()=>!f.window.document.querySelector('#add-device').disabled);
+    f.window.document.querySelector('#add-device').click();
+    const form=f.window.document.querySelector('#device-form'),fields=form.elements;
+    fields.label.value='synthetic';fields.organization.value='synthetic';fields.os.value='windows';fields.network.checked=true;
+    form.dispatchEvent(new f.window.Event('change',{bubbles:true}));
+    assert.equal(fields.network.checkValidity(),false);
+    assert.match(fields.network.validationMessage,/네트워크 패킷 수집/);
+    form.dispatchEvent(new f.window.Event('submit',{bubbles:true,cancelable:true}));
+    assert.equal(f.calls.filter(c=>c.options.method==='POST').length,0);
+    assert.equal(fields.network.checked,true);
+    assert.match(f.window.document.querySelector('#device-form-error').textContent,/네트워크 패킷 수집/);
+    fields.os.value='ubuntu';form.dispatchEvent(new f.window.Event('change',{bubbles:true}));
+    assert.equal(fields.network.validationMessage,'');assert.equal(fields.network.checkValidity(),true);
+    assert.equal(fields.network.checked,true);
+    form.dispatchEvent(new f.window.Event('submit',{bubbles:true,cancelable:true}));
+    await until(()=>!f.window.document.querySelector('#device-download').hidden);
+    const creates=f.calls.filter(c=>c.url==='/api/managed-devices'&&c.options.method==='POST');
+    assert.equal(creates.length,1);assert.equal(creates[0].body.os,'ubuntu');assert.equal(creates[0].body.network,true);
+  }finally{f.close();}
 });
 test('key history defaults to active and names are escaped',async()=>{
   const f=fixture();try{
