@@ -7,7 +7,7 @@
       ["cases.html", "사건 조사"]
     ] },
     { title: "에이전트", items: [
-      ["agents.html", "에이전트 설치 파일"], ["agents.html#keys", "발급 키 관리"],
+      ["devices.html", "장치 관리"], ["agents.html", "기존 설치 파일"], ["agents.html#keys", "발급 키 관리"],
       ["agent-status.html", "에이전트 수신 현황"]
     ] },
     { title: "설정", items: [["settings-slack.html", "알림 연동 → Slack"], ["settings-rules.html", "탐지 규칙 관리"]] }

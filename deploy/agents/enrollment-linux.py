@@ -293,7 +293,7 @@ def probe(client, spec, marker, source_id):
     raise RuntimeError('Central receipt NOT verified; services stopped, keys revoked, queues retained')
 
 
-def execute(source, spec, digest, interface, recovery, dry_run):
+def execute(source, spec, digest, interface, recovery, dry_run, *, registration=None, attempt=None):
     if os.geteuid() != 0:
         raise RuntimeError('Administrator root is required')
     if not re.fullmatch(r'[a-f0-9]{64}', digest):
@@ -337,10 +337,22 @@ def execute(source, spec, digest, interface, recovery, dry_run):
             if configured.get('packetbeat.interfaces', {}).get('device') != interface:
                 raise RuntimeError('Capture interface migration refused during re-enrollment')
         context = tls_context(source, spec['portal_url'])
-        token = getpass.getpass('Paste ONE installation token (hidden input): ')
+        if registration is not None:
+            if (registration.get('device_id') != spec.get('managed_device_id') or not spec.get('managed_device_id')
+                    or registration.get('package_sha256') != digest
+                    or type(registration.get('expires')) is not int or registration['expires'] <= time.time()
+                    or registration.get('enrollment_id') != registration.get('token', '')[:32]):
+                raise RuntimeError('장치 등록 정보가 다르거나 만료됐습니다. 같은 장치에서 갱신하세요.')
+            token = registration['token']
+        else:
+            token = getpass.getpass('Paste ONE installation token (hidden input): ')
         if not re.fullmatch(r'[a-f0-9]{32}\.[A-Za-z0-9_-]{43}', token):
             raise RuntimeError('Invalid installation token')
         client = Client(spec, context, token)
+        if attempt is not None:
+            if not isinstance(attempt, str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}', attempt):
+                raise RuntimeError('설치 재시도 식별자가 올바르지 않습니다.')
+            client.attempt = attempt
         body = {'package_id': spec['package_id'], 'package_sha256': digest}
         if receipt:
             body['recovery_probe'] = receipt['probe']

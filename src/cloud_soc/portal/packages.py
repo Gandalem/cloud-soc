@@ -24,6 +24,8 @@ NETWORK_FILES = {
     "ubuntu": ["install-network-ubuntu.sh", "packetbeat.base.json"],
 }
 for platform in ('windows','ubuntu'):FILES[platform].append('security-catalog.json')
+FILES['windows'] += ['agent-manager.ps1', 'bootstrap-windows.ps1']
+FILES['ubuntu'] += ['agent-manager.py', 'bootstrap-linux.py']
 FILES['amazon_linux_2023'] = FILES['ubuntu']
 NETWORK_FILES['amazon_linux_2023'] = NETWORK_FILES['ubuntu']
 
@@ -59,6 +61,10 @@ def validate_spec(data, endpoint):
 
 
 def launch_script(spec):
+    if spec.get('managed_device_id'):
+        if spec['os'] == 'windows':
+            return 'install.ps1', "param([string]$Action='install')\n& (Join-Path $PSScriptRoot 'agent-manager.ps1') $Action\n"
+        return 'install.sh', '#!/bin/sh\nset -eu\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)\nexec python3 "$HERE/agent-manager.py" install "$@"\n'
     endpoint, org = spec["endpoint"], spec["organization"]
     if spec["os"] != "windows":
         text = f'''#!/usr/bin/env bash
@@ -238,21 +244,27 @@ class PackageStore:
     def public(row):
         return {**json.loads(row["spec"]), **{key: row[key] for key in ("id", "filename", "sha256", "created_at")}}
 
-    def create(self, data):
+    def create(self, data, *, connection=None, managed_device_id=None):
         spec = validate_spec(data, self.endpoint)
         identifier = uuid.uuid4().hex
+        if managed_device_id:
+            spec['managed_device_id'] = managed_device_id
         if self.portal_url:
             spec.update(package_id=identifier, portal_url=self.portal_url, enrollment_protocol=1)
         archive, filename = build_bundle(spec, self.source, self.ca)
-        with self.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+        def insert(db):
             if db.execute("SELECT count(*) FROM packages").fetchone()[0] >= 200:
                 raise ValueError("패키지는 최대 200개입니다. 사용하지 않는 패키지를 삭제하세요.")
             db.execute("INSERT INTO packages VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (
                 identifier, spec["name"], spec["os"], json.dumps(spec, ensure_ascii=False), filename,
                 hashlib.sha256(archive).hexdigest(), datetime.now(timezone.utc).isoformat(), archive,
             ))
-        return self.get(identifier)
+            return self.public(db.execute('SELECT * FROM packages WHERE id=?', (identifier,)).fetchone())
+        if connection is not None:
+            return insert(connection)
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            return insert(db)
 
     def list(self):
         with self.connect() as db:
@@ -270,7 +282,38 @@ class PackageStore:
     def delete(self, identifier):
         self.get(identifier)
         with self.connect() as db:
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='managed_devices'").fetchone():
+                if db.execute('SELECT 1 FROM managed_devices WHERE package_id=?', (identifier,)).fetchone():
+                    raise ValueError('장치에 연결된 설치 정보입니다. 장치 상세에서 관리하세요.')
             db.execute("DELETE FROM packages WHERE id = ?", (identifier,))
+
+    def key_page(self, *, query='', view='active', page=1, size=25):
+        if (view not in ('active', 'attention', 'history', 'all') or not isinstance(query, str) or len(query) > 100
+                or type(page) is not int or not 1 <= page <= 10000 or type(size) is not int or not 1 <= size <= 100):
+            raise ValueError('키 조회 조건을 확인하세요.')
+        # Bounded output, not the legacy endpoint's last-500 client-side filtering.
+        escaped = query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        at = datetime.now(timezone.utc).timestamp() * 1000
+        sql = '''SELECT * FROM issued_keys WHERE
+            (COALESCE(target_label,'') || ' ' || COALESCE(package_name,'') || ' ' || id || ' ' ||
+             package_id || ' ' || COALESCE(organization,'') || ' ' || COALESCE(scope,'')) LIKE ? ESCAPE '\\'
+            AND (?='all' OR (?='history' AND revoked_at IS NOT NULL)
+              OR (?='active' AND revoked_at IS NULL)
+              OR (?='attention' AND revoked_at IS NULL AND
+                  (expiration<=? OR server_state IN ('missing','unavailable'))))
+            ORDER BY created_at DESC,id LIMIT ? OFFSET ?'''
+        count_sql = '''SELECT count(*) FROM issued_keys WHERE
+            (COALESCE(target_label,'') || ' ' || COALESCE(package_name,'') || ' ' || id || ' ' ||
+             package_id || ' ' || COALESCE(organization,'') || ' ' || COALESCE(scope,'')) LIKE ? ESCAPE '\\'
+            AND (?='all' OR (?='history' AND revoked_at IS NOT NULL)
+              OR (?='active' AND revoked_at IS NULL)
+              OR (?='attention' AND revoked_at IS NULL AND
+                  (expiration<=? OR server_state IN ('missing','unavailable'))))'''
+        args = ('%' + escaped + '%', view, view, view, view, at)
+        with self.connect() as db:
+            total = db.execute(count_sql, args).fetchone()[0]
+            rows = db.execute(sql, (*args, size, (page-1)*size)).fetchall()
+        return {'keys': [self.public_key(r) for r in rows], 'total': total, 'page': page, 'size': size}
 
     def record_keys(self, identifier, keys, *, package=None, target_label=""):
         package = package if package is not None else self.get(identifier)

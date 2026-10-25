@@ -1,5 +1,31 @@
 # Cloud SOC 작업 목록
 
+## 2026-10-25 설치 개선 작업 보존 — INSTALL-DEVICE-UX-01-SNAPSHOT
+
+- [ ] INSTALL-DEVICE-UX-01-SNAPSHOT 진행 중: 최신 사용자 요청으로 현재 codex/install-device-experience의 설치·장치 관리 소스/관련 검사/문서를 Gandalem/cloud-soc에 커밋·푸시한다. 이번 스냅샷에는 기존 커밋·푸시 보류를 해제한다. main 병합·운영 배포·추가 기능 검사는 포함하지 않는다.
+- 후속 실행 순서와 인수 조건은 docs/install_device_experience.md의 「다음 작업 순서와 인수 조건」에 모았다. 기존 통과 결과와 실제 OS 설치/삭제·서명/배포·전체 수집→경보 미확인을 구분하며, INSTALL-DEVICE-UX-01 부모/RELEASE는 미체크로 보존한다. Git 제외 state의 로그·비밀값·DB·도구/빌드 산출물은 푸시하지 않는다.
+
+## 2026-10-23 설치·배포·장치 관리 — INSTALL-DEVICE-UX-01
+
+- [x] INSTALL-DEVICE-UX-01-LIVE-LAB 완료(2026-10-23): 사용자 Docker 실행 응답 후 Linux Engine29.8.2와 기존 컨테이너0을 확인했다. 작성100% 이후 최종 검수의 연속으로 새 TLS Elasticsearch9.5.2·Filebeat9.5.2와 합성 장치만 사용해 실제 발급/수신/일반 로그/폐기 흐름8개 검사항목을 통과했다. 컨테이너 수집 시험을 실제 양 OS 설치·서비스 제거·서명 release 인수로 확대하지 않는다.
+- 실제 연결 근거: tests/manual/device_management_live.py는 명시적 --run 전용이며 대역 없이 제품 create_app의 제한된 issuer/monitor 계정을 생성한다. HTTPS 장치 생성/중복 요청→준비/동일 등록 정보 재다운로드→실제 키 교환/동일 시도 재교환→실제 Filebeat proof→receipt→일반 로그/정확한 index/id→장치 종료/원격 키 무효화/중복 종료/이력 분리를 확인했다. 최초 proof만으로 일반 로그/heartbeat/분석 완료를 표시하지 않으며, forged organization은 실제 인증 키 metadata로 덮어써졌다.
+- 권한/실패: 정상 인증된 수집 키의 원본 search·역할 변경·삭제는 각각403, 폐기 후 인증401, 이전 enrollment 재사용409. 잘못된 CA/호스트 이름/포털 비밀번호를 거부하고 일반 조회/진단/키 이력에 등록·수집 비밀값이 없음을 확인했다. 종료 후 기존 합성 원본2건은 보존했다. 경보·실장치 배포·원격 제거 인수는 포함하지 않는다.
+- 시험 준비 실패/수정: 첫 실행들은 Windows bind mount가 비밀번호 파일을 mode777로 제시해 ES가 시작을 거부했다. 새 전용 POSIX 볼륨에만 mode640/uid1000으로 준비해 해결했다. 이후 수신까지 통과했으나 시험용 Python 클라이언트에 Filebeat용 id:secret 문자열을 encoded key처럼 전달해401이 발생했다. tuple 전달과 정상 인증 선확인 후403 검사를 유지했다. 제품 권한/등록 계약을 완화하지 않았다. 최종 live-lab-attempt6.json의 passed/cleanup=true, 시험 컨테이너·네트워크·볼륨·개인키/상태 디렉터리0을 확인했다. 실패 보고서는 비밀값을 제거했으며 Git 제외 state/install-device-ux/live-lab*.json에 보존한다. 새 시험 도구 Ruff/diff 공백 통과. 기존 통과 suite를 반복하지 않았다.
+- 네트워크/정리 범위: 새 전용 bridge에서만 Beat→ES 연결, ES 관리 포트와 HTTPS 시험 Portal은 호스트127.0.0.1에만 노출했다. Beat에는 새 합성 입력·공개CA와 자신의 설정/큐만 mount했고 Docker socket/호스트 실제 로그/관리자 비밀값은 제공하지 않았다. bridge의 외부 송신 차단을 보장한다고 표시하지 않는다. 공식 ES/Beat 이미지 캐시는 보존하며 운영 서비스·기존 키·커밋·푸시·재부팅은 변경/실행하지 않았다.
+- [ ] INSTALL-DEVICE-UX-01 진행 중: 최종안의 1~3차(장치 중심 설치 요청/자동 등록/이력 분리, 공통 도구·장치 설정·OS 패키징, 서버 설치·삭제 진입점)를 구현한다. 4~5차의 자동 키 교체·다중 배포·대화형 승인·TUF 업데이트는 별도 후속으로 남긴다. 최신 사용자 지시로 구현 작성100% 이전 테스트·린트·빌드·실행 검사는 하지 않고, 이후 필수 상태/권한/재시도 검사와 새 격리 환경 흐름만 집중 확인한다. 실패 수정 후 영향 검사만 재실행한다.
+- [x] INSTALL-DEVICE-UX-01-CORE 작성·필수 계약 검사 완료(2026-10-23): 장치 생성/자동 등록 전달/재다운로드/명시 갱신/서버 접근 차단/이력 분리/API와 화면, 원본 패키지 계약을 유지하는 공통 runtime 분리, 양 OS 로컬 관리 진입점/패키징 recipe, 서버 설치·삭제·도움말을 작성했다. 실제 배포 완료 항목은 아니다.
+- 최종 Python 본검사: 최초88항목 중86pass/2실패, 기존13 subtests pass. 실패2건은 Windows의 기본 스크립트 정책이 임시 생성 launcher를 막은 환경 원인이다. 제품 실행 정책을 변경하지 않고 시험 프로세스에만 허용한 동일2 fixture를 재실행해2pass. SQL 정적 B608은 검사 제외 없이 고정SQL로 제거하고 영향2검사/Bandit 통과. 후속 boolean 폐기 확인·타조직 key metadata 차단·정확한 일반 로그/파이프라인/부분 조회 거부3항목 및 영향 HTTPS1항목 통과.
+- UI 본검사: 기존22pass, 신규 DOM 라이브러리 불일치/메뉴 기대값2실패. 새 의존성 추가 없이 이미 고정된 linkedom으로 바꾸고 신규3항목·메뉴1항목 통과(고유26항목). 새 페이지를 공유 shell 검사 대상에도 추가해 영향2항목 통과. 전체 UI·브라우저 실제 설치 인수는 실행하지 않았다.
+- 실제 경계 검사: 루프백 TLS 서버에 새 시험 인증서로 생성→다운로드→등록→수신 proof→폐기→이력 및 미신뢰CA/호스트 불일치/인증 실패를 확인했다. 이 흐름의 issuer/search는 합성 대역이므로 실제 ES/Beat 수신 증거가 아니다. 시험 상태 즉시 cleanup assertion도1pass. Windows 기존 enrollment harness에 managed SecureString/attempt 전달을 추가해 키/토큰 prompt 없이 enroll→receipt, 실패 abort를 확인했다(OS/엔진 모의 경계). 새 PS3파일 구문 통과.
+- Ubuntu WSL: stdlib 로컬 도구6항목과 새 root 전용 임시 경로의 다운로드 원본 삭제 후 status/uninstall·symlink 거부·ZIP 경로 이탈 거부3항목 통과. 실제 서비스/기존 파일은 변경하지 않았고 임시/root 시험 디렉터리는 정리됐다. 기존 backup의 stdlib-only import를 유지하도록 device schema 상수를 분리하고 새/기존 백업 영향2항목과 dependency-free import 통과.
+- 패키징: 공식 nFPM2.48.0의 배포 checksum을 대조한 임시 도구로 최종 Ubuntu DEB 빌드/파일·메타데이터/prerm 포함 확인. 공유 manager만 제거해 수집기가 남지 않도록 prerm은 소유 수집기 unit 존재 시 명시적으로 거부한다. 실제 DEB 설치/제거는 하지 않았다. NSIS3.13 고정 recipe/Windows 앱 제거 등록은 작성했으나 공식 portable 도구 다운로드가 HTTP 오류로 차단돼 EXE 컴파일·서명은 미실행이다. 다른 출처/버전으로 우회하지 않았다.
+- [ ] INSTALL-DEVICE-UX-01-RELEASE 남은 인수: 실제 Ubuntu 신규 서버 설치·양 OS 에이전트 설치/큐 보존 제거·Windows 서명 EXE/DEB 배포 연결은 미확인. 최초에는 Docker Desktop Linux 엔진 pipe가 없어 중단했으며, 이후 사용자 실행으로 실제 ES9.5.2·Filebeat 격리 수신/API 흐름은 위 LIVE-LAB에서 통과했다. 기존 장치 신원 인수·완료 설치 자동 재설치·부분 로컬 제거 재개·감사 보관 정리는 제한/후속으로 기록한다. 따라서 부모 작업은 미체크 유지한다.
+- 정리/근거: 새 합성 TLS 인증서·개인키·발급/전달 상태·Windows 임시 fixture와 root 임시 폴더 정리. 실제 엔진/클라우드 키는 발급하지 않았다. Git 제외 state/install-device-ux/{final-python.log,final-python.xml,final-ui.log,affected-ui.log,sql-affected.xml,windows-fixtures.log,windows-fixtures.xml,windows-enrollment.log,final-boundaries.log,final-boundaries.xml,backup-affected.xml,tls-cleanup.xml}에 근거, unsigned Ubuntu DEB와 공개 portable build tool을 보존했다. root WSL/DEB 결과는 도구 실행 결과로 기록했다. Ruff/Bandit/PS parser/Node syntax/diff 공백 확인 통과. 운영 배포·재부팅·이관·커밋·푸시·병합은 하지 않았다.
+- 작성100% 도달: 장치 상태/등록·공통 runtime/암호화 단기 전달·폐기/이력 API, 장치 화면, 양 OS 관리 진입점과 NSIS/DEB recipe, 서버 메뉴와 도움말, 백업 선택 schema 그룹 및 필수 검사를 작성했다. 중간 실행 검사는 하지 않았다. 이제 최종 필수 검수로 전환한다. 서명 인증서·실제 OS 설치/실장치·기존 장치 인수·자동 키 교체/업데이트·감사 보관 정리는 완료로 확대하지 않는다.
+- 기준: work/cloud-soc-main의 clean main34c2139에서 codex/install-device-experience 생성. D:/cloud-soc 원본과 이전 상용화 체크아웃을 수정하지 않는다. 기존 변경 없음. 이전 CI 후속 작업의 Windows 수정 금지는 해당 작업 한정이며 이번 명시 승인한 Windows 설치 개선을 포함한다. 기존 CI 이력은 보존하고 전체Windows/Ubuntu CI를 임의 실행하지 않는다.
+- 보존/제외: 실제 서버·장치·데이터·키·SQLite·큐/체크포인트·수신/증거 의미 보존. 운영 배포·재부팅·이관·커밋·푸시·병합 제외. 신설 상태와 검증은 새 폐기용 디렉터리에서 수행. 코드/격리 검사/배포/실장치 수신은 구분한다.
+
+
 ## 2026-10-21 과거 전달 파일 정리·설치 가이드 갱신 — REPO-CLEANUP-01
 
 - [x] REPO-CLEANUP-01 완료: 사용자 요청으로 저장소의 과거 패치3개와 일회성 소스 수정 도구8개만 제거했다. 런타임·설치·CI·테스트의 호출 참조가 없고, 도구에 내장된 과거 파일은 현재 소스와 일치하지 않음을 확인했다. 남은 사용 문서의 패치 적용 안내는 현재 절차로 바꿨으며 과거 검증/작업 이력은 보존했다. 삭제 전 파일은 Git 이력에서 복구할 수 있다.

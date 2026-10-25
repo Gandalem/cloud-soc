@@ -82,6 +82,12 @@ def case_schema(tables):
 
 
 def allowed_count_tables(name,format_version,tables):
+    if name == 'packages.sqlite3':
+        try:
+            package_schema(tables)
+            return True
+        except BackupError:
+            return False
     if name=='cases.sqlite':
         try:case_schema(tables);return True
         except BackupError:return False
@@ -92,6 +98,20 @@ def allowed_count_tables(name,format_version,tables):
 
 
 ENROLLMENT_COLUMNS = "id token_hash package_id package_sha256 spec target_label days created expires deadline state attempt_hash sealed nonce key_ids agents completed".split()
+
+
+def package_schema(tables):
+    from cloud_soc.portal.device_schema import TABLES
+    schema = dict(SCHEMAS['packages.sqlite3'])
+    if 'enrollments' in tables:
+        schema['enrollments'] = ENROLLMENT_COLUMNS
+    if set(TABLES) & tables:
+        if not set(TABLES) <= tables or 'enrollments' not in tables:
+            raise BackupError('Incomplete device management schema.')
+        schema.update(TABLES)
+    if set(schema) != tables:
+        raise BackupError('Unsupported package state schema.')
+    return schema
 
 
 class BackupError(Exception):
@@ -162,8 +182,8 @@ def inspect_database(path, name, budget):
         schema = dict(SCHEMAS[name])
         if name == 'dashboards.sqlite' and 'dashboard_collections' in tables:
             schema['dashboard_collections'] = COLLECTION_COLUMNS
-        if name == "packages.sqlite3" and "enrollments" in tables:
-            schema["enrollments"] = ENROLLMENT_COLUMNS
+        if name == "packages.sqlite3":
+            schema = package_schema(tables)
         if name == 'cases.sqlite':
             schema=case_schema(tables)
         if tables != set(schema):
