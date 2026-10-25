@@ -1,5 +1,6 @@
 """Focused device lifecycle failures; only disposable state and synthetic issuers."""
 import copy
+import hashlib
 import io
 import json
 import secrets
@@ -46,7 +47,21 @@ class Security:
 
 
 class DeviceManagementTests(unittest.TestCase):
-    setUp = enrollment_fixture.EnrollmentTests.setUp
+    def setUp(self):
+        enrollment_fixture.EnrollmentTests.setUp(self)
+        from cloud_soc.portal.windows_native import source_hash
+        self.native = self.root / 'native-release'
+        self.native.mkdir()
+        binary = b'MZ_SYNTHETIC_NOT_AN_EXECUTABLE'
+        (self.native / 'cloud-soc-agent-setup.exe').write_bytes(binary)
+        self.native_metadata = {'schema': 1, 'target': 'windows-x64-net48', 'mode': 'lab', 'signed': False,
+                                'source_sha256': source_hash(self.app.extensions['packages'].source),
+                                'sha256': hashlib.sha256(binary).hexdigest()}
+        (self.native / 'release.json').write_text(json.dumps(self.native_metadata))
+        store = self.app.extensions['packages']
+        store.windows_installer_dir = self.native
+        store.windows_installer_sha256 = self.native_metadata['sha256']
+        store.windows_installer_allow_lab = True
     tearDown = enrollment_fixture.EnrollmentTests.tearDown
     admin = enrollment_fixture.EnrollmentTests.admin
     proof = enrollment_fixture.EnrollmentTests.proof
@@ -72,7 +87,49 @@ class DeviceManagementTests(unittest.TestCase):
         result = self.admin('GET', f"/api/managed-devices/{device['id']}/download")
         self.assertEqual(result.status_code, 200, result.json)
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            if device['os'] == 'windows':
+                with zipfile.ZipFile(io.BytesIO(archive.read('package.zip'))) as original:
+                    spec = json.loads(original.read('package.json'))
+                return json.loads(archive.read('registration.json')), archive.read('cloud-soc-agent-setup.exe'), spec
             return json.loads(archive.read('registration.json')), archive.read('runtime.zip'), json.loads(archive.read('package.json'))
+
+    def test_native_release_guard_fails_before_mint_and_has_no_script_fallback(self):
+        device, _ = self.create(os='windows')
+        store = self.app.extensions['packages']
+        store.windows_installer_sha256 = '0' * 64
+        result = self.request('POST', f"/api/managed-devices/{device['id']}/prepare", {'days': 30, 'renew': False})
+        self.assertEqual(result.status_code, 503)
+        with store.connect() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM enrollments').fetchone()[0], 0)
+        self.assertEqual(self.issuer.security.create_api_key.call_count, 0)
+        store.windows_installer_sha256 = self.native_metadata['sha256']
+        self.prepare(device)
+        result = self.admin('GET', f"/api/managed-devices/{device['id']}/download")
+        with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
+            self.assertNotIn('bootstrap-windows.ps1', archive.namelist())
+            self.assertNotIn(b'powershell', archive.read('Start.cmd').lower())
+            package, original = store.get(device['package_id'], archive=True)
+            self.assertEqual(archive.read('package.zip'), original)
+            self.assertEqual(json.loads(archive.read('registration.json'))['package_sha256'], package['sha256'])
+        (self.native / 'cloud-soc-agent-setup.exe').write_bytes(b'MZ_TAMPERED')
+        self.assertEqual(self.admin('GET', f"/api/managed-devices/{device['id']}/download").status_code, 503)
+
+    def test_windows_unsupported_scope_does_not_create_or_issue(self):
+        result = self.request('POST', '/api/managed-devices', {'label': '시험', 'organization': 'school',
+            'os': 'windows', 'purpose': 'server', 'network': True, 'system': True, 'sites': []})
+        self.assertEqual(result.status_code, 400)
+        self.assertEqual(self.app.extensions['managed_devices'].listing()['total'], 0)
+        self.assertEqual(self.issuer.security.create_api_key.call_count, 0)
+
+    def test_lab_release_and_source_mismatch_are_rejected(self):
+        device, _ = self.create(os='windows')
+        store = self.app.extensions['packages']
+        store.windows_installer_allow_lab = False
+        self.assertEqual(self.request('POST', f"/api/managed-devices/{device['id']}/prepare", {'days': 30, 'renew': False}).status_code, 503)
+        store.windows_installer_allow_lab = True
+        metadata = {**self.native_metadata, 'source_sha256': '0' * 64}
+        (self.native / 'release.json').write_text(json.dumps(metadata))
+        self.assertEqual(self.request('POST', f"/api/managed-devices/{device['id']}/prepare", {'days': 30, 'renew': False}).status_code, 503)
 
     def exchange_device(self, device):
         registration, _, spec = self.handoff(device)

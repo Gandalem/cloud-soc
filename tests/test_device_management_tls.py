@@ -84,7 +84,9 @@ class DeviceTLSFlowTests(unittest.TestCase):
                 payload = call(base + '/download')
                 with zipfile.ZipFile(io.BytesIO(payload)) as archive:
                     registration = json.loads(archive.read('registration.json'))
-                    self.assertIn('runtime.zip', archive.namelist())
+                    self.assertIn('package.zip', archive.namelist())
+                    self.assertIn('cloud-soc-agent-setup.exe', archive.namelist())
+                    self.assertNotIn('bootstrap-windows.ps1', archive.namelist())
                 attempt = secrets.token_urlsafe(32)
                 authorization = 'Bearer ' + registration['token']
                 reply = call('/api/installer/enroll', {'attempt': attempt, 'package_id': device['package_id'],

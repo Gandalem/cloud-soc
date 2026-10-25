@@ -208,11 +208,15 @@ def build_bundle(spec, source, ca):
 class PackageStore:
     """SQLite holds small bundles atomically; no user-controlled filesystem paths."""
 
-    def __init__(self, root: Path, source: Path, ca: bytes, endpoint: str, *, portal_url=None):
+    def __init__(self, root: Path, source: Path, ca: bytes, endpoint: str, *, portal_url=None,
+                 windows_installer_dir=None, windows_installer_sha256=None, windows_installer_allow_lab=False):
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.database = root / "packages.sqlite3"
         self.source, self.ca, self.endpoint = source, ca, validate_endpoint(endpoint)
         self.portal_url = validate_endpoint(portal_url) if portal_url else None
+        self.windows_installer_dir = windows_installer_dir
+        self.windows_installer_sha256 = windows_installer_sha256
+        self.windows_installer_allow_lab = windows_installer_allow_lab
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("CREATE TABLE IF NOT EXISTS packages (id TEXT PRIMARY KEY, name TEXT NOT NULL, os TEXT NOT NULL, spec TEXT NOT NULL, filename TEXT NOT NULL, sha256 TEXT NOT NULL, created_at TEXT NOT NULL, archive BLOB NOT NULL, UNIQUE(name, os))")

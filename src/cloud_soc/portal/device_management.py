@@ -100,6 +100,8 @@ class Devices:
         spec = validate_spec({'name': 'device-' + device_id, 'organization': data.get('organization'),
             'os': data.get('os'), 'network': data.get('network', False),
             'system': data.get('system', True), 'sites': data.get('sites', [])}, self.store.endpoint)
+        from cloud_soc.portal.windows_native import require_scope
+        require_scope(spec)
         if data['purpose'] == 'web' and not spec['sites']:
             raise ValueError('웹 서버는 실제 수집할 웹 로그 경로를 지정하세요.')
         with self.store.connect() as db:
@@ -175,6 +177,12 @@ class Devices:
                 or type(data['days']) is not int or data['days'] not in (1, 7, 30, 90)):
             raise ValueError('등록 정보 갱신 여부와 키 유효 기간을 확인하세요.')
         body = {'device_id': device_id, **data}
+        # Reject unsupported/unavailable native releases before minting a handoff.
+        device_spec = self.store.get(self.detail(device_id)['package_id'])
+        from cloud_soc.portal.windows_native import require_scope, release
+        require_scope(device_spec)
+        if device_spec['os'] == 'windows':
+            release(self.store)
         cipher = self._cipher()
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -243,8 +251,13 @@ class Devices:
         package, archive = self.store.get(device['package_id'], archive=True)
         # The original archive hash remains the existing enrollment contract. The outer handoff is separate.
         from cloud_soc.portal.device_bundle import bundle
+        native = None
+        if package['os'] == 'windows':
+            from cloud_soc.portal.windows_native import require_scope, release
+            require_scope(package)
+            native = release(self.store)
         return bundle(package, archive, {'device_id': device_id, 'enrollment_id': row['enrollment_id'],
-            'token': reply['token'], 'expires': row['expires'], 'package_sha256': row['package_sha256']}), f"device-{device_id}-install.zip"
+            'token': reply['token'], 'expires': row['expires'], 'package_sha256': row['package_sha256']}, native=native), f"device-{device_id}-install.zip"
 
     def activity(self, device_id):
         device = self.detail(device_id)

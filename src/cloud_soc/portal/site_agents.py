@@ -86,7 +86,9 @@ def profile(spec):
             'prospector.scanner.fingerprint.length':64,
             'fields_under_root':True, 'fields':{'labels':{'log_source':'generic_web_access'}},
             'processors':[
-                {'script':{'lang':'javascript','file':'${path.config}/site-privacy.js','params':site,'timeout':'50ms','tag_on_exception':'_site_privacy_error'}},
+                # Script file paths are relative to path.config. External input
+                # reload hashing cannot resolve the main config's variables.
+                {'script':{'lang':'javascript','file':'site-privacy.js','params':site,'timeout':'50ms','tag_on_exception':'_site_privacy_error'}},
                 {'drop_event':{'when':{'contains':{'tags':'_site_privacy_error'}}}},
                 {'timestamp':{'field':'web.occurred_at','layouts':['2006-01-02T15:04:05.999Z07:00']}},
                 {'drop_fields':{'fields':['web.occurred_at'],'ignore_missing':True}}]})

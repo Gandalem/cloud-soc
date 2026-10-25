@@ -79,6 +79,7 @@ if (typeof document !== 'undefined') (() => {
   function formOptions(){
     const f=$('#device-form').elements,web=f.purpose.value==='web';$('#device-web').hidden=!web;$('#device-web').disabled=!web;
     if(!f.log_path.dataset.edited)f.log_path.value=f.os.value==='windows'?'C:\\Apache\\logs\\access.log':f.server_type.value==='nginx'?'/var/log/nginx/access.log':'/var/log/apache2/access.log';
+    f.network.setCustomValidity(f.os.value==='windows'&&f.network.checked?'Windows 설치는 시스템·웹 로그를 지원합니다. 네트워크 패킷 수집을 해제하세요.':'');
   }
   $('#add-device').addEventListener('click',()=>{
     if(state.busy)return;$('#device-form').reset();state.formRequest=id();state.startAt=new Date().toISOString();$('#device-form').elements.log_path.dataset.edited='';
@@ -90,6 +91,7 @@ if (typeof document !== 'undefined') (() => {
   $('#device-form').addEventListener('submit',async event=>{
     event.preventDefault();if(state.busy)return;
     const f=event.currentTarget.elements,data={label:f.label.value,organization:f.organization.value,os:f.os.value,purpose:f.purpose.value,system:f.system.checked,network:f.network.checked,sites:[]};
+    if(data.os==='windows'&&data.network){$('#device-form-error').textContent='Windows 설치는 시스템·웹 로그를 지원합니다. 네트워크 패킷 수집을 해제하세요.';return;}
     if(data.purpose==='web'){
       const site={id:'web',name:data.label.slice(0,64),server_type:f.server_type.value,log_path:f.log_path.value,start_at:state.startAt};
       if(f.waf_path.value)site.modsecurity={log_path:f.waf_path.value,timezone:f.waf_timezone.value};data.sites=[site];

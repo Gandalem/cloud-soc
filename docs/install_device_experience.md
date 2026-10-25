@@ -1,5 +1,7 @@
 # 설치·배포·장치 관리 개선
 
+2026-10-25 Windows 후속: 새 managed 장치의 Windows 설치를 네이티브 EXE로 옮겼다. 기본 Restricted를 유지한 실제 VM의 제품 설치→receipt→합성 로그·경보→stop/start→보존 제거/purge와 native TLS 실패6경계를 통과했다. 이전 NSIS/PowerShell 설치 제한의 구현 후속이며 unsigned lab 결과를 서명 운영 배포로 확대하지 않는다. 현재 계약·정확한 결과·남은 signed release/관리 도구 제거/복구 인수는 [Windows 네이티브 설치](windows_native_installer.md)를 따른다. 이전 완료 이력은 아래에 보존한다.
+
 ## 범위와 기준
 
 2026-10-23 승인 최종안의 1~3차를 구현한다. 기준 main은 34c2139이고 작업 브랜치는 `codex/install-device-experience`, 작업 경로는 `work/cloud-soc-main`이다. 원본 `D:/cloud-soc`와 상용화 PoC를 수정하거나 가져오지 않는다.
@@ -82,6 +84,12 @@ Linux는 root 전용 `/var/lib/cloud-soc-bundles/<device-id>`로, Windows는 관
 ## 다음 작업 순서와 인수 조건
 
 현재 통과한 검사와 아래 대기 작업은 별개다. 이 목록은 다음 작업을 재개하기 위한 계획이며 설치·서비스 변경을 미리 실행하라는 지시가 아니다. 각 작업 착수 시 작업 목록에 진행 중으로 기록하고 관련 파일과 실제 결과를 남긴다.
+
+2026-10-25 실제 WSL 제품 설치·제거와 양 OS의 제한된 합성 수집→경보 결과는 [VM·WSL 검증 기록](install_device_os_validation.md)에 분리했다. WSL 통과와 Windows native 수집 흐름 통과를 Windows 제품 설치 완료로 합치지 않는다.
+
+2026-10-25 실제 VM 사전 확인에서 Windows 기본 정책 차단을 발견했다. INSTALL-DEVICE-UX-01-WINDOWS-POLICY를 아래 2번 배포물 준비보다 앞에 둔다. 현재 EXE recipe는 PowerShell wrapper여서 기본 Restricted 환경의 제품 설치 인수를 통과하지 못한다. 사용자의 설치 편의성 요구에 맞게 정책 변경을 요구하지 않는 네이티브 EXE/MSI 설치·관리 경계를 구현한 후 빌드/서명/실설치를 완료해야 한다. 코드 서명은 출처 확인에 필요하지만 Restricted가 모든 ps1 실행을 막는 문제를 단독으로 해결하지 않는다. 최종 배포물에서 Bypass/Unrestricted나 스크립트 내용 실행으로 정책 문제를 감추지 않는다. 일반 UAC 관리자 권한 요청은 PowerShell 정책 변경과 구분하며 Windows/조직 정책을 따른다. 반복적인 사용자 정책 수락을 제품 설치 방식으로 삼지 않는다.
+
+근거: [Microsoft 실행 정책](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies)에서 Restricted는 명령은 허용하나 스크립트 파일은 실행하지 않으며, Process 범위 변경은 해당 세션에만 적용된다. 이번 VM 시험에서는 사용자가 예외를 승인하지 않아 Process/CurrentUser/LocalMachine 정책을 변경하지 않는다.
 
 | 순서/작업 ID | 다음에 할 일 | 준비 조건·완료 판단 |
 | --- | --- | --- |

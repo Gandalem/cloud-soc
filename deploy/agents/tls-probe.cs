@@ -70,6 +70,9 @@ public static class CloudSocTlsProbe
                 using (X509Certificate2 leaf = new X509Certificate2(certificate))
                 using (X509Chain chain = new X509Chain())
                 {
+#if NATIVE_INSTALLER
+                    return CloudSoc.Native.TlsChain.Validate(leaf, ca, unused);
+#else
                     chain.ChainPolicy.ExtraStore.Add(ca);
                     chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
                     chain.ChainPolicy.RevocationMode = X509RevocationMode.Online;
@@ -78,6 +81,7 @@ public static class CloudSocTlsProbe
                     chain.ChainPolicy.ApplicationPolicy.Add(new Oid("1.3.6.1.5.5.7.3.1"));
                     chain.Build(leaf);
                     return AcceptChain(chain, ca, allowUnavailable);
+#endif
                 }
             };
             using (SslStream tls = new SslStream(tcp.GetStream(), false, validate))

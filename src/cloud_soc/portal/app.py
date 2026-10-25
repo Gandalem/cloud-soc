@@ -63,6 +63,9 @@ def settings_from_environment():
     return {
         "STATE_DIR": Path(os.environ.get("SOC_STATE_DIR", "state/portal")),
         "AGENT_SOURCE": PROJECT / "deploy" / "agents",
+        "WINDOWS_INSTALLER_DIR": os.environ.get('SOC_WINDOWS_INSTALLER_DIR'),
+        "WINDOWS_INSTALLER_SHA256": os.environ.get('SOC_WINDOWS_INSTALLER_SHA256'),
+        "WINDOWS_INSTALLER_ALLOW_LAB": os.environ.get('SOC_WINDOWS_INSTALLER_ALLOW_LAB') == '1',
         "CA_BYTES": ca,
         "PUBLIC_URL": public_url,
         "LAN_URL": os.environ.get("SOC_PORTAL_LAN_ORIGIN"),
@@ -106,7 +109,10 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     app = Flask(__name__, static_folder=None)
     app.config.update(MAX_CONTENT_LENGTH=8192, TRUSTED_HOSTS=[urlsplit(origin).hostname for origin in origins.values()])
     store = PackageStore(Path(settings["STATE_DIR"]), Path(settings["AGENT_SOURCE"]), settings["CA_BYTES"], settings["ENDPOINT"],
-                         portal_url=settings["PUBLIC_URL"] if settings["PUBLIC_URL"].startswith("https://") else None)
+                         portal_url=settings["PUBLIC_URL"] if settings["PUBLIC_URL"].startswith("https://") else None,
+                         windows_installer_dir=settings.get('WINDOWS_INSTALLER_DIR'),
+                         windows_installer_sha256=settings.get('WINDOWS_INSTALLER_SHA256'),
+                         windows_installer_allow_lab=settings.get('WINDOWS_INSTALLER_ALLOW_LAB', False))
     app.extensions["packages"] = store
     users = load_users(settings["USERS_FILE"]) if settings.get("USERS_FILE") else None
     sessions = Sessions(Path(settings["STATE_DIR"]) / "sessions.sqlite", users) if users else None

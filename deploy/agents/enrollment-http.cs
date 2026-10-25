@@ -77,6 +77,9 @@ public static class CloudSocEnrollmentHttp
                 using (X509Certificate2 leaf = new X509Certificate2(certificate))
                 using (X509Chain chain = new X509Chain())
                 {
+#if NATIVE_INSTALLER
+                    return CloudSoc.Native.TlsChain.Validate(leaf, ca, supplied);
+#else
                     chain.ChainPolicy.ExtraStore.Add(ca);
                     chain.ChainPolicy.RevocationMode = X509RevocationMode.Online;
                     chain.ChainPolicy.RevocationFlag = X509RevocationFlag.ExcludeRoot;
@@ -84,6 +87,7 @@ public static class CloudSocEnrollmentHttp
                     chain.ChainPolicy.ApplicationPolicy.Add(new Oid("1.3.6.1.5.5.7.3.1"));
                     chain.Build(leaf);
                     return AcceptChain(chain, ca, allowUnavailable);
+#endif
                 }
             };
             byte[] data = Encoding.UTF8.GetBytes(body);
