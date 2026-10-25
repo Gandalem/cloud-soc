@@ -2,8 +2,9 @@
 
 ## 2026-10-25 설치 개선 작업 보존 — INSTALL-DEVICE-UX-01-SNAPSHOT
 
-- [ ] INSTALL-DEVICE-UX-01-SNAPSHOT 진행 중: 최신 사용자 요청으로 현재 codex/install-device-experience의 설치·장치 관리 소스/관련 검사/문서를 Gandalem/cloud-soc에 커밋·푸시한다. 이번 스냅샷에는 기존 커밋·푸시 보류를 해제한다. main 병합·운영 배포·추가 기능 검사는 포함하지 않는다.
+- [x] INSTALL-DEVICE-UX-01-SNAPSHOT 완료(2026-10-25): 최신 사용자 요청으로 codex/install-device-experience의 설치·장치 관리 소스/관련 검사/문서34파일을 e4a3d650a3f9ef8988f9b1e9f97eb56489b7912b에 커밋하고 Gandalem/cloud-soc의 같은 이름 브랜치에 푸시했다. 원격 refs/heads/codex/install-device-experience가 동일 SHA임을 확인했다. 이번 스냅샷에 기존 커밋·푸시 보류를 해제했으며 main 병합·운영 배포·추가 기능 검사는 하지 않았다.
 - 후속 실행 순서와 인수 조건은 docs/install_device_experience.md의 「다음 작업 순서와 인수 조건」에 모았다. 기존 통과 결과와 실제 OS 설치/삭제·서명/배포·전체 수집→경보 미확인을 구분하며, INSTALL-DEVICE-UX-01 부모/RELEASE는 미체크로 보존한다. Git 제외 state의 로그·비밀값·DB·도구/빌드 산출물은 푸시하지 않는다.
+- 저장 범위 확인: source/docs/tests만 포함했고 변경 공백 검사는 통과했다. 기존 기능 검사를 반복 실행하지 않았다. 현재 .github/workflows/ci.yaml의 push 대상에는 이 새 브랜치가 없으므로 이번 branch push 자체를 Actions 통과로 간주하지 않는다. PR 생성/수동 CI 실행은 하지 않았다. 이 결과 마감은 문서만 후속 커밋하며 검사 대상 코드 SHA는 위 e4a3d65로 구분한다.
 
 ## 2026-10-23 설치·배포·장치 관리 — INSTALL-DEVICE-UX-01
 
