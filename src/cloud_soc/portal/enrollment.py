@@ -58,7 +58,7 @@ class Enrollments:
                 "target_label": row["target_label"], "state": row["state"], "expires": row["expires"],
                 "deadline": row["deadline"], "completed": row["completed"]}
 
-    def mint(self, identifier, data):
+    def mint(self, identifier, data, *, sid=None):
         if (not isinstance(data, dict) or set(data) - {"days", "target_label"}
                 or type(data.get("days")) is not int or data["days"] not in (1, 7, 30, 90)):
             raise ValueError("키 유효 기간은 1·7·30·90일 중 선택하세요.")
@@ -69,11 +69,14 @@ class Enrollments:
         if package.get("enrollment_protocol") != 1 or package["os"] not in ("windows", "ubuntu", "amazon_linux_2023"):
             raise EnrollmentError("enrollment_package_required", 409, "단일 설치 토큰을 지원하는 새 패키지를 생성하세요.")
         self.check_pipeline()
-        sid = uuid.uuid4().hex
+        sid = sid or uuid.uuid4().hex
+        if not isinstance(sid, str) or not re.fullmatch(r'[a-f0-9]{32}', sid):
+            raise ValueError('설치 요청 ID를 확인하세요.')
         token = sid + "." + secrets.token_urlsafe(32)
         now = int(self.clock())
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            self.check_device_open(db, identifier)
             # Completed metadata is retained. Expired unused tokens need no key cleanup.
             db.execute("UPDATE enrollments SET state='expired' WHERE state='unused' AND expires<=?", (now,))
             if db.execute("SELECT count(*) FROM enrollments WHERE state IN ('unused','issuing','issued','cleanup_pending')").fetchone()[0] >= 500:
@@ -83,6 +86,13 @@ class Enrollments:
                         data["days"], now, now + TOKEN_TTL, secrets.token_hex(32)))
         return {"id": sid, "token": token, "expires": now + TOKEN_TTL,
                 "warning": "15분 이내 설치기에 한 번 입력하세요. 토큰을 명령줄·패키지·파일에 저장하지 마세요."}
+
+    @staticmethod
+    def check_device_open(db, package_id):
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='managed_devices'").fetchone():
+            device = db.execute('SELECT state FROM managed_devices WHERE package_id=?', (package_id,)).fetchone()
+            if device and device['state'] in ('ended', 'revocation_pending'):
+                raise EnrollmentError('device_closed', 409, '차단 또는 종료된 장치입니다.')
 
     def listing(self):
         with self.store.connect() as db:
@@ -160,6 +170,7 @@ class Enrollments:
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = self.authenticate(db, token, attempt)
+            self.check_device_open(db, row['package_id'])
             if data["package_id"] != row["package_id"] or data["package_sha256"] != row["package_sha256"]:
                 raise EnrollmentError("package_mismatch", 409, "발급한 토큰의 패키지와 설치 파일이 다릅니다.")
             # A deleted or superseded package cannot enroll even if its old ZIP remains.
@@ -184,6 +195,7 @@ class Enrollments:
             with self.store.connect() as db:
                 db.execute("BEGIN IMMEDIATE")
                 current = db.execute("SELECT * FROM enrollments WHERE id=?", (sid,)).fetchone()
+                self.check_device_open(db, current['package_id'])
                 if current["state"] != "issuing":
                     raise RuntimeError("Cancelled reservation")
                 issued = []

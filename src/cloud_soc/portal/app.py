@@ -63,6 +63,9 @@ def settings_from_environment():
     return {
         "STATE_DIR": Path(os.environ.get("SOC_STATE_DIR", "state/portal")),
         "AGENT_SOURCE": PROJECT / "deploy" / "agents",
+        "WINDOWS_INSTALLER_DIR": os.environ.get('SOC_WINDOWS_INSTALLER_DIR'),
+        "WINDOWS_INSTALLER_SHA256": os.environ.get('SOC_WINDOWS_INSTALLER_SHA256'),
+        "WINDOWS_INSTALLER_ALLOW_LAB": os.environ.get('SOC_WINDOWS_INSTALLER_ALLOW_LAB') == '1',
         "CA_BYTES": ca,
         "PUBLIC_URL": public_url,
         "LAN_URL": os.environ.get("SOC_PORTAL_LAN_ORIGIN"),
@@ -106,7 +109,10 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     app = Flask(__name__, static_folder=None)
     app.config.update(MAX_CONTENT_LENGTH=8192, TRUSTED_HOSTS=[urlsplit(origin).hostname for origin in origins.values()])
     store = PackageStore(Path(settings["STATE_DIR"]), Path(settings["AGENT_SOURCE"]), settings["CA_BYTES"], settings["ENDPOINT"],
-                         portal_url=settings["PUBLIC_URL"] if settings["PUBLIC_URL"].startswith("https://") else None)
+                         portal_url=settings["PUBLIC_URL"] if settings["PUBLIC_URL"].startswith("https://") else None,
+                         windows_installer_dir=settings.get('WINDOWS_INSTALLER_DIR'),
+                         windows_installer_sha256=settings.get('WINDOWS_INSTALLER_SHA256'),
+                         windows_installer_allow_lab=settings.get('WINDOWS_INSTALLER_ALLOW_LAB', False))
     app.extensions["packages"] = store
     users = load_users(settings["USERS_FILE"]) if settings.get("USERS_FILE") else None
     sessions = Sessions(Path(settings["STATE_DIR"]) / "sessions.sqlite", users) if users else None
@@ -124,6 +130,9 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     app.extensions["monitor"] = monitor
     enrollments = Enrollments(store, issuer, monitor)
     app.extensions["enrollments"] = enrollments
+    from cloud_soc.portal.device_management import Devices
+    devices = Devices(store, enrollments)
+    app.extensions['managed_devices'] = devices
     access_policy = LogAccessPolicy(settings["ADMIN_USER"], settings["ADMIN_HASH"], settings.get("LOG_ACCESS_POLICY"))
     basic_guard = BasicAuthGuard(Path(settings["STATE_DIR"]) / "basic-auth.sqlite", access_policy) if sessions is None else None
     app.extensions["basic_auth"] = basic_guard
@@ -603,7 +612,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def auth_me():
         navigation = ["logs.html"]
         if g.log_principal.role == "admin":
-            navigation += ["index.html", "dashboard.html", "cases.html", "agents.html", "agents.html#keys", "agent-status.html", "settings-slack.html", "settings-rules.html"]
+            navigation += ["index.html", "dashboard.html", "cases.html", "devices.html", "agents.html", "agents.html#keys", "agent-status.html", "settings-slack.html", "settings-rules.html"]
         elif sessions:
             navigation += ["index.html", "dashboard.html", "cases.html"]
         return jsonify(user=g.principal, role=g.role, csrf=g.csrf,
@@ -640,7 +649,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         return jsonify(endpoint=settings["ENDPOINT"], version="9.5.2", elasticsearch=status,
                        enrollment_enabled=bool(settings.get("ENROLLMENT_ENABLED")),
                        ca_sha256=hashlib.sha256(settings["CA_BYTES"]).hexdigest(),
-                       packages=store.list(), max_packages=200)
+                       packages=[p for p in store.list() if not p.get('managed_device_id')], max_packages=200)
 
     @app.get('/api/agents/components')
     def collection_components():
@@ -904,6 +913,8 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def mint_enrollment(identifier):
         if not settings.get("ENROLLMENT_ENABLED"):
             raise EnrollmentError("enrollment_disabled", 503, "중앙 서버의 단일 설치 토큰 기능을 먼저 준비하세요.")
+        if store.get(identifier).get('managed_device_id'):
+            raise ValueError('장치 상세에서 설치 묶음을 준비하세요.')
         return jsonify(enrollments.mint(identifier, request.get_json())), 201
 
     @app.get("/api/enrollments")
@@ -947,6 +958,8 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     @app.post("/api/packages/<identifier>/keys")
     def issue_keys(identifier):
         package = store.get(identifier)
+        if package.get('managed_device_id'):
+            raise ValueError('장치 상세의 자동 등록을 사용하세요. 장치 키를 별도로 발급하지 않습니다.')
         data = request.get_json()
         if not isinstance(data, dict) or set(data) - {"days", "target_label"} or type(data.get("days")) is not int or data["days"] not in (1, 7, 30, 90):
             raise ValueError("키 만료일은 1·7·30·90일 중 선택하세요.")
@@ -1053,6 +1066,85 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def key_ids():
         return jsonify(keys=store.keys())
 
+    def device_admin(*, enabled=False):
+        if g.role != 'admin':
+            abort(403)
+        if enabled and not settings.get('ENROLLMENT_ENABLED'):
+            raise EnrollmentError('enrollment_disabled', 503, '서버의 HTTPS 장치 등록 설정을 준비하세요.')
+
+    def page_args():
+        if set(request.args) - {'view', 'q', 'page', 'size'} or any(len(request.args.getlist(k)) != 1 for k in request.args):
+            raise ValueError('지원하지 않는 조회 조건입니다.')
+        return {'view': request.args.get('view', 'active'), 'query': request.args.get('q', ''),
+                'page': int(request.args.get('page', '1')), 'size': int(request.args.get('size', '25'))}
+
+    @app.get('/api/managed-devices')
+    def managed_device_list():
+        device_admin()
+        return jsonify(**devices.listing(**page_args()), enrollment_enabled=bool(settings.get('ENROLLMENT_ENABLED')))
+
+    @app.post('/api/managed-devices')
+    def managed_device_create():
+        device_admin(enabled=True)
+        if request.args:
+            abort(400)
+        return jsonify(device=devices.create(g.principal, request.headers.get('Idempotency-Key'), request.get_json())), 201
+
+    @app.get('/api/managed-devices/<identifier>')
+    def managed_device_get(identifier):
+        device_admin()
+        if request.args:
+            abort(400)
+        return jsonify(device=devices.detail(identifier))
+
+    @app.post('/api/managed-devices/<identifier>/prepare')
+    def managed_device_prepare(identifier):
+        device_admin(enabled=True)
+        if request.args:
+            abort(400)
+        return jsonify(device=devices.prepare(g.principal, identifier, request.headers.get('Idempotency-Key'), request.get_json()))
+
+    @app.get('/api/managed-devices/<identifier>/activity')
+    def managed_device_activity(identifier):
+        device_admin()
+        if request.args:
+            abort(400)
+        return jsonify(devices.activity(identifier))
+
+    @app.get('/api/managed-devices/<identifier>/diagnostics')
+    def managed_device_diagnostics(identifier):
+        device_admin()
+        if request.args:
+            abort(400)
+        device = devices.detail(identifier)
+        public = {k: device[k] for k in ('id', 'label', 'organization', 'os', 'purpose', 'state', 'version',
+            'created', 'updated', 'receipt_at', 'service_state', 'analysis_state', 'operations')}
+        public['credentials'] = [{k: row.get(k) for k in ('id', 'scope', 'status', 'created_at', 'expiration', 'revoked_at', 'checked_at')}
+                                 for row in device['keys']]
+        content = json.dumps(public, ensure_ascii=False, indent=2).encode('utf-8')
+        return send_file(io.BytesIO(content), as_attachment=True, download_name='device-' + identifier + '-diagnostics.json', mimetype='application/json')
+
+    @app.get('/api/managed-devices/<identifier>/download')
+    def managed_device_download(identifier):
+        device_admin(enabled=True)
+        if request.args:
+            abort(400)
+        content, filename = devices.download(identifier)
+        return send_file(io.BytesIO(content), as_attachment=True, download_name=filename, mimetype='application/zip')
+
+    @app.post('/api/managed-devices/<identifier>/end')
+    def managed_device_end(identifier):
+        device_admin()
+        body = request.get_json()
+        if request.args or not isinstance(body, dict) or set(body) != {'confirm'} or body['confirm'] is not True:
+            raise ValueError('장치의 서버 접근 차단을 확인하세요.')
+        return jsonify(device=devices.end(g.principal, identifier, request.headers.get('Idempotency-Key')))
+
+    @app.get('/api/key-history')
+    def managed_key_history():
+        device_admin()
+        return jsonify(store.key_page(**page_args()))
+
     @app.get("/")
     def index():
         return send_from_directory(PROJECT / "prototype", "index.html")
@@ -1060,7 +1152,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     @app.get("/<path:filename>")
     def static_file(filename):
         # Never serve the repo, secrets, SQLite, source code, or arbitrary uploads.
-        allowed = {"live-refresh.js", "live-refresh.css", "reprocessing-history.html", "reprocessing-history.js", "agents.html", "agents.js", "agents.css", "styles.css", "shell.js", "shell.css", "assets/mark.svg", "assets/world-countries-110m.json",
+        allowed = {"devices.html", "devices.js", "devices.css", "live-refresh.js", "live-refresh.css", "reprocessing-history.html", "reprocessing-history.js", "agents.html", "agents.js", "agents.css", "styles.css", "shell.js", "shell.css", "assets/mark.svg", "assets/world-countries-110m.json",
                    "settings-rules.html", "settings-rules.js", "rule-editor.js", "settings-rules.css",
                    "settings-slack.html", "settings-slack.js", "settings-slack.css",
                    "detection-history.html", "detection-history.js",

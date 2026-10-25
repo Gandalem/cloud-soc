@@ -1,0 +1,8 @@
+# Explicit release activation only. Never use a lab artifact on a production portal.
+services:
+  portal:
+    environment:
+      SOC_WINDOWS_INSTALLER_DIR: /opt/cloud-soc/windows-installer
+      SOC_WINDOWS_INSTALLER_SHA256: ${SOC_WINDOWS_INSTALLER_SHA256:?Set reviewed native release SHA-256}
+    volumes:
+      - ${SOC_WINDOWS_INSTALLER_DIR:?Set native release directory}:/opt/cloud-soc/windows-installer:ro

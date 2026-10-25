@@ -62,6 +62,12 @@ try {
     Invoke-SocEnrollmentInstall @args
     if (($script:Calls -join ',') -ne 'prompt,enroll,receipt') { throw 'Host-only enrollment failed.' }
     $script:Calls.Clear()
+    $spec | Add-Member -NotePropertyName managed_device_id -NotePropertyValue ('3'*32)
+    $spec | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'package.json')
+    $managedToken=ConvertTo-SecureString $script:Token -AsPlainText -Force
+    try{Invoke-SocEnrollmentInstall @args -RegistrationToken $managedToken -RegistrationAttempt ('m'*43)}finally{$managedToken.Dispose()}
+    if(($script:Calls -join ',') -ne 'enroll,receipt'){throw 'Managed installation unexpectedly prompted for a key/token.'}
+    $script:Calls.Clear()
     Invoke-SocEnrollmentInstall @args -ReEnroll -DryRun
     if (($script:Calls -join ',') -ne 'plan') { throw 'Re-enrollment preview changed state/prompted/networked.' }
     $script:Calls.Clear()

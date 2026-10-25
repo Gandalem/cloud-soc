@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {groups, current, markup, coverageView} = require('../shell.js');
-const pages = ['index.html','dashboard.html','operations.html','logs.html','cases.html','workbench.html','collection-health.html','agents.html','agent-status.html','detection-history.html','reprocessing-history.html','settings-slack.html','settings-rules.html'];
+const pages = ['index.html','dashboard.html','operations.html','logs.html','cases.html','workbench.html','collection-health.html','devices.html','agents.html','agent-status.html','detection-history.html','reprocessing-history.html','settings-slack.html','settings-rules.html'];
 
 test('every live page loads one shared shell and no duplicate header or sidebar', () => {
   for (const page of pages) {
@@ -20,7 +20,8 @@ test('every live page loads one shared shell and no duplicate header or sidebar'
 
 test('same navigation labels, groups and order on every page', () => {
   const expected = groups.flatMap(group => group.items);
-  assert.equal(expected.length, 9);
+  assert.equal(expected.length, 10);
+  assert.ok(expected.some(([href,label])=>href==='devices.html'&&label==='장치 관리'));
   assert.deepEqual(groups[2].items.map(([href])=>href), ['settings-slack.html','settings-rules.html']);
   for (const page of pages) {
     const html = markup('/'+page, '');

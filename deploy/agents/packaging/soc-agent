@@ -1,0 +1,3 @@
+#!/bin/sh
+set -eu
+exec python3 /usr/lib/cloud-soc-agent-manager/bootstrap-linux.py "$@"

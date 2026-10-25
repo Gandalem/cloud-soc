@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+if ! command -v python3 >/dev/null 2>&1; then
+    printf '%s\n' 'Python 3가 필요합니다. Ubuntu에서 sudo apt-get install python3 후 다시 실행하세요.' >&2
+    exit 1
+fi
+exec python3 "$HERE/deploy/server/soc.py" "$@"

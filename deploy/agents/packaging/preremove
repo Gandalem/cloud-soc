@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+# Package removal is not device retirement. Never silently leave collectors unmanaged.
+case "${1:-}" in
+    remove|deconfigure)
+        if [ -e /etc/systemd/system/cloud-soc-filebeat.service ] || [ -e /etc/systemd/system/cloud-soc-packetbeat.service ]; then
+            printf '%s\n' 'Cloud SOC 수집기가 남아 있습니다. 먼저 sudo soc-agent uninstall로 자료 보존 여부를 선택하고, 포털에서 서버 접근을 차단하세요.' >&2
+            exit 1
+        fi
+        ;;
+esac

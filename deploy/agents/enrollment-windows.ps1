@@ -97,7 +97,8 @@ function Confirm-SocEnrollmentReceipt($Context, $Members) {
 }
 
 function Invoke-SocEnrollmentInstall([string]$Source, [string]$Endpoint, [string]$CaPath, [string]$Organization,
-    [string]$InterfaceGuid, [string]$PackageSha256, [switch]$AllowUnavailableRevocation, [switch]$DryRun, [switch]$ReEnroll) {
+    [string]$InterfaceGuid, [string]$PackageSha256, [switch]$AllowUnavailableRevocation, [switch]$DryRun, [switch]$ReEnroll,
+    [Security.SecureString]$RegistrationToken, [string]$RegistrationAttempt) {
     try { $spec = Get-Content -LiteralPath (Join-Path $Source 'package.json') -Raw | ConvertFrom-Json -ErrorAction Stop }
     catch { throw 'Package metadata cannot be read; verify and unpack the complete ZIP.' }
     if ($spec.PSObject.Properties.Name -notcontains 'enrollment_protocol' -or $spec.os -cne 'windows' -or $spec.network -isnot [bool] -or $spec.enrollment_protocol -ne 1 -or
@@ -112,11 +113,14 @@ function Invoke-SocEnrollmentInstall([string]$Source, [string]$Endpoint, [string
     # enrollment/TLS/bundle helpers when install.ps1 dot-sources this script.
     $begin = {
         if ($context.Preissued) { $cached=$context.Preissued; $context.Preissued=$null; return $cached }
-        $secure = Read-Host 'Paste ONE installation token (hidden input)' -AsSecureString
+        if($RegistrationToken){
+            if(-not $spec.PSObject.Properties['managed_device_id'] -or $RegistrationAttempt -cnotmatch '^[A-Za-z0-9_-]{43}$'){throw 'Managed registration identity required.'}
+            $secure=$RegistrationToken.Copy()
+        }else{$secure = Read-Host 'Paste ONE installation token (hidden input)' -AsSecureString}
         $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
         try { $context.Token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) }
         finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer); $secure.Dispose() }
-        $context.Attempt = New-SocEnrollmentAttempt
+        $context.Attempt = if($RegistrationAttempt){$RegistrationAttempt}else{New-SocEnrollmentAttempt}
         $request = @{attempt=$context.Attempt;package_id=$context.PackageId;package_sha256=$context.PackageHash}
         if ($context.RecoveryProbe) { $request.recovery_probe=$context.RecoveryProbe }
         $reply = Invoke-SocEnrollmentRequest $context 'enroll' $request
