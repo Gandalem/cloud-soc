@@ -2,6 +2,8 @@
 
 2026-10-25. 실제 작업 체크아웃은 cloud-soc-main, 브랜치는 codex/install-device-experience다. 원본 D:\cloud-soc, 상용화 실험 체크아웃, 기존 VM/운영 서비스는 변경하지 않는다. 기존 WSL script processor 경로 수정과 OS 검증 기록을 보존한다.
 
+Git 반영(2026-10-26): [PR20](https://github.com/Gandalem/cloud-soc/pull/20)을 main에 병합했다. 최종 코드 head50ebce9의 [Ubuntu·Windows CI](https://github.com/Gandalem/cloud-soc/actions/runs/40204762899)가 모두 성공했으며 병합 SHA는17a32c42feca30e926b287d54426cc8e56e559cc다. 로컬 main도 fast-forward했다. CI의 독립 Python 환경과 DOM fixture, certifi/filelock 보안 pin을 보완했고 검사를 생략하지 않았다. 아래 구현/실제 VM 검증 이력과 운영 서명·릴리스/GUI·복구 인수의 남은 범위는 유지한다. main 병합은 운영 배포를 의미하지 않는다.
+
 ## 실행 경계
 
 새 관리 장치의 Windows 다운로드는 `Start.cmd → cloud-soc-agent-setup.exe`다. EXE는 C# 5/.NET Framework 4.8, x64, WinForms로 빌드한다. 제품 실행 중 PowerShell/스크립트 호스트/컴파일러를 실행하지 않는다. manifest의 requireAdministrator에 따라 UAC 관리자 승인은 필요하다. Restricted를 바꾸지 않으며 GPO, WDAC/AppLocker, SmartScreen, EDR의 EXE 차단을 해제하지 않는다. MSI도 반드시 동시에 만들 필요는 없으므로 이번 산출물은 EXE다.
