@@ -13,6 +13,46 @@
 
 `runtime-policy.json`이 버전·마이그레이션 ID·룰 revision·필수 워커·메모리 예산을 정한다. 운영 허용 목록은 실제 인수한 AUTH-001, AUTH-SEQ-001, AUTH-SPRAY-001, ATTACK-01, WIN-AUTH-001, WEB-404-001, NET-PORT-001이다. 룰 파일이 바뀌어 revision이 달라지면 검증 기록/정책 버전의 명시적 갱신 전에는 활성화를 거부한다. AWS/OCI의 격리 검증 성공을 실제 운영 인수로 바꾸지 않는다.
 
+## 서버 메뉴와 상태
+
+```bash
+sh soc --help
+sudo sh soc
+sudo sh soc install
+sudo sh soc status
+sudo sh soc uninstall
+```
+
+메뉴 명령은 `install`/`status`/`uninstall`/`help`/`exit`, 설치 환경은 `lab`/`lan`/`cloud`다. 접속 DNS/IPv4에는 스킴·포트·경로를 넣지 않는다. 클라우드의 접속 주소와 서버에 실제 할당된 바인딩 IP를 따로 받는다. 기존 설정이 있으면 새 설치로 덮어쓰지 않고 아래 복구 경로를 안내한다. 입력을 영어로 받는다는 것은 비밀번호 문자나 기존 장치 이름에 새 제한을 둔다는 뜻이 아니다. 관리자 비밀번호는 기존 숨김 입력과 해시 저장을 유지한다.
+
+`status`는 고정 로컬 Docker 소켓의 inspect 결과를 사용한다. 프로젝트·서비스·현재 checkout의 Compose 경로가 일치하는 컨테이너만 표시하고, 같은 프로젝트의 다른 설치·중복 서비스·조회 실패는 오류다. 런타임 계약의 필수 상주12서비스와 일회성 bootstrap을 구분하며 bootstrap의 종료0은 준비 완료다. 실행 중이더라도 healthcheck가 없으면 `상태 점검 미설정`, starting/unhealthy는 확인 필요로 표시한다. 데이터만 남은 경우 실행 서비스와 구분한다. 실행·건강 상태가 실제 수신·탐지 완료를 뜻하지 않는다.
+
+삭제 메뉴는 기존 설치/업그레이드 잠금 안에서 보존/삭제 방식을 선택하고, 삭제·보존 범위를 표시한 뒤 한 번 확인한다. 확인 후와 각 종료 단계마다 리소스·소유 관계·공유 사용 여부를 다시 읽는다. `keep`은 볼륨·설정·인증서·자격 증명을 보존하고 `purge`는 소유 관계를 확인한 전용 자료만 삭제한다. 보존 자료가 있는 상태에서 신규 설치는 거부한다. 복구·재사용은 기존 `manage.py recover/install` 절차로 진행한다.
+
+종료 순서는 gateway → 작업자·정리 작업 → portal/kibana → elasticsearch다. Docker 최소24.0.0 지원을 유지하고 신구 CLI의 긴 옵션 이름 차이(`--time`/`--timeout`)를 피하도록 공통 단축 옵션 `stop -t -1`을 사용한다. 컨테이너에 지정된 StopSignal(미지정 SIGTERM)을 보내고, Python의 전체90초 대기 한도만 적용한다. SIGKILL/SIGSTOP으로 설정된 대상은 거부한다. 클라이언트 대기 초과는 서버 종료 확인이 아니며 데몬의 종료 대기가 남을 수 있다. 실행·재시작·OOMKilled·종료137이면 비강제 rm·볼륨·설정 삭제로 진행하지 않는다. 종료 확인은 애플리케이션의 모든 버퍼 flush나 모든 장애에서 무손실을 증명하지 않는다. 백업은 별도로 필요하다. gateway는 포털/Kibana 접속 경로이고 장치의9200 수신은 Elasticsearch에 직접 연결되므로, gateway 종료가 모든 수신을 차단하는 fence는 아니다. 종료 중 원본이 추가될 수 있으며 전체 분석 적체 drain 완료를 보장하지 않는다.
+
+근거: [Docker stop의 신호와 무기한 대기](https://docs.docker.com/reference/cli/docker/container/stop/), [수동 종료와 재시작 정책](https://docs.docker.com/engine/containers/start-containers-automatically/), [Docker 27.5.1 종료 옵션 원문](https://github.com/docker/cli/blob/v27.5.1/cli/command/container/stop.go), [강제 rm의 SIGKILL](https://docs.docker.com/reference/cli/docker/container/rm/), [표준 argparse](https://docs.python.org/3.12/library/argparse.html). 새 제품 의존성은 추가하지 않는다.
+
+### INSTALL-SERVER-UX-02 인수 구분
+
+코드 작성과 최종 필수 검사의 결과는 작업 목록에 기록한다. 모의 검사와 독립 Docker 엔진의 실제 종료·삭제는 빈 Ubuntu/systemd에서 전체 신규 설치를 끝낸 것과 다르다. 이 작업의 Docker 실험은 새 폐기 컨테이너 내부의 별도 데몬·소켓·데이터 루트에서만 실행하고 호스트 Docker 소켓을 마운트하지 않는다. 서버 방화벽·커널 값·기존 WSL 배포판·실제 로그·키를 변경하지 않는다. WSL 배포판 하나를 추가한 것만으로 커널까지 독립됐다고 간주하지 않는다. 빈 VM 전체 설치·보존 제거·복구·purge는 독립 시험 서버에서 추가 인수한다.
+
+검사 결과(2026-10-26): Python 관련55검사 중54통과·Windows 실제 링크 권한1건 제외, 설치기 POSIX 보호 조건41건은 초기40통과와 문구 수정 후 해당1건 통과로 확인했다. 변경 Python의 Ruff·diff 공백 검사는 통과했다. Docker27.5.1 CLI/Engine의 독립 소켓·vfs·네트워크 none 실험에서 keep/purge, 미종료 시2초 시험 대기 초과와 강제 종료 없음/설정·볼륨 원문 보존, 다른 프로젝트 원문 보존, Linux 실제 심볼릭 링크 거부, 내부 컨테이너·볼륨0을 확인했다. 2초는 시험에서만 주입하며 제품 한도90초는 유지한다. 실제 설치 메뉴·전체12서비스의 빈 Ubuntu 설치/보존 복구/삭제는 이번 시험 범위가 아니다.
+
+초기 실험에서 별도 데몬의 포트 프록시 설정 누락을 고쳤고, Docker27 CLI의 `--timeout` 미지원은 제품 명령을 공통 `-t`로 고쳐 영향받은 삭제 검사7건과 실제 실험을 다시 통과했다. Windows 모의 호스트 설정 누락·심볼릭 링크 생성 권한과 한국어 오류 기대값도 검사 측에서 수정했다. 실제 실패를 정상 종료나 인수 완료로 처리하지 않았다. 외부 호스트의 기존3이미지와 기존 WSL은 유지했고 이번 시험 컨테이너/이미지는 제거했다. 공유 빌드 캐시는 전역 prune하지 않았다.
+
+재현용 `deploy/server/tests/server-removal.Dockerfile`과 `tests/manual/server_removal_docker_live.py`는 Linux amd64 컴포넌트 실험 전용이다. Docker27.5.1-dind와 Python3.12-slim-bookworm의 실제 digest를 고정했으며 새 제품 런타임 의존성은 없다. 실행은 승인받은 폐기 호스트에서만 하며, 호스트 소켓·폴더·포트를 연결하지 않는다. privileged 외부 시험 컨테이너는 VM/커널 보안 격리나 빈 Ubuntu 인수의 대체가 아니다.
+
+### 2026-10-27 WSL 전체 설치·삭제 인수
+
+사용자 승인으로 새 Ubuntu24.04.5 WSL의 systemd·독립 Docker29.9.2 기본 overlayfs에서 전체 흐름을 추가 확인했다. ES/Kibana9.5.2·Caddy2.11.4와12서비스 실행, CA/이름 검증 HTTPS, 메뉴/상태/도움말, 삭제 취소, keep/보존 상태/신규 설치 거부, 기존 관리자를 통한 복구, 같은 키·인증서·합성 원본 대조, purge/반복 제거가 통과했다. 따라서 앞서 남겼던 전체 설치 인수는 이 WSL 범위에서 완료다. 물리 VM/EC2·재부팅·실장치 수신/경보·HA 인수는 별도다.
+
+이 과정에서 Windows 작업본의 `soc` CRLF 실행 오류를 LF 및 `.gitattributes`로 고쳤다. 또한 Python이 컨테이너 PID1일 때 SIGTERM으로 멈추지 않는 실증을 확인했다. 공통7작업자와 등록 정리 작업자에 `init: true`를 적용해 Docker의 내장 초기 프로세스가 신호를 전달하고 자식을 회수하게 했다. 작업자 명령·권한·룰·키·체크포인트 의미는 바꾸지 않는다.90초 한도에서 미종료이면 삭제를 중단하는 조건도 유지한다. init가 있다고 작업 중 버퍼 flush나 전체 분석 drain까지 보장되는 것은 아니다. 근거: [Compose init](https://docs.docker.com/reference/compose-file/services/#init), [Tini MIT 라이선스](https://github.com/krallin/tini/blob/master/LICENSE).
+
+재현 도구는 `tests/manual/server_install_wsl_live.py`다. 새로운 시험 경로와 checksum 고정 Ubuntu WSL 이미지가 필요하며 기존 Ubuntu와 Docker Desktop에는 설치하지 않는다. 실패 시에도 소유 이름·레지스트리 BasePath·소유 표시를 대조해 새 trial만 unregister한다. 시험은 별도 네트워크 namespace/slirp4netns1.2.1를 사용하고 포트·호스트 Docker 소켓을 외부에 연결하지 않는다. 그 환경에서는 외부 containerd와 Docker의 mount 공간 불일치가 있었으므로 새 trial의 packaged containerd만 runtime mask하고 Docker 자체 containerd를 사용한다. 기존/운영 Docker 설정을 바꾸는 배포 처방이 아니다. 새 제품 의존성은 없고 시험용 패키지만 폐기 WSL에 설치한다. [slirp4netns 공식 사용법](https://github.com/rootless-containers/slirp4netns), [WSL systemd](https://learn.microsoft.com/en-us/windows/wsl/systemd), [Docker image store](https://docs.docker.com/engine/storage/containerd/).
+
+초기 시험 환경 실패·PID1 대기 초과를 성공으로 처리하지 않았고, 수정 후 새 trial의 전체 흐름으로 재확인했다. 최종 보고서는 Git 제외 `state/server-ux-wsl-20261026-10`의 result/cleanup/final-audit JSON이다. 모든 trial 디스크와 임시 소스·과거 다운로드 이미지도 제거했고 기존2배포판과 공유 Docker 이미지3개는 유지했다. 잠시 올린 공통 커널 값은262144로 원복하고 trial 밖 방화벽 규칙도 대조했다. 비밀값은 보고서에 남기지 않는다.
+
 ## 신규 설치
 
 기존 `install-ubuntu.sh`가 OS·주소·포트·Docker·커널과 초기 인증서를 준비한 후 아래 공통 관리자의 `install --build`를 호출한다. 초기 계정 준비는 `initialization` 프로필의 bootstrap에서 신규 설치에만 실행한다. 일반 `compose up`이나 기존 서버 업그레이드는 bootstrap의 비밀번호/계정 초기화를 재실행하지 않는다.

@@ -13,6 +13,25 @@ cd cloud-soc
 
 이미 저장소가 있다면 새로 복제하지 않아도 됩니다. 로컬 변경 사항을 확인한 후 필요한 버전을 가져오세요. 배포에는 검토한 커밋의 파일을 사용하고, 원격 스크립트를 확인 없이 다운로드와 동시에 실행하지 않습니다.
 
+### 여러 PC에서 같은 작업 목록 읽기
+
+다른 PC에서 push해도 현재 PC의 파일과 채팅은 자동으로 갱신되지 않습니다. 작업 목록을 안내하거나 개발을 재개하기 전에 실제 작업 폴더에서 다음을 확인합니다. `git fetch`는 원격 이력을 가져오며 현재 브랜치와 작업 파일을 바꾸지 않습니다.
+
+```shell
+git rev-parse --show-toplevel
+git remote -v
+git branch --show-current
+git status --short --branch
+git fetch origin
+git rev-parse HEAD
+git rev-parse origin/main
+git log --oneline HEAD..origin/main
+```
+
+원격 주소가 Gandalem/cloud-soc인지 확인합니다. 로컬 main이 원격보다 뒤에 있고 미커밋 변경이 없으며 분기되지 않은 경우에만 `git merge --ff-only origin/main`으로 작업 파일을 갱신합니다. 다른 브랜치·수정/미추적 파일·로컬 전용 커밋이 있으면 보존한 채 차이를 먼저 조사합니다. 자동 reset/clean·강제 덮어쓰기·이력 분기 시 임의 병합은 하지 않습니다. 원격 조회가 실패하면 이전 origin/main을 최신으로 단정하지 않습니다.
+
+갱신 후에는 [작업 목록](work_tracker.md), [현재 구현/검증 상태](project_status.md), 관련 기능 문서를 함께 읽습니다. 답변에는 확인한 브랜치/커밋을 기준으로 사용하고, 제안한 작업 순서와 사용자 승인 순서를 구분합니다. 코드의 구현 여부·시험 환경의 성공·현재 서버 배포 상태는 각각 확인합니다. 문서를 갱신하는 것만으로 운영 서비스가 바뀌지는 않습니다.
+
 | 파일 | 용도 |
 | --- | --- |
 | [compose.yaml](../compose.yaml) | 로컬 Elasticsearch·Kibana 실행 |

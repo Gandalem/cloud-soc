@@ -55,6 +55,8 @@ class Devices:
             db.execute('''CREATE TABLE IF NOT EXISTS device_audit (
                 seq INTEGER PRIMARY KEY, device_id TEXT NOT NULL, actor TEXT NOT NULL,
                 action TEXT NOT NULL, operation_id TEXT NOT NULL, at TEXT NOT NULL)''')
+        from cloud_soc.portal.key_extension import KeyExtensions
+        self.key_extensions = KeyExtensions(self)
 
     def _cipher(self, *, create=True):
         # This key encrypts ONLY short-lived enrollment handoffs, never publisher keys.
@@ -138,6 +140,9 @@ class Devices:
             transfer = db.execute('SELECT enrollment_id FROM device_transfers WHERE device_id=?', (device_id,)).fetchone()
             operations = [dict(r) for r in db.execute(
                 'SELECT id,action,state,created,updated FROM device_operations WHERE device_id=? ORDER BY created DESC,id LIMIT 20', (device_id,))]
+            extensions = [self.key_extensions.public(r) for r in db.execute(
+                "SELECT * FROM device_operations WHERE device_id=? AND action='extend_key' ORDER BY created DESC,id LIMIT 20", (device_id,))]
+            package = db.execute('SELECT spec FROM packages WHERE id=?', (device['package_id'],)).fetchone()
         latest = next((s for s in sessions if transfer and s['id'] == transfer['enrollment_id']), None)
         complete = next((s for s in sessions if s['state'] == 'complete'), None)
         state = device['state']
@@ -151,7 +156,9 @@ class Devices:
                 state = 'registration_expired'
             if keys and any(k['status'] in ('expired', 'revoked', 'unavailable', 'missing') for k in keys):
                 state = 'attention'
-        device.update(state=state, keys=keys, operations=operations,
+        device.update(state=state, keys=keys, operations=operations, key_extensions=extensions,
+            key_extension_allowed=bool(complete and package and not json.loads(package['spec'])['network']
+                                       and state not in ('ended', 'revocation_pending')),
             registration=self.enrollments.public(latest) if latest else None,
             receipt_at=datetime.fromtimestamp(complete['completed'], timezone.utc).isoformat() if complete and complete['completed'] else None,
             agents=json.loads(complete['agents']) if complete and complete['agents'] else {},

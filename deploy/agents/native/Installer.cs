@@ -44,12 +44,35 @@ internal sealed class Installer {
         throw new IOException("enrollment_unconfirmed");
     }
     private static void NoExisting() {
+        Safe.Path(Root); Safe.Path(StateRoot);
         Contract.Require(!Directory.Exists(Root) && !Platform.TaskExists(), "existing_installation");
+        Contract.Require(!File.Exists(Root), "existing_installation");
         foreach (var name in new[] {Platform.Service, "cloud-soc-winlogbeat", "winlogbeat", "filebeat", "elastic-agent"}) {
             using (var service = new ServiceController(name)) { bool exists; try { var status = service.Status; exists = true; } catch (InvalidOperationException) { exists = false; } Contract.Require(!exists, "existing_service"); }
         }
         foreach (var name in new[] {"filebeat", "winlogbeat", "elastic-agent"}) Contract.Require(Process.GetProcessesByName(name).Length == 0, "existing_process");
         foreach (var path in new[] {Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Filebeat"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Filebeat-Data"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "filebeat"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Winlogbeat"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Winlogbeat-Data"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Elastic"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "winlogbeat")}) Contract.Require(!Directory.Exists(path), "existing_collector_directory");
+    }
+    internal static void ArchivePurgedState(string stateRoot, string manager, Dictionary<string, object> previous, Dictionary<string, object> registration, bool lab, Action noExisting) {
+        string name = Contract.ReinstallHistoryName(previous, registration, lab);
+        Safe.CheckAcl(stateRoot); Safe.CheckAcl(manager);
+        Contract.Require(Contract.FileHash(manager) == (string)previous["manager_sha256"], "manager_integrity");
+        // A terminal state must contain no retained queues, credentials or unfinished purge tree.
+        var allowed = new[] {"state.json", "cloud-soc-agent.exe", "diagnostic.json"};
+        foreach (string entry in Directory.GetFileSystemEntries(stateRoot)) {
+            Safe.CheckAcl(entry);
+            Contract.Require(File.Exists(entry) && allowed.Contains(Path.GetFileName(entry), StringComparer.OrdinalIgnoreCase), "reinstall_state_residue");
+        }
+        string running = Path.GetFullPath(typeof(Installer).Assembly.Location);
+        Contract.Require(!running.StartsWith(Path.GetFullPath(stateRoot) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase), "reinstall_use_new_bundle");
+        noExisting();
+        string history = stateRoot + "-History", destination = Path.Combine(history, name);
+        Safe.Path(history); Safe.Path(destination);
+        if (!Directory.Exists(history)) Safe.Protected(history); else Safe.CheckAcl(history);
+        Contract.Require(!Directory.Exists(destination) && !File.Exists(destination), "reinstall_history_exists");
+        // Same-volume directory rename: either the previous state remains, or its complete history does.
+        // No old receipt/token is copied into the new installation, and no history is overwritten.
+        noExisting(); Directory.Move(stateRoot, destination);
     }
     internal void Install(string bundle, bool lab) {
         Safe.Path(bundle);
@@ -62,6 +85,14 @@ internal sealed class Installer {
         var profile = Contract.Parse(Contract.Utf8.GetString(members["collection-profile.json"]));
         Contract.Require(Convert.ToInt32(profile["schema"]) == 1 && Object.Equals(profile["platform"], "windows") && !Contract.Flag(profile, "network") && Contract.Flag(profile, "system") == Contract.Flag(spec, "system"), "profile_binding");
         if (lab) { LabOrigin((string)spec["endpoint"]); LabOrigin((string)spec["portal_url"]); }
+        if (File.Exists(StatePath)) {
+            var previous = Load();
+            if (Object.Equals(previous["phase"], "purged")) {
+                Contract.Require(new DriveInfo(Path.GetPathRoot(Root)).AvailableFreeSpace >= 4L * 1024 * 1024 * 1024, "disk_capacity");
+                ArchivePurgedState(StateRoot, Manager, previous, registration, lab, NoExisting);
+                report("이전 제거 이력을 보존했습니다. 새 장치 등록으로 설치합니다. 이전 키·큐는 복원하지 않습니다.");
+            } else if (Object.Equals(previous["phase"], "removed")) throw new IOException("reinstall_preserved_data");
+        }
         if (File.Exists(StatePath)) {
             state = Load(); Contract.Require(Object.Equals(state["device_id"], registration["device_id"]) && Object.Equals(state["package_sha256"], registration["package_sha256"]) && Object.Equals(state["enrollment_id"], registration["enrollment_id"]) && Object.Equals(state["lab"], lab), "existing_binding");
             string phase = (string)state["phase"];
@@ -234,6 +265,7 @@ internal sealed class Installer {
         Phase(purge ? "purged" : "removed");
         report(purge ? "수집기·로컬 큐를 삭제했습니다. 보호된 관리 도구와 작업 이력은 남아 있습니다." : "수집기를 제거했습니다. 재전송 자료·큐·관리 도구는 보호된 경로에 보존했습니다.");
         report("서버 키는 자동 폐기하지 않았습니다. 포털에서 이 장치를 종료하세요.");
+        if (purge) report("다시 설치하려면 포털에서 새 장치를 등록하고 새 설치 묶음을 실행하세요. 읽기 위치 삭제로 기존 로그가 다시 수집될 수 있습니다.");
     }
 }
 }

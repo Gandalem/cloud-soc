@@ -36,21 +36,21 @@ valid_ipv4() {
 validate_addresses() {
     if [ -n "$HOST" ]; then
         case "$HOST" in
-            *[!a-zA-Z0-9.-]*|'') die 'Host must be a DNS name or IPv4, without scheme, port or path.' ;;
+            *[!a-zA-Z0-9.-]*|'') die 'DNS 이름 또는 IPv4를 입력하세요. https://, 포트, 경로는 빼세요.' ;;
         esac
-        [ "${#HOST}" -le 253 ] || die 'Host name is too long.'
+        [ "${#HOST}" -le 253 ] || die 'DNS 이름은 253자 이내로 입력하세요.'
         case "$HOST" in
             *[!0-9.]*)
-                printf '%s\n' "$HOST" | awk -F. '{for(i=1;i<=NF;i++) if(length($i)<1 || length($i)>63 || $i !~ /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/) exit 1}' || die 'Invalid DNS name.'
+                printf '%s\n' "$HOST" | awk -F. '{for(i=1;i<=NF;i++) if(length($i)<1 || length($i)>63 || $i !~ /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/) exit 1}' || die 'DNS 이름 형식이 올바르지 않습니다.'
                 ;;
-            *) valid_ipv4 "$HOST" || die 'Invalid public IPv4.'
-               [ "$HOST" != '0.0.0.0' ] || die 'Public host cannot be 0.0.0.0.' ;;
+            *) valid_ipv4 "$HOST" || die '접속 IPv4 형식이 올바르지 않습니다.'
+               [ "$HOST" != '0.0.0.0' ] || die '접속 주소에 0.0.0.0은 사용할 수 없습니다.' ;;
         esac
         HOST=$(printf '%s' "$HOST" | tr '[:upper:]' '[:lower:]')
     fi
     if [ -n "$BIND_IP" ]; then
-        valid_ipv4 "$BIND_IP" || die 'Invalid bind IPv4.'
-        [ "$BIND_IP" != '0.0.0.0' ] || die 'Specify a concrete local interface IP, not 0.0.0.0.'
+        valid_ipv4 "$BIND_IP" || die '바인딩 IPv4 형식이 올바르지 않습니다.'
+        [ "$BIND_IP" != '0.0.0.0' ] || die '바인딩 주소에는 서버에 할당된 IPv4를 입력하세요. 0.0.0.0은 사용할 수 없습니다.'
     fi
 }
 
@@ -80,15 +80,15 @@ show_plan() {
 confirm_installation() {
     [ "$YES" != yes ] || return 0
     printf '필수 프로그램·Docker·호스트 설정을 변경합니다. 접속 허용 범위를 확인했다면 y/yes/INSTALL 입력 (기본: 취소): '
-    read -r CONFIRM || die 'Installation was not confirmed; no changes made.'
+    read -r CONFIRM || die '설치를 취소했습니다. 변경한 항목은 없습니다.'
     case "$CONFIRM" in
         [Yy]|[Yy][Ee][Ss]|INSTALL) ;;
-        *) die 'Installation was not confirmed; no changes made.' ;;
+        *) die '설치를 취소했습니다. 변경한 항목은 없습니다.' ;;
     esac
 }
 
 check_ubuntu_release() {
-    [ "${ID:-}" = ubuntu ] || die "Ubuntu Server is required (detected ID: ${ID:-unknown}). Derivative distributions are not supported."
+    [ "${ID:-}" = ubuntu ] || die "Ubuntu Server가 필요합니다 (현재 ID: ${ID:-unknown}). 파생 배포판은 지원하지 않습니다."
     UBUNTU_VERSION=${VERSION_ID:-}
     # Match Docker's supported LTS releases; never use jammy packages on a newer OS.
     # Review this list against https://docs.docker.com/engine/install/ubuntu/ when adding releases.
@@ -96,50 +96,50 @@ check_ubuntu_release() {
         22.04) EXPECTED_SUITE=jammy ;;
         24.04) EXPECTED_SUITE=noble ;;
         26.04) EXPECTED_SUITE=resolute ;;
-        *) die "Ubuntu ${UBUNTU_VERSION:-unknown} is not supported by this installer. Use Ubuntu 22.04, 24.04 or 26.04 LTS. Older, interim and unvalidated future releases are not automatically installed." ;;
+        *) die "Ubuntu ${UBUNTU_VERSION:-unknown}은 설치 대상이 아닙니다. Ubuntu Server 22.04·24.04·26.04 LTS를 사용하세요." ;;
     esac
     UBUNTU_SUITE=${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}
-    [ "$UBUNTU_SUITE" = "$EXPECTED_SUITE" ] || die "Ubuntu $UBUNTU_VERSION must use codename $EXPECTED_SUITE, not '${UBUNTU_SUITE:-missing}'. Check /etc/os-release; no repository was changed."
+    [ "$UBUNTU_SUITE" = "$EXPECTED_SUITE" ] || die "Ubuntu $UBUNTU_VERSION의 코드명은 $EXPECTED_SUITE이어야 합니다. /etc/os-release를 확인하세요. 저장소는 변경하지 않았습니다."
     if [ -n "${VERSION_CODENAME:-}" ] && [ "$VERSION_CODENAME" != "$EXPECTED_SUITE" ]; then
-        die 'Conflicting Ubuntu codenames in /etc/os-release; no repository was changed.'
+        die '/etc/os-release의 Ubuntu 코드명이 서로 다릅니다. 저장소는 변경하지 않았습니다.'
     fi
 }
 
 check_platform() {
-    [ "$(id -u)" = 0 ] || die 'Run with sudo on the Ubuntu server.'
-    [ -f /etc/os-release ] || die 'Missing /etc/os-release.'
+    [ "$(id -u)" = 0 ] || die 'Ubuntu 서버에서 sudo로 실행하세요.'
+    [ -f /etc/os-release ] || die '/etc/os-release 파일이 없습니다.'
     ID= VERSION_ID= VERSION_CODENAME= UBUNTU_CODENAME=
     # This file is part of the trusted, root-managed operating system.
     . /etc/os-release
     check_ubuntu_release
-    [ -d /run/systemd/system ] || die 'A running systemd host is required, not a container/chroot.'
+    [ -d /run/systemd/system ] || die 'systemd가 실행 중인 서버가 필요합니다. 컨테이너·chroot에서는 설치할 수 없습니다.'
     for tool in apt-get dpkg-query dpkg ip ss sysctl flock awk df stat mktemp systemctl; do
-        has_command "$tool" || die "Missing base Ubuntu tool: $tool. Use a standard supported Ubuntu Server image."
+        has_command "$tool" || die "필수 Ubuntu 도구가 없습니다: $tool. 표준 Ubuntu Server 이미지를 사용하세요."
     done
     ARCH=$(dpkg --print-architecture)
-    case "$ARCH" in amd64|arm64) ;; *) die 'Only amd64 and arm64 are supported.' ;; esac
+    case "$ARCH" in amd64|arm64) ;; *) die 'amd64와 arm64만 지원합니다.' ;; esac
 }
 
 check_fresh_state() {
-    [ ! -L "$ROOT/state" ] || die 'state/ must not be a symlink.'
+    [ ! -L "$ROOT/state" ] || die 'state/가 심볼릭 링크입니다. 원래 경로를 확인하세요.'
     if path_exists "$STATE"; then
-        die 'state/server already exists. Do not rerun or regenerate credentials. Use the documented Compose recovery commands.'
+        die 'state/server가 이미 있습니다. 인증서를 다시 만들지 말고 docs/runtime_deployment.md의 복구 절차를 따르세요.'
     fi
-    for item in deploy/server/prepare.py deploy/server/compose.yaml deploy/server/Dockerfile; do
-        [ -f "$ROOT/$item" ] || die "Incomplete checkout: $item"
+    for item in deploy/server/prepare.py deploy/server/server_cli.py deploy/server/compose.yaml deploy/server/Dockerfile; do
+        [ -f "$ROOT/$item" ] || die "필수 파일이 없습니다: $item"
     done
 }
 
 check_resources_and_network() {
-    awk '/^MemTotal:/ { found=1; if ($2 < 6291456) exit 1 } END { if (!found) exit 1 }' /proc/meminfo || die 'At least 6 GiB RAM is required; use an 8 GiB or larger instance.'
+    awk '/^MemTotal:/ { found=1; if ($2 < 6291456) exit 1 } END { if (!found) exit 1 }' /proc/meminfo || die '메모리가 6 GiB 이상 필요합니다. 8 GiB 이상 서버를 사용하세요.'
     FREE_KB=$(df -Pk "$ROOT" | awk 'NR==2 {print $4}')
-    case "$FREE_KB" in ''|*[!0-9]*) die 'Cannot check available disk space.' ;; esac
-    [ "$FREE_KB" -ge 10485760 ] || die 'At least 10 GiB free disk is required before downloads.'
-    ADDRESSES=$(ip -4 -o address show) || die 'Cannot enumerate local IPv4 addresses.'
-    printf '%s\n' "$ADDRESSES" | awk -v wanted="$BIND_IP" '{split($4, address, "/"); if (address[1] == wanted) found=1} END {exit !found}' || die 'Bind IP is not on this server. On EC2 use the private IPv4, not the NAT public IPv4.'
-    LISTENERS=$(ss -H -ltn) || die 'Cannot enumerate listening sockets.'
+    case "$FREE_KB" in ''|*[!0-9]*) die '디스크 여유 공간을 조회하지 못했습니다.' ;; esac
+    [ "$FREE_KB" -ge 10485760 ] || die '다운로드 전 디스크 여유 공간이 10 GiB 이상 필요합니다.'
+    ADDRESSES=$(ip -4 -o address show) || die '서버 IPv4를 조회하지 못했습니다.'
+    printf '%s\n' "$ADDRESSES" | awk -v wanted="$BIND_IP" '{split($4, address, "/"); if (address[1] == wanted) found=1} END {exit !found}' || die '서버에 할당되지 않은 바인딩 IP입니다. EC2에서는 사설 IPv4를 입력하세요.'
+    LISTENERS=$(ss -H -ltn) || die '사용 중인 포트를 조회하지 못했습니다.'
     if printf '%s\n' "$LISTENERS" | awk '$4 ~ /:(443|5601|9200)$/ {found=1} END {exit !found}'; then
-        die 'TCP 443, 5601 or 9200 is already in use. Existing services will not be stopped.'
+        die 'TCP 443·5601·9200 중 사용 중인 포트가 있습니다. 기존 서비스는 중지하지 않았습니다.'
     fi
 }
 
@@ -154,11 +154,11 @@ check_docker_stack() {
     docker_local info >/dev/null 2>&1 || die '로컬 Docker가 실행 중이고 접근 가능해야 합니다. 오래된 CLI라면 Docker를 업데이트하세요. 원격 Docker는 사용하지 않습니다.'
     docker_local compose version >/dev/null 2>&1 || die 'Docker Compose v2.24.0 이상이 필요합니다. 공식 저장소를 통해 플러그인을 설치·업데이트하세요.'
     check_runtime_compatibility
-    EXISTING=$(docker_local ps -aq --filter label=com.docker.compose.project=cloud-soc-central) || die 'Cannot inspect Docker containers.'
-    [ -z "$EXISTING" ] || die 'Existing cloud-soc-central containers found; use the recovery/upgrade procedure.'
-    VOLUMES=$(docker_local volume ls --format '{{.Name}}') || die 'Cannot inspect Docker volumes.'
+    EXISTING=$(docker_local ps -aq --filter label=com.docker.compose.project=cloud-soc-central) || die 'Docker 컨테이너를 조회하지 못했습니다.'
+    [ -z "$EXISTING" ] || die '기존 cloud-soc-central 컨테이너가 있습니다. 복구·업그레이드 절차를 따르세요.'
+    VOLUMES=$(docker_local volume ls --format '{{.Name}}') || die 'Docker 볼륨을 조회하지 못했습니다.'
     if printf '%s\n' "$VOLUMES" | grep -q '^cloud-soc-central_'; then
-        die 'Existing central volumes found. Keep their credentials and data; do not initialize a new CA/password set.'
+        die '기존 중앙 서버 볼륨이 있습니다. 데이터와 자격 증명을 보존하고 기존 서버 복구 절차를 따르세요.'
     fi
 }
 
@@ -167,34 +167,34 @@ check_runtime_compatibility() {
 }
 
 render_docker_source() {
-    case "${UBUNTU_SUITE:-}" in jammy|noble|resolute) ;; *) die 'Validate the Ubuntu release before generating the Docker repository.' ;; esac
+    case "${UBUNTU_SUITE:-}" in jammy|noble|resolute) ;; *) die 'Docker 저장소를 만들기 전에 Ubuntu 버전과 코드명을 확인하세요.' ;; esac
     printf '%s\n' 'Types: deb' 'URIs: https://download.docker.com/linux/ubuntu' \
         "Suites: $UBUNTU_SUITE" 'Components: stable' "Architectures: $ARCH" "Signed-By: $KEY_FILE"
 }
 
 check_repository() {
     for directory in "$APT_ROOT/keyrings" "$APT_ROOT/sources.list.d"; do
-        [ ! -L "$directory" ] || die "APT directory must not be a symlink: $directory"
+        [ ! -L "$directory" ] || die "APT 경로가 심볼릭 링크입니다: $directory"
         if path_exists "$directory"; then
-            [ -d "$directory" ] || die "Not an APT directory: $directory"
+            [ -d "$directory" ] || die "APT 디렉터리가 아닙니다: $directory"
         fi
     done
     for source in "$APT_ROOT/sources.list" "$APT_ROOT"/sources.list.d/*.list "$APT_ROOT"/sources.list.d/*.sources; do
         [ -f "$source" ] || continue
         [ "$source" = "$SOURCE_FILE" ] && continue
         if grep -q 'download\.docker\.com' "$source"; then
-            die "Existing Docker APT source: $source. Review/install Docker from that source manually; it will not be overwritten."
+            die "기존 Docker APT 저장소가 있습니다: $source. 덮어쓰지 않았습니다. 기존 저장소에서 Docker를 설치하세요."
         fi
     done
     if path_exists "$SOURCE_FILE"; then
-        [ ! -L "$SOURCE_FILE" ] && [ -f "$SOURCE_FILE" ] || die 'Unsafe existing Docker source file.'
-        [ "$(stat -c '%u:%a' "$SOURCE_FILE")" = '0:644' ] || die 'Existing Docker source must be root-owned mode 0644.'
-        [ "$(render_docker_source)" = "$(cat "$SOURCE_FILE")" ] || die 'Existing installer-managed Docker source differs; review it manually.'
-        [ -f "$KEY_FILE" ] || die 'Docker source exists without its signing key.'
+        [ ! -L "$SOURCE_FILE" ] && [ -f "$SOURCE_FILE" ] || die '기존 Docker 저장소 파일의 형식·링크를 확인하세요.'
+        [ "$(stat -c '%u:%a' "$SOURCE_FILE")" = '0:644' ] || die '기존 Docker 저장소 파일은 root 소유·권한 0644여야 합니다.'
+        [ "$(render_docker_source)" = "$(cat "$SOURCE_FILE")" ] || die '기존 Docker 저장소 파일 내용이 다릅니다. 덮어쓰지 않았습니다.'
+        [ -f "$KEY_FILE" ] || die 'Docker 저장소의 서명 키가 없습니다.'
     fi
     if path_exists "$KEY_FILE"; then
-        [ ! -L "$KEY_FILE" ] && [ -f "$KEY_FILE" ] && [ -s "$KEY_FILE" ] || die 'Unsafe existing Docker signing key.'
-        [ "$(stat -c '%u:%a' "$KEY_FILE")" = '0:644' ] || die 'Existing Docker signing key must be root-owned mode 0644.'
+        [ ! -L "$KEY_FILE" ] && [ -f "$KEY_FILE" ] && [ -s "$KEY_FILE" ] || die '기존 Docker 서명 키의 형식·링크를 확인하세요.'
+        [ "$(stat -c '%u:%a' "$KEY_FILE")" = '0:644' ] || die '기존 Docker 서명 키는 root 소유·권한 0644여야 합니다.'
     fi
 }
 
@@ -205,7 +205,7 @@ detect_docker() {
         return
     fi
     for package in docker.io docker-compose docker-compose-v2 docker-doc docker-buildx podman-docker containerd runc docker-ce docker-ce-cli containerd.io; do
-        installed "$package" && die "Existing package $package needs manual review; no automatic removal/replacement."
+        installed "$package" && die "기존 패키지를 확인하세요: $package. 자동 삭제·교체하지 않았습니다."
     done
     INSTALL_DOCKER=yes
     check_repository
@@ -230,8 +230,8 @@ install_docker() {
     if ! path_exists "$KEY_FILE"; then
         curl --fail --silent --show-error --proto '=https' --tlsv1.2 --connect-timeout 20 --max-time 120 \
             https://download.docker.com/linux/ubuntu/gpg -o "$TEMP/docker.asc"
-        [ -s "$TEMP/docker.asc" ] || die 'Empty Docker signing key download.'
-        grep -q '^-----BEGIN PGP PUBLIC KEY BLOCK-----' "$TEMP/docker.asc" || die 'Invalid Docker signing key response.'
+        [ -s "$TEMP/docker.asc" ] || die '다운로드한 Docker 서명 키가 비어 있습니다.'
+        grep -q '^-----BEGIN PGP PUBLIC KEY BLOCK-----' "$TEMP/docker.asc" || die '다운로드한 Docker 서명 키의 형식이 올바르지 않습니다.'
         if ! path_exists "$APT_ROOT/keyrings"; then install -d -m 0755 "$APT_ROOT/keyrings"; fi
         # Exclusive creation: never truncate an existing path or follow a symlink.
         (set -C; cat "$TEMP/docker.asc" > "$KEY_FILE")
@@ -249,15 +249,15 @@ install_docker() {
 
 check_kernel_config() {
     if path_exists "$SYSCTL_FILE"; then
-        [ ! -L "$SYSCTL_FILE" ] && [ -f "$SYSCTL_FILE" ] || die 'Unsafe existing sysctl configuration.'
-        [ "$(cat "$SYSCTL_FILE")" = 'vm.max_map_count=1048576' ] || die 'Existing sysctl file differs; it will not be overwritten.'
+        [ ! -L "$SYSCTL_FILE" ] && [ -f "$SYSCTL_FILE" ] || die '기존 커널 설정 파일의 형식·링크를 확인하세요.'
+        [ "$(cat "$SYSCTL_FILE")" = 'vm.max_map_count=1048576' ] || die '기존 커널 설정 파일 내용이 다릅니다. 덮어쓰지 않았습니다.'
     fi
 }
 
 configure_kernel() {
     check_kernel_config
     MAP_COUNT=$(sysctl -n vm.max_map_count)
-    case "$MAP_COUNT" in ''|*[!0-9]*) die 'Cannot read vm.max_map_count.' ;; esac
+    case "$MAP_COUNT" in ''|*[!0-9]*) die 'vm.max_map_count 값을 읽지 못했습니다.' ;; esac
     if [ "$MAP_COUNT" -lt 1048576 ]; then
         if ! path_exists "$SYSCTL_FILE"; then
             (set -C; printf '%s\n' 'vm.max_map_count=1048576' > "$SYSCTL_FILE")
@@ -315,7 +315,12 @@ finish() {
         rmdir "$TEMP" 2>/dev/null || true
     fi
     if [ "$RESULT" -ne 0 ]; then
-        printf '설치 중단 단계: %s. 기존 설정과 부분 설치 상태는 보존됐습니다.\n' "${STAGE:-arguments}" >&2
+        case "${STAGE:-arguments}" in
+            arguments) LABEL='입력';; preflight) LABEL='설치 조건';; packages) LABEL='필수 프로그램';;
+            docker) LABEL='Docker';; kernel) LABEL='커널 설정';; certificates) LABEL='인증서';;
+            compose) LABEL='서버 구성';; readiness) LABEL='HTTPS 접속';; *) LABEL='알 수 없음';;
+        esac
+        printf '설치 중단 단계: %s. 기존 설정과 부분 설치 상태는 보존됐습니다.\n' "$LABEL" >&2
         printf '%s\n' '인증서 준비 후 실패했다면 deploy/server/README.md의 공통 관리자 복구 절차를 따르세요.' >&2
     fi
     exit "$RESULT"
@@ -335,14 +340,14 @@ main() {
     trap 'exit 143' TERM
     while [ "$#" -gt 0 ]; do
         case "$1" in
-            --host) [ "$#" -ge 2 ] && [ -n "$2" ] && [ -z "$HOST" ] || die 'Provide --host once, with a value.'; HOST=$2; shift 2 ;;
-            --agent-host) [ "$#" -ge 2 ] && [ -n "$2" ] && [ -z "$AGENT_HOST" ] || die 'Provide --agent-host once, with a value.'; AGENT_HOST=$2; shift 2 ;;
-            --bind-ip) [ "$#" -ge 2 ] && [ -n "$2" ] && [ -z "$BIND_IP" ] || die 'Provide --bind-ip once, with a value.'; BIND_IP=$2; shift 2 ;;
+            --host) [ "$#" -ge 2 ] && [ -n "$2" ] && [ -z "$HOST" ] || die '--host는 값과 함께 한 번만 지정하세요.'; HOST=$2; shift 2 ;;
+            --agent-host) [ "$#" -ge 2 ] && [ -n "$2" ] && [ -z "$AGENT_HOST" ] || die '--agent-host는 값과 함께 한 번만 지정하세요.'; AGENT_HOST=$2; shift 2 ;;
+            --bind-ip) [ "$#" -ge 2 ] && [ -n "$2" ] && [ -z "$BIND_IP" ] || die '--bind-ip는 값과 함께 한 번만 지정하세요.'; BIND_IP=$2; shift 2 ;;
             --dry-run) DRY_RUN=yes; shift ;;
             --prepare-only) PREPARE_ONLY=yes; shift ;;
             --yes) YES=yes; shift ;;
             --help|-h) usage; return 0 ;;
-            *) die "Unknown option: $1" ;;
+            *) die "지원하지 않는 옵션입니다. --help로 사용법을 확인하세요." ;;
         esac
     done
     validate_addresses
@@ -365,8 +370,8 @@ main() {
     umask 077
     STAGE=preflight
     check_platform
-    case "$ROOT" in *[!a-zA-Z0-9_./-]*) die 'Use a repository path without spaces, special characters or non-ASCII text.' ;; esac
-    [ -t 0 ] && [ -t 1 ] || die 'Use an interactive SSH terminal; passwords cannot be passed as command-line arguments or piped input.'
+    case "$ROOT" in *[!a-zA-Z0-9_./-]*) die '저장소 경로에는 영문·숫자·밑줄·하이픈·슬래시만 사용하세요.' ;; esac
+    [ -t 0 ] && [ -t 1 ] || die '대화형 SSH 터미널에서 실행하세요. 비밀번호는 명령 인자나 파이프로 전달할 수 없습니다.'
     if [ -z "$HOST" ]; then
         printf 'PC에서 접속할 대시보드 DNS/IPv4 (https:// 제외): '
         read -r HOST
@@ -377,7 +382,7 @@ main() {
         read -r BIND_IP
         BIND_IP=${BIND_IP:-127.0.0.1}
     fi
-    [ -n "$HOST" ] || die 'Public host is required.'
+    [ -n "$HOST" ] || die '포털 접속 주소를 입력하세요.'
     validate_addresses
     check_fresh_state
     check_resources_and_network
@@ -387,7 +392,7 @@ main() {
     confirm_installation
     # Serialize this installer, including a retry launched from another checkout.
     exec 9>/run/lock/cloud-soc-central-install.lock
-    flock -n 9 || die 'Another central installation is running.'
+    flock -n 9 || die '다른 중앙 서버 설치가 실행 중입니다.'
     check_fresh_state
     check_resources_and_network
     detect_docker

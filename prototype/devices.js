@@ -1,18 +1,31 @@
 /* Device lifecycle UI: keep drafts and request IDs; never render or copy publisher secrets. */
 const SocDevices = (() => {
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const states = {requested:'설치 대기',awaiting_receipt:'등록 시험 수신 대기',received:'등록 시험 수신 기록',attention:'조치 필요',registration_expired:'등록 정보 만료',revocation_pending:'접근 차단 처리 중',ended:'사용 종료'};
+  const states = {requested:'설치 대기',awaiting_receipt:'최초 수신 대기',received:'등록 확인됨',attention:'조치 필요',registration_expired:'등록 정보 만료',revocation_pending:'접근 차단 처리 중',ended:'사용 종료'};
+  const operatingSystems = {ubuntu:'Ubuntu',windows:'Windows',amazon_linux_2023:'Amazon Linux 2023'};
+  const purposes = {server:'일반 서버',web:'웹 서버',custom:'직접 선택'};
   const keyStates = {active:'유효 · 마지막 조회 기준',unverified:'서버 조회 전',expired:'만료',revoked:'폐기 완료',missing:'서버에서 찾지 못함',unavailable:'서버 조회 실패'};
   const date = value => value ? new Date(value).toLocaleString('ko-KR') : '기록 없음';
-  function keyMarkup(key) { return `<article class="device-key"><strong>${escape(key.target_label || '대상 연결 전')} · ${key.scope === 'network' ? '네트워크 수집' : key.scope === 'host' ? '로그 수집' : '용도 미확인'}</strong><p>${escape(key.organization)} · ${escape(keyStates[key.status] || '상태 미확인')}</p><p>발급 ${escape(date(key.created_at))} · 만료 ${escape(date(key.expiration))}</p><details><summary>식별 정보</summary><code>${escape(key.id)}</code></details></article>`; }
-  return {escape,states,date,keyMarkup};
+  const tone = value => ['attention','registration_expired','revocation_pending','expired','missing','unavailable'].includes(value)?'attention':['ended','revoked'].includes(value)?'ended':'neutral';
+  function stateMarkup(value){return `<span class="device-state-chip" data-tone="${tone(value)}">${escape(states[value]||'상태 미확인')}</span>`;}
+  function stateNote(device){
+    if(device.state==='ended')return '서버 접근이 차단된 장치입니다. 장치의 프로그램과 미전송 자료는 장치에서 별도로 정리하세요.';
+    if(device.state==='revocation_pending')return '접근 차단 결과를 모두 확인하지 못했습니다. 같은 장치의 접근 차단을 다시 요청해 결과를 확인하세요.';
+    if(device.state!=='attention')return '';
+    if(device.keys.some(k=>k.status==='revoked'))return '폐기된 수집 키가 있습니다. 아래 키 이력을 확인하세요. 폐기된 키는 유효기간을 연장할 수 없습니다.';
+    if(device.keys.some(k=>k.status==='expired'))return '만료된 수집 키가 있습니다. 아래 키 이력을 확인하세요. 만료된 키는 유효기간을 연장할 수 없습니다.';
+    if(device.keys.some(k=>['missing','unavailable'].includes(k.status)))return '서버에서 상태를 확인하지 못한 수집 키가 있습니다. 키 이력에서 서버 조회 결과를 확인하세요.';
+    return '등록 요청 또는 수집 키에 확인이 필요한 항목이 있습니다. 설치 정보와 키 이력을 확인하세요.';
+  }
+  function keyMarkup(key) { return `<article class="device-key"><div class="device-key-heading"><strong>${escape(key.target_label || '대상 연결 전')} · ${key.scope === 'network' ? '네트워크 수집' : key.scope === 'host' ? '로그 수집' : '용도 미확인'}</strong><span class="device-state-chip" data-tone="${tone(key.status)}">${escape(keyStates[key.status] || '상태 미확인')}</span></div><p class="device-key-meta">조직 ${escape(key.organization)} · 발급일 ${escape(date(key.created_at))}</p><p>만료일 <strong>${escape(date(key.expiration))}</strong></p><details><summary>키 ID 보기</summary><code>${escape(key.id)}</code></details></article>`; }
+  return {escape,states,date,keyMarkup,stateMarkup,stateNote,operatingSystems,purposes};
 })();
 if (typeof module !== 'undefined') module.exports = SocDevices;
 if (typeof document !== 'undefined') (() => {
   'use strict';
   const $ = selector => document.querySelector(selector);
-  const {escape,states,date,keyMarkup} = SocDevices;
-  const state = {page:1,keyPage:1,detail:null,busy:false,enabled:false,formRequest:null,startAt:null,loads:0,keyLoads:0,requests:new Map()};
+  const {escape,states,date,keyMarkup,stateMarkup,stateNote,operatingSystems,purposes} = SocDevices;
+  const state = {page:1,keyPage:1,detail:null,busy:false,enabled:false,formRequest:null,startAt:null,loads:0,keyLoads:0,requests:new Map(),extension:null};
   const id = () => crypto.randomUUID().replaceAll('-','');
   function requestId(action, data) {
     const name = `${action}:${JSON.stringify(data)}`;
@@ -36,7 +49,7 @@ if (typeof document !== 'undefined') (() => {
       state.enabled=result.enrollment_enabled;
       $('#add-device').disabled=!state.enabled;
       $('#page-message').textContent=state.enabled?'':'서버의 HTTPS 장치 등록 설정을 준비하세요. 기존 장치와 키는 고급 관리에서 조회할 수 있습니다.';
-      $('#device-rows').innerHTML=result.devices.map(d=>`<tr><td>${escape(d.label)}</td><td>${escape(d.organization)} / ${escape(d.os)}</td><td>${escape(states[d.state]||d.state)}</td><td>${escape(date(d.receipt_at))}</td><td><button data-device="${d.id}">장치 관리</button></td></tr>`).join('')||'<tr><td colspan="5">표시할 장치가 없습니다.</td></tr>';
+      $('#device-rows').innerHTML=result.devices.map(d=>`<tr><td>${escape(d.label)}</td><td>${escape(d.organization)} / ${escape(operatingSystems[d.os]||d.os)}</td><td>${stateMarkup(d.state)}</td><td>${escape(date(d.receipt_at))}</td><td><button data-device="${d.id}">장치 관리</button></td></tr>`).join('')||'<tr><td colspan="5">표시할 장치가 없습니다.</td></tr>';
       $('#device-count').textContent=`${result.total}대 · ${state.page} / ${Math.max(1,Math.ceil(result.total/25))}`;
       $('#device-prev').disabled=state.page<=1;$('#device-next').disabled=state.page*25>=result.total;
     }catch(error){if(generation===state.loads)$('#page-message').textContent=error.message;}
@@ -46,17 +59,23 @@ if (typeof document !== 'undefined') (() => {
     try{
       const result=await api('/api/key-history?'+new URLSearchParams({view:$('#key-view').value,q:$('#key-search').value,page:state.keyPage,size:25}));
       if(generation!==state.keyLoads)return;
-      $('#key-rows').innerHTML=result.keys.map(keyMarkup).join('')||'<p>표시할 자격 증명이 없습니다.</p>';
+      $('#key-rows').innerHTML=result.keys.map(keyMarkup).join('')||'<p>표시할 수집 키가 없습니다.</p>';
       $('#key-count').textContent=`${result.total}개 · ${state.keyPage} / ${Math.max(1,Math.ceil(result.total/25))}`;
       $('#key-prev').disabled=state.keyPage<=1;$('#key-next').disabled=state.keyPage*25>=result.total;
     }catch(error){if(generation===state.keyLoads)$('#key-count').textContent=error.message;}
   }
   function show(device) {
+    const previous=state.detail;
     state.detail=device;$('#device-title').textContent=device.label;
-    const fields=[['조직',device.organization],['OS',device.os],['수집 목적',device.purpose],['상태',states[device.state]],['최초 등록 시험 수신',date(device.receipt_at)],['장치 서비스','로컬 상태에서 조회'],['분석','탐지 현황에서 별도 조회']];
+    const fields=[['조직',device.organization],['운영체제',operatingSystems[device.os]||device.os],['수집 목적',purposes[device.purpose]||device.purpose],['상태',states[device.state]||'상태 미확인'],['최초 수신 확인',date(device.receipt_at)],['수집기 실행 상태','장치의 상태 메뉴에서 확인'],['로그 분석 상태','탐지 현황에서 확인']];
     $('#device-info').innerHTML=fields.map(([k,v])=>`<dt>${escape(k)}</dt><dd>${escape(v)}</dd>`).join('');
+    const note=stateNote(device);$('#device-state-note').textContent=note;$('#device-state-note').hidden=!note;
     $('#device-keys').innerHTML=device.keys.map(keyMarkup).join('');
+    showExtension(device);
     const registration=device.registration;
+    if(previous?.id!==device.id||previous?.registration?.state!==registration?.state){
+      $('#device-installation').toggleAttribute('open',!device.receipt_at&&registration?.state!=='complete'&&!['received','ended','revocation_pending'].includes(device.state));
+    }
     const downloadable=registration?.state==='unused' && registration.expires*1000>Date.now() && !['ended','revocation_pending'].includes(device.state);
     $('#device-download').hidden=!downloadable;$('#device-download').href=`/api/managed-devices/${device.id}/download`;
     $('#device-diagnostics').href=`/api/managed-devices/${device.id}/diagnostics`;
@@ -64,9 +83,58 @@ if (typeof document !== 'undefined') (() => {
     $('#device-prepare').disabled=state.busy||!state.enabled||issued||['ended','revocation_pending'].includes(device.state);
     $('#device-renew').disabled=state.busy||!state.enabled||issued||['ended','revocation_pending'].includes(device.state);
     $('#device-end').disabled=state.busy||device.state==='ended';
+    $('#device-end').textContent=device.state==='ended'?'사용 종료된 장치':'접근 차단 및 사용 종료';
     $('#device-end-confirm').hidden=true;
     if(!$('#device-detail').open)$('#device-detail').showModal();
   }
+  function showExtension(device){
+    const pending=(device.key_extensions||[]).find(e=>['preview','attempted','uncertain'].includes(e.state));
+    if(state.extension?.device!==device.id)state.extension=null;
+    if(pending&&(!state.extension||pending.state!=='preview'||state.extension.state==='preview'))state.extension={device:device.id,...pending};
+    const available=device.keys.filter(k=>k.scope==='host'&&!k.revoked_at&&k.expiration>Date.now());
+    $('#device-extension').hidden=!(state.enabled&&device.key_extension_allowed&&(available.length||pending));
+    const choice=$('#extension-key').value;
+    $('#extension-key').innerHTML=available.map(k=>`<option value="${escape(k.id)}">로그 수집 · 만료 ${escape(date(k.expiration))} · ID ${escape(k.id.slice(-8))}</option>`).join('');
+    if(available.some(k=>k.id===choice))$('#extension-key').value=choice;
+    const current=state.extension;
+    $('#extension-confirm').hidden=!current;
+    for(const selector of ['#extension-key','#extension-days','#extension-preview'])$(selector).disabled=state.busy||!!current;
+    $('#extension-apply').disabled=state.busy;$('#extension-cancel').disabled=state.busy||!!current&&current.state!=='preview';
+    if(current){
+      $('#extension-summary').textContent=`기존 만료 ${date(current.before_expiration)} → 예정 만료 ${date(current.target_expiration)} · ${current.days}일 추가`;
+      $('#extension-apply').textContent=current.state==='preview'?'연장 적용':'서버 결과 다시 확인';
+      $('#extension-state').textContent=current.state==='preview'?'변경할 만료일을 확인한 뒤 연장을 적용하세요.':'연장 결과를 확인하지 못했습니다. 같은 요청의 결과를 다시 확인하세요. 기간을 중복으로 더하지 않습니다.';
+    }
+  }
+  $('#extension-preview').addEventListener('click',async()=>{
+    if(state.busy||!state.detail)return;
+    const device=state.detail.id,data={key_id:$('#extension-key').value,days:Number($('#extension-days').value)};
+    state.busy=true;show(state.detail);
+    try{
+      const result=await api(`/api/managed-devices/${device}/key-extension/preview`,{method:'POST',data,request:requestId('extend:'+device,data)});
+      state.extension={device,...result.extension};if(state.detail?.id===device)show(state.detail);
+    }catch(error){$('#device-detail-message').textContent=error.message;}
+    finally{state.busy=false;if(state.detail?.id===device)show(state.detail);}
+  });
+  async function extensionApply(confirm){
+    if(state.busy||!state.detail||!state.extension)return;
+    const current=state.extension,device=state.detail.id;
+    state.busy=true;show(state.detail);
+    try{
+      const result=await api(`/api/managed-devices/${device}/key-extension/${current.id}`,{method:'POST',data:{confirm}});
+      releaseRequest('extend:'+device,{key_id:current.key_id,days:current.days});state.extension=null;
+      if(state.detail?.id===device){show(result.device);$('#device-detail-message').textContent=confirm?`유효기간 연장 완료 · 새 만료일 ${date(result.extension.expiration)}`:'연장 요청을 취소했습니다.';}
+      await keys();
+    }catch(error){
+      // Do not offer a second dispatch after a lost apply response. Reload recovers
+      // the durable request; in-memory retries use the same ID even if reload fails.
+      if(confirm)state.extension={...current,state:'attempted'};
+      $('#device-detail-message').textContent=error.message;
+      try{const latest=await api('/api/managed-devices/'+device);if(state.detail?.id===device)show(latest.device);}catch{/* Preserve request identity until server is available. */}
+    }finally{state.busy=false;if(state.detail?.id===device)show(state.detail);}
+  }
+  $('#extension-apply').addEventListener('click',()=>extensionApply(true));
+  $('#extension-cancel').addEventListener('click',()=>extensionApply(false));
   async function detail(deviceId){try{const result=await api('/api/managed-devices/'+deviceId);$('#device-detail-message').textContent='';$('#device-activity').textContent='';show(result.device);}catch(error){$('#page-message').textContent=error.message;}}
   async function prepare(renew){
     if(state.busy||!state.detail)return;

@@ -1,1 +1,58 @@
-.device-panel{padding:20px;margin:18px 0}.device-toolbar,.device-actions{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin:12px 0}.device-toolbar label{display:grid;gap:6px}.device-toolbar input,.device-toolbar select{min-height:38px;max-width:100%}.device-panel h2{font-size:18px}.device-key{padding:12px 0;border-bottom:1px solid var(--border-color,#dce3ec)}.device-key p{margin:4px 0}#device-info{display:grid;grid-template-columns:minmax(100px,1fr) 2fr;gap:10px}#device-info dd{margin:0;overflow-wrap:anywhere}#device-form label{display:block;margin:12px 0}#device-form input:not([type=checkbox]),#device-form select{width:100%}#device-form-error,#device-detail-message{white-space:pre-wrap;overflow-wrap:anywhere}#device-end-confirm{padding:14px;margin-top:12px;background:var(--surface-alt,#fff5f3)}.device-actions [hidden]{display:none}@media(max-width:600px){.device-toolbar label{width:100%}.device-panel{padding:12px}#device-info{grid-template-columns:1fr}#device-info dd{margin-bottom:8px}}
+.device-panel{padding:20px;margin:18px 0}
+.device-toolbar,.device-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:16px 0}
+.device-toolbar label{display:grid;gap:6px}
+.device-toolbar input,.device-toolbar select{min-height:38px;max-width:100%}
+.device-panel h2{font-size:18px}
+.device-key{padding:16px;border:1px solid var(--border-color,#dce3ec);border-radius:10px;background:var(--surface,#fff);margin-top:12px}
+.device-key p{margin:7px 0;line-height:1.6}
+.device-key details{margin-top:10px}
+.device-key code{display:block;margin-top:8px;overflow-wrap:anywhere}
+.device-key-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.device-state-chip{display:inline-block;padding:3px 9px;border-radius:999px;background:var(--surface-alt,#eef3f9);font-size:12px;line-height:1.5;font-weight:600;white-space:nowrap}
+.device-state-chip[data-tone=attention]{background:#fff2df;color:#875008}
+.device-state-chip[data-tone=ended]{background:var(--surface-alt,#eef1f5);color:var(--muted,#53647b)}
+.device-key-meta,.device-help{color:var(--muted,#5f7087);font-size:13px;line-height:1.7}
+#device-info{display:grid;grid-template-columns:minmax(100px,160px) minmax(0,1fr);column-gap:24px;row-gap:12px;margin:0}
+#device-info dt{color:var(--muted,#5f7087)}
+#device-info dd{margin:0;overflow-wrap:anywhere}
+#device-form label{display:block;margin:12px 0}
+#device-form input:not([type=checkbox]),#device-form select{width:100%}
+#device-form-error,#device-detail-message{white-space:pre-wrap;overflow-wrap:anywhere}
+#page-message:empty,#device-form-error:empty,#device-detail-message:empty,#device-activity:empty{display:none}
+#device-detail{width:min(820px,calc(100vw - 32px));border-radius:14px}
+#device-detail header h2{font-size:19px;line-height:1.4}
+#device-detail>.dialog-body{display:grid;gap:22px;padding:24px}
+#device-detail h3{font-size:15px;line-height:1.5;margin:0 0 8px}
+#device-detail .form-row{grid-template-columns:120px minmax(0,1fr);gap:16px;margin:16px 0}
+#device-detail .form-row select{min-height:42px;min-width:0;border-radius:6px}
+#device-detail .device-actions{margin-bottom:0}
+#device-detail button,#device-detail .button-link{min-height:40px;border-radius:6px}
+#device-detail header button{min-width:36px;min-height:36px}
+.device-detail-section>.device-help{margin:16px 0 0}
+.device-detail-section>.device-actions{margin-top:14px}
+.device-installation{border:1px solid var(--border-color,#dce3ec);border-radius:10px;padding:14px 16px}
+.device-installation>summary{cursor:pointer;font-weight:600}
+.device-installation-body{padding-top:8px}
+.device-installation-body .device-help{margin:14px 0}
+.device-extension{padding:20px;border:1px solid var(--border-color,#d6e2f2);border-radius:10px;background:var(--surface-alt,#f5f8fd)}
+.device-extension>.device-help{margin:6px 0 0}
+.extension-confirm{padding-top:16px;margin-top:18px;border-top:1px solid var(--border-color,#d6e2f2)}
+#extension-summary{font-weight:600;line-height:1.8;margin:0 0 8px;overflow-wrap:anywhere}
+#extension-state{font-size:13px;line-height:1.7;color:var(--muted,#5f7087)}
+.device-danger-zone{border-top:1px solid var(--border-color,#dce3ec);padding-top:24px;margin-top:8px}
+.device-danger-zone .device-help{margin:0;max-width:64ch}
+.device-danger-zone>.device-actions{margin-top:16px}
+#device-end-confirm,.device-state-note{padding:14px;margin:14px 0 0;border:1px solid #ecd8b7;border-radius:8px;background:#fff7eb;color:#754b17;line-height:1.7}
+#device-detail-message{margin:0;padding:12px 14px;border-radius:8px;background:var(--surface-alt,#eef3f9);line-height:1.7}
+#device-activity{margin:14px 0 0;line-height:1.7}
+.device-actions [hidden],#device-detail [hidden]{display:none}
+@media(max-width:600px){
+  .device-toolbar label{width:100%}
+  .device-panel{padding:12px}
+  #device-info{grid-template-columns:1fr;gap:5px}
+  #device-info dd{margin-bottom:12px}
+  #device-detail>.dialog-body{padding:18px;gap:18px}
+  #device-detail .form-row{grid-template-columns:1fr;gap:7px}
+  .device-extension{padding:16px}
+  #device-detail .device-actions>*{flex:1 1 auto}
+}

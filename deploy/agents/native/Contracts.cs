@@ -85,5 +85,14 @@ internal static class Contract {
         var key = keys[0] as Dictionary<string, object>; Require(key != null && Text(key, "scope", "host") == "host", "session_scope");
         Text(key, "key", "[A-Za-z0-9_-]+:[A-Za-z0-9_-]+"); return key;
     }
+    internal static string ReinstallHistoryName(Dictionary<string, object> previous, Dictionary<string, object> registration, bool lab) {
+        Require(Object.Equals(previous["phase"], "purged") && Flag(previous, "purge"), "reinstall_requires_purge");
+        Require(Object.Equals(previous["lab"], lab), "reinstall_mode_changed");
+        string device = Text(previous, "device_id", "[a-f0-9]{32}");
+        string enrollment = Text(previous, "enrollment_id", "[a-f0-9]{32}");
+        Require(Text(registration, "device_id", "[a-f0-9]{32}") != device && Text(registration, "enrollment_id", "[a-f0-9]{32}") != enrollment, "reinstall_new_registration_required");
+        Text(previous, "manager_sha256", "[a-f0-9]{64}");
+        return device + "-" + enrollment;
+    }
 }
 }

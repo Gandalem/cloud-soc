@@ -52,7 +52,7 @@ class ImagePreparationTests(unittest.TestCase):
         engine.run.side_effect = lambda args, **kw: events.append((args, kw)) or ''
         plan = {'fresh': True, 'resources': {'ok': True}, 'compose_environment': {'SOC_STATE_DIR': '/lab/state/server'}}
         with patch.object(sys, 'argv', ['manage.py', 'install', '--build']), \
-                patch.object(manage.os, 'geteuid', return_value=0, create=True), \
+                patch.object(manage, 'os', SimpleNamespace(name='posix', geteuid=lambda: 0)), \
                 patch.object(manage, 'Docker', return_value=engine), \
                 patch.object(manage, 'snapshot', return_value=plan), \
                 patch.object(manage, 'apply', side_effect=lambda *_a, **_kw: events.append(('activate', {})) or {}), \
@@ -80,7 +80,7 @@ class ImagePreparationTests(unittest.TestCase):
             engine.run.side_effect = fail_pull
             plan = {'fresh': True, 'resources': {'ok': True}, 'compose_environment': {}}
             with patch.object(sys, 'argv', ['manage.py', 'install', '--state', str(state)]), \
-                    patch.object(manage.os, 'geteuid', return_value=0, create=True), \
+                    patch.object(manage, 'os', SimpleNamespace(name='posix', geteuid=lambda: 0)), \
                     patch.object(manage, 'Docker', return_value=engine), \
                     patch.object(manage, 'snapshot', return_value=plan), \
                     patch.object(manage, 'apply') as activate, redirect_stdout(io.StringIO()):
@@ -95,7 +95,7 @@ class ImagePreparationTests(unittest.TestCase):
                 engine = Mock()
                 plan = {'fresh': fresh, 'resources': {'ok': enough}, 'compose_environment': {}}
                 with patch.object(sys, 'argv', ['manage.py', 'install']), \
-                        patch.object(manage.os, 'geteuid', return_value=0, create=True), \
+                        patch.object(manage, 'os', SimpleNamespace(name='posix', geteuid=lambda: 0)), \
                         patch.object(manage, 'Docker', return_value=engine), \
                         patch.object(manage, 'snapshot', return_value=plan), \
                         redirect_stdout(io.StringIO()):
@@ -210,7 +210,12 @@ class RemovalTests(unittest.TestCase):
             result = remove.plan(self.args)
             self.assertEqual(result['paths'], [str(self.state)])
             (self.state / 'compose.env').unlink()
-            (self.state / 'compose.env').symlink_to(self.root / 'foreign')
+            try:
+                (self.state / 'compose.env').symlink_to(self.root / 'foreign')
+            except OSError as error:
+                if getattr(error, 'winerror', None) == 1314:
+                    self.skipTest('실제 심볼릭 링크 검사는 Linux 또는 Windows 링크 생성 권한이 필요합니다')
+                raise
             with self.assertRaises(remove.RemovalError):
                 remove.plan(self.args)
 

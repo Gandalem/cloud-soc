@@ -1,5 +1,4 @@
 """Ubuntu Cloud SOC 제거. 기본은 미리보기이며 실행은 --apply로 명시한다."""
-import argparse
 from contextlib import ExitStack
 import json
 import os
@@ -7,9 +6,14 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'deploy/server'))
+from server_cli import KoreanParser
+
 PROJECT = 'cloud-soc-central'
+STOP_TIMEOUT = 90
 SERVICES = {'elasticsearch', 'kibana', 'gateway', 'portal', 'bootstrap', 'enrollment-cleanup',
             'normalizer', 'normalizer-priority', 'detector', 'detector-priority',
             'detector-additional', 'detector-retrospective', 'slack-notifier'}
@@ -146,6 +150,8 @@ def plan(args):
                 result['docker_packages'].append(package)
         if has_docker and not result['docker_packages']:
             raise RemovalError('공식 Docker CE APT 설치가 아니므로 Docker 프로그램은 자동 제거하지 않습니다.')
+    for key in ('containers', 'volumes', 'networks', 'units', 'paths', 'images', 'docker_packages'):
+        result[key].sort()
     return result
 
 
@@ -157,11 +163,74 @@ def remove_path(path):
         path.unlink()
 
 
+def inspect_owned(args, identifiers):
+    rows = json.loads(docker('inspect', *identifiers)) if identifiers else []
+    if not isinstance(rows, list) or {r.get('Id') for r in rows} != set(identifiers):
+        raise RemovalError('종료 대상 조회 결과가 다릅니다. 삭제하지 않았습니다.')
+    for row in rows:
+        labels = row.get('Config', {}).get('Labels') or {}
+        files = labels.get('com.docker.compose.project.config_files', '').split(',')
+        if (labels.get('com.docker.compose.project') != PROJECT
+                or labels.get('com.docker.compose.service') not in SERVICES or not files
+                or Path(files[0]) != args.workspace / 'deploy/server/compose.yaml'
+                or type(row.get('State', {}).get('Running')) is not bool
+                or str(row.get('Config', {}).get('StopSignal', '')).upper() in ('9', 'SIGKILL', 'KILL', '19', 'SIGSTOP', 'STOP')):
+            raise RemovalError('종료 대상의 소유 관계나 상태가 바뀌었습니다. 삭제하지 않았습니다.')
+    return rows
+
+
+def stop_containers(args, expected):
+    """Use the configured graceful stop signal; bound only the CLI wait.
+
+    `docker stop -t -1` also suppresses restart-policy restarts. A client
+    timeout does not prove container exit and never authorizes data removal.
+    """
+    identifiers = expected['containers']
+    rows = inspect_owned(args, identifiers)
+    order = {'gateway': 0, 'portal': 2, 'kibana': 2, 'elasticsearch': 3}
+    deadline = time.monotonic() + STOP_TIMEOUT
+    for phase in range(4):
+        current = plan(args)
+        if current != expected:
+            raise RemovalError('삭제 대상이 바뀌었습니다. 변경된 대상을 다시 확인하세요.')
+        rows = inspect_owned(args, identifiers)
+        targets = [row['Id'] for row in rows if row['State']['Running'] and
+                   order.get(row['Config']['Labels']['com.docker.compose.service'], 1) == phase]
+        if not targets:
+            continue
+        if any(row['Id'] in targets and row['State'].get('Paused') for row in rows):
+            raise RemovalError('일시 정지된 컨테이너가 있습니다. 상태를 확인하세요. 데이터는 삭제하지 않았습니다.')
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RemovalError('종료 대기 시간이 지났습니다. 남은 서비스와 데이터는 삭제하지 않았습니다.')
+        print(f'서버 종료 중 · 대기 한도 {STOP_TIMEOUT}초')
+        env = {k: v for k, v in os.environ.items() if not k.startswith(('DOCKER_', 'COMPOSE_', 'SOC_'))}
+        try:
+            reply = subprocess.run(['docker', '--host', 'unix:///var/run/docker.sock', 'stop',
+                '-t', '-1', *targets], capture_output=True, text=True,
+                env=env, timeout=remaining)
+        except subprocess.TimeoutExpired:
+            raise RemovalError('종료 대기 시간이 지났습니다. 강제 종료하지 않았습니다. soc status로 남은 상태를 확인하세요.') from None
+        if reply.returncode:
+            raise RemovalError('서버 종료 결과를 확인하지 못했습니다. 데이터는 삭제하지 않았습니다.')
+        after = inspect_owned(args, targets)
+        if any(r['State']['Running'] or r['State'].get('Restarting') or r['State'].get('OOMKilled')
+               or r['State'].get('ExitCode') == 137 for r in after):
+            raise RemovalError('정상 종료를 확인하지 못했습니다. 데이터는 삭제하지 않았습니다.')
+    if any(r['State']['Running'] or r['State'].get('Restarting') or r['State'].get('OOMKilled')
+           or r['State'].get('ExitCode') == 137 for r in inspect_owned(args, identifiers)):
+        raise RemovalError('종료 상태를 확인하세요. 강제 종료·메모리 오류·실행 중인 서비스가 있으면 데이터는 삭제하지 않습니다.')
+
+
 def apply(args, expected):
     # Recheck ownership and sharing after confirmation, before the first removal.
     current = plan(args)
     if current != expected:
         raise RemovalError('미리보기 이후 설치 상태가 바뀌었습니다. 다시 실행해 확인하세요.')
+    if current['containers']:
+        stop_containers(args, current)
+        if plan(args) != current:
+            raise RemovalError('종료 중 삭제 대상이 바뀌었습니다. 변경된 대상을 다시 확인하세요.')
     for name in current['units']:
         run(['systemctl', 'disable', '--now', name])
     for name in current['units']:
@@ -169,7 +238,7 @@ def apply(args, expected):
     if current['units']:
         run(['systemctl', 'daemon-reload'])
     if current['containers']:
-        docker('rm', '-f', *current['containers'])
+        docker('rm', *current['containers'])
     for kind, key in (('volume', 'volumes'), ('network', 'networks')):
         if current[key]:
             docker(kind, 'rm', *current[key])
@@ -194,8 +263,39 @@ def apply(args, expected):
         print('발급 키는 중앙 Portal에서 별도로 폐기하세요. 중앙 서버의 키를 자동 폐기하지 않습니다.')
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+def describe(args, expected):
+    print('\n서버 삭제 대상\n저장소: ' + str(args.workspace))
+    for key, title in (('containers','컨테이너'), ('volumes','데이터 볼륨'), ('networks','네트워크'),
+                       ('units','서비스 등록'), ('paths','자료 경로'), ('images','이미지'), ('docker_packages','Docker 패키지')):
+        if expected[key]:
+            print('  ' + title + ': ' + str(len(expected[key])) + '개')
+    for path in expected['paths']:
+        print('  삭제 경로: ' + path)
+    if expected['data_preserved']:
+        print('보존: 서버 데이터·설정·인증서·자격 증명')
+        print('서비스 제거 뒤 기존 자료로 신규 설치를 덮어쓰지 않습니다. 재사용은 기존 서버 복구 절차를 따르세요.')
+    else:
+        print('삭제: 해당 설치의 데이터·설정·인증서·자격 증명')
+        print('기존 장치는 새 서버에 자동으로 다시 연결되지 않습니다.')
+    print('다른 프로젝트·저장소 소스·공용 Docker는 선택한 삭제 대상에 포함되지 않습니다.'
+          if not args.remove_docker else 'Docker 프로그램도 삭제 대상으로 선택했습니다.')
+
+
+def select_mode(args, ask):
+    print('\n서버 삭제\n  keep    서비스 제거 · 데이터·설정·인증서 보존\n  purge   서버 데이터·설정·인증서까지 삭제\n  cancel  취소')
+    while True:
+        value = ask('삭제 방식 [cancel]: ').strip().lower() or 'cancel'
+        if value == 'cancel':
+            print('삭제를 취소했습니다.')
+            return False
+        if value in ('keep', 'purge'):
+            args.purge_data = value == 'purge'
+            return True
+        print('keep, purge, cancel 중 하나를 입력하세요.')
+
+
+def main(*, ask=input):
+    parser = KoreanParser(description='Ubuntu Cloud SOC 제거 · 기본 동작은 삭제 대상 조회')
     parser.add_argument('--workspace', type=Path, default=ROOT, help='Cloud SOC 저장소 루트')
     parser.add_argument('--component', choices=('central', 'agent', 'all'), default='central', help='제거 대상 (기본: central)')
     parser.add_argument('--purge-data', action='store_true', help='대상 데이터·인증서·비밀번호도 삭제')
@@ -203,7 +303,12 @@ def main():
     parser.add_argument('--remove-docker', action='store_true', help='다른 사용처가 없을 때 공식 Docker 프로그램도 삭제')
     parser.add_argument('--apply', action='store_true', help='미리보기 후 실제 제거')
     parser.add_argument('--yes', action='store_true', help='실제 제거 시 확인 입력 생략')
+    parser.add_argument('--select-mode', action='store_true', help='데이터 보존 또는 완전 삭제를 선택')
     args = parser.parse_args()
+    args.workspace = safe_path(args.workspace)
+    if args.select_mode and (not args.apply or args.component != 'central' or args.purge_data
+                             or args.yes or args.remove_images or args.remove_docker):
+        raise RemovalError('--select-mode는 중앙 서버의 --apply와 함께 사용하세요. 다른 삭제 옵션은 지정하지 마세요.')
     if os.name != 'posix' or os.geteuid() != 0:
         raise RemovalError('Ubuntu에서 sudo로 실행하세요. 기본 동작은 제거 계획 표시입니다.')
     if not Path('/run/systemd/system').is_dir():
@@ -224,21 +329,34 @@ def main():
                     fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     raise RemovalError('다른 설치·업그레이드 작업이 실행 중입니다.') from None
-        expected = plan(args)
-        print('Cloud SOC 제거 계획 (다른 프로젝트와 Apache는 보존):')
-        print(json.dumps(expected, ensure_ascii=False, indent=2))
-        if not args.apply:
-            print('아직 삭제하지 않았습니다. 실제 제거는 같은 옵션에 --apply를 추가하세요.')
+        confirm_removal(args, ask)
+
+
+def confirm_removal(args, ask):
+    if args.select_mode and not select_mode(args, ask):
+        return
+    expected = plan(args)
+    describe(args, expected)
+    if not args.apply:
+        print('아직 삭제하지 않았습니다. 실제 제거는 같은 옵션에 --apply를 추가하세요.')
+        return
+    if not any(expected[k] for k in ('containers', 'volumes', 'networks', 'units', 'paths', 'images', 'docker_packages')):
+        print('삭제 대상이 없습니다.')
+        return
+    if not args.yes:
+        purge = args.purge_data and args.component in ('central', 'all')
+        value = ask('위 자료를 삭제하려면 DELETE 입력 [취소]: ' if purge else '위 서비스를 제거하려면 yes 입력 [취소]: ').strip()
+        if (value != 'DELETE' if purge else value.lower() not in ('y', 'yes')):
+            print('삭제를 취소했습니다.')
             return
-        if not args.yes and input('위 항목을 제거할까요? y/yes 입력 (기본: 취소): ').strip().lower() not in ('y', 'yes'):
-            print('제거를 취소했습니다.')
-            return
-        apply(args, expected)
+    apply(args, expected)
 
 
 if __name__ == '__main__':
     try:
         main()
+    except (EOFError, KeyboardInterrupt):
+        sys.exit('입력을 취소했습니다. soc status로 남은 상태를 확인하세요.')
     except (RemovalError, OSError, ValueError, subprocess.TimeoutExpired) as error:
         message = str(error) if isinstance(error, RemovalError) else type(error).__name__
         sys.exit('제거 중단: ' + message)

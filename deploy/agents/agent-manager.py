@@ -31,6 +31,87 @@ def receipt(module, spec):
     return row
 
 
+def purge_removed(module, spec, source, *, confirm=input):
+    """Explicitly delete this device's retained tree; never restore/adopt its queue."""
+    matches = []
+    for archive in module.STATE.glob('retired-*'):
+        module.private(archive, directory=True)
+        path = archive / 'operation.json'
+        module.private(path)
+        operation = json.loads(path.read_text())
+        if operation.get('device_id') == spec.get('managed_device_id'):
+            matches.append((archive, operation))
+    if len(matches) != 1:
+        raise RuntimeError('이 장치의 제거 기록을 하나로 확인할 수 없습니다.')
+    archive, operation = matches[0]
+    if operation.get('state') == 'removed' and operation.get('data_preserved') is False:
+        print('수집기 자료 삭제가 이미 완료됐습니다. 새 장치를 등록하고 새 설치 묶음을 실행하세요.')
+        return
+    if operation.get('state') not in ('removed', 'purging') or operation.get('data_preserved') is not True:
+        raise RuntimeError('보존 자료의 삭제 상태를 확인할 수 없습니다.')
+    session = operation.get('session', '')
+    if not isinstance(session, str) or not module.re.fullmatch(r'[a-f0-9]{32}', session):
+        raise RuntimeError('설치 식별자가 올바르지 않습니다.')
+    completed = module.STATE / ('complete-' + session + '.json')
+    module.private(completed)
+    row = json.loads(completed.read_text())
+    if (row.get('state') != 'complete' or row.get('session') != session
+            or row.get('spec', {}).get('package_id') != spec['package_id']
+            or row['spec'].get('managed_device_id') != spec.get('managed_device_id')
+            or not isinstance(row.get('files'), dict) or not row['files']):
+        raise RuntimeError('보존 자료와 설치 기록이 다릅니다.')
+    roots = [module.ROOTS[s] for s in module.roles(spec)]
+    units = [module.UNIT_ROOT / name for name in module.units(spec)]
+    if any(path.exists() or path.is_symlink() for path in roots + units):
+        raise RuntimeError('설치 경로 또는 서비스 파일이 있습니다. 보존 자료를 삭제하지 않습니다.')
+    for name in module.units(spec):
+        result = module.subprocess.run(['systemctl', 'is-active', '--quiet', name], stdout=module.subprocess.DEVNULL, stderr=module.subprocess.DEVNULL)
+        if result.returncode not in (3, 4):
+            raise RuntimeError('서비스 중지를 확인할 수 없습니다.')
+    for scope in module.roles(spec):
+        result = module.subprocess.run(['pgrep', '-x', 'filebeat' if scope == 'host' else 'packetbeat'], stdout=module.subprocess.DEVNULL)
+        if result.returncode != 1:
+            raise RuntimeError('수집기 프로세스 중지를 확인할 수 없습니다.')
+    targets = [archive / root.name for root in roots]
+    for target in targets:
+        if target.exists() or target.is_symlink():
+            module.private(target, directory=True)
+            for entry in target.rglob('*'):
+                module.private(entry)
+        elif operation['state'] != 'purging':
+            raise RuntimeError('보존 자료가 없거나 변경됐습니다.')
+    for original, expected in row.get('files', {}).items():
+        path = Path(original)
+        if path in units:
+            continue
+        candidates = [archive / root.name / path.relative_to(root) for root in roots if path.is_relative_to(root)]
+        if len(candidates) != 1:
+            raise RuntimeError('설치 기록의 파일 경로가 허용 범위를 벗어났습니다.')
+        retained = candidates[0]
+        if operation['state'] == 'purging' and not retained.exists():
+            continue
+        module.private(retained)
+        if module.sha(retained) != expected:
+            raise RuntimeError('보존된 설치 파일이 변경됐습니다.')
+    print('설정·키·미전송 자료·읽기 위치를 삭제합니다. 중앙 로그·경보는 유지합니다.')
+    if confirm('수집기 자료까지 삭제하려면 DELETE 입력: ').strip() != 'DELETE':
+        print('취소했습니다.')
+        return
+    operation['state'] = 'purging'
+    module.save(archive / 'operation.json', operation)
+    for target in targets:
+        if target.exists():
+            # Recheck immediately before removing this already identified, protected tree.
+            module.private(target, directory=True)
+            for entry in target.rglob('*'):
+                module.private(entry)
+            shutil.rmtree(target)
+    operation.update(state='removed', data_preserved=False)
+    module.save(archive / 'operation.json', operation)
+    module.save(source / 'managed-local.json', {'state': 'removed', 'device_id': spec['managed_device_id'], 'remote_revocation': 'not_confirmed'})
+    print('수집기 자료 삭제 완료. 포털에서 기존 장치 접근을 차단하고 새 장치의 설치 묶음을 사용하세요.')
+
+
 def manage(module, spec, action, *, confirm=input):
     row = receipt(module, spec)
     if action == 'status':
@@ -94,10 +175,12 @@ def manage(module, spec, action, *, confirm=input):
     print('로컬 프로그램 제거 완료. 서버 접근 차단은 포털의 같은 장치에서 완료하세요.')
     if choice == '1':
         print('자료·설정은 관리자 전용 보존 디렉터리에 남겼습니다. 재설치가 자동으로 복원하지는 않습니다.')
+    else:
+        print('새로 설치하려면 포털에서 새 장치를 등록하고 새 설치 묶음을 실행하세요. 기존 로그가 다시 수집될 수 있습니다.')
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Cloud SOC Agent 설치·상태·중지·재개·삭제')
+    parser = argparse.ArgumentParser(description='Cloud SOC Agent 설치·상태·중지·재개·삭제', epilog='새 설치: 자료까지 삭제 → 포털에서 기존 장치 접근 차단 → 새 장치 등록/설치. 이전 키·큐·읽기 위치를 복원하지 않으며 기존 로그가 다시 수집될 수 있습니다.')
     parser.add_argument('action', nargs='?', choices=('install', 'status', 'stop', 'start', 'uninstall', 'help'))
     parser.add_argument('--interface', help='네트워크 수집을 선택한 경우 실제 NIC')
     args = parser.parse_args()
@@ -123,7 +206,17 @@ def main():
         if previous.get('device_id') != spec.get('managed_device_id'):
             raise RuntimeError('로컬 관리 기록의 장치가 다릅니다.')
         if previous.get('state') == 'removed':
-            if action in ('status', 'uninstall'):
+            if action == 'uninstall':
+                import fcntl
+                module.private(module.STATE, directory=True)
+                fd = os.open(module.STATE / 'install.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    purge_removed(module, spec, source)
+                finally:
+                    os.close(fd)
+                return 0
+            if action == 'status':
                 print('로컬 프로그램 삭제됨. 서버 접근 차단 결과는 포털에서 확인하세요.')
                 return 0
             raise RuntimeError('삭제된 설치입니다. 보존 자료를 자동 복원하지 않습니다. 포털에서 재설치 절차를 확인하세요.')
@@ -137,6 +230,16 @@ def main():
         finally:
             os.close(fd)
         return 0
+    # Retire only verified data-deleted receipts, under the same enrollment lock.
+    if module.STATE.exists():
+        import fcntl
+        module.private(module.STATE, directory=True)
+        fd = os.open(module.STATE / 'install.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            module.retire_removed_receipts()
+        finally:
+            os.close(fd)
     if any(module.STATE.glob('complete-*.json')):
         try:
             receipt(module, spec)
