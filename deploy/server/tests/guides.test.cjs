@@ -21,7 +21,7 @@ test('guide links exclude fenced code examples', () => {
   assert.deepEqual(localLinks(content), ['README.md', 'README.md#section']);
 });
 
-for (const name of ['README.md', 'docs/first_install_walkthrough.md', 'deploy/server/README.md', 'docs/aws_windows_e2e_test.md', 'docs/agent_status.md', 'docs/portal_backup.md', 'docs/windows_install_recovery.md', 'docs/windows_native_discovery.md', 'docs/windows_discovery_update.md', 'docs/agent_key_management.md', 'docs/windows_log_loss_audit.md', 'docs/collection_protection.md', 'docs/local_development.md', 'docs/installation_reference.md']) {
+for (const name of ['README.md', 'docs/README.md', 'docs/portal_usage.md', 'deploy/server/README.md', 'docs/optional_integrations.md', 'docs/device_installation.md', 'docs/agent_management.md', 'docs/windows_agents.md', 'docs/project_status.md', 'docs/portal_backup.md', 'docs/windows_log_loss_audit.md', 'docs/collection_protection.md', 'docs/local_development.md', 'docs/installation_reference.md']) {
   test(`installation guide syntax and repository links: ${name}`, () => {
     const file = path.join(root, name);
     const content = fs.readFileSync(file, 'utf8');
@@ -37,12 +37,23 @@ for (const name of ['README.md', 'docs/first_install_walkthrough.md', 'deploy/se
     }
     const links = localLinks(content);
     for (const link of links) assert.ok(fs.existsSync(path.resolve(path.dirname(file), link.split('#')[0])), link);
-    if (name === 'docs/agent_status.md') assert.ok(content.includes('sudo python3 deploy/server/prepare-monitor.py'));
+    if (name === 'docs/agent_management.md') {
+      assert.ok(content.includes('sudo python3 deploy/server/prepare-monitor.py'));
+      assert.ok(content.includes('build portal'));
+    }
     else if (name === 'docs/portal_backup.md') assert.ok(content.includes('sudo python3 deploy/server/portal-backup.py'));
-    else if (name === 'docs/windows_install_recovery.md') assert.ok(content.includes('P0C-02'));
-    else if (name === 'docs/windows_native_discovery.md') assert.ok(content.includes('native-system-live.ps1 -RunIsolatedTest'));
-    else if (name === 'docs/windows_discovery_update.md') assert.ok(content.includes('-UpdateDiscovery -DryRun'));
-    else if (name === 'docs/agent_key_management.md') assert.ok(content.includes('build portal'));
+    else if (name === 'docs/windows_agents.md') {
+      assert.ok(content.includes('P0C-02'));
+      assert.ok(content.includes('native-system-live.ps1 -RunIsolatedTest'));
+      assert.ok(content.includes('-UpdateDiscovery -DryRun'));
+    }
+    else if (name === 'docs/device_installation.md') assert.ok(content.includes('sudo sh soc install'));
+    else if (name === 'docs/project_status.md' || name === 'docs/README.md') assert.ok(content.includes('device_installation.md'));
+    else if (name === 'docs/portal_usage.md') {
+      assert.ok(content.includes('cases.html'));
+      assert.ok(content.includes('log_access_policy.md'));
+    }
+    else if (name === 'docs/optional_integrations.md') assert.ok(content.includes('archive/mall-docs.zip'));
     else if (name === 'docs/windows_log_loss_audit.md') assert.ok(content.includes('audit-windows-loss.ps1'));
     else if (name === 'docs/collection_protection.md') assert.ok(content.includes('collector_metrics'));
     else if (name === 'docs/local_development.md') assert.ok(content.includes('PYTHONPATH'));
@@ -59,7 +70,7 @@ for (const name of ['README.md', 'docs/first_install_walkthrough.md', 'deploy/se
 test('quick start stays concise and relocated section links resolve', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
   assert.ok(readme.trimEnd().split('\n').length <= 200, 'Keep detailed reference material outside the quick start');
-  for (const link of ['docs/local_development.md', 'docs/installation_reference.md', 'docs/windows_discovery_update.md']) {
+  for (const link of ['docs/local_development.md', 'docs/installation_reference.md', 'docs/windows_agents.md#discovery-update']) {
     assert.ok(localLinks(readme).includes(link), link);
   }
   assert.ok(readme.includes('id="7-설치-후-실제-로그-확인"'), 'Preserve existing incoming verification links');

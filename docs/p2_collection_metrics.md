@@ -12,7 +12,7 @@
 - Filebeat 표본 큐 898,958 bytes/558건·시도/ACK 564/563, Packetbeat 79,875 bytes/77건·131/131이다. 읽기 오류 2와 scan_partial은 주의/판독 제한으로 유지하며 모든 오류 해결·전체 무손실을 주장하지 않는다. 이전 화면 증거/배포 파일 해시 대조는 별개로 보존하며 이번에 브라우저를 다시 열었다고 주장하지 않는다.
 - 임시 접속 키만 제거해 다른 키 bytes/ACL 보존 및 해당 키 인증 거절을 확인했다. 중앙 서비스/기존 ZIP은 변경하지 않았다. 지연 시작 적용을 전체 VM/PC 갱신이나 수정 설치기의 포털 배포 완료로 간주하지 않는다. 부팅 후 시작 전 패킷은 소급 수집되지 않는다. 자원 경합의 세부 원인은 확정하지 않았고, 확인된 부팅 단계 1053과 서비스별 완화의 대표 재부팅 결과로 한정한다.
 
-비민감 증거는 Git 제외 `state/p2-collection-20261007/windows-boot-{local,api,central}-evidence.json`에 보관한다. 순서대로 SHA256 `e98f5d382bfe9ad7cda86ebf8fff4f91ce52283ed99fb60f13c99a18cb935ba8`, `4480a03d7e2a5e5225b0e68a8ffe8843a4f6358534651d570ad53ab112084808`, `ea3a6122b2f72d693fc31ce50871e95953d39500e1b7740b1e943001e19f2832`이다. 시작 설정과 새 ZIP 적용 제한은 [Windows 복구 안내](windows_install_recovery.md)를 참고한다.
+비민감 증거는 Git 제외 `state/p2-collection-20261007/windows-boot-{local,api,central}-evidence.json`에 보관한다. 순서대로 SHA256 `e98f5d382bfe9ad7cda86ebf8fff4f91ce52283ed99fb60f13c99a18cb935ba8`, `4480a03d7e2a5e5225b0e68a8ffe8843a4f6358534651d570ad53ab112084808`, `ea3a6122b2f72d693fc31ce50871e95953d39500e1b7740b1e943001e19f2832`이다. 시작 설정과 새 ZIP 적용 제한은 [Windows 복구 안내](windows_agents.md#repair)를 참고한다.
 
 팀원 통합 중인 `app.py`, 탐지/인증/공통 shell/CI는 변경하지 않았다. 사용자 요청으로 수집 품질 전용 화면의 네트워크 컬럼과 해당 화면에 한정된 CSS·회귀를 추가했다. `packages.py`의 Ubuntu 파일 허용 목록과 `collection_health.py`의 추가 응답 필드는 통합 시 보존해야 한다.
 

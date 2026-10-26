@@ -2,7 +2,7 @@
 
 신규 서버에서 설치 명령 한 번과 API 키 입력으로 Filebeat 9.5.2를 설치합니다. **고정된 몇 개 로그만 수집하지 않고, 지원하는 소스를 자동 발견하고 1분마다 다시 탐색**합니다. 중앙 원격 배포나 Fleet 관리 서버는 아닙니다.
 
-**웹 화면에서 설치 파일을 만들려면 [Ubuntu 중앙 서버 가이드](../server/README.md)를 먼저 진행합니다.** OS별 ZIP/tar.gz에 설치 스크립트와 CA 공개 인증서를 묶으며 API 키는 별도로 발급합니다. 네트워크를 선택한 묶음은 Filebeat와 Packetbeat 설치를 순서대로 실행합니다. 아래는 개별 스크립트를 직접 사용할 때의 안내입니다.
+**웹 화면에서 새 장치를 설치하려면 [장치 설치와 배포](../../docs/device_installation.md)를 따릅니다.** 아래는 API 키를 직접 입력하는 고급 스크립트 경로입니다. OS별 전체 패키지와 공개 CA가 필요합니다. 네트워크 묶음의 Windows는 통합 준비/commit, Linux는 순차 설치를 사용하며 실제 NIC를 지정합니다.
 
 | OS | 자동 수집 범위 | 별도 앱 경로 |
 | --- | --- | --- |
@@ -40,7 +40,7 @@ sudo bash deploy/agents/install-ubuntu.sh --endpoint https://soc.example.invalid
 
 ## Windows 설치
 
-신규 Windows 패키지는 [설치 실패 예방 1차 가이드](../../docs/windows_install_recovery.md)의 SYSTEM 사전 검사·보호 staging·준비 단계 롤백을 적용합니다. NIC는 확인 후 선택할 수 있습니다. 두 수집기의 원자적 설치, `-Repair`, Enrollment, 실제 수신 자동 확인은 아직 미완료입니다.
+기존 고급 Windows 패키지는 [SYSTEM 검사·보호 staging·Repair/Resume](../../docs/windows_agents.md#repair)를 사용합니다. [토큰 등록·자동 수신 확인](../../docs/agent_management.md#enrollment)의 실제 검증 기록도 있습니다. 두 경로 이동과 서비스 시작 전체가 OS 수준의 원자적 작업인 것은 아닙니다. 새 managed Windows 설치는 PowerShell 진입점 대신 [native EXE](../../docs/device_installation.md#장치-설치)를 사용합니다.
 
 64비트 관리자 PowerShell에서 실행합니다. Windows 시스템 `curl.exe`와 설치기 옆의 `download-windows.ps1`이 필요합니다. 조직의 기존 실행 정책을 따르고 정책이나 인증서 검증을 우회하지 않습니다. 다운로드는 1회 300초·최대 2회로 제한하며, 60초 동안 초당 16KiB 미만이면 중단합니다. SHA-512 검증 후에만 압축을 풉니다.
 

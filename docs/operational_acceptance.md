@@ -67,7 +67,7 @@ JSON/모드 해석 근거: [ModSecurity 공식 JSON 직렬화](https://github.co
 
 ## 최소 인수 시나리오
 
-기존 [처음 설치 안내](../README.md), [공통 배포·복구](runtime_deployment.md), [실제 시험 절차](aws_windows_e2e_test.md)를 사용한다. 새 설치와 기존 설치 복구를 별개로 수행한다.
+기존 [처음 설치 안내](../README.md), [공통 배포·복구](runtime_deployment.md), [실제 시험 절차](installation_reference.md)를 사용한다. 새 설치와 기존 설치 복구를 별개로 수행한다.
 
 1. 새 Ubuntu 서버에서 공통 설치기를 실행하고 Portal 관리자 로그인·CA 검증·필수 워커 상태를 확인한다. 기동 성공만으로 인수를 마치지 않는다.
 2. Portal에서 대상 Windows 또는 Ubuntu용 새 패키지를 생성하고 SHA256을 대조한 뒤 대상 장치에 설치한다. 수집 항목과 조직을 기록한다.
@@ -79,7 +79,7 @@ JSON/모드 해석 근거: [ModSecurity 공식 JSON 직렬화](https://github.co
 
 ## 지정 경보 근거 대조 CLI
 
-새 `python -m cloud_soc.acceptance`는 명시한 조직·규칙·시각·원본 인덱스와 저장된 경보 하나를 읽는다. 일반 공통 인덱스(`soc-normalized-v1`, `soc-processing-v1`, `security-alerts`)용이며 Mall 격리 인덱스 계약은 기존 [9-C 도구](security_mall_9c_predeployment.md)를 사용한다.
+새 `python -m cloud_soc.acceptance`는 명시한 조직·규칙·시각·원본 인덱스와 저장된 경보 하나를 읽는다. 일반 공통 인덱스(`soc-normalized-v1`, `soc-processing-v1`, `security-alerts`)용이며 Mall 격리 인덱스 계약은 기존 [9-C 도구](archive/README.md#record-docs-security-mall-9c-predeployment-md)를 사용한다.
 
 프로젝트 의존성이 설치된 환경에서 실행한다. 아래 주소/경로/ID/시각은 자리표시자다. 별도 관리자에 의해 준비된 **읽기 전용 키 파일**과 신뢰할 CA를 사용한다. 키 값은 인자에 넣지 않는다. 키에는 선택한 정확한 원본 인덱스, 공통 정규화/처리/경보/상태 인덱스의 `read`, `view_index_metadata`가 필요하다. 도구는 키 발급·권한 변경을 하지 않는다. `soc-pipeline-status`는 전역 메타데이터이므로 전체 운영 상태를 조회할 수 있는 관리자 환경에서 실행한다.
 

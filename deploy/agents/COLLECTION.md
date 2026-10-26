@@ -4,7 +4,7 @@
 
 사용자가 로그 이름을 하나씩 나열하지 않아도 **지원하는 시스템 로그 저장소와 로그 디렉터리에서 읽을 수 있는 소스를 발견**합니다. 탐색 단계에서 이벤트 ID·심각도·성공/실패로 필터링하지 않습니다. 이후 개인정보 보호 정책으로 본문/필드 또는 레코드가 제외될 수 있습니다. 이것은 모든 디스크 파일이나 생성되지 않은 기록까지 수집한다는 뜻이 아닙니다.
 
-P3의 privacy v2에서는 Windows 렌더링 메시지·명령줄·작업 XML/스크립트 본문 및 네이티브 Linux Audit 인자 레코드(EXECVE/PROCTITLE/USER_CMD)를 제외합니다. 메타데이터 해석 범위와 감사 설정 사전 조건은 [호스트 감사 가이드](../../docs/host_security_audit.md)를 확인하세요. Sysmon/auditd·감사 정책·SACL은 자동 설치/변경하지 않습니다.
+P3의 privacy v2에서는 Windows 렌더링 메시지·명령줄·작업 XML/스크립트 본문 및 네이티브 Linux Audit 인자 레코드(EXECVE/PROCTITLE/USER_CMD)를 제외합니다. 메타데이터 해석 범위와 감사 설정 사전 조건은 [호스트 감사 가이드](../../docs/archive/README.md#record-docs-host-security-audit-md)를 확인하세요. Sysmon/auditd·감사 정책·SACL은 자동 설치/변경하지 않습니다.
 
 | 범위 | 구현 |
 | --- | --- |

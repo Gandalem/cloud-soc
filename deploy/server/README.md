@@ -4,7 +4,7 @@
 
 이 구성은 **단일 노드 졸업작품·실습용**입니다. Elasticsearch, Kibana, 에이전트 배포 포털을 함께 실행합니다. 저장소 루트의 `compose.yaml`은 기존 로컬 개발용으로 유지하며, 아래에서는 항상 `deploy/server/compose.yaml`을 지정합니다.
 
-AWS EC2에 처음 배포하고 Windows PC에서 검증하는 경우에는 [AWS Ubuntu + Windows 실제 수집 테스트](../../docs/aws_windows_e2e_test.md)를 먼저 따라가세요. 아래는 공통 구성과 운영 제약 설명입니다.
+AWS EC2에 처음 배포하고 Windows PC에서 검증하는 경우에는 [AWS Ubuntu + Windows 실제 수집 테스트](../../docs/installation_reference.md)를 먼저 따라가세요. 아래는 공통 구성과 운영 제약 설명입니다.
 
 ```text
 관리자 PC -- HTTPS 443 --> Caddy --> 관리 포털 (인증·패키지·수집 키)
@@ -49,7 +49,7 @@ APT가 결정하는 Docker 버전은 고정하지 않으며 기존 엔진을 자
 
 `--dry-run`은 파일·OS·포트·의존성 확인 없이 계획만 출력합니다. `--prepare-only`는 의존성 설치와 인증서 준비까지만 하고 SOC 컨테이너는 기동하지 않습니다. 다만 새로 설치한 Docker 데몬은 시작됩니다. `--yes`는 변경 승인만 생략하며 관리자 비밀번호 때문에 대화형 터미널은 계속 필요합니다.
 
-자동 설치가 완료되면 아래 2~3절을 반복하지 말고 [AWS 가이드 6절](../../docs/aws_windows_e2e_test.md#6-windows에-ca-공개-인증서-전달신뢰)에서 Windows 신뢰 등록과 실제 수집 검증을 이어갑니다. 수동 설치를 원하는 경우에만 아래 1~3절을 진행합니다.
+자동 설치가 완료되면 아래 2~3절을 반복하지 말고 [AWS 가이드 6절](../../docs/installation_reference.md)에서 Windows 신뢰 등록과 실제 수집 검증을 이어갑니다. 수동 설치를 원하는 경우에만 아래 1~3절을 진행합니다.
 
 ### Ubuntu 버전 범위
 
@@ -292,7 +292,7 @@ sudo curl --noproxy '*' --cacert state/server/tls/ca.crt \
   --output /dev/null --write-out 'HTTP %{http_code}\n' "https://$PublicHost/index.html"
 ```
 
-계속 실패하면 원인을 별도로 확인합니다. 재설치·CA 재생성·데이터 삭제·검증 비활성화는 하지 않습니다. 브라우저 오류가 `ERR_CERT_AUTHORITY_INVALID`로 바뀌면 TLS 협상 이후의 별도 CA 신뢰 문제이므로 [Windows CA 등록](../../docs/aws_windows_e2e_test.md#6-windows에-ca-공개-인증서-전달신뢰)을 진행합니다. 서버 개인키·CA 개인키를 PC로 복사하지 않습니다.
+계속 실패하면 원인을 별도로 확인합니다. 재설치·CA 재생성·데이터 삭제·검증 비활성화는 하지 않습니다. 브라우저 오류가 `ERR_CERT_AUTHORITY_INVALID`로 바뀌면 TLS 협상 이후의 별도 CA 신뢰 문제이므로 [Windows CA 등록](../../docs/installation_reference.md)을 진행합니다. 서버 개인키·CA 개인키를 PC로 복사하지 않습니다.
 
 ### 기존 설치의 Elasticsearch 비밀번호 파일 권한 복구
 
@@ -362,7 +362,7 @@ Get-NetAdapter -IncludeHidden | Select-Object Name, Status, InterfaceGuid
 
 ## 5. 실제 수신 확인
 
-포털의 **에이전트 → 에이전트 접속 현황**에서 수집기별 마지막 서버 수신 시각을 확인할 수 있습니다. 기존 서버는 [접속 현황 업데이트 가이드](../../docs/agent_status.md)를 먼저 적용하세요. 서비스 heartbeat가 아니라 실제 수신 기록 기반이며, 데이터가 오지 않는다고 오프라인으로 단정하지 않습니다.
+포털의 **에이전트 → 에이전트 접속 현황**에서 수집기별 마지막 서버 수신 시각을 확인할 수 있습니다. 기존 서버는 [접속 현황 업데이트 가이드](../../docs/agent_management.md#received-activity)를 먼저 적용하세요. 서비스 heartbeat가 아니라 실제 수신 기록 기반이며, 데이터가 오지 않는다고 오프라인으로 단정하지 않습니다.
 
 1. 포털의 연결 상태를 확인합니다.
 2. 대상 서버에서 Filebeat, 네트워크 선택 시 Packetbeat 서비스와 전송 오류를 확인합니다. OS별 명령은 [설치 후 확인](../../README.md#7-설치-후-실제-로그-확인)과 [네트워크 가이드](../agents/NETWORK.md)에 있습니다.
@@ -415,4 +415,4 @@ try {
 
 이 테스트는 구버전 설정의 NAT/IP 무-SNI 실패를 재현하고, 수정본의 443·5601 IP/도메인 TLS 연결과 잘못된 CA·호스트 차단을 검증합니다. 실제 포털 로그인·Kibana·Elasticsearch 연동이나 외부 보안그룹은 검사하지 않습니다.
 
-**실제 AWS Ubuntu에서 이미지 빌드·기동·인증서·API 키·문서 수신을 통합 검증하지 못했습니다.** Compose 정적 검사, 오프라인 테스트와 테스트 서버의 브라우저 동작을 검증했습니다. 운영 전에는 실제 서버에서 기동·Windows 에이전트·Kibana 수신까지 확인해야 합니다.
+이 절의 초기 검사는 Compose·오프라인·시험 브라우저 범위였으며 당시 AWS Ubuntu 통합 인수는 미수행이었습니다. 이후 집 서버·실습 VM·WSL/Windows의 실제 설치·수신·경보·제거 결과는 [현재 검증 상태](../../docs/project_status.md#확인된-완료-기록)에서 날짜/환경별로 구분합니다. 이 절의 과거 미수행을 현재 제품 전체의 미검증으로 확대하지 않습니다.

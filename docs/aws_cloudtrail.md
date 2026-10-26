@@ -35,7 +35,7 @@ IAM 전역 이벤트 확인에는 `us-east-1`이 중요하지만 ConsoleLogin이
 
 ES 키는 AWS 키와 다릅니다. [publisher-role.json](../deploy/aws/publisher-role.json)은 `soc-cloud-aws-*`에 `auto_configure`, `create_doc`만 허용합니다. 호스트 에이전트 키를 재사용하지 마세요. CloudTrail 키는 조회·수정·삭제·호스트 로그 쓰기 권한이 없습니다.
 
-먼저 검토한 서버 코드를 반영하고 [기존 서버 업데이트 절차](agent_status.md#기존-중앙-서버-업데이트)를 실행합니다. bootstrap은 AWS 인덱스 템플릿·서버 수신 파이프라인·읽기 역할·전용 쓰기 역할만 준비합니다. AWS 수집기를 자동 실행하거나 API 키를 자동 발급하지 않습니다. 기존 CA·데이터·비밀번호·수집기 키는 보존합니다.
+먼저 검토한 서버 코드를 반영하고 [기존 서버 업데이트 절차](agent_management.md#기존-중앙의-수신-조회-준비)를 실행합니다. bootstrap은 AWS 인덱스 템플릿·서버 수신 파이프라인·읽기 역할·전용 쓰기 역할만 준비합니다. AWS 수집기를 자동 실행하거나 API 키를 자동 발급하지 않습니다. 기존 CA·데이터·비밀번호·수집기 키는 보존합니다.
 
 승인된 Elasticsearch 관리자가 Kibana Dev Tools 등에서 다음과 같이 **별도 만료 키**를 발급합니다. 키의 `encoded` 값은 보호된 로컬 파일에만 기록하고 채팅/로그/Git에 남기지 마세요.
 

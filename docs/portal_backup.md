@@ -4,7 +4,7 @@ P2-02 중 **사건/메모·패키지/키 발급 이력의 유실 방지**를 위
 
 ## 포함 범위와 한계
 
-2026-10-13 지정 중앙192.168.32.60에서 기존 포털 DB의 실제 온라인 backup·격리 restore, 이후 탐지 main/early를 잠시 정지한 일관 쌍 백업 및 실제 개인 설정 재시작 보존을 추가 인수했다. 원래 패키지16/발급 이력26·사건 관련 행과 키/CA는 보존했다. [현재 보호 자료·실제 결과](early_deployment_validation_20261013.md). ES snapshot·외부 독립 복구는 완료되지 않았으며 아래 형식별 개발 이력은 유지한다.
+2026-10-13 지정 중앙192.168.32.60에서 기존 포털 DB의 실제 온라인 backup·격리 restore, 이후 탐지 main/early를 잠시 정지한 일관 쌍 백업 및 실제 개인 설정 재시작 보존을 추가 인수했다. 원래 패키지16/발급 이력26·사건 관련 행과 키/CA는 보존했다. [현재 보호 자료·실제 결과](archive/README.md#record-docs-early-deployment-validation-20261013-md). ES snapshot·외부 독립 복구는 완료되지 않았으며 아래 형식별 개발 이력은 유지한다.
 
 2026-10-13 다중 대시보드 확장: `dashboard_collections`가 포함된 `dashboards.sqlite`는 format 4로 기존 개인 설정과 다중 화면·기본 지정·즐겨찾기·독립 위젯 설정·컬렉션 revision을 함께 백업한다. 기존 format 1/2/3의 검증/격리 복원을 유지하며, 원본 행을 이행하거나 삭제하지 않는다. 새 테이블이 있는 DB에는 이번 버전의 백업 도구를 사용한다. 계정별 구성·기본 지정의 합성 백업/격리 복원과 현재/이전 감사 복원을 시험했고 운영 백업·복구는 별도다.
 
@@ -12,7 +12,7 @@ P2-02 중 **사건/메모·패키지/키 발급 이력의 유실 방지**를 위
 
 2026-10-04 P2-01 후속 코드: `log-access.sqlite`의 보호된 원문 접근 감사도 백업한다. 감사 DB가 존재하면 manifest format 2로 최대 세 DB를 포함한다. 기존 format 1 백업의 verify/격리 restore는 유지한다. 새 포털은 원문 기능 차단 상태에서도 감사 DB를 만들므로 배포 버전과 맞는 백업 도구를 사용한다. 정책 파일·조회 계정 해시는 별도 보호 백업 대상이다. format 2 합성 감사 DB 백업/복원은 로컬 검증했으며 VM의 실제 감사 백업·배포·운영 복구 완료는 아니다([조회 정책](log_access_policy.md)).
 
-2026-10-04 실제 후속 검증: 위 문단의 로컬 단계 이후 지정 VMware에서 초기 format 1 및 새 감사 포함 format 2의 online/stopped/final backup·verify·새 경로 restore·verify를 통과했다. 실제 감사 34개 행의 모든 컬럼·순번과 기존 패키지 10/키 이력 18/등록 15·사건 테이블을 대조했다([보고서](archive/validation/p2_source_access_validation_20261004.md)). 복원은 격리 경로에만 했으며 운영 DB 교체·ES 스냅샷·외부 백업·보존 기간 승인은 별도다.
+2026-10-04 실제 후속 검증: 위 문단의 로컬 단계 이후 지정 VMware에서 초기 format 1 및 새 감사 포함 format 2의 online/stopped/final backup·verify·새 경로 restore·verify를 통과했다. 실제 감사 34개 행의 모든 컬럼·순번과 기존 패키지 10/키 이력 18/등록 15·사건 테이블을 대조했다([보고서](archive/README.md#record-docs-archive-validation-p2-source-access-validation-20261004-md)). 복원은 격리 경로에만 했으며 운영 DB 교체·ES 스냅샷·외부 백업·보존 기간 승인은 별도다.
 
 | 대상 | 포함 여부 |
 | --- | --- |
@@ -74,4 +74,4 @@ sudo python3 deploy/server/portal-backup.py verify --source "$RESTORE"
 
 이는 실제 AWS 백업/복구 완료가 아닙니다. 현재 남은 우선순위는 P0 배포·수신 확인, P2 큐/전송 오류 계측 및 운영 ES 백업·보존 승인입니다. 백업 예약/자동 삭제/외부 저장소 연결은 추가하지 않았습니다.
 
-2026-10-12 후속 실제 배포: 개인 대시보드 DB가 생성된 지정 VMware에서 format 3 backup/verify/격리 restore와 최종 관리자 revision 2 구성 대조를 완료했다. 기존 format 1/2 이력과 독립 저장소 보류는 유지하며 운영 DB 교체는 하지 않았다. [배포 결과](archive/validation/dashboard_deployment_20261012.md)
+2026-10-12 후속 실제 배포: 개인 대시보드 DB가 생성된 지정 VMware에서 format 3 backup/verify/격리 restore와 최종 관리자 revision 2 구성 대조를 완료했다. 기존 format 1/2 이력과 독립 저장소 보류는 유지하며 운영 DB 교체는 하지 않았다. [배포 결과](archive/README.md#record-docs-archive-validation-dashboard-deployment-20261012-md)

@@ -27,7 +27,7 @@ Allow dynamic-group SocAuditCollectors to read audit-events in compartment Proje
 
 ## 중앙 서버 준비
 
-검토한 코드를 반영하고 [기존 중앙 서버 업데이트](agent_status.md#기존-중앙-서버-업데이트) 절차로 bootstrap/portal을 갱신합니다. bootstrap이 준비하는 것은 OCI 인덱스 템플릿·서버 수신 시각 파이프라인·읽기 역할·전용 쓰기 역할뿐입니다. SDK 설치·OCI 인증·수집기 실행·OCI 정책 변경은 자동으로 하지 않습니다.
+검토한 코드를 반영하고 [기존 중앙 서버 업데이트](agent_management.md#기존-중앙의-수신-조회-준비) 절차로 bootstrap/portal을 갱신합니다. bootstrap이 준비하는 것은 OCI 인덱스 템플릿·서버 수신 시각 파이프라인·읽기 역할·전용 쓰기 역할뿐입니다. SDK 설치·OCI 인증·수집기 실행·OCI 정책 변경은 자동으로 하지 않습니다.
 
 기존 CA·데이터·비밀번호·에이전트 키를 보존합니다. 설치기를 처음부터 다시 실행하거나 `down -v`를 실행하지 마세요. 포털은 기존 단일 관리자 모델이며 조직별 격리/RBAC를 새로 제공한 것은 아닙니다.
 

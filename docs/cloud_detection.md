@@ -1,6 +1,6 @@
 # 클라우드 핵심 탐지 규칙
 
-2026-10-12 추가: 기존 Single 규칙과 기본 프로필은 그대로 유지한다. 선택적 공격 연계·API 다양성 규칙은 [P5-03 명세](p5_03_attack_scenarios.md)에 별도로 정리했다. `--include-attacks`는 시험 프로필 선택이며 기본/운영 활성화가 아니다.
+2026-10-12 추가: 기존 Single 규칙과 기본 프로필은 그대로 유지한다. 선택적 공격 연계·API 다양성 규칙은 [P5-03 명세](archive/README.md#record-docs-p5-03-attack-scenarios-md)에 별도로 정리했다. `--include-attacks`는 시험 프로필 선택이며 기본/운영 활성화가 아니다.
 
 2026-10-04 / P5-03 코드·합성 검증. 운영 배포와 실제 ES·클라우드 로그 검증은 사용자 요청으로 보류했다.
 
@@ -33,7 +33,7 @@ PYTHONPATH=src python -m cloud_soc.detection --include-cloud
 
 위 명령은 오프라인 규칙 검증이며 ES 연결/쓰기/서비스 기동이 없다.
 
-증분 실행에는 기존 실행 옵션에 `--include-cloud`를 추가한다. 규칙 집합은 상태 identity에 포함되므로 기존 SSH 상태 파일에 옵션만 추가하면 명시적으로 거부한다. 운영 재개 시 [기존 데이터 전환 절차](detection_deployment_runbook.md)에 따라 시작점/과거 평가 범위를 결정하고 별도 상태를 준비한다. Compose 기본은 SSH만이며 클라우드 활성화 시 command override를 명시한다.
+증분 실행에는 기존 실행 옵션에 `--include-cloud`를 추가한다. 규칙 집합은 상태 identity에 포함되므로 기존 SSH 상태 파일에 옵션만 추가하면 명시적으로 거부한다. 운영 재개 시 [기존 데이터 전환 절차](archive/README.md#record-docs-detection-deployment-runbook-md)에 따라 시작점/과거 평가 범위를 결정하고 별도 상태를 준비한다. Compose 기본은 SSH만이며 클라우드 활성화 시 command override를 명시한다.
 
 `--snapshot --include-cloud`도 지원하나 기존 전체 조회 상한이 적용된다. 이 옵션은 과거 자료의 일회성 검증 경로이며 대용량 이행 완료를 뜻하지 않는다.
 

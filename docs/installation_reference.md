@@ -140,7 +140,7 @@ Get-WinEvent -ListLog * -Force | Select-Object LogName,IsEnabled,LogType
 .\install.ps1 -UpdateDiscovery
 ```
 
-`-DryRun`은 읽기 전용 점검이며 SYSTEM 실행/중앙 수신 검증은 아닙니다. 갱신 완료 후 운영자 수집 진단 화면(`collection-health.html`)의 같은 수집기 보고 생성·수신 시각을 확인합니다. Filebeat만 있는 중지 설치는 로그 전용 패키지의 복구 경로를 사용합니다. 두 서비스가 모두 있는 중지 설치는 2026-10-01 수정 코드로 새로 생성한 네트워크 포함 패키지의 제한적 통합 `-Repair`를 사용합니다(운영 배포·실제 통합 수신은 별도 검증). `-Repair`와 `-UpdateDiscovery`를 함께 쓰지 않습니다. 실행 정책에 막히면 [미서명 스크립트 안내](#windows-미서명-스크립트-차단)부터 확인하세요. 상세 절차: [Discovery 갱신](windows_discovery_update.md), [중지 설치 복구](windows_install_recovery.md).
+`-DryRun`은 읽기 전용 점검이며 SYSTEM 실행/중앙 수신 검증은 아닙니다. 갱신 완료 후 운영자 수집 진단 화면(`collection-health.html`)의 같은 수집기 보고 생성·수신 시각을 확인합니다. Filebeat만 있는 중지 설치는 로그 전용 패키지의 복구 경로를 사용합니다. 두 서비스가 모두 있는 중지 설치는 2026-10-01 수정 코드로 새로 생성한 네트워크 포함 패키지의 제한적 통합 `-Repair`를 사용합니다(운영 배포·실제 통합 수신은 별도 검증). `-Repair`와 `-UpdateDiscovery`를 함께 쓰지 않습니다. 실행 정책에 막히면 [미서명 스크립트 안내](#windows-미서명-스크립트-차단)부터 확인하세요. 상세 절차: [Discovery 갱신](windows_agents.md#discovery-update), [중지 설치 복구](windows_agents.md#repair).
 
 활성화된 PowerShell·Defender·Sysmon 등의 채널은 이름을 지정하지 않아도 탐색됩니다. `-AdditionalChannel`은 수집 범위를 제한하는 옵션이 아니라 **반드시 존재해야 하는 채널을 검사**하는 옵션입니다.
 
@@ -224,7 +224,7 @@ Get-ChildItem "$env:ProgramFiles\Cloud-SOC-Agent\logs"
 | ES가 재시작하며 `ELASTIC_PASSWORD_FILE ... actually has: 644` 출력 | 비밀번호 내용이 아니라 해당 파일 권한 문제입니다. 기본 Docker 구성에서는 기존 `secrets/elastic_password` 파일 하나를 소유자 `1000:0`, 권한 `0400`으로 교정합니다. [정확한 권한 복구 명령](../deploy/server/README.md#기존-설치의-elasticsearch-비밀번호-파일-권한-복구)을 사용하고 재설치·비밀번호 재생성·재귀 권한 변경은 하지 않습니다. |
 | 집 PC에서 EC2의 `http://10.x.x.x:5601` 접속 실패 | 프라이빗 IP는 VPN 등 별도 내부망 경로 없이 인터넷에서 직접 접근할 수 없습니다. 중앙 구성은 HTTP가 아닌 HTTPS입니다. 브라우저에는 설치 때 지정한 공인 DNS/IP를 사용하고, 서버 바인딩에는 실제 EC2 프라이빗 IP를 사용합니다. 보안그룹은 승인된 출발지 IP만 허용합니다. |
 | 포털·Kibana 모두 `ERR_SSL_PROTOCOL_ERROR` | TLS 협상 실패입니다. 같은 Caddy 버전에서 공인 IP와 Docker/NAT 내부 IP가 다르고 클라이언트가 SNI를 보내지 않을 때의 인증서 선택 오류를 재현했습니다. [Caddy 복구 절차](../deploy/server/README.md#공인-ip-접속의-tls-오류-복구)에 따라 전역 블록의 `default_sni {$SOC_PUBLIC_HOST}`를 확인하고 설정 검증 성공 후 gateway만 재시작합니다. 다른 원인의 TLS 오류까지 이 설정으로 해결되는 것은 아닙니다. |
-| `ERR_CERT_AUTHORITY_INVALID` | TLS 프로토콜 오류와 별개인 CA 신뢰 문제입니다. [공개 CA 해시 확인·Windows 등록](aws_windows_e2e_test.md#6-windows에-ca-공개-인증서-전달신뢰)을 진행합니다. 인증서 경고를 무시하거나 TLS 검증을 끄지 않습니다. |
+| `ERR_CERT_AUTHORITY_INVALID` | TLS 프로토콜 오류와 별개인 CA 신뢰 문제입니다. [공개 CA 해시 확인·Windows 등록](installation_reference.md)을 진행합니다. 인증서 경고를 무시하거나 TLS 검증을 끄지 않습니다. |
 | `logs --since 10m ... gateway` 결과가 비어 있음 | 그 시간 안에 기록된 로그가 없다는 뜻입니다. 시작 시각이 더 이전이거나 TLS 실패가 기본 로그 수준에 기록되지 않을 수 있습니다. 빈 출력만으로 HTTPS가 정상이라고 판단하지 않습니다. |
 
 **Ubuntu 서버의 기존 체크아웃 루트**에서 상태와 시작 로그를 먼저 확인합니다. 아래 명령은 설치나 재시작을 하지 않습니다.
@@ -271,7 +271,7 @@ Get-ChildItem -LiteralPath (Join-Path $env:USERPROFILE 'Downloads') -Filter '*-s
 }
 ```
 
-파일이 실제로 존재하는데 해시가 다르면 설치를 중단하고 출처·패키지 버전·다운로드를 확인합니다. 검증을 생략하지 않습니다. 이미 압축을 풀었다면 같은 폴더에 `Expand-Archive -Force`로 덮어쓰지 말고, 그 파일들이 검증된 ZIP과 같은 내용인지 확인하세요. 확신할 수 없으면 [새 폴더에 검증 후 압축 해제](aws_windows_e2e_test.md#windows-해시-검증압축-해제) 절차를 사용합니다.
+파일이 실제로 존재하는데 해시가 다르면 설치를 중단하고 출처·패키지 버전·다운로드를 확인합니다. 검증을 생략하지 않습니다. 이미 압축을 풀었다면 같은 폴더에 `Expand-Archive -Force`로 덮어쓰지 말고, 그 파일들이 검증된 ZIP과 같은 내용인지 확인하세요. 확신할 수 없으면 [새 폴더에 검증 후 압축 해제](installation_reference.md) 절차를 사용합니다.
 
 ### Windows NIC GUID 문법 오류
 
@@ -359,7 +359,7 @@ Get-Process -Name filebeat,packetbeat -ErrorAction SilentlyContinue |
 | `No module named 'cloud_soc'` | 저장소 루트에서 `PYTHONPATH=src`를 현재 셸에 지정했는지, 가상환경 Python을 사용했는지 확인 |
 | HTTP 주소 거부 | 에이전트는 HTTPS만 허용. 개발용 Compose가 아닌 보안 수신 환경 준비 필요 |
 | TLS 연결 실패 | CA PEM 파일, 인증서 만료, DNS/IP와 SAN 일치 여부 확인. 검증을 끄지 않음 |
-| Windows `schannel: the revocation status is unknown` | 사설 CA의 폐기 정보 조회 불가일 수 있습니다. 기본 검사는 유지하며 승인된 사설 CA에만 새 패키지의 `-AllowUnavailableRevocation` 옵션을 사용합니다. 인증서 서명·주소·기간 검사는 유지하지만 조회 불가 시 폐기 여부를 확인하지 못할 수 있습니다. [원인·적용 조건·새 패키지 필요 안내](windows_install_recovery.md)를 먼저 확인하세요. |
+| Windows `schannel: the revocation status is unknown` | 사설 CA의 폐기 정보 조회 불가일 수 있습니다. 기본 검사는 유지하며 승인된 사설 CA에만 새 패키지의 `-AllowUnavailableRevocation` 옵션을 사용합니다. 인증서 서명·주소·기간 검사는 유지하지만 조회 불가 시 폐기 여부를 확인하지 못할 수 있습니다. [원인·적용 조건·새 패키지 필요 안내](windows_agents.md#repair)를 먼저 확인하세요. |
 | API 키 인증/저장 실패 | `id:api_key` 형식, 만료, 대상 인덱스 권한, 중앙 인덱스 자동 생성 정책 확인 |
 | 기존 설치 감지 | 기존 서비스·설정·registry를 검토한 후 전환 계획 수립. 무조건 삭제하거나 덮어쓰지 않음 |
 | Ubuntu 로그 파일 없음 | journald 수집과 `discovery-report.json`, 탐색 타이머 상태 확인 |
@@ -390,11 +390,11 @@ Get-Item -LiteralPath "$env:ProgramFiles\Cloud-SOC-Agent", "$env:ProgramFiles\Cl
     Select-Object FullName, LastWriteTime
 ```
 
-**폴더가 남아 있으면 바로 재설치하거나 재귀 삭제하지 않습니다.** 기존 `data`·keystore·서비스 유무와 pending 기록을 확인한 후 지원되는 복구 경로를 선택합니다. 이전 ZIP/순차 설치에서는 Filebeat 설치 후 Packetbeat 다운로드 실패 시 Filebeat만 실행 중일 수 있습니다. 최신 Windows 통합 ZIP은 두 준비가 끝난 뒤 서비스 등록을 진행하지만, 시작 후 실패·강제 종료에는 자료를 보존합니다. 2026-10-01 로컬 수정본은 보호된 최종 준비 완료 기록과 중지된 설치가 일치하면 `-Repair`로 누락 서비스도 복원하며, 복구 자체 중단은 `-Repair -ResumeRepair -DryRun` 검사 후 명시적으로 재개합니다. 구버전·폴더 승격 도중 중단·누락 폴더·변조/불명확한 생성 상태·실행 중 수집기는 자동 채택하지 않습니다. [지원 조건과 명령](windows_install_recovery.md#복구-자체가-중단된-경우)을 먼저 확인하세요. 배포와 실제 두 서비스 검증은 별도입니다. 전체 설치를 무조건 되풀이하거나 pending 파일을 지워 우회하지 않습니다. 실제 전송 속도는 네트워크·프록시·Elastic 배포 서버에 따라 달라지며, 중앙 서버 캐시와 다운로드 이어받기는 아직 구현하지 않았습니다.
+**폴더가 남아 있으면 바로 재설치하거나 재귀 삭제하지 않습니다.** 기존 `data`·keystore·서비스 유무와 pending 기록을 확인한 후 지원되는 복구 경로를 선택합니다. 이전 ZIP/순차 설치에서는 Filebeat 설치 후 Packetbeat 다운로드 실패 시 Filebeat만 실행 중일 수 있습니다. 최신 Windows 통합 ZIP은 두 준비가 끝난 뒤 서비스 등록을 진행하지만, 시작 후 실패·강제 종료에는 자료를 보존합니다. 2026-10-01 로컬 수정본은 보호된 최종 준비 완료 기록과 중지된 설치가 일치하면 `-Repair`로 누락 서비스도 복원하며, 복구 자체 중단은 `-Repair -ResumeRepair -DryRun` 검사 후 명시적으로 재개합니다. 구버전·폴더 승격 도중 중단·누락 폴더·변조/불명확한 생성 상태·실행 중 수집기는 자동 채택하지 않습니다. [지원 조건과 명령](windows_agents.md#repair)을 먼저 확인하세요. 배포와 실제 두 서비스 검증은 별도입니다. 전체 설치를 무조건 되풀이하거나 pending 파일을 지워 우회하지 않습니다. 실제 전송 속도는 네트워크·프록시·Elastic 배포 서버에 따라 달라지며, 중앙 서버 캐시와 다운로드 이어받기는 아직 구현하지 않았습니다.
 
 ## 테스트와 현재 한계
 
-정상 실행 중인 Windows 에이전트의 Discovery만 갱신하려면 [갱신 가이드](windows_discovery_update.md)를 따릅니다. 새 코드로 생성한 전체 패키지에서 `-UpdateDiscovery -DryRun`으로 점검한 뒤 `-UpdateDiscovery`로 실행합니다. 기존 키·registry·큐는 보존하며 `-Repair`로 대체하지 않습니다. 기존 다운로드 ZIP에는 이 옵션이 없을 수 있습니다.
+정상 실행 중인 Windows 에이전트의 Discovery만 갱신하려면 [갱신 가이드](windows_agents.md#discovery-update)를 따릅니다. 새 코드로 생성한 전체 패키지에서 `-UpdateDiscovery -DryRun`으로 점검한 뒤 `-UpdateDiscovery`로 실행합니다. 기존 키·registry·큐는 보존하며 `-Repair`로 대체하지 않습니다. 기존 다운로드 ZIP에는 이 옵션이 없을 수 있습니다.
 
 오프라인 설치기 테스트:
 

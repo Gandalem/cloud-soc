@@ -1,6 +1,6 @@
 # P2 수집 보호·품질 운영 가이드
 
-이 문서는 수집 보호·품질의 적용 범위를 설명합니다. 최초 로컬 구현·격리 검증 뒤 2026-10-04 지정 VMware에서 조직별 포털 보호 조회와 실제 Windows/Ubuntu v3 교체·수신을 검증했습니다([실제 보고서](archive/validation/p2_source_access_validation_20261004.md)). AWS 운영 배포·승인된 보존/삭제 정책·ES 문서별 권한·일반 에이전트 업그레이드는 별도 범위입니다.
+이 문서는 수집 보호·품질의 적용 범위를 설명합니다. 최초 로컬 구현·격리 검증 뒤 2026-10-04 지정 VMware에서 조직별 포털 보호 조회와 실제 Windows/Ubuntu v3 교체·수신을 검증했습니다([실제 보고서](archive/README.md#record-docs-archive-validation-p2-source-access-validation-20261004-md)). AWS 운영 배포·승인된 보존/삭제 정책·ES 문서별 권한·일반 에이전트 업그레이드는 별도 범위입니다.
 
 2026-10-04 P2-01: 조직별 viewer/investigator·보호된 원문 허용 필드·조회 사유·감사 기록을 로컬 구현했습니다([정책과 적용 절차](log_access_policy.md)). 기본 차단·전체 원문/내보내기 차단을 유지하며 실제 배포/권한 대조는 남아 있습니다. 새 패키지의 마스킹 v3는 비밀 명령 옵션·일반 URI 자격 증명/쿼리·숨김 제어 문자를 보강합니다. 기존 VM의 v2 설치·큐·과거 ES 데이터는 변경하지 않았으며 아래 v2 이력을 보존합니다.
 
@@ -19,7 +19,7 @@ Ubuntu 실제 탐색에서 발견한 `/var/log/installer`와 cloud-init 로그�
 
 `password`, `secret`, `token`, 인증 헤더/쿠키, 명령 인자·명령줄, `event.original`, XML·본문 같은 필드는 제거합니다. Windows `include_xml`도 비활성화했습니다. 비밀번호 대입, Bearer/Basic, 자격증명이 붙은 URL, 쿼리/fragment가 있는 HTTP URL, 알려진 AWS 키/JWT/PEM 표식을 발견한 문자열은 **일부분이 아니라 전체를 `[REDACTED]`**로 바꿉니다. 배열에 민감 항목이 있으면 배열 전체를 가립니다. 일반 Linux 인증 실패 메시지와 이벤트 코드는 유지합니다.
 
-P3에서 `privacy_policy=v2`로 보완했습니다. Windows 렌더링 `message`와 예약 작업 XML/스크립트 본문은 중복된 명령 인자 누출을 막기 위해 제거합니다. 네이티브 Linux 감사 인자 레코드(EXECVE/PROCTITLE/USER_CMD)는 전송하지 않고 SYSCALL/PATH를 유지합니다. 범위·미지원 포맷·기존 에이전트 적용 제한은 [P3 감사 가이드](host_security_audit.md)를 확인하세요.
+P3에서 `privacy_policy=v2`로 보완했습니다. Windows 렌더링 `message`와 예약 작업 XML/스크립트 본문은 중복된 명령 인자 누출을 막기 위해 제거합니다. 네이티브 Linux 감사 인자 레코드(EXECVE/PROCTITLE/USER_CMD)는 전송하지 않고 SYSCALL/PATH를 유지합니다. 범위·미지원 포맷·기존 에이전트 적용 제한은 [P3 감사 가이드](archive/README.md#record-docs-host-security-audit-md)를 확인하세요.
 
 문자열 8,192자 초과는 가리고, 깊이 12·노드 4,096 제한이나 처리 오류 시 이벤트를 버립니다. 스크립트 제한 시간 초과 이벤트도 후속 `drop_event`에서 버립니다. 안전한 실패를 우선하므로 이것은 손실 없는 수집 정책이 아닙니다. 정상 조사 정보가 가려지는 오탐도 가능합니다.
 
@@ -61,7 +61,7 @@ P3에서 `privacy_policy=v2`로 보완했습니다. Windows 렌더링 `message`�
 
 ### 중앙 서버 반영 순서
 
-1. 검토한 코드를 서버로 반영하고 [기존 중앙 서버 업데이트](agent_status.md#기존-중앙-서버-업데이트)를 실행합니다. bootstrap이 상태 인덱스 템플릿·서버 수신 시각·조회/발급 역할을 준비합니다. 저장 데이터·CA·기존 비밀번호는 삭제하지 않습니다.
+1. 검토한 코드를 서버로 반영하고 [기존 중앙 서버 업데이트](agent_management.md#기존-중앙의-수신-조회-준비)를 실행합니다. bootstrap이 상태 인덱스 템플릿·서버 수신 시각·조회/발급 역할을 준비합니다. 저장 데이터·CA·기존 비밀번호는 삭제하지 않습니다.
 2. **새 설치 패키지와 새 호스트 수집 키를 발급**합니다. 이미 SQLite에 저장된 ZIP/tar.gz와 기존 키는 자동 갱신되지 않습니다. 새 키에는 `soc-agent-health-*`의 쓰기 권한이 추가됩니다. 네트워크 키 권한은 확대하지 않습니다.
 3. 승인된 테스트 호스트의 새 설치부터 검증합니다. 구버전 설치 프로그램을 기존 서비스 위에 다시 실행하지 마세요. 기존 에이전트 바이너리/전체 설정 자동 업그레이드는 아직 지원하지 않습니다.
 4. 로컬 `discovery-report.json`, 중앙 품질 보고의 시각/카운터, 실제 고유 테스트 로그 도착을 각각 확인합니다. 어느 하나만 보고 전체 수집 완료로 체크하지 않습니다.

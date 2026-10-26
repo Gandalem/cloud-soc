@@ -1,6 +1,6 @@
 # 통합 로그 조회 계약 v1
 
-P1-01 계약을 기준으로 P1-02 API와 P1-03 화면 연결까지 구현했다. 기준일: 2026-09-22. 격리 ES 및 합성 UI 검증은 완료했으나 AWS 배포·실제 에이전트 수신 검증은 별도다. 사용·업데이트 절차는 [통합 로그 안내](log_explorer.md)를 참고한다.
+P1-01 계약을 기준으로 P1-02 API와 P1-03 화면 연결까지 구현했다. 기준일: 2026-09-22. 격리 ES 및 합성 UI 검증은 완료했으나 AWS 배포·실제 에이전트 수신 검증은 별도다. 사용·업데이트 절차는 [통합 로그 안내](portal_usage.md#logs)를 참고한다.
 
 - 구현: [log_contract.py](../src/cloud_soc/portal/log_contract.py)
 - 조회 API 구현: [log_query.py](../src/cloud_soc/portal/log_query.py), [포털 라우트](../src/cloud_soc/portal/app.py)
@@ -105,11 +105,11 @@ OCI 추가 계약: `soc-cloud-oci-*`, `collector=oci-audit`, `os=cloud`를 지�
 
 P4 추가 계약: `soc-cloud-aws-*`를 조회/상세 허용 목록에 추가했습니다. `collector=cloudtrail`, `os=cloud`는 AWS 관리 API 영역이며 호스트 OS가 아닙니다. 행에는 `cloud_account`, `cloud_region`, `cloud_service`, `actor_id`가 추가됩니다. 별도 AWS 허용 필드만 상세에서 조회하며 전체 CloudTrailEvent/requestParameters/responseElements는 요청하지 않습니다. 계정/자원을 `host.name`으로 바꾸지 않고 호스트 필터도 AWS 계정 필터로 재해석하지 않습니다. 중앙 읽기 역할/템플릿 갱신 후 사용하며 [AWS 가이드](aws_cloudtrail.md)를 따릅니다.
 
-P3 추가 계약: 상세 응답에 선택적 `security` 객체(version 1)를 제공합니다. Windows 공급자/채널/ID를 확인하여 명시된 event_data 하위 필드만 해석하고, Packetbeat 메타데이터를 표시합니다. `message`, 전체 event_data, 명령줄/작업 XML은 조회하지 않습니다. 목록 계약과 `row.parse_status=not_evaluated`는 그대로이며 별도 해석을 전체 파싱/공격 판정으로 취급하지 않습니다. 누락/미지원·감사 설정 미확인·연관 한계는 [P3 계약](host_security_audit.md)에 명시합니다.
+P3 추가 계약: 상세 응답에 선택적 `security` 객체(version 1)를 제공합니다. Windows 공급자/채널/ID를 확인하여 명시된 event_data 하위 필드만 해석하고, Packetbeat 메타데이터를 표시합니다. `message`, 전체 event_data, 명령줄/작업 XML은 조회하지 않습니다. 목록 계약과 `row.parse_status=not_evaluated`는 그대로이며 별도 해석을 전체 파싱/공격 판정으로 취급하지 않습니다. 누락/미지원·감사 설정 미확인·연관 한계는 [P3 계약](archive/README.md#record-docs-host-security-audit-md)에 명시합니다.
 
 로컬 계약 테스트는 합성 Windows 이벤트/파일, Linux 파일/저널, 흐름/DNS/TLS, 과거 문서를 사용한다. 필드 결측·시각·잘못된 타입·표시 제한·본문 비노출·인덱스 참조·조회 제한·기존 수집 설정과의 정합성을 검사한다. 서비스나 에이전트를 설치하지 않고 ES/운영 로그에도 접근하지 않는다.
 
-P1-02 실제 격리 ES 쿼리/페이지 검증과 P1-03 화면 연결 검증은 [통합 로그 안내](log_explorer.md)에 기록했다. P1-04/P0의 승인된 실제 서버 수신 시험은 남아 있다. 합성 테스트 통과로 운영 수신을 완료 처리하지 않는다.
+P1-02 실제 격리 ES 쿼리/페이지 검증과 P1-03 화면 연결 검증은 [통합 로그 안내](portal_usage.md#logs)에 기록했다. P1-04/P0의 승인된 실제 서버 수신 시험은 남아 있다. 합성 테스트 통과로 운영 수신을 완료 처리하지 않는다.
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p test_log_contract.py -v
