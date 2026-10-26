@@ -12,7 +12,9 @@
 
 ## 현재 작업
 
-- [ ] GIT-PUBLISH-20261027-01 진행 중(2026-10-27): 사용자 요청으로 현재 codex/agent-clean-reinstall의 장치 삭제 후 새 등록 설치·수동 키 연장/화면 정리·서버 설치/삭제 및 WSL 인수 변경과 관련 검사/문서를 Gandalem/cloud-soc에 커밋·푸시한다. 앞선 작업의 커밋/푸시 제외는 이 게시 요청 범위에서 대체한다. main 병합·운영 배포·새 기능 개발·전체 재검사는 하지 않는다. 게시 후보46경로를 확인했고 runtime/state·디스크/로그/개인키 확장자와 식별 가능한 비밀값 패턴은 포함되지 않았다. 기존 변경은 삭제·초기화하지 않고 현재 스냅샷으로 보존하며 원격 반영 결과는 후속 기록으로 확정한다.
+- Git 게시 결과(2026-10-27): 코드 커밋 b71d300292d772abb8237f6379d5482f624b079f를 https://github.com/Gandalem/cloud-soc.git 의 codex/agent-clean-reinstall에 일반 push했고 원격 SHA 일치를 확인했다. 장치 재설치·수동 키 연장/화면·서버 설치/삭제/작업자 init 및 관련 검사/문서46파일이 포함됐다. 게시 준비 중 새 테스트2파일의 EOF 빈 줄만 정리했고 스테이징 diff 공백·soc LF·게시 목록/비밀값 패턴 확인을 통과했다. 기존 기능 검사 결과를 재사용했으며 새 전체 검사·원격 CI 실행·PR 생성·main 병합·운영 배포·재부팅은 요청 범위가 아니다. state의 시험 보고서/디스크·비밀값은 Git에 추가하지 않았다. 이 원격 반영 결과 기록은 후속 문서 커밋으로 함께 게시한다.
+
+- [x] GIT-PUBLISH-20261027-01 코드 커밋·원격 반영 완료(2026-10-27): 사용자 요청으로 현재 codex/agent-clean-reinstall의 장치 삭제 후 새 등록 설치·수동 키 연장/화면 정리·서버 설치/삭제 및 WSL 인수 변경과 관련 검사/문서를 Gandalem/cloud-soc에 커밋·푸시한다. 앞선 작업의 커밋/푸시 제외는 이 게시 요청 범위에서 대체한다. main 병합·운영 배포·새 기능 개발·전체 재검사는 하지 않는다. 게시 후보46경로를 확인했고 runtime/state·디스크/로그/개인키 확장자와 식별 가능한 비밀값 패턴은 포함되지 않았다. 기존 변경은 삭제·초기화하지 않고 현재 스냅샷으로 보존하며 원격 반영 결과는 후속 기록으로 확정한다.
 
 - WSL 최종 인수/정리 결과(2026-10-27): 새 Ubuntu24.04.5/systemd·전용 Docker CLI/Engine29.9.2·기본 containerd image store(overlayfs), ES/Kibana9.5.2·Caddy2.11.4에서 실제 `soc install`→12서비스/CA 검증 HTTPS→상태/메뉴/도움말→삭제 취소→keep 확인1회/정상 종료→보존 상태→신규 설치 거부→공통 recover/install 복구→동일 키·인증서·합성 원본→purge 확인1회→반복 제거를 통과했다. Python 작업자8개의 HostConfig.Init=true도 실제 inspect로 확인했고 종료 한도90초·비강제 rm·권한/룰/체크포인트 계약은 유지했다. 보고서 state/server-ux-wsl-20261026-10/reports/result.json·cleanup.json·final-audit.json이며 원래 입력 비밀값/키는 기록하지 않는다.
 - 실제 발견/수정(2026-10-27): Windows checkout의 확장자 없는 `soc` CRLF가 dash의 Illegal option 오류를 냈다. 작업본을 LF로 정리하고 .gitattributes의 /soc text eol=lf 및 POSIX/LF 회귀 검사를 추가했다. 전체 서비스 실험에서는 Python PID1 작업자가 SIGTERM을 무시해 keep가90초 대기 후 중단했고 원본/설정은 남았다. runtime.compose.yaml 공통7작업자와 compose.yaml enrollment-cleanup에 Docker 내장 init를 추가했다. 직접 영향 설정1검사(7하위 사례)·launcher1검사·Ruff를 통과한 뒤 새 WSL 전체 흐름을 다시 통과했다. 사용자 코드/규칙/상태/키·권한을 완화하거나 미종료를 성공으로 바꾸지 않았다.
