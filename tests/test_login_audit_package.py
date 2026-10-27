@@ -3,6 +3,9 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import runpy
+import sys
+from unittest.mock import Mock, patch
 
 import pytest
 import yaml
@@ -79,3 +82,39 @@ def test_patch_mismatch_preserves_existing_local_changes(patcher, mall):
         patcher(mall)
     after = {p: p.read_bytes() for p in mall.rglob('*') if p.is_file() and '.git' not in p.parts}
     assert before == after
+
+
+def test_manual_actions_starts_real_jar_without_creating_login_or_collector(tmp_path):
+    mall = tmp_path / 'prepared-mall'
+    jar = mall / 'build/libs/mall.jar'
+    jar.parent.mkdir(parents=True)
+    jar.write_bytes(b'isolated jar placeholder')
+    child = Mock(pid=424242)
+    child.poll.return_value = None
+    response = Mock(status=200)
+    response.__enter__ = Mock(return_value=response)
+    response.__exit__ = Mock(return_value=False)
+    with patch.object(sys, 'argv', ['start-and-connect.py', '--mall', str(mall), '--manual-actions', '--sudo-docker']), \
+            patch('os.getuid', return_value=1000), \
+            patch('os.kill') as kill, \
+            patch('subprocess.run', return_value=Mock(returncode=0)) as run, \
+            patch('subprocess.Popen', return_value=child) as start, \
+            patch('urllib.request.urlopen', return_value=response) as http:
+        with pytest.raises(SystemExit) as stopped:
+            runpy.run_path(str(PACKAGE / 'start-and-connect.py'), run_name='__main__')
+    assert stopped.value.code == 0
+    assert run.call_args_list[0].args[0] == ['sudo', '-n', 'docker', 'info']
+    assert len(run.call_args_list) == 2  # Docker readiness and actual bootJar command only.
+    assert 'bootJar' in run.call_args_list[1].args[0]
+    assert '--server.address=127.0.0.1' in start.call_args.args[0]
+    assert str(jar.resolve()) in start.call_args.args[0]
+    assert http.call_count == 1
+    assert http.call_args.args[0] == 'http://127.0.0.1:8080/login'
+    kill.assert_not_called()
+    assert not (mall / 'audit/security-audit.jsonl').exists()
+
+
+def test_connect_help_exposes_custom_mall_and_sudo_without_touching_docker():
+    result = subprocess.run([sys.executable, str(PACKAGE / 'connect.py'), '--help'], capture_output=True, text=True)
+    assert result.returncode == 0
+    assert '--mall' in result.stdout and '--sudo-docker' in result.stdout and '--verify' in result.stdout

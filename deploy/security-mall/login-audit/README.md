@@ -27,6 +27,52 @@ python3 deploy/security-mall/login-audit/apply.py --mall "$HOME/security-mall"
 
 ## 2. 실행과 중앙 연결
 
+### 실제 브라우저 작업으로 감사 로그 생성 (Ubuntu 로컬)
+
+준비한 쇼핑몰을 그대로 사용하며 별도 Flask 앱은 필요 없다. 기본 경로는 `~/security-mall`이고 다른 경로는 `--mall`로 명시한다. Java17 JDK가 필요하다. 현재 원격 쇼핑몰 `aba2b423157cdcb4562fb0eaab3694e379b900e4`에 이 패치가 적용되는 것을 확인했다. 기존 checkout에 로컬 변경이 있으면 보존하고 적용 충돌 시 중단한다.
+
+```bash
+# Cloud SOC 소스 폴더에서 실행
+sudo apt update
+sudo apt install -y openjdk-17-jdk
+# 쇼핑몰 폴더가 이미 있다면 clone은 생략
+git clone https://github.com/ZIYA0614/security-mall.git "$HOME/security-mall"
+python3 deploy/security-mall/login-audit/apply.py --mall "$HOME/security-mall"
+sudo -v
+python3 deploy/security-mall/login-audit/start-and-connect.py \
+  --mall "$HOME/security-mall" --manual-actions --sudo-docker
+```
+
+`--sudo-docker`는 Docker 명령에만 미리 인증한 sudo를 사용한다. Python 전체를 sudo로 실행하지 않아 DB·감사 파일의 사용자 소유권을 유지한다. Docker에 일반 사용자로 접근 가능하면 이 옵션과 `sudo -v`는 생략할 수 있다. `--manual-actions`에서는 자동 실패 로그인이나 수신 검사를 생성하지 않는다. 기존 H2 DB를 삭제하지 않으며 사용자의 해당 쇼핑몰 프로세스만 재시작한다. 앱은127.0.0.1:8080에만 바인딩한다.
+
+Ubuntu 데스크톱 브라우저에서 `http://127.0.0.1:8080`을 열고 다음을 직접 수행한다.
+
+1. `/signup`에서 로컬 실습 계정을 회원가입한다. 다른 서비스의 비밀번호나 실제 개인정보를 재사용하지 않는다.
+2. `/login`에서 올바른 비밀번호로 로그인하고 로그아웃한다.
+3. 같은 계정으로 잘못된 비밀번호를 입력해 로그인 실패를 만든다.
+4. 위 로그인 성공·실패 작업을 반복해 최소3건의 실제 앱 감사 기록을 생성한다.
+
+로그는 실제 앱의 인증 처리 결과이며 JSON을 임의로 작성해 채우지 않는다. 회원가입 자체를 이 패치가 감사하는 것은 아니다. 결제 API를 호출할 필요도 없다. 다른 PC 브라우저의127.0.0.1은 Ubuntu가 아니므로 Ubuntu 브라우저를 사용하거나 기존 SSH 터널로8080을 전달한다. 앱을 공용 인터페이스에 열지 않는다.
+
+다른 터미널에서 Cloud SOC 소스 폴더로 이동한 뒤 실제 JSONL을 중앙에 연결한다.
+
+```bash
+sudo -v
+python3 deploy/security-mall/login-audit/connect.py \
+  --mall "$HOME/security-mall" --sudo-docker
+# 브라우저에서 추가 로그인 성공/실패 후 중앙 실제 수신 조회
+python3 deploy/security-mall/login-audit/connect.py \
+  --mall "$HOME/security-mall" --sudo-docker --verify
+```
+
+이 작업은 기존 중앙 ES에 전용 인덱스·pipeline·만료 API키와 별도 Filebeat 컨테이너를 구성한다. 기존 에이전트 등록·키·큐를 교체하지 않는다. 쇼핑몰 HMAC 키는 앱에만 남기며 수집기에 전달하지 않는다. 중앙 설정은 로그인 실패 시 자동 비밀번호 재설정을 하지 않는다.
+
+Portal 통합 로그에서 host `mall-host-isolated`, service `security-mall`을 사용한다. 원본 인덱스는 `soc-host-raw-mall-isolated-local-login-v1`이다. 로그인 감사는 기존 `security_mall_audit_v1` 정규화 경로와 WEB-AUTH-01 등 쇼핑몰 규칙을 사용한다. 앞서 추가한 `SCENARIO-APP-ROLE-001`·`SCENARIO-APP-EXPORT-001`·`SCENARIO-APP-UPLOAD-001`과 다른 입력 계약이다. 이 로그인 패치만으로 그3종 이벤트를 수집했다고 기록하지 않는다. 정상/실패 로그인3건은 감사 기록3건이지 서로 다른 앱 시나리오3종이 아니다.
+
+보고서 캡처는 쇼핑몰 로그인 성공·실패 화면, 중앙 `--verify`의 success/failure 집계, Portal 통합 로그 상세를 사용한다. 원문 계정·비밀번호·HMAC 키·수집 API키는 캡처하지 않는다. 로컬에서 만든 실습 계정의 실제 HTTP 활동 결과이며 실제 상용 서비스의 운영 데이터라고 표현하지 않는다.
+
+### 기존 자동 실행 도우미
+
 ```bash
 python3 deploy/security-mall/login-audit/start-and-connect.py
 ```

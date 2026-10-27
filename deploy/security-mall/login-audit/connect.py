@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run as the VM user with Docker access. No credentials are printed."""
 import base64
+import argparse
 import getpass
 import json
 import os
@@ -20,10 +21,11 @@ INDEX = 'soc-host-raw-mall-isolated-local-login-v1'
 PIPELINE = 'security-mall-local-login-final-v1'
 IMAGE = 'docker.elastic.co/beats/filebeat:9.5.2'
 MALL = Path.home() / 'security-mall'
+DOCKER = ['docker']
 
 
 def docker(*args, data=None):
-    p = subprocess.run(['docker', *args], input=data, capture_output=True)
+    p = subprocess.run([*DOCKER, *args], input=data, capture_output=True)
     if p.returncode:
         raise RuntimeError('Docker 명령 실패: ' + ' '.join(args[:2]) + ' (키·원문은 출력하지 않음)')
     return p.stdout
@@ -39,6 +41,16 @@ def private(path, data):
 
 
 def main():
+    global MALL, DOCKER
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--mall', type=Path, default=MALL)
+    parser.add_argument('--verify', action='store_true')
+    parser.add_argument('--sudo-docker', action='store_true', help='Use cached sudo for Docker only')
+    args = parser.parse_args()
+    MALL = args.mall.expanduser().resolve()
+    DOCKER = ['sudo', '-n', 'docker'] if args.sudo_docker else ['docker']
+    if os.getuid() == 0:
+        raise RuntimeError('전체 스크립트는 sudo 없이 실행하세요. Docker만 sudo가 필요하면 --sudo-docker를 사용하세요.')
     os.umask(0o077)
     STATE.mkdir(mode=0o700, exist_ok=True)
     config = STATE / 'config'
@@ -96,7 +108,7 @@ def main():
                 return None
             raise RuntimeError('ES 요청 실패 HTTP ' + str(error.code) + ': ' + path.split('?')[0]) from None
 
-    if '--verify' in sys.argv:
+    if args.verify:
         result = api('POST', '/' + INDEX + '/_search', {
             'size': 5, 'sort': [{'event.ingested': 'desc'}],
             '_source': ['@timestamp', 'event.ingested', 'security_mall.audit.event_outcome'],
@@ -158,7 +170,7 @@ def main():
            '--stdin', '--force', *flags, data=(key['id'] + ':' + key['api_key'] + '\n').encode())
     docker('run', '--rm', *mounts, IMAGE, 'test', 'config', *flags)
     docker('run', '--rm', *mounts, IMAGE, 'test', 'output', *flags)
-    prior = subprocess.run(['docker', 'inspect', NAME], capture_output=True)
+    prior = subprocess.run([*DOCKER, 'inspect', NAME], capture_output=True)
     if prior.returncode == 0:
         old = json.loads(prior.stdout)[0]
         mounted = {m['Destination']: m['Source'] for m in old['Mounts']}

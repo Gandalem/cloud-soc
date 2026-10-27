@@ -1,5 +1,9 @@
 # 두 브랜치 통합 기록 — 2026-10-27
 
+- [ ] LOCAL-AUDIT-APP-20261027-01 진행 중: 실제 앱 감사 로그를 발생시키는 로컬 앱 추가 방법 요청에 따라 loopback 전용 Flask 앱을 작성한다. 실제 SQLite 권한 변경·업무 예제 데이터 내보내기·업로드 격리 저장 결과에서 감사 기록을 생성하고 기존 앱3개 시나리오 입력으로 내보낸다. 업무 데이터는 예제이며 감사 로그는 사용자가 실제 수행한 작업에서 생성한다. 기존 중앙 서버·등록·키는 변경하지 않는다.
+- 범위 변경: 사용자가 별도 로컬 앱 대신 ZIYA0614/security-mall 사용을 지정했다. 방금 작성하던 미커밋 독립 앱은 제외하고 쇼핑몰 기존 소스·감사 패키지로 전환한다. 실제 앱 기능에 없는 권한 관리·자료 내보내기·파일 업로드 이벤트를 만들어 내지 않는다.
+- [x] LOCAL-AUDIT-APP-20261027-01-MALL-CONNECTION 코드·안내 작성: 지정 쇼핑몰을/tmp 별도 경로에 복제해 원격aba2b42에 기존 로그인 감사 패치를 적용했다. start-and-connect.py에--manual-actions·--mall·--sudo-docker와 Java/Gradle 메모리 제한을 추가했다. manual 경로는 자동 실패 로그인을 만들지 않고 실제 브라우저 작업 뒤 connect.py로 별도 전송한다. connect.py도 사용자 소유 경로를 유지하며 Docker에만 sudo를 적용한다. README에Java17설치·실제회원가입/로그인·원본중앙수신·캡처 절차와 기존9종 앱규칙과의 입력 차이를 기록했다. 기존패키지/쇼핑몰수집/탐지62검사pass, 새help/manual2검사는 최초manual1실패(기존프로세스args변수 충돌)를options로수정후pass했다. Ruff/diff공백pass. 사용자쇼핑몰/DB/키·기존서버는 변경하지 않았으며 실제 Java빌드/브라우저작업/Filebeat/ES 수신은 사용자Ubuntu에서 별도 실행해야 한다.
+
 - [ ] ENROLLMENT-CRL-REPAIR-20261027-01 진행 중: 사용자 실제 Ubuntu 등록에서 CRL 배포 주소 부재를 확인하고 기존 CA·개인키·데이터·등록 상태를 보존하는 코드 수정을 요청했다. 신규 설치의 CRL 발급/제공과 기존 서버의 명시적 인증서 보완 도구를 작성한다. 기존 CA/서버 키를 재생성하지 않고 SAN·subject를 보존하며 인증서/CRL만 교체한다. 보호 백업·오류 시 원복을 포함하고 실제 사용자 서버에는 적용하지 않는다.
 - [x] ENROLLMENT-CRL-REPAIR-20261027-01-CODE 코드·격리 검사 완료: deploy/server/enrollment_pki.py와repair-enrollment-tls.py에 기존 CA/키 보존형 발급·갱신·해시 보호 백업·명시 원복·매일 갱신 타이머를 추가했다. prepare.py·install-ubuntu.sh의 신규 설치에 연결하고 Caddyfile에서 공개 DER CRL 경로만 제공한다. 실제 OpenSSL/loopback Ubuntu 등록기/신규 설치8건, 기존prepare20건 및12subtests, 등록/설치/CLI36건 및39subtests 통과. 초기 loopback 검사는 샌드박스 소켓 제한으로 실패해 격리 승인 실행으로pass했고 mock OpenSSL 테스트2건은 새 helper를 명시 mock한 후pass했다. Ruff·셸 구문·diff 공백 검사 통과. Docker gate4건은 실행 환경 부재로skip했다. docs/enrollment_crl_repair.md에 사용자192.168.1.159의 적용·CRL갱신·게이트웨이만재생성·원복 명령을 기록했다. 실제 사용자 서버·등록 상태·DB·CA·키는 변경하지 않았으므로 부모 운영 인수는미완료다.
 
