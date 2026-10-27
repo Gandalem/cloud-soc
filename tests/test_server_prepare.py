@@ -29,7 +29,7 @@ class ServerPreparationTests(unittest.TestCase):
     def run_main(self, entries, error=None):
         args = argparse.Namespace(host="soc.example.test", agent_host=None, bind_ip="10.0.0.5", state=self.state)
         stdout, stderr = io.StringIO(), io.StringIO()
-        with patch.object(prepare.argparse.ArgumentParser, "parse_args", return_value=args), \
+        with patch.object(prepare.KoreanParser, "parse_args", return_value=args), \
                 patch.object(prepare, "os", SimpleNamespace(name="posix", geteuid=lambda: 0)), \
                 patch.object(prepare.getpass, "getpass", side_effect=entries) as prompt, \
                 patch.object(prepare, "prepare", side_effect=error) as action, \
@@ -102,7 +102,7 @@ class ServerPreparationTests(unittest.TestCase):
         self.state.mkdir()
         marker = self.state / "existing.txt"
         marker.write_text("existing state", encoding="ascii")
-        with self.assertRaisesRegex(prepare.PreparationError, "never overwritten"):
+        with self.assertRaisesRegex(prepare.PreparationError, "덮어쓰지 않았습니다"):
             prepare.prepare("soc.example.test", "10.0.0.5", self.state, PASSWORD)
         self.assertEqual(marker.read_text(encoding="ascii"), "existing state")
         self.assertEqual(list(self.state.iterdir()), [marker])
@@ -110,21 +110,21 @@ class ServerPreparationTests(unittest.TestCase):
     def test_state_symlink_is_rejected_before_resolving_or_writing(self):
         with patch.object(type(self.state), "is_symlink", return_value=True), \
                 patch.object(prepare, "password_hash") as hash_password:
-            with self.assertRaisesRegex(prepare.PreparationError, "must not be a symlink"):
+            with self.assertRaisesRegex(prepare.PreparationError, "심볼릭 링크"):
                 prepare.prepare("soc.example.test", "10.0.0.5", self.state, PASSWORD)
             hash_password.assert_not_called()
         self.assertFalse(self.state.exists())
 
     def test_missing_openssl_is_actionable_before_writing(self):
         with patch.object(prepare.shutil, "which", return_value=None):
-            with self.assertRaisesRegex(prepare.PreparationError, "Install OpenSSL"):
+            with self.assertRaisesRegex(prepare.PreparationError, "OpenSSL이 필요"):
                 prepare.prepare("soc.example.test", "10.0.0.5", self.state, PASSWORD)
         self.assertFalse(self.state.exists())
 
     def test_invalid_bind_ip_is_static_and_does_not_create_state(self):
         with self.assertRaises(prepare.PreparationError) as result:
             prepare.prepare("soc.example.test", "invalid-bind-canary", self.state, PASSWORD)
-        self.assertIn("valid server-local IPv4", str(result.exception))
+        self.assertIn("서버에 할당된 IPv4", str(result.exception))
         self.assertNotIn("invalid-bind-canary", str(result.exception))
         self.assertFalse(self.state.exists())
 
@@ -212,10 +212,10 @@ class ServerPreparationTests(unittest.TestCase):
         self.assertFalse((self.state / "compose.env").exists())
 
     def test_known_validation_error_is_actionable(self):
-        error = prepare.PreparationError("Existing server state is never overwritten; review it manually")
+        error = prepare.PreparationError("기존 서버 설정이 있습니다. 덮어쓰지 않았습니다")
         code, output, _prompt, _action = self.run_main([PASSWORD, PASSWORD], error)
         self.assertEqual(code, 1)
-        self.assertIn("Existing server state is never overwritten", output)
+        self.assertIn("기존 서버 설정이 있습니다", output)
         self.assertNotIn(PASSWORD, output)
 
     def test_unknown_errors_remain_redacted(self):

@@ -32,6 +32,8 @@ class NativeContracts(unittest.TestCase):
             result = subprocess.run([str(executable)], capture_output=True, timeout=60)
             self.assertEqual(result.returncode, 0, (result.stdout + result.stderr).decode(errors='replace'))
             self.assertIn(b'native_contracts_passed=', result.stdout)
+            print('\n'.join(line for line in result.stdout.decode(errors='replace').splitlines()
+                            if line.startswith('native_')))
 
 
 if __name__ == '__main__':

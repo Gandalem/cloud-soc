@@ -1,6 +1,5 @@
 """First-install only: generate protected local state and a private lab CA on Ubuntu."""
 
-import argparse
 import getpass
 import hashlib
 import ipaddress
@@ -15,6 +14,8 @@ import sys
 import warnings
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'deploy/server'))
+from server_cli import KoreanParser
 
 
 class PreparationError(ValueError):
@@ -23,13 +24,13 @@ class PreparationError(ValueError):
 
 def validate_host(host):
     if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?", host):
-        raise PreparationError("Use a DNS hostname or IPv4 address, without a scheme, port or path")
+        raise PreparationError("DNS 이름 또는 IPv4를 입력하세요. https://, 포트, 경로는 빼세요")
     try:
         ipaddress.IPv4Address(host)
         return "IP:" + host
     except ValueError:
         if all(char in "0123456789." for char in host) or any(not label or len(label) > 63 or label.startswith("-") or label.endswith("-") for label in host.split(".")):
-            raise PreparationError("Invalid DNS hostname or IPv4 address")
+            raise PreparationError("DNS 이름 또는 IPv4 형식이 올바르지 않습니다")
         return "DNS:" + host
 
 
@@ -68,15 +69,15 @@ def prepare(host, bind_ip, state, password, *, agent_host=None):
     try:
         ipaddress.IPv4Address(bind_ip)
     except ValueError:
-        raise PreparationError("Use a valid server-local IPv4 for --bind-ip") from None
+        raise PreparationError("--bind-ip에는 서버에 할당된 IPv4를 입력하세요") from None
     if state.is_symlink():
-        raise PreparationError("Server state must not be a symlink; review it manually")
+        raise PreparationError("서버 설정 경로가 심볼릭 링크입니다. 원래 경로를 확인하세요")
     state = state.resolve()
     if state.exists():
-        raise PreparationError("Existing server state is never overwritten; review it manually")
+        raise PreparationError("기존 서버 설정이 있습니다. 덮어쓰지 않았습니다")
     validate_password(password)
     if not shutil.which("openssl"):
-        raise PreparationError("Install OpenSSL before preparing certificates")
+        raise PreparationError("인증서를 만들려면 OpenSSL이 필요합니다")
     # A hashing failure should not leave an empty state directory blocking a retry.
     admin_hash = password_hash(password)
     os.umask(0o077)
@@ -125,14 +126,14 @@ def prepare(host, bind_ip, state, password, *, agent_host=None):
     (state / "compose.env").write_text(f"SOC_PUBLIC_HOST={host}\nSOC_AGENT_ENDPOINT=https://{agent_host}:9200\nSOC_BIND_IP={bind_ip}\nSOC_STATE_DIR={state.as_posix()}\nSOC_ENROLLMENT_ENABLED=1\n", encoding="utf-8")
     print(f"서버 인증서와 보호 설정을 생성했습니다: {state}")
     print(f"공개 CA 파일 SHA256: {hashlib.sha256(ca_crt.read_bytes()).hexdigest()}")
-    print("인증서 준비가 끝났습니다. 서버 기동은 다음 단계에서 진행합니다. private/와 secrets/는 외부에 전달하지 마세요.")
+    print("private/와 secrets/는 외부에 전달하지 마세요.")
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--host", required=True, help="Dashboard DNS name or IPv4")
-    parser.add_argument("--agent-host", help="Agent-reachable DNS/IPv4 for HTTPS 9200; defaults to --host")
-    parser.add_argument("--bind-ip", default="127.0.0.1", help="Publish ports only on this server-local IP; default is loopback")
+    parser = KoreanParser(description="신규 서버 인증서와 자격 증명 생성")
+    parser.add_argument("--host", required=True, help="포털 접속 DNS 또는 IPv4")
+    parser.add_argument("--agent-host", help="장치가 접속할 DNS 또는 IPv4 (기본: --host)")
+    parser.add_argument("--bind-ip", default="127.0.0.1", help="포트를 열 서버 IPv4 (기본: 127.0.0.1)")
     parser.add_argument("--state", type=Path, default=ROOT / "state" / "server")
     args = parser.parse_args()
     if os.name != "posix" or os.geteuid() != 0:

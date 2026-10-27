@@ -56,19 +56,17 @@ class InstallToolsTests(unittest.TestCase):
         self.assertEqual(calls[-1][-6:], ['--host', 'soc.example.test', '--bind-ip', '10.0.0.8', '--agent-host', 'ingest.example.test'])
         self.assertNotIn('--yes', calls[-1])
 
-    def test_purge_requires_explicit_delete_and_never_removes_shared_docker(self):
+    def test_uninstall_delegates_selection_to_one_guarded_workflow(self):
         tool = load('deploy/server/soc.py')
-        with patch.object(tool, 'command') as command, patch('sys.stdout', new=io.StringIO()):
-            answers = iter(['2', 'no'])
-            tool.uninstall(ask=lambda _: next(answers))
-            command.assert_not_called()
-            answers = iter(['1'])
-            command.return_value.returncode = 0
-            tool.uninstall(ask=lambda _: next(answers))
-            args = [str(a) for a in command.call_args.args[0]]
-            self.assertNotIn('--purge-data', args)
-            self.assertNotIn('--remove-docker', args)
-            self.assertIn('--apply', args)
+        with patch.object(tool, 'command') as command:
+            command.return_value.returncode = 7
+            self.assertEqual(tool.uninstall(ask=Mock(side_effect=AssertionError('duplicate prompt'))), 7)
+        args = [str(a) for a in command.call_args.args[0]]
+        self.assertIn('--select-mode', args)
+        self.assertIn('--apply', args)
+        self.assertEqual(args[args.index('--component') + 1], 'central')
+        for forbidden in ('--yes', '--purge-data', '--remove-docker', '--remove-images'):
+            self.assertNotIn(forbidden, args)
 
     def test_agent_cancel_preserves_queue_without_service_commands(self):
         tool = load('deploy/agents/agent-manager.py')

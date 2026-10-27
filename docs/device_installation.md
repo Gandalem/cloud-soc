@@ -4,6 +4,9 @@
 
 ## 장치 설치
 
+장치 상세에서는 운영체제·수집 목적을 표시명으로 보여주고, 최초 수신 확인과 최근 일반 로그 수신을 구분한다. 등록이 끝난 장치의 설치 안내는 기본으로 접힌다. 수집 키와 유효기간 연장, 서버 접근 차단/사용 종료는 별도 영역이며 폐기·만료 등 조치 이유를 표시한다. 빈 알림은 표시하지 않고 실제 오류는 유지한다. 2026-10-26 직접 영향 화면9검사와 시험 포털 HTML/CSS 제공을 확인했으며 새 배치의 자동 브라우저 시각 검사는 미수행이다. 기존 만료/폐기 및 권한 계약을 변경한 작업이 아니다.
+
+
 1. Portal의 `devices.html`에서 이름·조직·OS·수집 목적과 실제 로그 경로를 지정한다.
 2. 설치 정보를 준비하고 ZIP을 다운로드한다. 같은 생성 요청은 같은 장치에 연결되며, 재다운로드는 같은 미사용·미만료 등록 정보를 쓴다.
 3. ZIP 전체를 새 폴더에 푼다. Linux에서는 다음 명령을, Windows에서는 `Start.cmd`를 실행한다. 일반 관리자 승인은 필요하며 실행 정책을 변경하지 않는다.
@@ -31,7 +34,7 @@ Windows의 새 관리 경로는 `Start.cmd → cloud-soc-agent-setup.exe`다. x6
 
 Linux는 보호된 같은 설치의 확인된 실패에만 재등록한다. 새 Windows EXE는 stable attempt/token/session을 ACL·DPAPI LocalMachine 봉투에 저장해 같은 세션으로 일부 중단 단계를 재개한다. reserved/exchanging/session_saved/prepared/starting/awaiting_receipt는 지원하지만 초기 preparing·파일/manifest 불일치·불명확한 외부 성공은 관리자 검토로 남긴다. 모든 전원 손실/복원 지점의 자동 재개를 보장하지 않는다.
 
-기존 정상 설치의 키 자동 교체, 기존 장치 신원 인수, 제거 완료 후 재설치/보존 큐 복원, 일반 바이너리 업그레이드는 별도 후속이다. 기존 Windows Repair/Resume와 확인된 실패 설치의 새 토큰 재등록은 이미 존재하므로 이 제한과 혼동하지 않는다.
+기존 정상 설치의 키 자동 교체, 기존 장치 신원 인수, 보존 큐 복원, 일반 바이너리 업그레이드는 별도 후속이다. 자료 삭제 후 **새 장치로 설치**하는 경로는 아래 절차를 따른다. 기존 Windows Repair/Resume와 확인된 실패 설치의 새 토큰 재등록은 별도 기능이다.
 
 ## 로컬 제거와 서버 접근 차단
 
@@ -43,9 +46,27 @@ Linux는 보호된 같은 설치의 확인된 실패에만 재등록한다. 새 
 | 수집기 자료 삭제 | 선택2와 DELETE 확인 후 소유 수집기 디렉터리 삭제 | `--uninstall --purge`로 소유 수집기 트리 삭제 |
 | 남는 자료 | 관리 도구·완료/제거 기록 | ProgramData/Cloud-SOC-Native의 관리 EXE·상태/감사 |
 
-Windows 관리 EXE의 명령은 `--install --bundle <folder>`, `--status`, `--start`, `--stop`, `--uninstall`, `--uninstall --purge`, `--help`다. GUI 제거는 자료 보존 방식이며 purge는 CLI에서 선택한다. `--refresh`는 SYSTEM task 내부 동작이고 `--quiet`는 메시지 창 대신 CLI 출력을 사용한다. 보존 제거 후 purge 재호출과 일부 제거 재시도는 지원하지만 manager self-uninstall/in-place upgrade는 제공하지 않는다. 시험 controller가 manager까지 정리한 결과를 제품 완전 삭제 기능으로 해석하지 않는다.
+Windows 관리 EXE의 명령은 `--install --bundle <folder>`, `--status`, `--start`, `--stop`, `--uninstall`, `--uninstall --purge`, `--help`다. GUI 제거에서는 자료 보존을 기본으로 선택하고 자료까지 삭제할 때 추가 확인을 받는다. `--refresh`는 SYSTEM task 내부 동작이고 `--quiet`는 메시지 창 대신 CLI 출력을 사용한다. 보존 제거 후 purge 재호출과 일부 제거 재시도는 지원하지만 manager self-uninstall/in-place upgrade는 제공하지 않는다. 시험 controller가 manager까지 정리한 결과를 제품 완전 삭제 기능으로 해석하지 않는다.
 
 서버 장치 종료는 해당 패키지·조직·소유자 범위의 키를 폐기하고 원격 재조회까지 확인한다. 실패는 revocation_pending/uncertain으로 남으며 같은 요청을 재시도한다. 이력 영구 삭제/자동 보관 만료는 제공하지 않는다. 종료 이력도 장치/패키지200개 한도에 포함된다.
+
+### 자료 삭제 후 새 설치
+
+같은 PC에서 새 장치로 설치할 때만 사용하는 절차다. 이전 장치 신원·키·큐·읽기 위치를 복원하지 않는다.
+
+1. 기존 관리 도구의 제거에서 **수집기 자료까지 삭제**를 선택한다. 보존 제거만 한 경우에는 기존 도구의 제거를 다시 실행해 자료 삭제를 명시적으로 선택한다. Windows CLI는 `--uninstall --purge`, Linux는 제거 메뉴의 DELETE 확인을 사용한다.
+2. 포털에서 기존 장치의 접근 차단을 완료한다. 로컬 자료를 지운 사실은 서버 키 폐기 확인이 아니다.
+3. 포털의 기존 장치 추가 기능으로 새 장치를 등록하고 새 설치 묶음을 받는다. 이전 설치 토큰·패키지·receipt를 재사용하지 않는다.
+4. 새 묶음의 설치 프로그램을 실행한다. Windows에서는 다운로드한 새 EXE를 실행하며 이전 관리 폴더에서 설치를 실행하지 않는다.
+5. 새 설치의 중앙 수신 확인과 일반 로그 수신을 따로 확인한다. 설치 확인은 경보 생성 또는 과거 자료의 전송 완료를 뜻하지 않는다.
+
+Windows는 `purged`와 자료 삭제 의도, 보호된 manager 해시, 서비스/작업/프로세스·수집기 폴더 부재를 확인한다. 이전 관리 폴더는 같은 볼륨의 `ProgramData/Cloud-SOC-Native-History/<device-id>-<enrollment-id>`로 이동해 기록을 보존한다. 기존 이력·잔여 큐·미확정 삭제·lab/production 전환·같은 등록 재사용은 덮어쓰지 않는다. 이력 이동 후 새 설치가 중단되면 새 설치 상태의 기존 중단 처리 규칙을 따른다.
+
+Linux는 명시적인 자료 삭제 완료 기록과 같은 장치/세션의 완료 receipt를 대조하고, 이전 완료 receipt만 해당 retired 폴더로 옮긴다. 보존 자료·미완료 삭제·수집기/서비스 파일이 남으면 차단한다. 보존 제거 후 자료 삭제는 기존 보존 트리의 소유권/파일 해시와 서비스·프로세스 중지를 확인한 뒤 수행한다. 새 복원 API·키 발급 방식은 추가하지 않는다.
+
+큐·읽기 위치를 지우면 미전송 자료가 사라지고 디스크에 남은 과거 원본을 새로 읽을 수 있다. 기존 최초 수집 정책과 중복 처리 계약을 유지하며 재수집이나 중복 경보가 절대 없다고 보장하지 않는다. 중앙 원본·정규화·경보·감사 이력과 소유하지 않은 수집기/서비스는 삭제하지 않는다.
+
+2026-10-26 INSTALL-DEVICE-UX-02-REINSTALL-BASIC은 작성100% 이후 코드 검사45건/14 subtests·C# 계약41항목·Linux root 파일 경계12건을 통과했다. 별도 Windows VM에서 제품 EXE의 보존 상태 덮어쓰기 차단→자료 삭제→새 장치 설치/새 receipt·일반 로그→정리를 실제 확인했다. 후속 INSTALL-DEVICE-UX-02-REINSTALL-WSL에서 새 Ubuntu24.04.5/systemd WSL의 제품 bootstrap/실제 Filebeat·서비스로 같은 삭제→새 등록 설치·새 receipt 및 정확한 새 요청 ID의 일반 수신을 확인했다. 양 OS의 이전 원본과 제거 이력 해시를 유지했고 Windows 정책은 Restricted 그대로다. GUI 직접 클릭/시각·운영 서명 릴리스·실제 DEB 패키지·모든 장애/일반 VM 재부팅 인수는 별도이며 작업 목록에서 구분한다.
 
 ## 서버 도우미
 
@@ -102,6 +123,8 @@ Portal은 `deploy/server/windows-native.compose.yaml`을 명시 적용한다. SO
 |10/25 Windows 후속 native | build19045/.NET4.8/Restricted에서 제품 EXE가 ACL·DPAPI·keystore·service·SYSTEM COM task·receipt 구성. stop/start·합성 경보·보존 uninstall/purge·키 폐기 통과 | unsigned lab, 실제 GUI 클릭·운영 서명·native 재부팅/모든 중단 지점·network 미인수 |
 |10/25 native TLS | 동일 제품 소스로 정상 CA 통과, 다른 CA·이름 불일치·폐기·CRL503·만료 거부6경계 | OS CA 설치/폐기 검증 완화 없음 |
 |10/26 Git/CI | PR20 main 병합17a32c4, 최종 코드50ebce9 Actions40204762899 Ubuntu/Windows 성공, 기록main ac64198 | 운영 서버/장치 자동 배포 아님 |
+|10/26 최소 재설치 | 작성100% 후 필수 코드 검사·Linux root 임시 파일 검사, Windows 실제 EXE 자료 삭제/새 장치 설치·새 receipt/일반 로그·이전 원본/이력 보존·정리 | 이전 큐/신원 복원·Linux 실제 재설치·GUI 직접 클릭·운영 서명·새 경보/재부팅 검사 아님 |
+|10/26 후속 WSL 재설치 | 새 Ubuntu24.04.5/systemd의 실제 bootstrap/Filebeat·TLS ES/Portal에서 첫 설치/수신→보존 제거/덮어쓰기 차단→명시 자료 삭제/이전 장치 종료→새 장치·수집기 UUID/새 receipt·정확한 새 일반 요청 수신→기존 원본/제거 이력 해시 유지→자료 삭제·장치 종료·시험 배포판/서버/비밀값 정리 | 보존 큐·기존 신원 복원·실제 DEB 패키지·일반 VM 부팅·새 공격/경보/재부팅 인수 아님 |
 
 양 OS의 합성 WAF 시험은 SQLi2+비SQLi3→정규화5/경보0, SQLi3번째→정규화6/WEB-SITE-WAF-001 경보1, 재분석 기존1/신규0이다. 근거3건의 normalized/raw index/id·event_hash·조직/host/site/package와 privacy canary 미전송을 확인했다. 설치 probe는 분석용 양성 입력에 세지 않았다. 파일에 기록한 합성 입력이며10/19~20의 실제 HTTP/SQLi 시험과 별도다.
 

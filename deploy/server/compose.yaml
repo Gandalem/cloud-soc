@@ -107,6 +107,7 @@ services:
       dockerfile: deploy/server/Dockerfile
     command: [python, /app/deploy/server/enrollment-maintenance.py]
     restart: unless-stopped
+    init: true
     depends_on:
       elasticsearch: {condition: service_healthy}
     environment: *portal-environment

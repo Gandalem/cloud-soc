@@ -180,6 +180,40 @@ def units(spec):
     return [SERVICES[s] + '.service' for s in roles(spec)] + ['cloud-soc-discovery.service', 'cloud-soc-discovery.timer']
 
 
+def retire_removed_receipts():
+    """Archive only a completed receipt paired with an explicit, finished data deletion."""
+    if not STATE.exists():
+        return
+    private(STATE, directory=True)
+    for archive in STATE.glob('retired-*'):
+        private(archive, directory=True)
+        operation = archive / 'operation.json'
+        private(operation)
+        removed = json.loads(operation.read_text())
+        if removed.get('state') != 'removed' or removed.get('data_preserved') is not False:
+            raise RuntimeError('보존 자료 또는 미완료 삭제가 있습니다. 기존 관리 도구에서 자료 삭제를 완료하세요.')
+        session = removed.get('session', '')
+        if not isinstance(session, str) or not re.fullmatch(r'[a-f0-9]{32}', session):
+            raise RuntimeError('삭제 기록의 설치 식별자가 올바르지 않습니다.')
+        original = STATE / ('complete-' + session + '.json')
+        if not original.exists() and not original.is_symlink():
+            continue
+        private(original)
+        row = json.loads(original.read_text())
+        old = row.get('spec', {})
+        if (row.get('state') != 'complete' or row.get('session') != session
+                or not old.get('managed_device_id') or old['managed_device_id'] != removed.get('device_id')):
+            raise RuntimeError('설치 완료 기록과 삭제 기록이 다릅니다.')
+        destinations = [ROOTS[s] for s in roles(old)] + [UNIT_ROOT / name for name in units(old)]
+        destinations += [archive / ROOTS[s].name for s in roles(old)]
+        if any(path.exists() or path.is_symlink() for path in destinations):
+            raise RuntimeError('수집기 또는 보존 자료가 남아 있습니다. 새 설치로 덮어쓰지 않습니다.')
+        destination = archive / original.name
+        if destination.exists() or destination.is_symlink():
+            raise RuntimeError('이전 설치 이력은 덮어쓰지 않습니다.')
+        original.rename(destination)
+
+
 def beat_args(scope):
     root = ROOTS[scope]
     name = 'filebeat' if scope == 'host' else 'packetbeat'
@@ -326,6 +360,7 @@ def execute(source, spec, digest, interface, recovery, dry_run, *, registration=
             private(pending)
             receipt = validate_failed(source, spec, json.loads(pending.read_text()))
         else:
+            retire_removed_receipts()
             if pending.exists() or pending.is_symlink() or any(ROOTS[s].exists() or ROOTS[s].is_symlink() for s in roles(spec)):
                 raise RuntimeError('Existing installation/receipt; no automatic replacement')
             if any((UNIT_ROOT / name).exists() or (UNIT_ROOT / name).is_symlink() for name in units(spec)):

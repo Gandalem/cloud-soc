@@ -3,6 +3,7 @@ x-worker: &worker
   image: ${SOC_RUNTIME_IMAGE:-cloud-soc-central-runtime:local}
   build: {context: ../.., dockerfile: deploy/server/Dockerfile}
   restart: unless-stopped
+  init: true
   depends_on:
     elasticsearch: {condition: service_healthy}
   read_only: true

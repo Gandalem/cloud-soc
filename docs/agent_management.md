@@ -84,6 +84,35 @@ final pipeline은 클라이언트 검증 신원을 제거하고 실제 API key m
 <a id="key-management"></a>
 ## 발급 키 관리
 
+### 정상 장치의 수동 유효기간 연장
+
+INSTALL-DEVICE-UX-03-KEY-EXTEND는 기존 키의 만료일에1·7·30·90일을 더하는 기능이다. 키 원문·장치 keystore·수집기 ID·등록/증거 참조는 유지한다. 새 비밀값으로 교체하는 키 회전이나 유출된 키의 복구 수단은 아니다. 현재 개발 체크아웃의 구현이며 기존 서버에 자동 배포되지 않는다.
+
+장치 관리 → 장치 상세 → 수집 키 유효기간 연장에서 키와 기간을 선택한다. 서버에서 확인한 기존/예정 만료일을 보고 적용한다. 최종 화면은 서버 재조회로 확정한 실제 만료일을 표시한다. 일반 로그 수신은 기존 수신 조회에서 별도로 확인한다. 조용한 장치를 연장 실패로 판단하지 않는다.
+
+대상은 설치 완료 receipt가 있고 조직·장치·패키지·등록 세션·host 키의 정확한 연결이 확인된 로그 전용 managed Windows/Ubuntu/Amazon Linux 장치다. network 포함·수동/연결 불명 키·만료/폐기 키·종료/차단 중 장치는 지원하지 않는다. 미사용 등록 토큰 갱신이나 실패 재등록과 혼용하지 않는다. 관리자 권한·기존 로그인/CSRF/Origin 경계를 유지하고 발급 소유자 계정만 서버에서 사용한다. 장치 키에 관리 권한을 추가하지 않는다.
+
+#### 권한·시각·중복 계약
+
+- 미리보기 `POST /api/managed-devices/<device>/key-extension/preview`: key_id/days와32자리 요청 ID를 받아 기존 device_operations에 예약한다. 같은 사용자/ID/내용은 같은 예약이며 다른 내용/사용자는 충돌이다. 장치별 미확정 예약은 하나만 허용한다. 미제출 예약은 취소할 수 있고10분 뒤에는 새 확인 화면이 필요하다.
+- 적용 `POST .../key-extension/<operation>`: confirm=true는 적용/결과 재확인, false는 미제출 예약 취소다. actor/device/action을 대조한다. 제출 전에 attempted 상태를 영속화하고 원격 변경은 최초 호출의 한 번만 허용한다. 프로세스 중단 후 attempted 요청은 원격 조회만 한다. 클라이언트의 자동 재시도도 끈다.
+- 원격 metadata의 기존 조직/패키지/등록/용도와 나머지 metadata를 보존하고, cloud_soc_expiry_extension의 요청 ID/고정 목표 시각을 추가한다. 변경 전 원격 스냅샷 해시와 변경 후 metadata 해시·목표 만료 허용 오차를 예약에 보관한다. 비밀값은 저장하거나 조회하지 않는다. 이 표식은 해당 키의 소유 관리자에게 위변조 불가능한 서명이 아니다.
+- Elasticsearch update는 소유자 권한 스냅샷도 갱신한다. 기존 할당 role이 정확한 제품 host 최소 권한인지 확인하고, limited_by의 모든 교집합이 그 전체 권한을 원래 허용했는지 보수적으로 증명한다. 정확 패턴/단순 끝별표 접두 범위와 명시 권한 또는 all만 인정한다. 제한 쿼리/필드/조건부 역할이나 복잡한 동등성은 추정하지 않는다. 현재 소유자 has_privileges 확인과 갱신 뒤 동일 정책/전체 스냅샷 확인을 모두 통과해야 완료다. 소유자의 다른 권한이 늘어도 명시 host 역할 상한은 유지한다. 조직별 인덱스 권한까지 새로 보장하는 변경은 아니다.
+- ES는 상대 기간을 받으므로 미리보기에서 기존 만료일+선택 일수의 목표를 고정한다. 적용 직전 남은 밀리초를 한 번 계산한다. 원격 Nodes Stats의 모든 노드 timestamp와 Portal 시각 차이는5초 이내만 허용하고 부분 노드 응답도 거부하며 재조회 만료일도 목표±5초 안이어야 한다. 화면의 예정 시각과 최종 확정 시각을 구분한다. 시각 차이를 자동 보정하거나 재시도 때 목표를 다시 더하지 않는다.
+- 키 ID·기간·변경 전/예정/확정 만료·상태는 기존 작업 결과에, 행위자/장치/작업 ID/시각은 기존 감사 기록에 남긴다. 별도 자격 증명 원장을 만들지 않는다. 백업에는 기존 작업/감사 테이블과 attempted 장벽이 함께 포함된다.
+
+#### 실패·경합·복구 한계
+
+원격 확인 실패는 연장 성공이 아니다. 응답 유실 또는 원격 성공 뒤 로컬 완료 저장 실패는 같은 작업 ID로 원격 표식/만료/권한을 다시 확인한다. 키 캐시·완료 작업·감사 기록은 한 로컬 transaction으로 저장한 뒤에만 완료를 반환한다. 조회도 실패하면 미확정 상태를 유지한다. 미확정 예약이 있으면 새 연장 예약을 막고, 원래 유효한 키를 자동 폐기하거나 수집기를 정지하지 않는다.
+
+attempted 기록 뒤 실제 전송 전에 중단되면 원격 표식이 없으므로 자동 재전송하지 않는다. 관리자 확인이 필요한 요청으로 남으며 현재 화면에는 재확인만 제공한다. 자동 취소/강제 재연장으로 불확정을 숨기지 않는다. DB와 원격 엔진 사이의 원자적 exactly-once, 사이트 손실/오래된 백업 복원 후 자동 조정, 권한 관리자와 동시 정책 변경을 원천 차단하는 기능은 없다. 외부 관리자가 바인딩/권한/표식을 바꾼 경우에도 명시적으로 거부한다.
+
+장치 종료와 연장 변경 구간은 같은 DB 쓰기 잠금으로 직렬화한다. 종료가 먼저면 적용을 거부하고, 연장이 먼저면 종료가 같은 키를 이어서 폐기한다. 폐기된 키는 update로 복구하지 않는다. Portal 밖의 동시 변경은 재조회로 확인하되 다른 관리자의 모든 경합을 전역 잠그지는 않는다. 새 비밀값 교체·자동 연장·단말 관리 채널·설치기 변경·운영 키 변경은 범위 밖이다.
+
+공식 근거: [API key update](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-security-update-api-key), [소유 키와 limited_by 조회](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-security-get-api-key), [현재 권한 확인](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-security-has-privileges), [노드 시각 조회](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-nodes-stats). 2026-10-26 새 TLS ES9.5.2에서 같은 키 연장/합성 API 수집·권한 차단·응답 유실/완료 저장 실패 조정·폐기/만료·TLS 신뢰/이름 실패를 통과했다. 그 후 새 Ubuntu24.04.5 WSL의 제품 Filebeat 설치/receipt·연장 전후 실제 수집·같은 키/수집기 ID/서비스 PID·설정/keystore/receipt 해시 유지·제거/폐기까지 확인했다. 후속 사용자의 실제 브라우저 연장 클릭 성공 보고를 원격/로컬 만료 일치·같은 Filebeat/키/권한·연장 뒤 정확 원본 수신과 대조하고 시험 환경을 정리했다. 모델 직접 화면 시각 확인은 연결 도구 시작 오류로 미수행이며 기존 만료 경과·Windows 추가 인수·운영 단말 배포와 구분한다. 기존 Python client9.5.1과 시험 ES9.5.2를 유지하며 새 의존성/라이선스를 추가하지 않는다. 공식 최신 문서의 지원 설명과 고정 버전의 실제 실행 결과는 구분한다.
+
+구현/검사 파일은 src/cloud_soc/portal/key_extension.py·device_management.py·app.py, prototype/devices.{html,js}, tests/test_device_key_extension.py·test_device_key_extension_live.py와 prototype/tests/devices.test.cjs다. 실제 고정 버전 결과와 정리 여부는 [작업 목록](work_tracker.md)의 해당 ID에 기록한다. opt-in 실제 시험은 SOC_TEST_KEY_EXTENSION_ES=1과 SOC_TEST_DOCKER 지정 후 해당 live 검사만 실행하며, 새 loopback TLS 컨테이너/볼륨/합성 키만 만들고 정리한다. 실제 Windows/WSL 수집기를 재설치하거나 운영 서비스/키에 접속하지 않는다.
+
 | 작업 | 의미 |
 | --- | --- |
 | 고급 패키지 삭제 | 다운로드 파일/링크만 삭제. 설치된 수집기·키는 유지 |

@@ -1,8 +1,10 @@
 # 현재 구현과 검증 상태
 
-기준: 2026-10-26, Gandalem/cloud-soc `main ac64198`, 설치 기능 커밋 e4a3d65/08a99c3와 후속 CI 수정50ebce9. **사용 안내는 [문서 색인](README.md), 작업 승인/완료 이력은 [작업 목록](work_tracker.md)**을 따른다. 여기서 작업 순서나 실제 운영 상태를 새로 확정하지 않는다.
+기능 대조의 코드 기준: 2026-10-26, Gandalem/cloud-soc `main ac64198`. 설치 기능 커밋 e4a3d65/08a99c3와 후속 CI 수정50ebce9를 포함한다. 문서 기준은 학교에서 게시한31de814의 통합·보관본에 이번 문서 수정을 더한 상태다. 문서 기준이 달라졌다고 기능을 다시 개발하거나 실제 서비스를 갱신한 것으로 보지 않는다. **사용 안내는 [문서 색인](README.md), 작업 승인/완료 이력은 [작업 목록](work_tracker.md)**을 따른다. 여기서 작업 순서나 실제 운영 상태를 새로 확정하지 않는다.
 
 ## 읽는 기준
+
+학교·집에서 작업 목록이 다르면 먼저 [저장소/커밋 확인 절차](local_development.md#여러-pc에서-같은-작업-목록-읽기)를 따른다. 폴더 이름이나 이전 대화 요약보다 실제 확인한 원격 문서와 해당 코드/검증 근거를 기준으로 답한다. 다른 PC의 미커밋 변경과 현재 실행 중인 서비스 상태는 원격 문서만으로 확인할 수 없다.
 
 코드 구현, 격리 검사, 실제 OS 설치, 실제 웹 요청, 상주 worker, 재부팅, Slack 수신, 운영 서명 배포는 별도 근거다. 나중의 **같은 환경/범위** 결과가 이전 실패·대기를 갱신하며 날짜가 새롭다는 이유만으로 다른 환경의 결과를 덮어쓰지 않는다. 부모 미체크는 완료된 하위 검증을 취소하지 않는다.10/12의 완료율/우선순위를 현재 제품 상태로 재사용하지 않는다.
 
@@ -10,6 +12,7 @@
 
 | 날짜/환경 | 기록된 결과 | 근거/제한 |
 | --- | --- | --- |
+|10/27 새 Ubuntu24.04.5 WSL | 서버 메뉴 설치·12서비스·CA HTTPS·keep/동일 키·인증서/합성 원본 복구·purge/반복 제거, PID1 init 적용·trial/VHD 정리·커널 원복 | [서버 메뉴 인수](runtime_deployment.md#2026-10-27-wsl-전체-설치삭제-인수). 물리 VM/재부팅·실장치 수신/HA는 별도 |
 |10/01·08 기존 Windows VM | Repair/Resume·장애/강제 종료 뒤 키/큐 보존·새 수신, 재부팅 후 Filebeat/Packetbeat/Discovery 자동 시작 | [Windows 운영](windows_agents.md#verification). 새 native의 모든 복구 경계 인수는 아님 |
 |10/04 양 OS 시험 VM | 로그/통합 토큰 설치·실제 수신, ES 중단 후 실패 키 폐기·동일 수집기 ID 새 토큰 재등록 | [P0C-03 결과](archive/README.md#record-docs-archive-validation-p0c03-validation-20261004-md). 정상 설치 키 자동 교체와 별도 |
 |10/07~08 실장치 | Discovery의 수집기 통계/상태→ES/API→화면 수치 대조 | [계측](p2_collection_metrics.md). 별도 인증 dashboard heartbeat와 같은 경로는 아님 |
@@ -28,6 +31,9 @@
 
 ## 이미 구현된 연결
 
+- INSTALL-DEVICE-UX-03-KEY-EXTEND: 기존 정상 로그 전용 장치 키의 수동 유효기간 연장 구현과 최종 필수 검사를 완료했다. Python54건(실제 TLS ES 시나리오1 포함)·UI7건 통과 뒤 후속 새 WSL에서 실제 제품 Filebeat 설치·같은 프로세스/키의 연장 전후 수집·제거/폐기도 확인했다. 후속 사용자 수동 화면 클릭 성공과 실제 서버/수집기 대조·시험 정리도 완료했다. 모델 직접 화면 시각 확인·기존 만료 경과·Windows 추가 인수·운영 배포는 별도다. 새 키 교체/자동 회전은 범위 밖이고 상세 결과는 [작업 목록](work_tracker.md)의 해당 ID를 따른다. [키 연장 계약](agent_management.md#정상-장치의-수동-유효기간-연장).
+
+
 - 설치 proof·일반 로그 수신·서비스 보고·분석/경보를 구분한다. managed activity는 정확한 agent/org/enrollment/key·final pipeline을 확인하고 probe를 제외한 event.ingested/원본 참조를 조회한다.10/23 실제 ES 검사에서 분리했다.
 - 지속 heartbeat는 tools/device_heartbeat.py의 SCM/systemctl 관측·15~300초 HTTPS 반복/실패 후 재전송, insight_state의 인증·신선도 저장, dashboard-insights.js의 보고 중/지연/두절·collector 상태 표시까지 구현돼 있다. 특정 managed API의 unknown을 전체 heartbeat 미구현으로 해석하지 않는다.
 - 키 폐기·미사용 등록 정보 갱신, 확인된 실패 설치의 새 토큰 재등록, 기존 Windows Repair/Resume는 구현/기록돼 있다. 아래 정상 설치의 수집 키 교체·제거 후 복원과 범위가 다르다.
@@ -39,8 +45,8 @@
 | 범위 | 코드에서 확인한 제한 | 이미 있는 범위/정책 |
 | --- | --- | --- |
 | 정상 등록 장치의 수집 키 교체 | device_management.prepare는 issued/complete를409로 거부하고 managed 수동 키 발급도 금지. 로컬 keystore 교체/구키 종료의 통합 절차 없음 | 미사용 토큰 갱신·실패 재등록·별도 heartbeat credential rotate는 있음 |
-| 제거 완료 뒤 재설치/큐 복원 | agent-manager.py의 removed는 install/start 거부. native도 removed/purged를 설치 재개 단계에 포함하지 않음 | 일부 설치 단계·제거 재시도와 기존 Repair/Resume는 있음 |
-| Windows manager 완전 제거 | purge 뒤에도 ProgramData의 관리 EXE·상태/감사 보존. GUI는 보존 제거만 제공 | 수집기/큐 purge는 있음. 보존 정책 변경을 무조건 필수 버그 수정으로 단정하지 않음 |
+| 제거 완료 뒤 재설치/큐 복원 | 자료 삭제 완료 뒤 새 장치로 설치하는 최소 경로는10/26 구현·필수 검사와 실제 Windows VM/Ubuntu24.04.5 WSL의 재설치·새 중앙 수신 통과. 보존 큐 복원·기존 신원 재사용은 범위 밖 | 기존 Repair/Resume·일부 설치/제거 재시도는 있음. WSL 결과는 DEB 패키지 설치·일반 Linux VM 부팅·모든 장애 인수를 뜻하지 않음 |
+| Windows manager 완전 제거 | purge 뒤에도 ProgramData의 관리 EXE·상태/감사 보존. GUI는 보존 기본·명시 자료 삭제 선택 제공 | 수집기/큐 purge는 있음. 보존 정책 변경을 무조건 필수 버그 수정으로 단정하지 않음 |
 | 종료 이력/한도 | ended 포함 managed_devices 전체200개와 packages200개 한도. managed 패키지 일반 삭제 차단, 한도 회수 절차 없음 | 종료·폐기·이력 조회는 있음. 감사 보관/참조 보존 정책을 먼저 정해야 함 |
 | 새 native Windows network | require_scope와 native 계약에서 network=true 거부 | 시스템/웹 지원, 기존 고급 Packetbeat/Npcap 경로와 별도 |
 

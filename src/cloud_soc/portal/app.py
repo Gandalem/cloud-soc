@@ -1140,6 +1140,25 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             raise ValueError('장치의 서버 접근 차단을 확인하세요.')
         return jsonify(device=devices.end(g.principal, identifier, request.headers.get('Idempotency-Key')))
 
+    @app.post('/api/managed-devices/<identifier>/key-extension/preview')
+    def managed_key_extension_preview(identifier):
+        device_admin(enabled=True)
+        if request.args:
+            abort(400)
+        result = devices.key_extensions.preview(g.principal, identifier,
+            request.headers.get('Idempotency-Key'), request.get_json())
+        return jsonify(extension=result)
+
+    @app.post('/api/managed-devices/<identifier>/key-extension/<operation>')
+    def managed_key_extension_apply(identifier, operation):
+        device_admin(enabled=True)
+        body = request.get_json()
+        if request.args or not isinstance(body, dict) or set(body) != {'confirm'} or type(body['confirm']) is not bool:
+            raise ValueError('유효기간 연장 또는 미제출 요청 취소를 확인하세요.')
+        handler = devices.key_extensions.apply if body['confirm'] else devices.key_extensions.cancel
+        result = handler(g.principal, identifier, operation)
+        return jsonify(extension=result, device=devices.detail(identifier))
+
     @app.get('/api/key-history')
     def managed_key_history():
         device_admin()

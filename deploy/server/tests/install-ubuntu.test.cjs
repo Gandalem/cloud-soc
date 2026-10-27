@@ -61,7 +61,7 @@ python3() { forbidden python3 "$@"; }
 check_runtime_compatibility() { :; }
 openssl() { forbidden openssl "$@"; }
 mkdir -p "$ROOT/deploy/server" "$APT_ROOT/sources.list.d" "$APT_ROOT/keyrings"
-touch "$ROOT/deploy/server/prepare.py" "$ROOT/deploy/server/compose.yaml" "$ROOT/deploy/server/Dockerfile"
+touch "$ROOT/deploy/server/server_cli.py" "$ROOT/deploy/server/prepare.py" "$ROOT/deploy/server/compose.yaml" "$ROOT/deploy/server/Dockerfile"
 `;
     return run(['-s'], prelude + '\n' + body + '\n');
   } finally {
@@ -74,6 +74,9 @@ touch "$ROOT/deploy/server/prepare.py" "$ROOT/deploy/server/compose.yaml" "$ROOT
 
 test('POSIX sh syntax, LF checkout and help', () => {
   assert.ok(!source.includes('\r'), 'Keep the installer LF-only');
+  const launcher = path.join(root, 'soc');
+  assert.ok(!fs.readFileSync(launcher, 'utf8').includes('\r'), 'Keep the soc launcher LF-only');
+  ok(run(['-n', launcher]));
   ok(run(['-n', script]));
   assert.match(ok(run([script, '--help'])), /--prepare-only/);
 });
@@ -84,9 +87,9 @@ test('dashboard and receiver addresses are independent, without any installation
   assert.match(output, /에이전트 수신 주소: 192\.168\.32\.60/);
   for (const value of ['https://receiver:9200', 'bad-.test', 'receiver/path', '0.0.0.0', 'host\nOTHER=value']) {
     // Windows argument transport can split a newline; either path must stop.
-    fail(run([script, '--dry-run', '--agent-host', value]), /Host|DNS|host|IPv4|Unknown option/);
+    fail(run([script, '--dry-run', '--agent-host', value]), /DNS|IPv4|0\.0\.0\.0|지원하지 않는 옵션/);
   }
-  fail(run([script, '--dry-run', '--agent-host', 'a', '--agent-host', 'b']), /once/);
+  fail(run([script, '--dry-run', '--agent-host', 'a', '--agent-host', 'b']), /한 번만/);
   assert.match(source, /unset SOC_PUBLIC_HOST SOC_AGENT_ENDPOINT SOC_ELASTIC_ENDPOINT/);
   assert.match(source, /--agent-host "\$AGENT_HOST"/);
 });
@@ -110,10 +113,10 @@ YES=no
 printf '%s\\n' ${quote(answer)} | confirm_installation
 install_packages
 `);
-    fail(result, /not confirmed; no changes made/);
+    fail(result, /설치를 취소했습니다/);
     assert.doesNotMatch(result.stderr, /Unexpected live operation/);
   }
-  fail(fixture('YES=no; confirm_installation < /dev/null; install_packages'), /not confirmed; no changes made/);
+  fail(fixture('YES=no; confirm_installation < /dev/null; install_packages'), /설치를 취소했습니다/);
 });
 
 test('--yes confirmation skips the prompt without reading input', () => {
@@ -143,10 +146,10 @@ render_docker_source
 test('Ubuntu codename fallback is validated, not replaced with jammy', () => {
   const output = ok(fixture('ID=ubuntu VERSION_ID=24.04 VERSION_CODENAME=noble; unset UBUNTU_CODENAME; check_ubuntu_release; render_docker_source'));
   assert.match(output, /Suites: noble/);
-  fail(fixture('ID=ubuntu VERSION_ID=24.04; unset VERSION_CODENAME UBUNTU_CODENAME; check_ubuntu_release'), /codename noble/);
-  fail(fixture('ID=ubuntu VERSION_ID=24.04 VERSION_CODENAME=jammy UBUNTU_CODENAME=noble; check_ubuntu_release'), /Conflicting Ubuntu codenames/);
-  fail(fixture('ID=ubuntu VERSION_ID=24.04 VERSION_CODENAME=noble UBUNTU_CODENAME=jammy; check_ubuntu_release'), /codename noble/);
-  fail(fixture('unset UBUNTU_SUITE; render_docker_source'), /Validate the Ubuntu release/);
+  fail(fixture('ID=ubuntu VERSION_ID=24.04; unset VERSION_CODENAME UBUNTU_CODENAME; check_ubuntu_release'), /코드명은 noble/);
+  fail(fixture('ID=ubuntu VERSION_ID=24.04 VERSION_CODENAME=jammy UBUNTU_CODENAME=noble; check_ubuntu_release'), /코드명이 서로 다릅니다/);
+  fail(fixture('ID=ubuntu VERSION_ID=24.04 VERSION_CODENAME=noble UBUNTU_CODENAME=jammy; check_ubuntu_release'), /코드명은 noble/);
+  fail(fixture('unset UBUNTU_SUITE; render_docker_source'), /Ubuntu 버전과 코드명을 확인/);
 });
 
 test('unsupported releases and non-Ubuntu distributions stop before mutation', () => {
@@ -156,11 +159,11 @@ ID=ubuntu VERSION_ID=${quote(version)} VERSION_CODENAME=noble UBUNTU_CODENAME=no
 check_ubuntu_release
 install_packages
 `);
-    fail(result, /not supported by this installer/);
+    fail(result, /설치 대상이 아닙니다/);
     assert.doesNotMatch(result.stderr, /Unexpected live operation/);
   }
   for (const id of ['debian', 'linuxmint', 'pop', '']) {
-    fail(fixture(`ID=${quote(id)} ID_LIKE=ubuntu VERSION_ID=24.04 VERSION_CODENAME=noble; check_ubuntu_release`), /Ubuntu Server is required/);
+    fail(fixture(`ID=${quote(id)} ID_LIKE=ubuntu VERSION_ID=24.04 VERSION_CODENAME=noble; check_ubuntu_release`), /Ubuntu Server가 필요/);
   }
 });
 
@@ -201,8 +204,8 @@ main --dry-run
 });
 
 test('existing state and incomplete checkouts fail closed', () => {
-  fail(fixture('mkdir -p "$STATE"; check_fresh_state'), /already exists/);
-  fail(fixture('rm "$ROOT/deploy/server/prepare.py"; check_fresh_state'), /Incomplete checkout/);
+  fail(fixture('mkdir -p "$STATE"; check_fresh_state'), /이미 있습니다/);
+  fail(fixture('rm "$ROOT/deploy/server/prepare.py"; check_fresh_state'), /필수 파일이 없습니다/);
   ok(fixture('check_fresh_state'));
 });
 
@@ -215,10 +218,10 @@ ss() { :; }
 
 test('preflight rejects nonlocal NAT address, occupied ports and low disk/RAM', () => {
   ok(fixture(networkMocks + '\ncheck_resources_and_network'));
-  fail(fixture(networkMocks + '\nBIND_IP=203.0.113.5; check_resources_and_network'), /Bind IP is not/);
-  fail(fixture(networkMocks + '\nss() { printf "LISTEN 0 4096 [::]:9200 [::]:*\\n"; }; check_resources_and_network'), /already in use/);
-  fail(fixture(networkMocks + '\ndf() { printf "Filesystem Blocks Used Available\\n/dev/test 2000 1000 1000\\n"; }; check_resources_and_network'), /free disk/);
-  fail(fixture(networkMocks + '\nawk() { return 1; }; check_resources_and_network'), /6 GiB RAM/);
+  fail(fixture(networkMocks + '\nBIND_IP=203.0.113.5; check_resources_and_network'), /할당되지 않은 바인딩 IP/);
+  fail(fixture(networkMocks + '\nss() { printf "LISTEN 0 4096 [::]:9200 [::]:*\\n"; }; check_resources_and_network'), /사용 중인 포트/);
+  fail(fixture(networkMocks + '\ndf() { printf "Filesystem Blocks Used Available\\n/dev/test 2000 1000 1000\\n"; }; check_resources_and_network'), /디스크 여유 공간/);
+  fail(fixture(networkMocks + '\nawk() { return 1; }; check_resources_and_network'), /메모리가 6 GiB/);
 });
 
 test('existing Docker is reused, remote engines are not selected', () => {
@@ -235,9 +238,9 @@ printf '%s\n' "$INSTALL_DOCKER"
 test('Docker failures, existing central containers/volumes and conflicting packages stop installation', () => {
   fail(fixture('docker_local() { return 1; }; check_docker_stack'), /실행 중/);
   fail(fixture('docker_local() { case "$1" in compose) return 1;; esac; }; check_docker_stack'), /Compose v2/);
-  fail(fixture('docker_local() { case "$1" in ps) printf "existing";; esac; }; check_docker_stack'), /containers found/);
-  fail(fixture('docker_local() { case "$1" in volume) printf "cloud-soc-central_es-data\\n";; esac; }; check_docker_stack'), /volumes found/);
-  fail(fixture('has_command() { return 1; }; installed() { [ "$1" = docker.io ]; }; detect_docker'), /no automatic removal/);
+  fail(fixture('docker_local() { case "$1" in ps) printf "existing";; esac; }; check_docker_stack'), /기존 cloud-soc-central 컨테이너/);
+  fail(fixture('docker_local() { case "$1" in volume) printf "cloud-soc-central_es-data\\n";; esac; }; check_docker_stack'), /기존 중앙 서버 볼륨/);
+  fail(fixture('has_command() { return 1; }; installed() { [ "$1" = docker.io ]; }; detect_docker'), /자동 삭제·교체하지/);
 });
 
 test('only missing dependencies are installed, with no upgrade/removal flags', () => {
@@ -251,10 +254,10 @@ install_packages
 });
 
 test('Docker repository conflicts and altered managed sources are preserved', () => {
-  fail(fixture('printf "%s" "deb https://download.docker.com/linux/ubuntu jammy stable" > "$APT_ROOT/sources.list.d/existing.list"; check_repository'), /Existing Docker APT source/);
-  fail(fixture('printf "%s" "foreign source" > "$SOURCE_FILE"; stat() { printf "0:644"; }; check_repository'), /differs/);
-  fail(fixture('render_docker_source > "$SOURCE_FILE"; stat() { printf "0:644"; }; check_repository'), /without its signing key/);
-  fail(fixture('printf "key" > "$KEY_FILE"; stat() { printf "1000:644"; }; check_repository'), /root-owned/);
+  fail(fixture('printf "%s" "deb https://download.docker.com/linux/ubuntu jammy stable" > "$APT_ROOT/sources.list.d/existing.list"; check_repository'), /기존 Docker APT 저장소/);
+  fail(fixture('printf "%s" "foreign source" > "$SOURCE_FILE"; stat() { printf "0:644"; }; check_repository'), /파일 내용이 다릅니다/);
+  fail(fixture('render_docker_source > "$SOURCE_FILE"; stat() { printf "0:644"; }; check_repository'), /서명 키가 없습니다/);
+  fail(fixture('printf "key" > "$KEY_FILE"; stat() { printf "1000:644"; }; check_repository'), /root 소유/);
   const output = ok(fixture('render_docker_source'));
   assert.match(output, /URIs: https:\/\/download.docker.com\/linux\/ubuntu/);
   assert.match(output, /Suites: jammy/);
@@ -269,7 +272,7 @@ stat() { printf '0:644'; }
 UBUNTU_SUITE=noble
 trap 'grep -q "Suites: jammy" "$SOURCE_FILE" || exit 99' 0
 check_repository
-`), /differs/);
+`), /파일 내용이 다릅니다/);
 });
 
 test('new Docker install uses verified HTTPS key transport and explicit signed APT source', () => {
@@ -311,7 +314,7 @@ cat "$SYSCTL_FILE"
 `));
   assert.equal(result, '-w vm.max_map_count=1048576\nvm.max_map_count=1048576\n');
   ok(fixture('sysctl() { [ "$1" = -n ] || forbidden lower; printf "2097152"; }; configure_kernel; [ ! -e "$SYSCTL_FILE" ]'));
-  fail(fixture('printf "foreign setting" > "$SYSCTL_FILE"; check_kernel_config'), /not be overwritten/);
+  fail(fixture('printf "foreign setting" > "$SYSCTL_FILE"; check_kernel_config'), /덮어쓰지 않았습니다/);
 });
 
 test('new installs delegate to the same versioned manager used by upgrades', () => {
@@ -351,5 +354,5 @@ check_ready
 test('failure trap preserves original nonzero exit status', () => {
   const result = fixture('STAGE=test; trap finish 0; exit 42');
   assert.equal(result.status, 42);
-  assert.match(result.stderr, /설치 중단 단계: test/);
+  assert.match(result.stderr, /설치 중단 단계: 알 수 없음/);
 });
