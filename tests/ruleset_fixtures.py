@@ -51,7 +51,36 @@ def oci():
 
 
 def positive(identifier):
-    if identifier == 'AUTH-001':
+    if identifier.startswith('SCENARIO-'):
+        from test_security_scenarios import SAMPLES, raw, normalized
+        kind = next(key for key, value in SAMPLES.items() if value[0] == identifier)
+        rows = [normalized(raw(kind, i, organization='fixture')) for i in range(3)]
+    elif identifier.startswith('UNIFIED-'):
+        if identifier == 'UNIFIED-SERVER-MIN3-001':
+            rows = [sequence_ssh(i) for i in range(3)]
+        elif identifier == 'UNIFIED-APP-MIN3-001':
+            rows = [site_web(i) for i in range(3)]
+            for row in rows:
+                row['cloud_soc']['detail']['fields']['http_status'] = 403
+        elif identifier == 'UNIFIED-NET-MIN3-001':
+            rows = [flow(i) for i in range(3)]
+        elif identifier == 'UNIFIED-WEB-HOST-001':
+            rows = [site_web(i) for i in range(5)] + [sequence_ssh(10, outcome='success')]
+        elif identifier == 'UNIFIED-HOST-NET-001':
+            rows = [sequence_ssh(i) for i in range(5)] + [sequence_ssh(10, outcome='success'), flow(20)]
+        elif identifier == 'UNIFIED-THREE-SOURCE-001':
+            first = site_web(0)
+            first['cloud_soc']['detail']['fields']['http_status'] = 403
+            rows = [first, sequence_ssh(10, outcome='success'), flow(20)]
+        else:
+            raise ValueError(identifier)
+        for row in rows:
+            row['organization'] = {'id': 'fixture'}
+            row['host'] = {'id': 'unified-host'}
+            row['source'] = {'ip': '192.0.2.1'}
+            if row['cloud_soc']['detail']['adapter'].startswith('web_'):
+                row.setdefault('service', {})['name'] = 'unified-web'
+    elif identifier == 'AUTH-001':
         rows = [sequence_ssh(i) for i in range(10)]
     elif identifier == 'AUTH-SEQ-001':
         rows = [sequence_ssh(i) for i in range(5)] + [sequence_ssh(5, outcome='success')]

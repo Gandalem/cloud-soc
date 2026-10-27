@@ -10,7 +10,8 @@ filebeat.inputs:
       - ndjson:
           target: ""
           add_error_key: true
-          overwrite_keys: false
+          # Honor the exporter's event timestamp instead of Filebeat read time.
+          overwrite_keys: true
     processors:
       - drop_event:
           when.has_fields: [error.message]

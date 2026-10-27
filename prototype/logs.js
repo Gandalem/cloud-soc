@@ -27,11 +27,11 @@
           (environment === 'application' && code.startsWith('app_')) ||
           (environment === 'network' && code.startsWith('network_'));
       }).length;
-      const output = document.getElementById(`log-count-${environment}`);
+      const output = document.querySelector(`#log-count-${environment}`);
       if (output) output.textContent = count === null ? '—' : count.toLocaleString('ko-KR');
       classified += count || 0;
     }
-    const state = document.getElementById('log-environment-state');
+    const state = document.querySelector('#log-environment-state');
     if (state) state.textContent = rows === null ? '로그를 조회하면 환경별 건수가 표시됩니다.' : `현재 페이지 ${rows.length.toLocaleString('ko-KR')}건 · 기타 및 수집 상태 ${(rows.length - classified).toLocaleString('ko-KR')}건 · 조회 결과 기준`;
   }
   function rowMarkup(row, index, timeBasis = 'ingested') {
