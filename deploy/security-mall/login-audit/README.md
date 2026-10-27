@@ -6,6 +6,8 @@ Kibana 대시보드 saved object는 포함하지 않는다.
 
 ## 1. 준비와 감사 패치
 
+로그인에서 `NonUniqueResultException: 2 results were returned`가 발생한 기존 DB도 삭제하지 않는다. 보완 패치는 중복 아이디 인증을 실패로 처리하고 새 중복 가입을 거부한다. 기존 중복 계정을 임의로 선택·병합·삭제하지 않는다. 기존 패치가 적용된 폴더에도 아래 apply.py를 다시 실행한 뒤 앱을 재빌드·재시작한다. 중복된 아이디 대신 새 고유 실습 아이디로 가입해 진행한다. 가입 방지의 동시성 범위는 단일 앱 인스턴스이며, 기존 데이터 정리·DB 고유 제약 마이그레이션·다중 인스턴스 가입 제어는 별도 범위다.
+
 Ubuntu 실습 VM에서 Java 17 JDK, Git, Python 3.10 이상, Docker가 필요하다.
 Cloud SOC 중앙 ES 컨테이너 `cloud-soc-central-elasticsearch-1`이 실행 중이어야 한다.
 Docker가 정상 연결되는 일반 사용자 터미널에서 수행하며 sudo로 실행하지 않는다.

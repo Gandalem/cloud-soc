@@ -1,5 +1,8 @@
 # 두 브랜치 통합 기록 — 2026-10-27
 
+- [ ] MALL-DUPLICATE-LOGIN-20261027-01 진행 중: 사용자 첨부 실제 로그의 HomeController.login에서 사용자조회2건으로 NonUniqueResultException/HTTP500이 발생했다. 기존 H2회원·주문·감사키는 보존하고 중복아이디 인증거부·중복가입방지 보완 패치를 기존감사패치 다음에 적용한다. 기존 중복계정을 임의선택·병합·삭제하거나 DB를 초기화하지 않는다.
+- 코드 기록: security-mall-duplicate-login.patch와apply.py의순차·반복 적용 경로를 추가했다. 중복조회 예외는 인증실패로기록하고 신규중복가입은단일controller의synchronized영역에서거부한다. H2파일·회원행·주문·감사키변경도구는추가하지않았다. 원격쇼핑몰사본에기존감사패치후보완/반복적용성공, 패키지5검사/Ruff/diff공백pass. 최초fixture는기존로그인패치에없던signup본문이생략돼실패했으며preimage보완후pass. 실제Java재빌드/사용자DB로그인재실행은미수행이므로운영인수완료로표시하지않는다.
+
 - [ ] LOCAL-AUDIT-APP-20261027-01 진행 중: 실제 앱 감사 로그를 발생시키는 로컬 앱 추가 방법 요청에 따라 loopback 전용 Flask 앱을 작성한다. 실제 SQLite 권한 변경·업무 예제 데이터 내보내기·업로드 격리 저장 결과에서 감사 기록을 생성하고 기존 앱3개 시나리오 입력으로 내보낸다. 업무 데이터는 예제이며 감사 로그는 사용자가 실제 수행한 작업에서 생성한다. 기존 중앙 서버·등록·키는 변경하지 않는다.
 - 범위 변경: 사용자가 별도 로컬 앱 대신 ZIYA0614/security-mall 사용을 지정했다. 방금 작성하던 미커밋 독립 앱은 제외하고 쇼핑몰 기존 소스·감사 패키지로 전환한다. 실제 앱 기능에 없는 권한 관리·자료 내보내기·파일 업로드 이벤트를 만들어 내지 않는다.
 - [x] LOCAL-AUDIT-APP-20261027-01-MALL-CONNECTION 코드·안내 작성: 지정 쇼핑몰을/tmp 별도 경로에 복제해 원격aba2b42에 기존 로그인 감사 패치를 적용했다. start-and-connect.py에--manual-actions·--mall·--sudo-docker와 Java/Gradle 메모리 제한을 추가했다. manual 경로는 자동 실패 로그인을 만들지 않고 실제 브라우저 작업 뒤 connect.py로 별도 전송한다. connect.py도 사용자 소유 경로를 유지하며 Docker에만 sudo를 적용한다. README에Java17설치·실제회원가입/로그인·원본중앙수신·캡처 절차와 기존9종 앱규칙과의 입력 차이를 기록했다. 기존패키지/쇼핑몰수집/탐지62검사pass, 새help/manual2검사는 최초manual1실패(기존프로세스args변수 충돌)를options로수정후pass했다. Ruff/diff공백pass. 사용자쇼핑몰/DB/키·기존서버는 변경하지 않았으며 실제 Java빌드/브라우저작업/Filebeat/ES 수신은 사용자Ubuntu에서 별도 실행해야 한다.

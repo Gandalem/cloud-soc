@@ -60,6 +60,17 @@ def mall(tmp_path):
         target = repo / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b''.join(lines))
+        if name.endswith('/HomeController.java'):
+            # Signup was outside the original login-only patch's context.
+            signup = ('    public String signupForm() { return "signup"; }\r\n\r\n'
+                      '    @PostMapping("/signup")\r\n'
+                      '    public String signup(User user) {\r\n'
+                      '        user.setRole("USER");\r\n'
+                      '        userRepository.save(user);\r\n'
+                      '        return "redirect:/login";\r\n'
+                      '    }\r\n\r\n').encode()
+            target.write_bytes(target.read_bytes().replace(
+                b'    public String loginForm()', signup + b'    public String loginForm()', 1))
     return repo
 
 
@@ -70,6 +81,8 @@ def test_patch_applies_and_repeated_application_is_idempotent(patcher, mall):
     before = {p: p.read_bytes() for p in (java, controller, mall / '.gitignore')}
     assert b'loginAudit.record(username, request.getRemoteAddr(), authenticated)' in before[controller]
     assert b'HmacSHA256' in before[java]
+    assert b'IncorrectResultSizeDataAccessException duplicate' in before[controller]
+    assert b'public synchronized String signup(User user)' in before[controller]
     patcher(mall)
     assert all(p.read_bytes() == data for p, data in before.items())
 
