@@ -5,6 +5,11 @@ import re
 def classification(row, detail):
     kind=row['source_kind'];fields=detail.get('fields',{})
     def result(code,label,basis):return {'code':code,'label':label,'basis':basis}
+    if kind == 'security_scenario' and detail.get('status') == 'recognized':
+        from cloud_soc.parsers.security_scenarios import SCENARIOS
+        scenario = SCENARIOS.get(fields.get('scenario_kind'))
+        if scenario:
+            return result(fields['scenario_kind'], scenario[3], 'structured_security_export')
     if kind=='security_mall_audit' and detail.get('status')=='recognized':
         action=fields.get('action')
         return result('authentication' if action=='login' else 'authorization',

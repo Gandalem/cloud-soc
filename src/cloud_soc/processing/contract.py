@@ -42,6 +42,39 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
     if not received or not occurred or not organization or organization == REDACTED or organization != raw_organization:
         return identifier, record, None
     detail = security_detail(source)
+    if detail['adapter'] == 'security_scenarios_v1':
+        version = 'security-scenarios-v1'
+        identifier = hashlib.sha256(json.dumps([version, reference], sort_keys=True).encode()).hexdigest()
+        record.update(version=version, adapter=detail['adapter'])
+        host_id = field(source, 'host.id')
+        if (detail['status'] != 'recognized' or not reference['index'].startswith('soc-host-raw-')
+                or not isinstance(host_id, str) or not host_id or text(host_id) != host_id):
+            record.update(reason='security_scenario_scope_or_metadata_invalid')
+            return identifier, record, None
+        values = detail['fields']
+        event = {'@timestamp': iso(occurred), 'organization': {'id': organization},
+                 'host': {'id': host_id},
+                 'event': {'kind': 'event', 'category': [values['category']],
+                           'action': values['action'], 'outcome': values['outcome'],
+                           'dataset': 'security_scenarios.' + values['scenario_kind'], 'ingested': iso(received)},
+                 'cloud_soc': {'normalized_at': processed_at, 'normalizer_version': version,
+                               'parse_status': 'recognized', 'detail': detail,
+                               'provenance': {'schema_version': 1, 'raw': reference,
+                                              'time': {'basis': 'exporter_event_timestamp', 'year_inferred': False}}}}
+        if values.get('actor'):
+            event['user'] = {'name': values['actor']}
+        service_name = text(field(source, 'service.name'))
+        if service_name not in (None, REDACTED):
+            event['service'] = {'name': service_name}
+        for endpoint in ('source', 'destination'):
+            if values.get(endpoint + '_ip'):
+                event[endpoint] = {'ip': values[endpoint + '_ip']}
+                if endpoint + '_port' in values:
+                    event[endpoint]['port'] = values[endpoint + '_port']
+        if values.get('transport'):
+            event['network'] = {'transport': values['transport']}
+        record.update(status='normalized', reason='recognized', normalized={'index': NORMALIZED, 'id': identifier})
+        return identifier, record, event
     if detail['adapter'] == EDGE_ADAPTER:
         identifier = hashlib.sha256(json.dumps([EDGE_VERSION, reference], sort_keys=True).encode()).hexdigest()
         record.update(version=EDGE_VERSION, adapter=EDGE_ADAPTER)

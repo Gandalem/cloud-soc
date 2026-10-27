@@ -28,6 +28,7 @@ def project_list_hit(hit):
     detail = security_detail(hit.get("_source")) if row["source_kind"] != "unknown" else {
         "status": "unsupported", "adapter": None, "fields": {}}
     adapters = {"windows_event": {"windows_security_v1", "sysmon_v1"},
+                "security_scenario": {"security_scenarios_v1"},
                 "security_mall_audit": {"security_mall_audit_v1"}, "security_mall_edge": {"security_mall_edge_v1"},
                 "web_access_metadata": {"web_access_metadata_v1"},
                 "generic_web_access": {"web_access_agent_v1"}, "generic_modsecurity": {"modsecurity_audit_v1"},

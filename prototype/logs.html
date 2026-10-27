@@ -22,9 +22,19 @@
   <a class="skip-link" href="#main">본문으로 이동</a>
   <div id="app-shell"></div>
   <main id="main" class="main-content agents-main logs-main">
-    <div class="page-heading"><div><h1>통합 로그</h1><p class="subheading">호스트 · 웹 · 네트워크 · 클라우드 감사 로그</p></div><button id="log-refresh" class="primary-button" type="button">새로고침</button></div>
+    <div class="page-heading"><div><span class="log-eyebrow">LOG EXPLORER</span><h1>통합 로그</h1><p class="subheading">서버, 애플리케이션, 네트워크에서 지속적으로 발생하는 로그를 한곳에서 확인하세요.</p></div><button id="log-refresh" class="primary-button" type="button">새로고침</button></div>
+    <section class="log-environments" aria-labelledby="log-environments-title">
+      <div class="log-environments-heading"><h2 id="log-environments-title">환경별 로그</h2><p>현재 페이지 기준 · 전체 수집량과 다릅니다.</p></div>
+      <div class="log-environment-grid">
+        <article class="log-environment-card" data-environment="server"><span class="log-environment-icon" aria-hidden="true">01</span><h3>서버</h3><p>Windows 이벤트 · Linux 파일 · 시스템 저널</p><div><strong id="log-count-server">—</strong><span>건 / 현재 페이지</span></div></article>
+        <article class="log-environment-card" data-environment="application"><span class="log-environment-icon" aria-hidden="true">02</span><h3>애플리케이션</h3><p>웹 접근 · WAF · 애플리케이션 감사</p><div><strong id="log-count-application">—</strong><span>건 / 현재 페이지</span></div></article>
+        <article class="log-environment-card" data-environment="network"><span class="log-environment-icon" aria-hidden="true">03</span><h3>네트워크</h3><p>통신 흐름 · DNS 질의 · TLS 메타데이터</p><div><strong id="log-count-network">—</strong><span>건 / 현재 페이지</span></div></article>
+        <article class="log-environment-card" data-environment="cloud"><span class="log-environment-icon" aria-hidden="true">04</span><h3>클라우드</h3><p>AWS CloudTrail · OCI 감사 이벤트</p><div><strong id="log-count-cloud">—</strong><span>건 / 현재 페이지</span></div></article>
+      </div>
+      <p id="log-environment-state" class="log-environment-state" role="status">로그를 조회하면 환경별 건수가 표시됩니다.</p>
+    </section>
     <section class="panel log-workspace" id="log-panel" aria-labelledby="log-list-title" aria-busy="true">
-      <div class="log-list-heading"><div><h2 id="log-list-title">로그 목록</h2><p>최신순 · 새 로그는 새로고침 후 표시</p></div><span id="log-state-label" role="status">조회 준비</span></div>
+      <div class="log-list-heading"><div><h2 id="log-list-title">로그 탐색</h2><p>최신순 · 새 로그 알림을 눌러 반영하거나 실시간 따라보기를 켜세요.</p></div><span id="log-state-label" role="status">조회 준비</span></div>
       <form id="log-filters" class="log-filters" role="search" aria-label="로그 메타데이터 검색">
         <label>기간<select id="log-period"><option value="60">최근 1시간</option><option value="1440">최근 24시간</option><option value="10080">최근 7일</option><option value="43200">최근 30일</option><option value="custom">직접 지정 (KST)</option></select></label>
         <label>시간 기준<select id="log-time-basis"><option value="ingested">서버 수신 시각</option><option value="event">로그 기준 시각</option></select></label>

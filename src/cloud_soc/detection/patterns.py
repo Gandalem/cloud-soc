@@ -10,7 +10,7 @@ from cloud_soc.detection.engine import (build_group_key, event_evidence, event_f
 from cloud_soc.detection.behavior import conditions_status, scalar
 from cloud_soc.web.scope import valid_site_id
 
-FIELDS = {'organization.id', 'source.ip', 'destination.ip', 'destination.port', 'host.id', 'service.id', 'http.request.id', 'user.name',
+FIELDS = {'organization.id', 'source.ip', 'destination.ip', 'destination.port', 'host.id', 'service.id', 'service.name', 'http.request.id', 'user.name',
           'user.id', 'cloud.account.id', 'event.action', 'network.transport',
           'cloud_soc.detail.fields.logon_type', 'cloud_soc.detail.fields.flow_id',
           'cloud_soc.detail.fields.event_id', 'cloud_soc.detail.fields.identity_arn'}
@@ -132,7 +132,7 @@ def detect_pattern(events, rule, runtime=None):
                 'window_start': parse_event_timestamp(pool[0]).isoformat(), 'window_end': stamp.isoformat(),
                 'alert': deepcopy(rule['alert']), 'mitre': deepcopy(rule.get('mitre', {})),
                 'evidence': evidence, 'evidence_status': 'complete',
-                'assessment': {'type': 'attack_indicator', 'reason': 'metadata_count_and_distinct_values',
+                'assessment': {'type': rule.get('detection_type', 'attack_indicator'), 'reason': 'metadata_count_and_distinct_values',
                     'observed_count': len(pool), 'distinct_count': len(distinct),
                     'distinct_values': sorted(distinct), 'limitations': deepcopy(rule['limitations']),
                     'attack_success': 'not_established'}})
