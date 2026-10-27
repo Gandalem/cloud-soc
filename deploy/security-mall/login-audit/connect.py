@@ -24,6 +24,62 @@ MALL = Path.home() / 'security-mall'
 DOCKER = ['docker']
 
 
+def analysis_status(api):
+    """Bounded exact-source evidence, without running workers or changing rules."""
+    def search(index, body):
+        result = api('POST', '/' + index + '/_search', {
+            'track_total_hits': True, **body}, missing=True)
+        if result is not None and (result.get('timed_out') or result.get('terminated_early')
+                                   or result.get('_shards', {}).get('failed', 0)):
+            raise RuntimeError('분석 상태 조회가 불완전해 정상 결과로 표시하지 않습니다.')
+        return result
+
+    def rows(result):
+        return result['hits']['hits'] if result else []
+
+    def total(result):
+        return result['hits']['total'] if result else None
+
+    raw = search(INDEX, {'size': 100, '_source': False})
+    normal_script = ("def c=params._source.cloud_soc; if(c!=null && c.provenance!=null "
+                     "&& c.provenance.raw!=null && c.provenance.raw.index!=null) emit(c.provenance.raw.index);")
+    normalized = search('soc-normalized-v1', {'size': 200,
+        'runtime_mappings': {'audit_source_index': {'type': 'keyword', 'script': {'source': normal_script}}},
+        'query': {'term': {'audit_source_index': INDEX}},
+        '_source': ['@timestamp', 'event.outcome', 'cloud_soc.provenance.raw']})
+    raw_ids = {row['_id'] for row in rows(raw)}
+    normalized_ids = {row['_source']['cloud_soc']['provenance']['raw']['id'] for row in rows(normalized)}
+    raw_complete = bool(raw is not None and total(raw).get('relation') == 'eq'
+                        and total(raw)['value'] <= 100)
+    norm_complete = bool(normalized is not None and total(normalized).get('relation') == 'eq'
+                         and total(normalized)['value'] <= 200)
+    alert_script = ("def c=params._source.cloud_soc; if(c!=null && c.provenance!=null "
+                    "&& c.provenance.evidence!=null) for(def e:c.provenance.evidence) "
+                    "{if(e.raw!=null && e.raw.index!=null) emit(e.raw.index);}")
+    alerts = search('security-alerts', {'size': 10, 'sort': [{'@timestamp': 'desc'}],
+        'runtime_mappings': {'audit_source_index': {'type': 'keyword', 'script': {'source': alert_script}}},
+        'query': {'term': {'audit_source_index': INDEX}},
+        '_source': ['@timestamp', 'rule.id', 'rule.name', 'cloud_soc.event_count']})
+    statuses = search('soc-pipeline-status', {'size': 20,
+        '_source': ['state', 'last_success', 'checkpoint', 'runtime.rules.id']})
+    workers = []
+    for row in rows(statuses):
+        source = row['_source']
+        workers.append({'id': row['_id'], 'state': source.get('state'),
+                        'last_success': source.get('last_success'), 'checkpoint': source.get('checkpoint'),
+                        'reported_rules': [item['id'] for item in source.get('runtime', {}).get('rules', [])]})
+    return {'source_index': INDEX, 'raw_documents': total(raw), 'normalized_documents': total(normalized),
+            'reference_check': {'raw_sample_complete': raw_complete, 'normalized_sample_complete': norm_complete,
+                                'matched_raw_ids': len(raw_ids & normalized_ids),
+                                'missing_raw_ids_count': len(raw_ids - normalized_ids) if raw_complete and norm_complete else None},
+            'alerts_with_exact_source_evidence': total(alerts),
+            'latest_alerts': [row['_source'] for row in rows(alerts)],
+            'worker_status_index_present': statuses is not None, 'workers': workers,
+            'login_rule': {'id': 'WEB-AUTH-01', 'failures_required': 5, 'failure_window_seconds': 300,
+                           'success_after_failures_seconds': 600,
+                           'note': '동일 조직·서비스·가명 계정·키 버전·관측 IP가 필요합니다. 규칙 파일의 존재는 실행 중이라는 뜻이 아닙니다.'}}
+
+
 def docker(*args, data=None):
     p = subprocess.run([*DOCKER, *args], input=data, capture_output=True)
     if p.returncode:
@@ -44,7 +100,9 @@ def main():
     global MALL, DOCKER
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mall', type=Path, default=MALL)
-    parser.add_argument('--verify', action='store_true')
+    checks = parser.add_mutually_exclusive_group()
+    checks.add_argument('--verify', action='store_true')
+    checks.add_argument('--analysis-status', action='store_true', help='Read-only normalization and exact-source alert status')
     parser.add_argument('--sudo-docker', action='store_true', help='Use cached sudo for Docker only')
     args = parser.parse_args()
     MALL = args.mall.expanduser().resolve()
@@ -108,6 +166,9 @@ def main():
                 return None
             raise RuntimeError('ES 요청 실패 HTTP ' + str(error.code) + ': ' + path.split('?')[0]) from None
 
+    if args.analysis_status:
+        print(json.dumps(analysis_status(api), ensure_ascii=False, indent=2))
+        return
     if args.verify:
         result = api('POST', '/' + INDEX + '/_search', {
             'size': 5, 'sort': [{'event.ingested': 'desc'}],

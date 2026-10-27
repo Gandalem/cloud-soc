@@ -107,6 +107,18 @@ python3 deploy/security-mall/login-audit/connect.py
 
 ## 3. 실제 수신 확인과 Kibana
 
+정규화 및 원본 참조가 연결된 경보 확인은 다음 읽기 전용 조회를 사용한다.
+
+```bash
+sudo -v
+python3 deploy/security-mall/login-audit/connect.py \
+  --mall "$HOME/security-mall" --sudo-docker --analysis-status
+```
+
+raw/normalized 문서 수, 제한된 원본 ID 대조, 해당 원본 인덱스의 증거가 연결된 경보, 워커가 보고한 규칙 목록을 조회한다. 원본100건·정규화200건 이하일 때만 전체 ID 대조로 해석하고, 범위 초과·인덱스 부재·부분 응답은 미확인/오류로 구분한다. 키·본문·가명 계정 ID를 출력하지 않는다. 규칙·워커·체크포인트를 변경하지 않는다.
+
+WEB-AUTH-01은 같은 조직·서비스·가명 계정·키 버전·관측 IP의5분 이내 로그인 실패5건 뒤10분 이내 성공을 요구한다. 실패3건만으로 경보가 없는 것은 탐지 실패가 아니다. YAML 규칙이 존재해도 기본 배포 정책의7규칙에는 쇼핑몰 규칙이 포함되지 않으므로 실제 워커 활성 상태를 별도 확인해야 한다. 규칙 활성화를 위해 기존 정책/체크포인트를 임의 수정하지 않는다.
+
 http://localhost:8080 에서 정상/실패 로그인을 한 뒤 실행한다.
 
 ```bash

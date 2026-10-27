@@ -131,3 +131,43 @@ def test_connect_help_exposes_custom_mall_and_sudo_without_touching_docker():
     result = subprocess.run([sys.executable, str(PACKAGE / 'connect.py'), '--help'], capture_output=True, text=True)
     assert result.returncode == 0
     assert '--mall' in result.stdout and '--sudo-docker' in result.stdout and '--verify' in result.stdout
+
+
+def test_analysis_status_uses_exact_raw_references_without_writes():
+    spec = importlib.util.spec_from_file_location('mall_connect_status', PACKAGE / 'connect.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    calls = []
+    def api(method, path, body, missing=False):
+        calls.append((method, path, body))
+        assert method == 'POST' and path.endswith('/_search') and missing
+        if path.startswith('/' + module.INDEX + '/'):
+            hits = [{'_id': str(i)} for i in range(6)]
+        elif path.startswith('/soc-normalized-v1/'):
+            assert body['query']['term']['audit_source_index'] == module.INDEX
+            hits = [{'_source': {'cloud_soc': {'provenance': {'raw': {'index': module.INDEX, 'id': str(i)}}}}} for i in range(6)]
+        elif path.startswith('/security-alerts/'):
+            assert body['query']['term']['audit_source_index'] == module.INDEX
+            hits = []
+        else:
+            hits = [{'_id': 'detector', '_source': {'state': 'success', 'runtime': {'rules': [{'id': 'AUTH-001'}]}}}]
+        return {'hits': {'total': {'value': len(hits), 'relation': 'eq'}, 'hits': hits}}
+    result = module.analysis_status(api)
+    assert result['reference_check']['matched_raw_ids'] == 6
+    assert result['reference_check']['missing_raw_ids_count'] == 0
+    assert result['alerts_with_exact_source_evidence']['value'] == 0
+    assert result['workers'][0]['reported_rules'] == ['AUTH-001']
+    assert result['login_rule']['failures_required'] == 5
+    assert len(calls) == 4
+
+
+def test_analysis_status_missing_indices_are_unknown_and_partial_search_is_refused():
+    spec = importlib.util.spec_from_file_location('mall_connect_empty', PACKAGE / 'connect.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    result = module.analysis_status(lambda *a, **kw: None)
+    assert result['normalized_documents'] is None
+    assert result['reference_check']['missing_raw_ids_count'] is None
+    assert result['alerts_with_exact_source_evidence'] is None
+    with pytest.raises(RuntimeError, match='불완전'):
+        module.analysis_status(lambda *a, **kw: {'timed_out': True})
