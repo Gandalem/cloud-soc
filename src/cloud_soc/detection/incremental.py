@@ -39,7 +39,13 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
     """
     now, start = utc(now or datetime.now(timezone.utc)), utc(start)
     expected_status = 'detector-additional' if additional_rule_ids is not None else 'detector'
-    if status_id not in (None, expected_status, 'detector-priority') or (status_id == 'detector-priority' and (additional_rule_ids is not None or early_auth)):
+    mall_owner = status_id == 'detector-mall-login'
+    if mall_owner and (additional_rule_ids != ['WEB-AUTH-01'] or early_auth
+                       or any((include_cloud, include_sequence, include_attacks, include_patterns, isolated_all))
+                       or rule_ids is not None):
+        raise ValueError('Mall status requires only the separate WEB-AUTH-01 worker')
+    if (status_id not in (None, expected_status, 'detector-priority', 'detector-mall-login')
+            or status_id == 'detector-priority' and (additional_rule_ids is not None or early_auth)):
         raise ValueError('Invalid status ownership')
     status_id = status_id or expected_status
     if (type(max_documents) is not int or type(max_active_events) is not int

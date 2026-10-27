@@ -1,5 +1,8 @@
 # 두 브랜치 통합 기록 — 2026-10-27
 
+- [ ] MALL-LOGIN-DETECTOR-20261027-01: 사용자 출력으로 원본10건·정규화10건·참조누락0·경보0 및기존워커에WEB-AUTH-01미포함을확인했다. 기존배포정책/워커/체크포인트를유지하고 별도호스트Python워커·키·SQLite·detector-mall-login상태로쇼핑몰탐지를연결하는경로를준비한다. 기존detector-additional상태덮어쓰기를막기위해전용status-id는정확한WEB-AUTH-01선택에만허용한다. 사용자서버의규칙/프로세스/키에는직접접근하지않는다.
+- 코드/격리검사: detection CLI와incremental에전용status소유권을추가하고모의ES의실제WEB-AUTH-01시퀀스/기존상태보존/오선택거부및기존증분·시퀀스26건pass. 최초새테스트2건은mockstatus기록방식·명시별도state누락을수정후pass했다. Ruffpass. docs/mall_login_detector.md에신규전용키발급·호스트Python실행·사용자실제5실패후성공·조회명령을작성했다. 기존정책/컨테이너/키/체크포인트는직접변경하지않았고실제사용자경보인수는미완료다.
+
 - MALL-ANALYSIS-STATUS-20261027-01: 사용자가 실제 중앙수신6건(성공3·실패3) 이후정규화/탐지경보확인을요청했다. connect.py --analysis-status에 원본/정규화ID대조·해당원본의증거가연결된경보·워커보고규칙의읽기전용조회를추가한다. 실패3건은WEB-AUTH-01의5건임계값미달이며기본정책에는쇼핑몰규칙이없음을구분한다. 실제사용자ES에는접근하지않으며규칙/체크포인트는변경하지않는다.
 
 - [ ] MALL-DUPLICATE-LOGIN-20261027-01 진행 중: 사용자 첨부 실제 로그의 HomeController.login에서 사용자조회2건으로 NonUniqueResultException/HTTP500이 발생했다. 기존 H2회원·주문·감사키는 보존하고 중복아이디 인증거부·중복가입방지 보완 패치를 기존감사패치 다음에 적용한다. 기존 중복계정을 임의선택·병합·삭제하거나 DB를 초기화하지 않는다.

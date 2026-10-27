@@ -36,7 +36,7 @@ def main(argv=None):
     parser.add_argument("--retrospective", action="store_true",
                         help="Separate-state historical-context review for events normalized beyond the lateness allowance")
     parser.add_argument("--early-auth", action="store_true", help="Opt in to separate AUTH-001 provisional notices; needs explicit notice setup/permissions")
-    parser.add_argument('--status-id', choices=('detector', 'detector-priority'), default=None,
+    parser.add_argument('--status-id', choices=('detector', 'detector-priority', 'detector-mall-login'), default=None,
                         help='Independent priority AUTH telemetry; state and alert IDs stay unchanged')
     parser.add_argument("--es-url")
     parser.add_argument("--ca-file")
@@ -48,7 +48,9 @@ def main(argv=None):
         if (not 10 <= args.interval <= 3600 or not 1 <= args.max_documents <= 100000
                 or not 1 <= args.max_active_events <= 1_000_000 or args.once and not args.run
                 or args.early_auth and args.snapshot
-                or args.status_id and (args.retrospective or args.additional_rules is not None or args.snapshot)
+                or args.status_id and (args.retrospective or args.snapshot
+                                      or args.additional_rules is not None and args.status_id != 'detector-mall-login')
+                or args.status_id == 'detector-mall-login' and (args.additional_rules != 'WEB-AUTH-01' or args.early_auth)
                 or args.status_id == 'detector-priority' and args.early_auth):
             raise ValueError("Invalid options")
         selection = dict(include_cloud=args.include_cloud, include_sequence=args.include_sequence,

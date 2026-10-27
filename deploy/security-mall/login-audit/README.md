@@ -107,6 +107,8 @@ python3 deploy/security-mall/login-audit/connect.py
 
 ## 3. 실제 수신 확인과 Kibana
 
+원본과 정규화가 일치하지만 WEB-AUTH-01이 실행 중이지 않다면 [기존 워커를 보존하는 별도 쇼핑몰 탐지](../../../docs/mall_login_detector.md)를 사용한다.
+
 정규화 및 원본 참조가 연결된 경보 확인은 다음 읽기 전용 조회를 사용한다.
 
 ```bash
