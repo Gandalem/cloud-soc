@@ -38,6 +38,9 @@ internal static class NativeInstallerTests {
             Reject(() => Platform.Quote("unsafe\"argument")); Reject(() => Safe.Path(@"\\server\share\file"));
             Reject(() => Safe.Signed(typeof(NativeInstallerTests).Assembly.Location));
             Assert(Contract.Hash(new byte[0]) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+            string missing = Program.Error(new InvalidDataException("installation_state_missing"), false);
+            Assert(missing.Contains("설치 기록을 찾을 수 없습니다") && missing.Contains("수집기 자료는 변경하지 않았습니다"));
+            Assert(!missing.Contains("InvalidOperationException"));
             ReinstallPolicy();
             using (var choice = new RemovalChoice()) {
                 Assert(!choice.Purge);

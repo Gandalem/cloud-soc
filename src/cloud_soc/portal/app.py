@@ -460,6 +460,21 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             if request.scheme != "https" and request.headers.get("X-Forwarded-Proto") != "https":
                 abort(403)
             return
+        # External entry links may reach only the public login document. A
+        # same-origin click from that page performs normal authentication.
+        entry_navigation = (request.headers.get('Sec-Fetch-Site') == 'cross-site'
+            and request.method in ('GET', 'HEAD') and not request.args
+            and request.headers.get('Sec-Fetch-Mode') == 'navigate'
+            and request.headers.get('Sec-Fetch-Dest') == 'document'
+            and (request.endpoint in ('index', 'login_page')
+                 or request.endpoint == 'static_file'
+                 and (request.view_args or {}).get('filename') == 'index.html'))
+        if entry_navigation:
+            if request.headers.get('Origin') not in (None, request_origin):
+                abort(403)
+            if request.endpoint != 'login_page':
+                return redirect('/login')
+            return
         if sessions is None and request.endpoint not in PUBLIC:
             credentials = request.authorization
             principal = None
