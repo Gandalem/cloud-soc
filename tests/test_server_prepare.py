@@ -144,6 +144,7 @@ class ServerPreparationTests(unittest.TestCase):
         output = io.StringIO()
         with patch.object(prepare.shutil, "which", return_value="openssl"), \
                 patch.object(prepare.subprocess, "run", side_effect=fake_openssl), \
+                patch.object(prepare, "prepare_enrollment_pki"), \
                 patch.object(prepare, "password_hash", return_value="SYNTHETIC_HASH"), \
                 patch.object(prepare.secrets, "token_urlsafe", return_value="SYNTHETIC_CREDENTIAL"), \
                 patch.object(prepare.os, "umask"), \
@@ -180,6 +181,7 @@ class ServerPreparationTests(unittest.TestCase):
 
         with patch.object(prepare.shutil, "which", return_value="openssl"), \
                 patch.object(prepare.subprocess, "run", side_effect=fake_openssl), \
+                patch.object(prepare, "prepare_enrollment_pki"), \
                 patch.object(prepare, "password_hash", return_value="SYNTHETIC_HASH"), \
                 patch.object(prepare.os, "umask"), patch.object(prepare.os, "chown", create=True), \
                 patch.object(Path, "chmod", autospec=True), redirect_stdout(io.StringIO()):

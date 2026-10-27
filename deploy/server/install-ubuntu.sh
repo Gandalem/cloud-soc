@@ -125,7 +125,7 @@ check_fresh_state() {
     if path_exists "$STATE"; then
         die 'state/server가 이미 있습니다. 인증서를 다시 만들지 말고 docs/runtime_deployment.md의 복구 절차를 따르세요.'
     fi
-    for item in deploy/server/prepare.py deploy/server/server_cli.py deploy/server/compose.yaml deploy/server/Dockerfile; do
+    for item in deploy/server/prepare.py deploy/server/enrollment_pki.py deploy/server/repair-enrollment-tls.py deploy/server/server_cli.py deploy/server/compose.yaml deploy/server/Dockerfile; do
         [ -f "$ROOT/$item" ] || die "필수 파일이 없습니다: $item"
     done
 }
@@ -293,6 +293,7 @@ http_status() {
 check_ready() {
     printf '%s\n' '[설치] 서버 구성과 HTTPS 접속 준비를 확인합니다.'
     python3 "$ROOT/deploy/server/manage.py" verify --state "$STATE" --startup-only
+    python3 "$ROOT/deploy/server/repair-enrollment-tls.py" --state "$STATE" --portal-url "https://$HOST" --install-renewal
     DEADLINE=$(($(date +%s) + 300))
     while [ "$(date +%s)" -lt "$DEADLINE" ]; do
         ES_CODE=$(http_status 9200 /)

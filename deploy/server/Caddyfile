@@ -11,7 +11,16 @@ https://{$SOC_PUBLIC_HOST} {$SOC_PORTAL_LAN_ORIGIN:} {
 	# Explicit peer allowlist; default preserves existing LAN/VPN connectivity.
 	@unapproved not remote_ip {$SOC_ADMIN_ALLOWED_CIDRS:0.0.0.0/0 ::/0}
 	respond @unapproved "Forbidden" 403
-	reverse_proxy portal:8000
+	handle /.well-known/cloud-soc/ca.crl {
+		root * /certs
+		rewrite * /ca.crl
+		header Content-Type application/pkix-crl
+		header Cache-Control "no-cache"
+		file_server
+	}
+	handle {
+		reverse_proxy portal:8000
+	}
 }
 
 https://{$SOC_PUBLIC_HOST}:5601 {

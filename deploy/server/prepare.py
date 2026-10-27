@@ -16,6 +16,7 @@ import warnings
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'deploy/server'))
 from server_cli import KoreanParser
+from enrollment_pki import repair as prepare_enrollment_pki
 
 
 class PreparationError(ValueError):
@@ -111,6 +112,7 @@ def prepare(host, bind_ip, state, password, *, agent_host=None):
     for file in (ca_crt, cert):
         file.chmod(0o644)
     key.chmod(0o640)
+    prepare_enrollment_pki(state, f'https://{host}')
     (state / "tls").chmod(0o750)
     # Elasticsearch runs as uid 1000, gid 0; the portal runs as 1000:1000.
     os.chown(state / "portal", 1000, 1000)

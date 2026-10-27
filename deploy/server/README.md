@@ -106,6 +106,10 @@ sudo python3 deploy/server/manage.py verify --startup-only
 
 인증서 준비 자체가 실패해 `compose.env`가 없다면 상태를 보존하고 원인을 검토합니다. CA·비밀번호를 임의로 다시 만들거나 `down -v`로 데이터를 삭제하지 않습니다. 실행 준비 확인은 실제 에이전트 수신·탐지 인수를 대신하지 않습니다.
 
+## Ubuntu 등록에서 CRL 오류가 발생한 기존 설치
+
+`Server certificate requires an available signed CRL distribution point`가 발생하면 [기존 CA·키 보존형 CRL 보완](../../docs/enrollment_crl_repair.md)을 따릅니다. 최초 설치기를 다시 실행하거나 등록 상태를 삭제하지 않습니다.
+
 ## 제거
 
 제거기는 기본적으로 계획만 표시합니다. 소스 저장소와 Apache·다른 프로젝트는 보존합니다. 중앙 컨테이너·네트워크를 제거하며 기본값은 ES 볼륨과 인증서·비밀번호 보존입니다.
