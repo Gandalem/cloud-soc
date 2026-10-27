@@ -35,7 +35,7 @@ sudo sh soc uninstall
 
 ### INSTALL-SERVER-UX-02 인수 구분
 
-코드 작성과 최종 필수 검사의 결과는 작업 목록에 기록한다. 모의 검사와 독립 Docker 엔진의 실제 종료·삭제는 빈 Ubuntu/systemd에서 전체 신규 설치를 끝낸 것과 다르다. 이 작업의 Docker 실험은 새 폐기 컨테이너 내부의 별도 데몬·소켓·데이터 루트에서만 실행하고 호스트 Docker 소켓을 마운트하지 않는다. 서버 방화벽·커널 값·기존 WSL 배포판·실제 로그·키를 변경하지 않는다. WSL 배포판 하나를 추가한 것만으로 커널까지 독립됐다고 간주하지 않는다. 빈 VM 전체 설치·보존 제거·복구·purge는 독립 시험 서버에서 추가 인수한다.
+이 절은10/26의 초기 컴포넌트 인수 기록이다. 당시 모의 검사와 독립 Docker 엔진의 실제 종료·삭제는 빈 Ubuntu/systemd의 전체 설치를 대신하지 않았다. 새 폐기 컨테이너의 별도 데몬·소켓·데이터 루트만 사용했고 호스트 Docker 소켓·방화벽·커널 값·기존 WSL·실제 로그/키를 변경하지 않았다. 당시 남긴 전체 설치·복구·purge 인수는 다음 절의10/27 새 WSL 결과로 해당 환경에서 해소했다. WSL 배포판 추가를 커널까지 독립된 VM으로 보지 않으며 물리 VM/EC2는 별도다.
 
 검사 결과(2026-10-26): Python 관련55검사 중54통과·Windows 실제 링크 권한1건 제외, 설치기 POSIX 보호 조건41건은 초기40통과와 문구 수정 후 해당1건 통과로 확인했다. 변경 Python의 Ruff·diff 공백 검사는 통과했다. Docker27.5.1 CLI/Engine의 독립 소켓·vfs·네트워크 none 실험에서 keep/purge, 미종료 시2초 시험 대기 초과와 강제 종료 없음/설정·볼륨 원문 보존, 다른 프로젝트 원문 보존, Linux 실제 심볼릭 링크 거부, 내부 컨테이너·볼륨0을 확인했다. 2초는 시험에서만 주입하며 제품 한도90초는 유지한다. 실제 설치 메뉴·전체12서비스의 빈 Ubuntu 설치/보존 복구/삭제는 이번 시험 범위가 아니다.
 
@@ -52,6 +52,8 @@ sudo sh soc uninstall
 재현 도구는 `tests/manual/server_install_wsl_live.py`다. 새로운 시험 경로와 checksum 고정 Ubuntu WSL 이미지가 필요하며 기존 Ubuntu와 Docker Desktop에는 설치하지 않는다. 실패 시에도 소유 이름·레지스트리 BasePath·소유 표시를 대조해 새 trial만 unregister한다. 시험은 별도 네트워크 namespace/slirp4netns1.2.1를 사용하고 포트·호스트 Docker 소켓을 외부에 연결하지 않는다. 그 환경에서는 외부 containerd와 Docker의 mount 공간 불일치가 있었으므로 새 trial의 packaged containerd만 runtime mask하고 Docker 자체 containerd를 사용한다. 기존/운영 Docker 설정을 바꾸는 배포 처방이 아니다. 새 제품 의존성은 없고 시험용 패키지만 폐기 WSL에 설치한다. [slirp4netns 공식 사용법](https://github.com/rootless-containers/slirp4netns), [WSL systemd](https://learn.microsoft.com/en-us/windows/wsl/systemd), [Docker image store](https://docs.docker.com/engine/storage/containerd/).
 
 초기 시험 환경 실패·PID1 대기 초과를 성공으로 처리하지 않았고, 수정 후 새 trial의 전체 흐름으로 재확인했다. 최종 보고서는 Git 제외 `state/server-ux-wsl-20261026-10`의 result/cleanup/final-audit JSON이다. 모든 trial 디스크와 임시 소스·과거 다운로드 이미지도 제거했고 기존2배포판과 공유 Docker 이미지3개는 유지했다. 잠시 올린 공통 커널 값은262144로 원복하고 trial 밖 방화벽 규칙도 대조했다. 비밀값은 보고서에 남기지 않는다.
+
+이후 PR21의 Windows CI에서 monotonic 반올림으로 종료 대기값이90.00000000000006초가 되는 실패를 확인했다.5bcef7f는 공통 deadline을 유지하면서 대기값이90초를 넘지 않게 보정했다. 결정적 반올림·단계별 예산을 포함한 영향9검사와 Actions40424825929의 Windows/Ubuntu 두 job이 성공했고 main e804569로 병합됐다(기록b737b23). 이 후속은 코드/CI 검증이며 위 WSL 전체 인수를 다시 실행한 것은 아니다. 운영 서버·키/데이터·재부팅도 변경하지 않았다.
 
 ## 신규 설치
 
@@ -76,6 +78,16 @@ sudo python3 deploy/server/manage.py apply --plan /실제/state/server/runtime-p
 계획에는 서버 사양, 전체 메모리 한도+여유 예산, Docker/state 디스크의 실제 여유, DB 두 벌 백업 공간, 기존 실행 명령·mount·site 주소 차이, 새 워커, 누락된 인덱스·역할/API키 권한이 나타난다. 인증 값은 출력하지 않는다. 실제 image 파일 검증·기존 DB identity 확인·권한 scope 검토를 통과해야 한다. 계획 이후 구성/권한/후보가 바뀌거나 자원이 부족하면 서비스를 멈추기 전에 거부한다.
 
 기존 운영 명령은 Docker label의 파일 목록과 일치하는 `compose.active.json` 영수증으로 식별한다. 경로를 추정하거나 임의 파일의 명령을 실행하지 않는다. 영수증을 찾지 못하면 먼저 기존 배포 명령을 보호 기록으로 남겨야 한다.
+
+### 2026-10-27 실제 Portal 배포 준비 중 확인된 문제
+
+기존 중앙 서버에서 새 Windows 설치 도구의 Portal 배포를 준비하던 중 `plan`이 `Cannot identify the exact active Compose command; provide its protected receipt`로 중단됐다. 보호된 실행 기록에는 기본 Compose 파일과 `runtime/site.json` 두 개가 있었지만, 실행 중인 Portal에는 ngrok 환경 설정과 외부 링크 진입 수정의 두 파일이 추가로 적용돼 있었다. 게이트웨이에는 세 파일, 나머지 확인한 서비스에는 두 파일이 표시됐다. 실제 네 파일을 결합해 계산한 구성의 이미지 ID는 확인한 실행 서비스 12개의 이미지 ID와 각각 일치했다. 구성 전체가 실행 상태와 일치한다거나 업그레이드 후에도 ngrok가 작동한다는 인수는 아니다.
+
+추가 파일 두 개는 기존 배포 관리자가 허용하는 경로 밖에도 있다. 따라서 보호 기록에 파일명만 추가하거나 검사를 우회해 적용해서는 안 된다. 다음 작업에서는 실제 설정과 파일 소유·무결성, 서비스별 차이, 승인된 경로와 기존 구성·ngrok 복구 방법을 검토한 뒤 정확한 실행 기록과 새 계획을 준비해야 한다. 이 기록 시점에 후보 이미지는 별도 태그로 서버에 불러왔으나 배포 계획은 성공하지 않았고 서비스 중지나 적용도 없었다. 추가 원인 진단을 위해 준비한 도구는 사용자의 중지 요청에 따라 실행하지 않았다.
+
+별도로 기존 업그레이드 실패 복구가 `runtime/site.json`을 새 설정으로 덮어쓴 뒤 이전 명령에서 같은 경로를 읽는 문제를 발견했다. 로컬 코드는 이전 사이트 파일을 보호된 복구 폴더에 보관하고 해시를 확인한 후 이전 서비스 실행 전에 복원하도록 수정했다. 직접 영향 모의 검사 13건을 통과했으며, 실제 서버 적용·장애 복구 검증은 아직 하지 않았다. 앞서 서버에 불러온 후보 이미지는 이 후속 수정을 포함하지 않는다.
+
+Windows 운영 코드 서명도 별도 미완료다. 이 PC와 시험 VM에서는 유효한 개인키가 있는 코드 서명 인증서를 찾지 못했으며, HTTPS용 CA를 코드 서명 인증서로 사용하지 않는다. 서명 도구 준비와 서명 없는 시험 파일 거부 확인은 했지만 운영 서명 파일의 생성·Portal 공급·실제 설치/수신 검증은 수행하지 않았다.
 
 001 마이그레이션은 기존 데이터를 변경하지 않는 mapping 추가와 정확한 런타임 권한을 준비한다. 기존 사용자/비밀번호는 변경하지 않으며, 기존 API키는 ID·토큰·만료를 유지하고 필요한 descriptor만 추가한다. 폐기/만료 키, DLS/FLS 제약, 알 수 없는 역할/상태 scope는 자동 교체하지 않는다. 신규 설치의 키만 보호 경로에 신규 발급한다.
 

@@ -298,6 +298,8 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
     if fault=='disk':current['resources']['ok']=False
     monkeypatch.setattr(host,'snapshot',lambda *_:deepcopy(current))
     runtime=state/'runtime';runtime.mkdir()
+    previous_site=b'{"services":{"gateway":{"environment":{"SOC_PUBLIC_HOST":"existing.example"}}}}\n'
+    (runtime/'site.json').write_bytes(previous_site)
     monkeypatch.setattr(host,'lock',lambda _:nullcontext())
     actual_atomic=host.atomic_json
     def atomic(path,value,**kw):
@@ -326,7 +328,9 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
                 self.phase='new'
                 if fault=='activation':raise RuntimeError('isolated activation interruption')
                 if fault=='interrupt':raise KeyboardInterrupt()
-            elif 'up' in args:self.phase='old'
+            elif 'up' in args:
+                assert (runtime/'site.json').read_bytes()==previous_site
+                self.phase='old'
             return ''
     engine=Engine()
     def objects(*_):
@@ -346,6 +350,7 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
             assert not engine.calls
         else:
             assert engine.phase=='old'
+            assert (runtime/'site.json').read_bytes()==previous_site
             assert not (runtime/'contract.json').exists()
             # A retry preserves each unactivated copy, instead of deleting state.
             copy_adopted_state({'adoption':adopt,'state':str(state)},runtime)
@@ -461,6 +466,40 @@ def test_process_kill_journal_recovers_execution_without_restoring_any_database(
         ownership_calls.chown.assert_not_called()
     else:
         ownership_calls.expect_atomic_contract(runtime)
+
+
+def test_site_backup_restores_exact_bytes_and_rejects_a_changed_backup(tmp_path):
+    from cloud_soc.deployment import host
+    runtime=tmp_path/'runtime';run=runtime/'upgrades'/'attempt';run.mkdir(parents=True)
+    site=runtime/'site.json';original=b'{"preserved":"existing site"}\n'
+    site.write_bytes(original)
+    saved=host.save_previous_site(runtime,run)
+    site.write_bytes(b'{"candidate":"new site"}')
+    host.restore_previous_site(runtime,run,saved)
+    assert site.read_bytes()==original
+    site.write_bytes(b'{"candidate":"still running"}')
+    (run/'site.before.json').write_bytes(b'{"tampered":true}')
+    with pytest.raises(ValueError,match='backup changed'):
+        host.restore_previous_site(runtime,run,saved)
+    assert site.read_bytes()==b'{"candidate":"still running"}'
+
+
+def test_recovery_restores_site_before_starting_old_compose(tmp_path,monkeypatch):
+    from cloud_soc.deployment import host
+    runtime=tmp_path/'runtime';run=runtime/'upgrades'/'attempt';run.mkdir(parents=True)
+    site=runtime/'site.json';original=b'{"site":"old"}\n';site.write_bytes(original)
+    saved=host.save_previous_site(runtime,run)
+    site.write_bytes(b'{"site":"new"}')
+    class Engine:
+        def run(self,args,**kwargs):
+            if 'up' in args:
+                assert site.read_bytes()==original
+            return ''
+    monkeypatch.setattr(host,'containers',lambda *_:{})
+    host._restore_execution(Engine(),runtime,run,{'previous_compose':['--project-name','cloud-soc-central'],
+        'canonical':['compose','--project-name','cloud-soc-central'], 'old_names':['portal'],
+        'old_contract':None,'old_current':None,'old_site':saved})
+    assert site.read_bytes()==original
 
 
 def test_site_snapshot_repository_and_compose_numeric_strings_are_supported():

@@ -408,6 +408,44 @@ def copy_adopted_state(plan, runtime):
             os.chown(folder, 1000, 1000)
 
 
+def save_previous_site(runtime, run):
+    """Keep the exact Compose site file needed to restart the previous release."""
+    path = checked_path(runtime / 'site.json', runtime)
+    if not path.exists():
+        return None
+    checked_path(path, runtime, file=True)
+    backup = checked_path(run / 'site.before.json', run)
+    if backup.exists():
+        raise ValueError('Previous site backup already exists')
+    shutil.copy2(path, backup)
+    info = path.stat()
+    checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+    if hashlib.sha256(backup.read_bytes()).hexdigest() != checksum:
+        raise ValueError('Previous site backup verification failed')
+    return {'sha256': checksum, 'uid': info.st_uid, 'gid': info.st_gid}
+
+
+def restore_previous_site(runtime, run, saved):
+    if saved is None:
+        return
+    backup = checked_path(run / 'site.before.json', run, file=True)
+    if hashlib.sha256(backup.read_bytes()).hexdigest() != saved['sha256']:
+        raise ValueError('Previous site backup changed; recovery stopped')
+    target = checked_path(runtime / 'site.json', runtime)
+    fd, name = tempfile.mkstemp(prefix='.site-recovery-', dir=runtime)
+    os.close(fd)
+    temporary = Path(name)
+    try:
+        shutil.copy2(backup, temporary)
+        info = temporary.stat()
+        if os.name == 'posix' and (info.st_uid, info.st_gid) != (saved['uid'], saved['gid']):
+            os.chown(temporary, saved['uid'], saved['gid'])
+        os.replace(temporary, target)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
 def apply(engine, plan, *, poll=None):
     workspace, state = Path(plan['workspace']), Path(plan['state']);runtime = state / 'runtime'
     if not plan['resources']['ok']:
@@ -443,12 +481,13 @@ def apply(engine, plan, *, poll=None):
         active = plan['previous_compose']
         old_objects = containers(engine, plan['project'])
         old_contract = (runtime / 'contract.json').read_bytes() if (runtime / 'contract.json').is_file() else None
+        old_site = save_previous_site(runtime, run)
         canonical = ['compose', '--project-name', plan['project'], '--env-file', str(state / 'compose.env'),
                      '-f', str(workspace / 'deploy/server/compose.yaml'), '-f', str(runtime / 'site.json')]
         atomic_json(run / 'recovery.json', {'previous_compose': active, 'old_names': list(old_objects),
             'old_contract': json.loads(old_contract) if old_contract else None,
             'old_current': json.loads((runtime / 'current.json').read_text()) if (runtime / 'current.json').is_file() else None,
-            'canonical': canonical, 'environment': plan['compose_environment']})
+            'old_site': old_site, 'canonical': canonical, 'environment': plan['compose_environment']})
         atomic_json(runtime / 'pending.json', {'run': str(run)})
         try:
             if active:
@@ -536,6 +575,7 @@ def _restore_execution(engine, runtime, run, saved):
     targets = [project + '-' + name + '-1' for name in APP_SERVICES if name in present]
     if targets:
         engine.run(['stop', *targets])
+    restore_previous_site(runtime, run, saved.get('old_site'))
     # Restore metadata before starting the previous image; never restore a database.
     for name, value in (('contract.json', saved['old_contract']), ('current.json', saved['old_current'])):
         path = runtime / name
