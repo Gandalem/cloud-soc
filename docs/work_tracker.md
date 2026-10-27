@@ -1,3 +1,7 @@
+# 두 브랜치 통합 기록 — 2026-10-27
+
+사용자 요청으로 origin/JEONGRIM-SEO와 codex/security-nine-scenarios를 codex/jeongrim-security-scenarios에 병합한다. 기존 원격 브랜치는 변경하지 않는다. 서버 관리자의 한국어 오류 안내와 안전한 SQLite 오류 코드 표시를 함께 보존한다. JEONGRIM-SEO 작업 이력 전체는 [원문 보존본](archive/jeongrim_work_tracker_20261027.md)에 보관하며 그 안의 과거 승인·테스트 기록을 현재 작업의 승인이나 검증 결과로 해석하지 않는다. 문서 색인은 양쪽 링크를 유지한다. 테스트·시험·검수·검사·린트·빌드·구문 확인·실행 확인은 일절 수행하지 않는다. 이 기록과 Git 병합은 운영 배포·게시·실제 수집 성공을 뜻하지 않는다.
+
 # Cloud SOC 작업 목록
 
 상태 대조 기준: 2026-10-27, Gandalem/cloud-soc `main b737b23`과 이번 문서 수정. PR21의 기능/수정 head는5bcef7f, main 병합은e804569, b737b23은 병합 결과의 문서 기록이다. 이전 ac64198 코드 대조와31de814 문서 통합은 아래에 이력으로 보존한다. Git 반영·CI 성공·각 환경의 실제 인수·현재 서버 배포는 별개다. 현재 기능/검증은 [프로젝트 상태](project_status.md), 사용은 [문서 색인](README.md)을 따른다.

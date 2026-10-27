@@ -1,4 +1,5 @@
 """Transactional incremental threshold detection; ES writes precede local commit."""
+from cloud_soc.processing.errors import WorkerFailure, error_code
 from copy import deepcopy
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -273,8 +274,7 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                     pass
             return counts
         except Exception as error:
-            code = str(error) if isinstance(error, ValueError) and str(error) in {
-                'active_state_limit', 'input_spool_limit', 'input_document_size_limit'} else 'incremental_cycle_failed'
+            code = error_code(error, 'incremental_cycle_failed')
             db.rollback()
             if early_auth:
                 try:
@@ -296,4 +296,4 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                 publish('failed', code)
             except Exception:
                 pass
-            raise RuntimeError('incremental_cycle_failed; checkpoint retained') from None
+            raise WorkerFailure('incremental_cycle_failed; checkpoint retained', code) from None

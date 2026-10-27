@@ -1,3 +1,8 @@
+# Current incident direction (2026-10-21)
+
+- User selected the October 16 Elasticsearch snapshot baseline and rejected partial salvage/recollection as the operating recovery path. Preserve forensic copies; do not promote salvaged documents or rewind live checkpoints implicitly.
+- User explicitly requested commit/push of subsequent programming changes to JEONGRIM-SEO. Archive source only; exclude private logs, databases, credentials, host-generated configuration and executables. Distinguish publication from VM recovery/deployment.
+
 # Work Tracking
 
 - Read `docs/work_tracker.md` before starting project implementation or review.
@@ -31,3 +36,27 @@
 - Keep implementation and verification distinct. Record unverified changes honestly and leave unverified acceptance items unchecked.
 - The earlier commercial-foundation snapshot is archived in Gandalem/test-cs; do not automatically apply it to this main checkout.
 - Product pages must not include developer progress commentary such as verification promises, planned testing, unfinished/MVP labels, or implementation-completion disclaimers. Keep development scope, verification status, and remaining work in project documents and the work tracker. UI text should describe user actions and actual results; do not claim an operation succeeded or was applied when it did not.
+
+
+# Current local integration request (2026-10-21)
+
+- Compare and merge main + JEONGRIM-SEO locally; this current user request supersedes historical branch and verification restrictions above for this integration.
+- Validate the merged code locally. The latest user request explicitly authorizes committing the reviewed integration and pushing it to JEONGRIM-SEO. Do not push main, create remote PRs, deploy, or change existing services.
+
+
+# Current AWS Sydney request (2026-10-21)
+
+- Implement and locally validate Sydney AWS/T-Pot ingestion and connect approved existing AWS resources. The user selected code/local verification and existing-resource connection, not new cloud provisioning.
+- Same account, separate team IAM Roles; T-Pot is not installed yet. Read-only AWS inventory and bounded existing-log metadata sampling are authorized.
+- Do not repurpose the existing CI runner or enable new AWS resources, costs, public honeypot ports or role grants without a concrete approved scope. Do not automatically commit/push this new task based on the earlier merge-only push authorization.
+
+
+# Latest AWS provisioning authorization (2026-10-21)
+
+- The user explicitly approved creating one private Sydney S3 bucket and SQS plus DLQ, enabling VPC Flow/ALB access logging, and subsequently requested Sydney CloudTrail storage. This supersedes the earlier existing-resources-only limit for those actions.
+- The user will create the new EC2 instance. Do not repurpose the CI runner, create IAM identity grants/instance roles, or expose ports based only on the reference conversation.
+- Implement web collection for ZIYA0614/security-mall. Apply the shared conversation requirements for four distinct IAM users, at least three app pages, and CloudWatch web collection; use Sydney instead of its Seoul example.
+
+2026-10-21 추가 사용자 승인: ALB 전달 조건을 같은 계정·시드니 loadbalancer/*로 수정, 새 EC2의 default VPC Flow 추가, CloudSOC-SecurityMall-Sydney 전용 EC2 역할 및 지정 CloudWatch 쓰기+AmazonSSMManagedInstanceCore 연결, 고정 Security Mall 설치·실행 허용. 공개 포트 추가와 기존 Trail 변경은 포함하지 않음.
+
+2026-10-21 최신 사용자 지시: 현재 AWS Sydney·Security Mall 변경을 JEONGRIM-SEO에 commit 및 push한다. 이전 미커밋/미push 지시를 이번 변경에 한해 대체한다. main은 변경하지 않는다.

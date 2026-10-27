@@ -176,3 +176,72 @@ def test_incremental_duplicate_arrival_before_finalization_survives_restart():
         assert result['created']==result['late']==0
         assert run(140)['created']==0
         assert not any(call.kwargs['index']=='security-alerts' for call in c.create.call_args_list)
+
+
+def invalid_user_raw(i=0, origin='journald'):
+    hit = raw(i, origin if origin != 'rfc3164' else 'rfc3339')
+    body = f'Invalid user fixture from 192.0.2.177 port {40000+i}'
+    if origin == 'journald':
+        hit['_source']['message'] = body
+    elif origin == 'rfc3339':
+        stamp = BASE + timedelta(seconds=i, microseconds=123456)
+        hit['_source']['message'] = f'{stamp.isoformat()} fixture sshd[{100+i}]: {body}'
+    else:
+        hit['_source']['message'] = f'Oct 12 21:00:{i:02d} fixture sshd[{100+i}]: {body}'
+        hit['_source']['event']['timezone'] = '+09:00'
+        hit['_id'] = f'rfc3164-{i}'
+    return hit
+
+
+@pytest.mark.parametrize('origin', ['journald', 'rfc3339', 'rfc3164'])
+def test_invalid_user_is_failure_with_distinct_version_and_lineage(origin):
+    hit = invalid_user_raw(origin=origin)
+    original = deepcopy(hit)
+    identifier, record, body = normalize(hit, BASE.isoformat())
+    assert hit == original
+    assert record['status'] == 'normalized'
+    assert record['version'] == 'linux-ssh-invalid-user-v1'
+    assert body['event']['action'] == 'ssh_invalid_user'
+    assert body['event']['outcome'] == 'failure'
+    assert body['network']['protocol'] == 'ssh'
+    assert body['cloud_soc']['detail']['fields']['auth_method'] == 'unknown'
+    assert body['cloud_soc']['provenance']['raw'] == {'index':hit['_index'],'id':hit['_id']}
+    assert body['@timestamp'].startswith('2026-10-12T12:00:00')
+    assert 'message' not in body
+    assert identifier == normalize(hit, (BASE+timedelta(days=1)).isoformat())[0]
+
+
+@pytest.mark.parametrize('file_origin', ['rfc3339', 'rfc3164'])
+def test_invalid_user_mirrors_count_once_per_attempt(file_origin):
+    def normalized_invalid(i, origin):
+        body = event(invalid_user_raw(i, origin))
+        return body
+    runtime = {}
+    nine = [normalized_invalid(i, origin) for i in range(9) for origin in ('journald', file_origin)]
+    assert detect_rule(nine, RULE, runtime=runtime) == []
+    assert len(next(iter(runtime.values()))['window']) == 9
+    found = detect_rule([normalized_invalid(9, origin) for origin in ('journald', file_origin)], RULE, runtime=runtime)
+    assert len(found) == 1
+    assert found[0]['event_count'] == 10
+    assert len(found[0]['evidence']) == 10
+    a = normalized_invalid(0, 'journald')
+    b = normalized_invalid(0, file_origin)
+    assert ssh_collection_mirror(a,b)
+    assert not ssh_collection_mirror(a,a)
+    b['source']['port'] += 1
+    assert not ssh_collection_mirror(a,b)
+
+
+def test_invalid_user_requires_explicit_file_timezone_and_rejects_close_messages():
+    hit = invalid_user_raw(origin='rfc3164')
+    del hit['_source']['event']['timezone']
+    assert normalize(hit, BASE.isoformat())[1]['reason'] == 'ssh_timezone_missing'
+    for origin in ('journald','rfc3339','rfc3164'):
+        hit = invalid_user_raw(origin=origin)
+        hit['_source']['message'] = hit['_source']['message'].replace(
+            'Invalid user fixture from', 'Connection closed by invalid user fixture from')
+        assert parse_linux_ssh_source(hit['_source']) is None
+    for suffix in (' ssh2',' EXTRA','\nPRIVATE_CANARY'):
+        hit = invalid_user_raw()
+        hit['_source']['message'] += suffix
+        assert parse_linux_ssh_source(hit['_source']) is None

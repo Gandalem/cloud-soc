@@ -1,11 +1,11 @@
 """Durable input spool: receipt windows finalize only after a complete PIT scan."""
 import json
-from datetime import datetime
 
 from elasticsearch import NotFoundError
 
 from cloud_soc.elastic.pagination import IncompleteSearchError
 from cloud_soc.processing.contract import NORMALIZED
+from cloud_soc.processing import receipt
 
 MAX_STAGED = 1_000_000
 
@@ -30,9 +30,10 @@ def remember(db, meta):
 def add(db, hit, meta, seen):
     if hit.get('_index') != NORMALIZED or not isinstance(hit.get('_id'), str) or not hit['_id']:
         raise ValueError('invalid_reference')
-    received = datetime.fromisoformat(hit['_source']['cloud_soc']['normalized_at'].replace('Z', '+00:00'))
-    if not datetime.fromisoformat(meta['lower']) <= received < datetime.fromisoformat(meta['end']):
-        raise ValueError('outside_receipt_range')
+    if not receipt.contains(hit['_source']['cloud_soc']['normalized_at'], meta['lower'], meta['end']):
+        # A date mapping may return another source timestamp in the same
+        # millisecond. It belongs to an adjacent exact window, not this spool.
+        return False
     if hit['_id'] in seen or db.execute('SELECT 1 FROM input_hits WHERE id=?', (hit['_id'],)).fetchone():
         return False
     body = json.dumps({k: hit[k] for k in ('_index', '_id', '_source')})
@@ -49,9 +50,18 @@ def checked(response):
 
 
 def read_window(client, db, meta, *, budget, seen, scanner=None):
+    if meta.get('receipt_query_version') != 2:
+        # Old cursors used narrower date buckets. Replay the same fixed window
+        # once so records earlier in shard order are not missed after upgrade.
+        if meta.get('pit'):
+            try:
+                client.close_point_in_time(id=meta['pit'])
+            except Exception:
+                pass  # The old PIT expires; the replacement does not use it.
+        meta.update(pit=None, after=None, complete=False, receipt_query_version=2)
     if meta['complete']:
         return True
-    query = {'range': {'cloud_soc.normalized_at': {'gte': meta['lower'], 'lt': meta['end']}}}
+    query = receipt.query('cloud_soc.normalized_at', meta['lower'], meta['end'])
     total = db.execute('SELECT count(*) FROM input_hits').fetchone()[0]
     added = 0
 

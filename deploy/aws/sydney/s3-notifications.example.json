@@ -1,0 +1,106 @@
+{
+  "QueueConfigurations": [
+    {
+      "Id": "cloud-soc-0",
+      "QueueArn": "arn:aws:sqs:ap-southeast-2:123456789012:replace-existing-ingest-queue",
+      "Events": [
+        "s3:ObjectCreated:*"
+      ],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "cloudtrail/AWSLogs/123456789012/CloudTrail/"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Id": "cloud-soc-1",
+      "QueueArn": "arn:aws:sqs:ap-southeast-2:123456789012:replace-existing-ingest-queue",
+      "Events": [
+        "s3:ObjectCreated:*"
+      ],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "vpc/team-a/"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Id": "cloud-soc-2",
+      "QueueArn": "arn:aws:sqs:ap-southeast-2:123456789012:replace-existing-ingest-queue",
+      "Events": [
+        "s3:ObjectCreated:*"
+      ],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "alb/team-a/"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Id": "cloud-soc-3",
+      "QueueArn": "arn:aws:sqs:ap-southeast-2:123456789012:replace-existing-ingest-queue",
+      "Events": [
+        "s3:ObjectCreated:*"
+      ],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "services/shared/"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Id": "cloud-soc-4",
+      "QueueArn": "arn:aws:sqs:ap-southeast-2:123456789012:replace-existing-ingest-queue",
+      "Events": [
+        "s3:ObjectCreated:*"
+      ],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "tpot/team-a/cowrie/"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Id": "cloud-soc-5",
+      "QueueArn": "arn:aws:sqs:ap-southeast-2:123456789012:replace-existing-ingest-queue",
+      "Events": [
+        "s3:ObjectCreated:*"
+      ],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "tpot/team-a/suricata/"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

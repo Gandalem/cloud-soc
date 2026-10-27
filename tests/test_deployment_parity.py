@@ -593,3 +593,48 @@ def test_fresh_common_install_and_retry_preserve_pinned_start_and_state(tmp_path
         assert db.execute('select value from preserved').fetchall()==[(73,)]
     ownership_calls.expect(*(state/'runtime/state'/name for name in WORKERS))
     ownership_calls.expect_atomic_contract(state/'runtime')
+
+
+def test_active_compose_receipt_accepts_explicit_workspace_only(tmp_path):
+    from cloud_soc.deployment.host import active_command
+    state = tmp_path / 'original' / 'state' / 'server'
+    runtime = state / 'runtime';runtime.mkdir(parents=True)
+    workspace = tmp_path / 'release'
+    compose = workspace / 'deploy/server/compose.yaml';compose.parent.mkdir(parents=True)
+    compose.write_text('services: {}\n')
+    overlay = runtime / 'site.json';overlay.write_text('{}')
+    files = [str(compose), str(overlay)]
+    receipt = ['docker','compose','--project-name','cloud-soc-central',
+               '-f',files[0],'-f',files[1]]
+    (runtime / 'compose.active.json').write_text(json.dumps(receipt))
+    objects = {'portal':{'Config':{'Labels':{
+        'com.docker.compose.project.config_files':','.join(files)}}}}
+    # Reproduce the old refusal when no explicit release root is supplied.
+    with pytest.raises(ValueError, match='escapes approved'):
+        active_command(state, objects)
+    assert active_command(state, objects, workspace=workspace) == receipt[2:]
+    with pytest.raises(ValueError, match='escapes approved'):
+        active_command(state, objects, workspace=tmp_path / 'unrelated')
+    # The private receipt must still match the running Docker labels exactly.
+    objects['portal']['Config']['Labels']['com.docker.compose.project.config_files'] = str(overlay)
+    with pytest.raises(ValueError, match='exact active Compose'):
+        active_command(state, objects, workspace=workspace)
+
+
+def test_active_compose_receipt_rejects_symlink_inside_allowed_workspace(tmp_path):
+    from cloud_soc.deployment.host import active_command
+    state = tmp_path / 'original/state/server'
+    runtime = state / 'runtime';runtime.mkdir(parents=True)
+    workspace = tmp_path / 'release';workspace.mkdir()
+    actual = workspace / 'actual.yaml';actual.write_text('services: {}\n')
+    link = workspace / 'compose.yaml'
+    try:
+        link.symlink_to(actual)
+    except OSError:
+        pytest.skip('Symlink creation unavailable')
+    receipt = ['docker','compose','-f',str(link)]
+    (runtime / 'compose.active.json').write_text(json.dumps(receipt))
+    objects = {'portal':{'Config':{'Labels':{
+        'com.docker.compose.project.config_files':str(link)}}}}
+    with pytest.raises(ValueError, match='State path escapes'):
+        active_command(state, objects, workspace=workspace)

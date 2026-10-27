@@ -9,8 +9,10 @@ from datetime import datetime, timezone
 import re
 import shlex
 
-from cloud_soc.parsers.linux_auth import parse_linux_auth_line, ACCEPTED_PATTERN, FAILED_PASSWORD_PATTERN
+from cloud_soc.parsers.linux_auth import parse_linux_auth_line, ACCEPTED_PATTERN, FAILED_PASSWORD_PATTERN, INVALID_USER_PATTERN, SYSLOG_PATTERN
 from cloud_soc.privacy import display, REDACTED
+
+SSH_INVALID_USER_VERSION = "linux-ssh-invalid-user-v1"
 
 AUDIT_HEADER = re.compile(r"^type=(SYSCALL|PATH|CWD|EXECVE|PROCTITLE|EOE) msg=audit\((\d{10}(?:\.\d{1,9})?:\d{1,20})\):\s*(.*)$")
 # Linux x86_64 syscall numbers only. Unknown architectures are not guessed.
@@ -60,6 +62,18 @@ def parse_linux_ssh_source(source):
         if not present or any(v not in ('sshd', 'sshd-session') for v in present):
             return None
         body, stamp, pid, origin = message, source.get('@timestamp'), field(source, 'journald.pid'), 'journald'
+    elif kind in ('linux_file', 'linux_auth'):
+        legacy = SYSLOG_PATTERN.fullmatch(message)
+        if not legacy or not INVALID_USER_PATTERN.match(legacy['message']) or not field(source, 'event.timezone'):
+            return None
+        from cloud_soc.normalizers.time_context import raw_time_context
+        from cloud_soc.normalizers.ecs import parse_syslog_timestamp
+        try:
+            reference, zone, _ = raw_time_context(source)
+            stamp = parse_syslog_timestamp(legacy['timestamp'], reference_time=reference, source_timezone=zone).isoformat()
+            body, pid, origin = legacy['message'], int(legacy['pid']), 'rfc3164'
+        except (ValueError, TypeError, OverflowError):
+            return None
     else:
         return None
     if type(pid) is not int or not 0 < pid < 2**32 or not isinstance(stamp, str):
@@ -75,12 +89,16 @@ def parse_linux_ssh_source(source):
     outcome = 'failure'
     if not match:
         match, outcome = ACCEPTED_PATTERN.match(body), 'success'
+    invalid_user = False
+    if not match:
+        match = INVALID_USER_PATTERN.match(body)
+        invalid_user, outcome = bool(match), 'failure'
     if not match:
         return None
     suffix = body[match.end():]
     # OpenSSH can append a public-key fingerprint to an accepted login.
     # Validate that bounded format without returning or storing the fingerprint.
-    valid_suffix = re.fullmatch(r'(?: ssh2)?', suffix)
+    valid_suffix = re.fullmatch(r'' if invalid_user else r'(?: ssh2)?', suffix)
     if outcome == 'success' and match['method'] == 'publickey':
         valid_suffix = valid_suffix or re.fullmatch(
             r' ssh2: (?:ED25519|RSA|ECDSA) SHA256:[A-Za-z0-9+/]{43}', suffix)
@@ -97,9 +115,10 @@ def parse_linux_ssh_source(source):
     user = display(match['username'])
     if user in (None, REDACTED) or len(user) > 128:
         return None
-    return {'adapter': 'linux_ssh_v2', 'category': 'authentication', 'action': 'ssh_login',
+    return {'adapter': 'linux_ssh_invalid_user_v1' if invalid_user else 'linux_ssh_v2',
+            'category': 'authentication', 'action': 'ssh_invalid_user' if invalid_user else 'ssh_login',
             'outcome': outcome, 'target_user': user, 'source_ip': ip, 'source_port': port,
-            'process_pid': pid, 'protocol': 'ssh', 'auth_method': match['method'] if outcome == 'success' else 'password',
+            'process_pid': pid, 'protocol': 'ssh', 'auth_method': 'unknown' if invalid_user else match['method'] if outcome == 'success' else 'password',
             'occurred': occurred, 'origin': origin}
 
 

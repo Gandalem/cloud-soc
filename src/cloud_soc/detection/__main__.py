@@ -11,6 +11,7 @@ from cloud_soc.aws.__main__ import endpoint, protected_key
 from cloud_soc.detection.worker import approved_rules, run_once
 from cloud_soc.detection.incremental import run_incremental, utc
 from cloud_soc.detection.retrospective import run_retrospective
+from cloud_soc.processing.errors import error_code
 
 
 def main(argv=None):
@@ -95,16 +96,16 @@ def main(argv=None):
                                               accept_legacy_exclusion=args.accept_legacy_exclusion, **selection, early_auth=args.early_auth,
                                               status_id=args.status_id))
                     print(json.dumps(result), flush=True)
-                except Exception:
+                except Exception as error:
                     failed = True
-                    print("detection_cycle_failed; checkpoint retained; check portal health, state and permissions", flush=True)
+                    print("detection_cycle_failed reason=" + error_code(error, "incremental_cycle_failed") + "; checkpoint retained", flush=True)
                 if args.once:
                     return int(failed)
                 time.sleep(args.interval)
     except KeyboardInterrupt:
         return 130
-    except Exception:
-        print("detector_configuration_or_connection_failed; credentials and payloads omitted")
+    except Exception as error:
+        print("detector_configuration_or_connection_failed reason=" + error_code(error, "configuration_failed") + "; credentials omitted")
         return 1
 
 

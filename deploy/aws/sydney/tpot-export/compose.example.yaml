@@ -1,0 +1,28 @@
+# Not auto-started. Verify the pinned image and logstash-output-s3 plugin first.
+# Run two isolated projects with different data volumes and fixed source paths:
+# cowrie: /tpot-logs/cowrie.json, prefix tpot/team-a/cowrie/
+# suricata: /tpot-logs/eve.json, prefix tpot/team-a/suricata/
+services:
+  exporter:
+    image: docker.elastic.co/logstash/logstash:9.5.2
+    environment:
+      TPOT_LOG_GLOB: ${TPOT_LOG_GLOB:?Set an explicit container log file path}
+      TPOT_S3_BUCKET: ${TPOT_S3_BUCKET:?Set an approved Sydney bucket}
+      TPOT_S3_PREFIX: ${TPOT_S3_PREFIX:?Set the dedicated source prefix}
+      AWS_REGION: ap-southeast-2
+      LS_JAVA_OPTS: -Xms256m -Xmx256m
+    volumes:
+      - ./pipeline.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+      - ./logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ${TPOT_SOURCE_DIRECTORY:?Mount only the relevant honeypot log directory}:/tpot-logs:ro
+      - export-data:/usr/share/logstash/data
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+    # EC2 instance-role credentials only; no AWS key literals or exposed ports.
+    # IMDSv2 container access must be configured explicitly on the dedicated host.
+volumes:
+  export-data:

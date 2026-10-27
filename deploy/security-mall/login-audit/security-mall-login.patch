@@ -1,0 +1,143 @@
+diff --git a/.gitignore b/.gitignore
+index c2065bc..e11ee3a 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -35,3 +35,8 @@ out/
+ 
+ ### VS Code ###
+ .vscode/
++
++# Local security audit material
++/audit/
++/mall-console.log
++/mall.pid
+diff --git a/src/main/java/com/security/securitymall/controller/HomeController.java b/src/main/java/com/security/securitymall/controller/HomeController.java
+index a80cd06..29291fd 100644
+--- a/src/main/java/com/security/securitymall/controller/HomeController.java
++++ b/src/main/java/com/security/securitymall/controller/HomeController.java
+@@ -3,6 +3,8 @@ package com.security.securitymall.controller;
+ import com.security.securitymall.domain.*;
+ import com.security.securitymall.repository.*;
+ import jakarta.servlet.http.HttpSession;
++import jakarta.servlet.http.HttpServletRequest;
++import com.security.securitymall.audit.LoginAudit;
+ import org.springframework.http.*;
+ import org.springframework.stereotype.Controller;
+ import org.springframework.ui.Model;
+@@ -16,13 +18,15 @@ import java.util.*;
+ @Controller
+ public class HomeController {
+ 
++    private final LoginAudit loginAudit;
+     private final UserRepository userRepository;
+     private final ItemRepository itemRepository;
+     private final BoardRepository boardRepository;
+     private final OrderRepository orderRepository;
+ 
+     public HomeController(UserRepository userRepository, ItemRepository itemRepository,
+-                          BoardRepository boardRepository, OrderRepository orderRepository) {
++                          BoardRepository boardRepository, OrderRepository orderRepository, LoginAudit loginAudit) {
++        this.loginAudit = loginAudit;
+         this.userRepository = userRepository;
+         this.itemRepository = itemRepository;
+         this.boardRepository = boardRepository;
+@@ -62,9 +66,11 @@ public class HomeController {
+     public String loginForm() { return "login"; }
+ 
+     @PostMapping("/login")
+-    public String login(@RequestParam String username, @RequestParam String password, HttpSession session) {
++    public String login(@RequestParam String username, @RequestParam String password, HttpSession session, HttpServletRequest request) {
+         User user = userRepository.findByUsername(username);
+-        if (user != null && user.getPassword().equals(password)) {
++        boolean authenticated = user != null && user.getPassword().equals(password);
++        loginAudit.record(username, request.getRemoteAddr(), authenticated);
++        if (authenticated) {
+             session.setAttribute("loginUser", user);
+             return "redirect:/";
+         }
+@@ -409,4 +415,4 @@ public class HomeController {
+         userRepository.deleteById(id);
+         return "redirect:/admin";
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/src/main/java/com/security/securitymall/audit/LoginAudit.java b/src/main/java/com/security/securitymall/audit/LoginAudit.java
+new file mode 100644
+index 0000000..db5839e
+--- /dev/null
++++ b/src/main/java/com/security/securitymall/audit/LoginAudit.java
+@@ -0,0 +1,73 @@
++package com.security.securitymall.audit;
++
++import java.io.IOException;
++import java.nio.charset.StandardCharsets;
++import java.nio.file.*;
++import java.nio.file.attribute.PosixFilePermissions;
++import java.security.GeneralSecurityException;
++import java.security.SecureRandom;
++import java.time.Instant;
++import java.time.temporal.ChronoUnit;
++import java.util.HexFormat;
++import java.util.UUID;
++import javax.crypto.Mac;
++import javax.crypto.spec.SecretKeySpec;
++import org.springframework.stereotype.Component;
++import org.slf4j.LoggerFactory;
++
++/** Schema v1 metadata only. Credentials and submitted names never enter the log. */
++@Component
++public class LoginAudit {
++    private final Path directory;
++    private final byte[] key;
++
++    public LoginAudit() throws IOException {
++        this(Path.of(System.getProperty("mall.audit.dir", "audit")));
++    }
++
++    public LoginAudit(Path directory) throws IOException {
++        this.directory = directory.toAbsolutePath();
++        if (Files.isSymbolicLink(this.directory)) throw new IOException("audit_directory_invalid");
++        Files.createDirectories(this.directory);
++        Files.setPosixFilePermissions(this.directory, PosixFilePermissions.fromString("rwx------"));
++        Path keyFile = this.directory.resolve("account-hmac.key");
++        if (Files.isSymbolicLink(keyFile)) throw new IOException("audit_key_invalid");
++        if (!Files.exists(keyFile)) {
++            byte[] generated = new byte[32];
++            new SecureRandom().nextBytes(generated);
++            try (var out = Files.newOutputStream(Files.createFile(keyFile,
++                    PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------"))))) {
++                out.write(generated);
++            }
++        }
++        Files.setPosixFilePermissions(keyFile, PosixFilePermissions.fromString("rw-------"));
++        key = Files.readAllBytes(keyFile);
++        if (key.length != 32) throw new IOException("audit_key_invalid");
++    }
++
++    public synchronized void record(String submittedName, String peer, boolean success) {
++        try {
++            // Servlet socket address only; X-Forwarded-For is deliberately unused.
++            if (peer == null || !peer.matches("[0-9a-fA-F:.]{2,45}")) {
++                throw new IOException("audit_peer_invalid");
++            }
++            Mac mac = Mac.getInstance("HmacSHA256");
++            mac.init(new SecretKeySpec(key, "HmacSHA256"));
++            String account = HexFormat.of().formatHex(mac.doFinal(
++                ("security-mall:login:" + submittedName).getBytes(StandardCharsets.UTF_8)));
++            String line = "{\"schema_version\":1,\"@timestamp\":\"" + Instant.now().truncatedTo(ChronoUnit.MILLIS)
++                + "\",\"event_id\":\"" + UUID.randomUUID()
++                + "\",\"service_name\":\"security-mall\",\"event_action\":\"login\","
++                + "\"event_outcome\":\"" + (success ? "success" : "failure")
++                + "\",\"source_ip\":\"" + peer + "\",\"account_id\":\"" + account
++                + "\",\"account_key_id\":\"local-v1\"}\n";
++            Path log = directory.resolve("security-audit.jsonl");
++            if (Files.isSymbolicLink(log)) throw new IOException("audit_file_invalid");
++            if (!Files.exists(log)) Files.createFile(log,
++                PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
++            Files.writeString(log, line, StandardCharsets.UTF_8, StandardOpenOption.APPEND);
++        } catch (IOException | GeneralSecurityException e) {
++            LoggerFactory.getLogger(LoginAudit.class).error("login_audit_write_failed");
++        }
++    }
++}

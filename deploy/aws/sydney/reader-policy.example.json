@@ -1,0 +1,36 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "sqs:ReceiveMessage",
+        "sqs:DeleteMessage",
+        "sqs:ChangeMessageVisibility",
+        "sqs:GetQueueAttributes"
+      ],
+      "Resource": "arn:aws:sqs:ap-southeast-2:123456789012:replace-existing-ingest-queue"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation"
+      ],
+      "Resource": "arn:aws:s3:::replace-with-existing-sydney-log-bucket"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectVersion"
+      ],
+      "Resource": [
+        "arn:aws:s3:::replace-with-existing-sydney-log-bucket/cloudtrail/*",
+        "arn:aws:s3:::replace-with-existing-sydney-log-bucket/vpc/*",
+        "arn:aws:s3:::replace-with-existing-sydney-log-bucket/alb/*",
+        "arn:aws:s3:::replace-with-existing-sydney-log-bucket/services/*",
+        "arn:aws:s3:::replace-with-existing-sydney-log-bucket/tpot/*"
+      ]
+    }
+  ]
+}
