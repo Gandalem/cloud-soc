@@ -200,7 +200,8 @@ def stop_containers(args, expected):
             continue
         if any(row['Id'] in targets and row['State'].get('Paused') for row in rows):
             raise RemovalError('일시 정지된 컨테이너가 있습니다. 상태를 확인하세요. 데이터는 삭제하지 않았습니다.')
-        remaining = deadline - time.monotonic()
+        # Floating-point deadline arithmetic can round slightly above the original budget.
+        remaining = min(STOP_TIMEOUT, deadline - time.monotonic())
         if remaining <= 0:
             raise RemovalError('종료 대기 시간이 지났습니다. 남은 서비스와 데이터는 삭제하지 않았습니다.')
         print(f'서버 종료 중 · 대기 한도 {STOP_TIMEOUT}초')

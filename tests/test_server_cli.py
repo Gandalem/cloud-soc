@@ -254,6 +254,20 @@ class RemovalWorkflowTests(unittest.TestCase):
         self.assertEqual((self.state / 'compose.env').read_text(), 'synthetic-settings-canary')
         self.assertEqual(self.rows, {})
 
+    def test_monotonic_rounding_cannot_exceed_total_stop_budget(self):
+        # This clock value rounds (start + 90) - start above 90 even without elapsed time.
+        with patch.object(self.tool.time, 'monotonic', return_value=511.99999999999994):
+            self.apply()
+        self.assertEqual(self.rows, {})
+
+    def test_deadline_is_shared_across_stop_phases(self):
+        with patch.object(self.tool.time, 'monotonic', side_effect=[1000, 1001, 1002, 1003, 1091]):
+            with self.assertRaises(self.tool.RemovalError):
+                self.apply()
+        self.assertTrue(self.rows['id-elasticsearch']['State']['Running'])
+        self.assertTrue(self.state.exists())
+        self.assertFalse(any(call[0] == 'rm' for call in self.calls))
+
     def test_timeout_error_running_137_and_oom_never_remove_data_or_leak_output(self):
         original = deepcopy(self.rows)
         for failure in ('timeout', 'error', 'running', '137', 'oom'):
