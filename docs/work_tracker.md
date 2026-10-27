@@ -1,3 +1,8 @@
+# 9종 운영 연결 — 2026-10-28 KST
+
+- [ ] SCENARIO-LIVE-20261028-01 진행 중: 사용자 요청으로 9종 운영 탐지 시작 경로를 준비한다. 기존 기본·쇼핑몰 워커/키/SQLite/체크포인트는 보존한다. 전용 detector-security-scenarios 상태 소유권과 실행 안내를 추가한다. 실제 생산자 설치·앱 업무 기능 연결은 사용자 대상 정보가 필요하며, 합성 이벤트·자동 시험·검증 명령은 실행하지 않는다. 사용자 제공 결과로 쇼핑몰 원본38/정규화38/참조누락0 및 WEB-AUTH-01 경보1건(증거7건)은 확인됐으나 9종 운영 완료를 뜻하지 않는다.
+- 작성 결과: detection CLI/incremental에 정확한 9종 선택만 허용하는 detector-security-scenarios 상태를 추가했다. deploy/security-scenarios/start-detector.sh는 기존 쇼핑몰 venv를 재사용하고 새 키/CA사본/고정 시작 시각/SQLite/프로세스 잠금으로 명시적 운영 시작을 제공한다. docs/security_scenarios_operations.md에 실행과 실제 생산자별 추가 연결을 구분했다. 사용자 답변으로 대상은 Ubuntu+security-mall만으로 확정했다. 테스트·검증·실제 워커 실행은 수행하지 않았다. auditd/Suricata/방화벽 해석기 및 쇼핑몰 실제 권한/내보내기/업로드 연결은 남아 있으므로 인수 항목을 완료 처리하지 않는다.
+
 # 두 브랜치 통합 기록 — 2026-10-27
 
 - MALL-LOGIN-DETECTOR-20261027-01 권한 안내 수정: 사용자 첨부에서 Python의존성설치는완료됐지만root보호state하위mkdir/start.txt생성이Permissiondenied로실패했다. 전용탐지키·시각·SQLite를$HOME/.local/state/cloud-soc/mall-login-detector로분리하는안내로수정한다. 서버state재귀chown/chmod는하지않고사용자출력범위에서는아직키발급·워커시작전으로구분한다.
