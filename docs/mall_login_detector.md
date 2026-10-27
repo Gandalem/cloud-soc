@@ -4,6 +4,8 @@
 
 ## 최초 준비
 
+중앙 설치기의 `state`는 보호된 root 소유 경로일 수 있다. 전용 탐지 상태는 사용자 홈의 별도 경로에 두며 서버 `state`의 소유권/권한을 재귀 변경하지 않는다. 예전 경로에 이미 키나 SQLite를 생성했다면 새 경로로 무조건 재발급/재시작하지 말고 기존 자료를 먼저 보존해야 한다.
+
 ```bash
 cd ~/cloud-soc-local
 python3.12 -m venv .venv-mall-detector
@@ -11,12 +13,14 @@ python3.12 -m venv .venv-mall-detector
   -r requirements.txt -r deploy/server/requirements.txt \
   -r deploy/aws/requirements.txt -r deploy/oci/requirements.txt
 umask 077
-mkdir -p state/mall-login-detector
+MALL_DETECTOR_STATE="$HOME/.local/state/cloud-soc/mall-login-detector"
+mkdir -p "$MALL_DETECTOR_STATE"
+chmod 700 "$MALL_DETECTOR_STATE"
 # 한 번만 생성. 이미 있으면 기존 시작 시각과 상태를 유지한다.
 (set -o noclobber; date -u -d '2 minutes ago' +%Y-%m-%dT%H:%M:%SZ \
-  > state/mall-login-detector/start.txt)
+  > "$MALL_DETECTOR_STATE/start.txt")
 sudo install -o "$(id -u)" -g "$(id -g)" -m 644 \
-  state/server/tls/ca.crt state/mall-login-detector/ca.crt
+  state/server/tls/ca.crt "$MALL_DETECTOR_STATE/ca.crt"
 ```
 
 ## 전용 키 발급
@@ -24,20 +28,21 @@ sudo install -o "$(id -u)" -g "$(id -g)" -m 644 \
 이미 있는 키를 덮어쓰지 않는다. 실패 시 기존 파일/키를 지우거나 자동 재발급하지 않는다. 중앙 Elasticsearch 관리자 비밀번호 파일을 내부에서 사용하고 값은 출력하지 않는다. 기존 소유자 계정에서 sudo로 설정 명령만 수행한 뒤 새 키 파일을 해당 사용자에게 돌려준다. 기존 서버 키·비밀번호·계정은 교체하지 않는다.
 
 ```bash
+MALL_DETECTOR_STATE="$HOME/.local/state/cloud-soc/mall-login-detector"
 sudo env PYTHONPATH="$PWD/src" \
   "$PWD/.venv-mall-detector/bin/python" -m cloud_soc.detection.setup \
   --es-url https://192.168.1.159:9200 \
-  --ca-file "$PWD/state/mall-login-detector/ca.crt" \
+  --ca-file "$MALL_DETECTOR_STATE/ca.crt" \
   --password-file "$PWD/state/server/secrets/elastic_password" \
   --worker detector \
-  --key-file "$PWD/state/mall-login-detector/detector.key"
+  --key-file "$MALL_DETECTOR_STATE/detector.key"
 ```
 
 성공한 경우에만 다음을 실행한다.
 
 ```bash
-sudo chown "$(id -u):$(id -g)" state/mall-login-detector/detector.key
-chmod 600 state/mall-login-detector/detector.key
+sudo chown "$(id -u):$(id -g)" "$MALL_DETECTOR_STATE/detector.key"
+chmod 600 "$MALL_DETECTOR_STATE/detector.key"
 ```
 
 키는30일 만료이며 만료 시 명시적 교체가 필요하다. 기존 API 키 파일이 이미 있으면 발급 단계를 반복하지 않는다.
@@ -48,15 +53,16 @@ chmod 600 state/mall-login-detector/detector.key
 
 ```bash
 cd ~/cloud-soc-local
+MALL_DETECTOR_STATE="$HOME/.local/state/cloud-soc/mall-login-detector"
 PYTHONPATH="$PWD/src" .venv-mall-detector/bin/python -m cloud_soc.detection \
   --run --additional-rules WEB-AUTH-01 \
   --status-id detector-mall-login \
-  --state "$PWD/state/mall-login-detector/runtime.sqlite" \
-  --start "$(cat state/mall-login-detector/start.txt)" \
+  --state "$MALL_DETECTOR_STATE/runtime.sqlite" \
+  --start "$(cat "$MALL_DETECTOR_STATE/start.txt")" \
   --interval 10 --lateness-seconds 180 \
   --es-url https://192.168.1.159:9200 \
-  --ca-file "$PWD/state/mall-login-detector/ca.crt" \
-  --api-key-file "$PWD/state/mall-login-detector/detector.key"
+  --ca-file "$MALL_DETECTOR_STATE/ca.crt" \
+  --api-key-file "$MALL_DETECTOR_STATE/detector.key"
 ```
 
 `detector-mall-login` 상태 ID는 정확히 WEB-AUTH-01만 선택하는 별도 워커에 허용한다. 기존 detector-additional 상태를 덮어쓰지 않는다. 이 프로세스는 soc-normalized-v1을 읽고 선택 규칙의 경보·처리 이력을 중앙에 기록한다. 전용 키는 정상 기존 탐지 역할을 사용하며 별도 조직 필터를 적용한 키는 아니다. 실제 규칙은 서비스/가명 계정/IP 등으로 그룹화한다.

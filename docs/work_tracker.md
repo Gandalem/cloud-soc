@@ -1,5 +1,7 @@
 # 두 브랜치 통합 기록 — 2026-10-27
 
+- MALL-LOGIN-DETECTOR-20261027-01 권한 안내 수정: 사용자 첨부에서 Python의존성설치는완료됐지만root보호state하위mkdir/start.txt생성이Permissiondenied로실패했다. 전용탐지키·시각·SQLite를$HOME/.local/state/cloud-soc/mall-login-detector로분리하는안내로수정한다. 서버state재귀chown/chmod는하지않고사용자출력범위에서는아직키발급·워커시작전으로구분한다.
+
 - [ ] MALL-LOGIN-DETECTOR-20261027-01: 사용자 출력으로 원본10건·정규화10건·참조누락0·경보0 및기존워커에WEB-AUTH-01미포함을확인했다. 기존배포정책/워커/체크포인트를유지하고 별도호스트Python워커·키·SQLite·detector-mall-login상태로쇼핑몰탐지를연결하는경로를준비한다. 기존detector-additional상태덮어쓰기를막기위해전용status-id는정확한WEB-AUTH-01선택에만허용한다. 사용자서버의규칙/프로세스/키에는직접접근하지않는다.
 - 코드/격리검사: detection CLI와incremental에전용status소유권을추가하고모의ES의실제WEB-AUTH-01시퀀스/기존상태보존/오선택거부및기존증분·시퀀스26건pass. 최초새테스트2건은mockstatus기록방식·명시별도state누락을수정후pass했다. Ruffpass. docs/mall_login_detector.md에신규전용키발급·호스트Python실행·사용자실제5실패후성공·조회명령을작성했다. 기존정책/컨테이너/키/체크포인트는직접변경하지않았고실제사용자경보인수는미완료다.
 
