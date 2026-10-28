@@ -186,7 +186,7 @@ def worker_inventory(engine, project, *, stopped=False):
     return found
 
 
-def active_command(state, objects):
+def active_command(state, objects, *, workspace=None):
     if (Path(state) / 'runtime/install.json').exists() and not (Path(state) / 'runtime/current.json').exists():
         return None
     if 'portal' not in objects:
@@ -204,10 +204,18 @@ def active_command(state, objects):
         if isinstance(value, list) and value[:2] == ['docker', 'compose']:
             observed = [value[i+1] for i, v in enumerate(value[:-1]) if v == '-f']
             if observed == files:
+                # A reviewed release may live next to the original checkout.
+                # Only its exact canonical pair gains this additional root.
+                base = Path(workspace).resolve() / 'deploy/server/compose.yaml' if workspace else None
+                canonical = base and observed == [str(base), str(Path(state) / 'runtime/site.json')]
                 for name in observed:
-                    checked_path(name, Path(state).parent.parent, file=True)
+                    root = Path(workspace).resolve() if canonical and Path(name) == base else Path(state).parent.parent
+                    checked_path(name, root, file=True)
                 return value[2:]
-    raise ValueError('Cannot identify the exact active Compose command; provide its protected receipt')
+    from cloud_soc.deployment.compose_review import ComposeReviewError
+    raise ComposeReviewError('실행 중인 Compose 설정과 보호 기록이 다릅니다. '
+                             '기존 설정 파일을 확인해 manage.py review-compose로 검토한 뒤 '
+                             'plan --compose-review에 보호된 검토 기록을 지정하세요')
 
 
 def public_environment(obj):
@@ -307,7 +315,7 @@ def inspect_prerequisites(engine, state, image, project, value, contract, adopti
                               if (runtime / 'keys/slack-notifier.key').is_file() else None}))
 
 
-def snapshot(engine, workspace, state, image, project='cloud-soc-central'):
+def snapshot(engine, workspace, state, image, project='cloud-soc-central', *, compose_review=None):
     workspace, state = Path(workspace).resolve(), Path(state).resolve()
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,62}', project) or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,200}', image):
         raise ValueError('Invalid image/project identity')
@@ -317,7 +325,12 @@ def snapshot(engine, workspace, state, image, project='cloud-soc-central'):
         raise ValueError('Interrupted upgrade retained; run manage.py recover before making a new plan')
     value = policy(workspace);objects = containers(engine, project)
     inventory = worker_inventory(engine, project)
-    active = active_command(state, objects)
+    reviewed_files = {}
+    if compose_review:
+        from cloud_soc.deployment.compose_review import load
+        active, reviewed_files = load(engine, state, compose_review, objects, project)
+    else:
+        active = active_command(state, objects, workspace=workspace)
     env = compose_environment(state, image, objects)
     original = engine.json(['compose', *active, 'config', '--format', 'json']) if active else {}
     runtime = state / 'runtime'
@@ -330,6 +343,7 @@ def snapshot(engine, workspace, state, image, project='cloud-soc-central'):
     selected = {name: {'id': obj['Id'], 'image': obj['Image'], 'command': obj['Config']['Cmd'],
                       'mounts': obj.get('Mounts', []), 'environment': public_environment(obj)} for name, obj in objects.items()}
     fingerprints = protected_hashes(state)
+    fingerprints.update(reviewed_files)
     for obj in objects.values():
         for mount in obj.get('Mounts', []):
             path = Path(mount['Source'])
@@ -351,7 +365,8 @@ def snapshot(engine, workspace, state, image, project='cloud-soc-central'):
         prerequisites = inspect_prerequisites(engine, state, image, project, value, contract, adoption)
     # Only stable configuration participates in the stale-plan guard, not progress counters.
     identity = {'containers': selected, 'protected_sha256': fingerprints, 'image': candidate,
-                'source_sha256': digest(source), 'prerequisites': prerequisites}
+                'source_sha256': digest(source), 'prerequisites': prerequisites,
+                'previous_compose': active}
     result = {'plan_version': 1, 'policy': value, 'workspace': str(workspace), 'state': str(state), 'project': project,
         'image': image, 'image_id': candidate, 'source': source, 'source_sha256': digest(source),
         'fresh': fresh, 'contract': contract, 'adoption': adoption, 'resources': resources,
@@ -359,9 +374,14 @@ def snapshot(engine, workspace, state, image, project='cloud-soc-central'):
         'site': site_overlay(original, objects) if original else {}, 'compose_environment': env,
         'new_workers': [n for n in ALL_WORKERS if n not in objects], 'prerequisites': prerequisites,
         'worker_inventory': inventory, 'fingerprint': digest(identity)}
+    if compose_review:
+        result['compose_review'] = str(compose_review)
     desired = engine.json(['compose', '--profile', 'initialization', '--project-name', project, '--env-file', str(state / 'compose.env'),
         '-f', str(workspace / 'deploy/server/compose.yaml'), '-f', '-', 'config', '--format', 'json'],
         input=json.dumps(configure_site(result, runtime)), env=env)
+    if compose_review:
+        from cloud_soc.deployment.compose_review import preserved_site
+        preserved_site(original, desired, objects)
     result['compose_validation'] = validate_rendered(value, desired, image)
     return result
 
@@ -371,7 +391,9 @@ def summary(plan):
         'required_workers': list(ALL_WORKERS), 'verified_rules': list(plan['policy']['verified_rules']),
         'preserve': ['data', 'state_identity', 'checkpoints', 'certificates', 'existing_key_material', 'site_endpoints'],
         'permissions': 'additive_exact_runtime_grants_with_restricted_scope_refusal',
-        'infrastructure_changes': {'kibana': '1536MiB limit / 1024MiB Node heap', 'elasticsearch': '3072MiB limit / 1536MiB heap'}}
+        'infrastructure_changes': {'kibana': '1536MiB limit / 1024MiB Node heap', 'elasticsearch': '3072MiB limit / 1536MiB heap'},
+        'compose_review': plan.get('compose_review'),
+        'post_apply_checks': ['portal_direct_login', 'portal_external_link_login', 'mobile_portal_login', 'new_agent_log_receipt']}
 
 
 def configure_site(plan, runtime):
@@ -451,7 +473,8 @@ def apply(engine, plan, *, poll=None):
     if not plan['resources']['ok']:
         raise ValueError('Server resource preflight failed; no mutation performed')
     with lock(runtime):
-        current = snapshot(engine, workspace, state, plan['image'], plan['project'])
+        current = snapshot(engine, workspace, state, plan['image'], plan['project'],
+                           **({'compose_review': plan['compose_review']} if plan.get('compose_review') else {}))
         if current['fingerprint'] != plan['fingerprint']:
             raise ValueError('Deployment changed after planning; no mutation performed')
         if not current['resources']['ok']:
@@ -484,10 +507,18 @@ def apply(engine, plan, *, poll=None):
         old_site = save_previous_site(runtime, run)
         canonical = ['compose', '--project-name', plan['project'], '--env-file', str(state / 'compose.env'),
                      '-f', str(workspace / 'deploy/server/compose.yaml'), '-f', str(runtime / 'site.json')]
+        if plan.get('compose_review'):
+            from cloud_soc.deployment.compose_review import load
+            active_now, reviewed_now = load(engine, state, plan['compose_review'], old_objects, plan['project'])
+            if active_now != active or any(plan['protected_sha256'].get(p) != h for p, h in reviewed_now.items()):
+                raise ValueError('Compose review changed before activation; no services stopped')
         atomic_json(run / 'recovery.json', {'previous_compose': active, 'old_names': list(old_objects),
             'old_contract': json.loads(old_contract) if old_contract else None,
             'old_current': json.loads((runtime / 'current.json').read_text()) if (runtime / 'current.json').is_file() else None,
-            'old_site': old_site, 'canonical': canonical, 'environment': plan['compose_environment']})
+            'old_site': old_site, 'canonical': canonical, 'environment': plan['compose_environment'],
+            'reviewed_compose_files': {name: h for name, h in plan['protected_sha256'].items()
+                                      if plan.get('compose_review') and Path(name).is_relative_to(runtime / 'compose-reviews')},
+            'previous_images': sorted({o['Image'] for o in old_objects.values()}) if plan.get('compose_review') else []})
         atomic_json(runtime / 'pending.json', {'run': str(run)})
         try:
             if active:
@@ -570,6 +601,14 @@ def apply(engine, plan, *, poll=None):
 
 def _restore_execution(engine, runtime, run, saved):
     active = saved['previous_compose']
+    # A changed/missing frozen configuration must not be used to stop or replace services.
+    for name, expected in saved.get('reviewed_compose_files', {}).items():
+        path = checked_path(name, runtime / 'compose-reviews', file=True)
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise ValueError('Reviewed recovery configuration changed; pending recovery retained')
+    for image in saved.get('previous_images', []):
+        if engine.json(['image', 'inspect', image])[0]['Id'] != image:
+            raise ValueError('Previous recovery image is not available locally')
     project = saved['canonical'][saved['canonical'].index('--project-name') + 1]
     present = containers(engine, project)
     targets = [project + '-' + name + '-1' for name in APP_SERVICES if name in present]

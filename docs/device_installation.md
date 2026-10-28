@@ -1,6 +1,6 @@
 # 장치 설치와 배포
 
-새 관리 장치의 설치·패키징·OS 시험을 한 문서로 통합했다. 기준은 `main ac64198`(2026-10-26)이다. 기존 수동 패키지는 [에이전트 운영](agent_management.md), 기존 Windows의 Discovery 갱신/Repair는 [Windows 운영](windows_agents.md)을 따른다. 전체 검증 상태는 [프로젝트 상태](project_status.md)에 모았다.
+새 관리 장치의 설치·패키징·OS 시험 안내다. 상태 기준은 `main b737b23`(2026-10-27, PR21 병합e804569·기능 head5bcef7f)이며 이전 ac64198 시험 이력도 유지한다. 기존 수동 패키지는 [에이전트 운영](agent_management.md), 기존 Windows의 Discovery 갱신/Repair는 [Windows 운영](windows_agents.md)을 따른다. 전체 검증 상태는 [프로젝트 상태](project_status.md)에 모았다.
 
 ## 장치 설치
 
@@ -48,6 +48,8 @@ Linux는 보호된 같은 설치의 확인된 실패에만 재등록한다. 새 
 
 Windows 관리 EXE의 명령은 `--install --bundle <folder>`, `--status`, `--start`, `--stop`, `--uninstall`, `--uninstall --purge`, `--help`다. GUI 제거에서는 자료 보존을 기본으로 선택하고 자료까지 삭제할 때 추가 확인을 받는다. `--refresh`는 SYSTEM task 내부 동작이고 `--quiet`는 메시지 창 대신 CLI 출력을 사용한다. 보존 제거 후 purge 재호출과 일부 제거 재시도는 지원하지만 manager self-uninstall/in-place upgrade는 제공하지 않는다. 시험 controller가 manager까지 정리한 결과를 제품 완전 삭제 기능으로 해석하지 않는다.
 
+Windows에서 설치 기록을 찾지 못하면 상태 변경을 중단하고 기존 수집기와 자료를 확인하도록 안내한다. 기록이 없다는 이유만으로 수집기 자료를 삭제하거나 새 설치가 안전하다고 판단하지 않는다.
+
 서버 장치 종료는 해당 패키지·조직·소유자 범위의 키를 폐기하고 원격 재조회까지 확인한다. 실패는 revocation_pending/uncertain으로 남으며 같은 요청을 재시도한다. 이력 영구 삭제/자동 보관 만료는 제공하지 않는다. 종료 이력도 장치/패키지200개 한도에 포함된다.
 
 ### 자료 삭제 후 새 설치
@@ -80,7 +82,7 @@ sudo sh soc uninstall
 sh soc --help
 ```
 
-설치는 실습/사내망/클라우드, 접속 주소와 할당 IP, 수집 주소, 시간 동기화를 확인한다. 기존 `state/server`가 있으면 덮어쓰지 않고 [공통 복구/업그레이드](runtime_deployment.md)를 안내한다. 제거의 기본 선택은 데이터/CA 보존이고 완전 삭제는 DELETE 추가 확인이 필요하다. 공용 Docker 제거·global prune·Apache 삭제는 호출하지 않는다. 기존10/21 설치·제거 시험과 이후 추가한 메뉴 자체의 실제 인수는 구분한다.
+설치는 실습/사내망/클라우드, 접속 주소와 할당 IP, 수집 주소, 시간 동기화를 확인한다. 기존 `state/server`가 있으면 덮어쓰지 않고 [공통 복구/업그레이드](runtime_deployment.md)를 안내한다. 제거의 기본 선택은 데이터/CA 보존이고 완전 삭제는 DELETE 추가 확인이 필요하다. 공용 Docker 제거·global prune·Apache 삭제는 호출하지 않는다.10/27 새 WSL에서 메뉴를 통한12서비스 설치·상태·삭제 취소·보존 제거·동일 키/인증서/합성 원본 복구·purge/반복 제거를 확인했다.10/21 시험과 별도의 후속 인수이며 물리 VM/EC2·재부팅·실장치 경보 인수로 확대하지 않는다.
 
 ## Windows 보안 계약
 
@@ -125,6 +127,10 @@ Portal은 `deploy/server/windows-native.compose.yaml`을 명시 적용한다. SO
 |10/26 Git/CI | PR20 main 병합17a32c4, 최종 코드50ebce9 Actions40204762899 Ubuntu/Windows 성공, 기록main ac64198 | 운영 서버/장치 자동 배포 아님 |
 |10/26 최소 재설치 | 작성100% 후 필수 코드 검사·Linux root 임시 파일 검사, Windows 실제 EXE 자료 삭제/새 장치 설치·새 receipt/일반 로그·이전 원본/이력 보존·정리 | 이전 큐/신원 복원·Linux 실제 재설치·GUI 직접 클릭·운영 서명·새 경보/재부팅 검사 아님 |
 |10/26 후속 WSL 재설치 | 새 Ubuntu24.04.5/systemd의 실제 bootstrap/Filebeat·TLS ES/Portal에서 첫 설치/수신→보존 제거/덮어쓰기 차단→명시 자료 삭제/이전 장치 종료→새 장치·수집기 UUID/새 receipt·정확한 새 일반 요청 수신→기존 원본/제거 이력 해시 유지→자료 삭제·장치 종료·시험 배포판/서버/비밀값 정리 | 보존 큐·기존 신원 복원·실제 DEB 패키지·일반 VM 부팅·새 공격/경보/재부팅 인수 아님 |
+|10/26 수동 키 연장 | 실제 WSL/Filebeat의 같은 키·수집기 ID/프로세스·설정/keystore/receipt·권한을 유지해 연장 전후 새 로그 수신. 사용자 클릭 성공과 원격/로컬 만료 대조·정리 | 새 비밀값 교체/자동 회전·기존 만료 시각 경과·Windows 추가 인수·운영 배포와 별도 |
+|10/27 Ubuntu24.04.2 VMware DEB | 제품1.0.0 실제 dpkg 설치·소유권/모드·전역 도움말·제거, 동일 소스의 합성 낮은 버전→제품 교체, 비활성 수집기 unit/합성 자료 잔존 시 제거 거부·명시 정리6단계 통과. 사후 패키지/고정 경로8개 부재·시험 staging 정리 확인 | 실행 중 수집기·과거 출시 버전 호환·새 등록/실제 수신 시험 아님. 기존 중앙/Docker/키/로그 변경 없음 |
+|10/27 서버 메뉴 WSL | 새 Ubuntu24.04.5/systemd·독립 Docker의12서비스 설치·HTTPS·keep/동일 자료 복구·purge/반복 제거·작업자 init·시험 자원 정리 | 물리 Ubuntu/EC2·재부팅·실장치 수신/경보·전체 분석 drain/HA 인수는 아님 |
+|10/27 PR21/CI | 종료 시간 반올림 수정5bcef7f의 Actions40424825929 양 OS 성공·main 병합e804569·기록b737b23 | WSL 보고서의 재실행이나 운영 배포를 뜻하지 않음 |
 
 양 OS의 합성 WAF 시험은 SQLi2+비SQLi3→정규화5/경보0, SQLi3번째→정규화6/WEB-SITE-WAF-001 경보1, 재분석 기존1/신규0이다. 근거3건의 normalized/raw index/id·event_hash·조직/host/site/package와 privacy canary 미전송을 확인했다. 설치 probe는 분석용 양성 입력에 세지 않았다. 파일에 기록한 합성 입력이며10/19~20의 실제 HTTP/SQLi 시험과 별도다.
 
@@ -141,6 +147,6 @@ Portal은 `deploy/server/windows-native.compose.yaml`을 명시 적용한다. SO
 
 ## 남은 범위
 
-기능 구현과 미확인 실행 결과를 구분한다. Windows sign/verify·Portal release 설정, DEB 빌드, 서버 메뉴는 구현돼 있다. 운영 인증서로 서명한 산출물 공급/조직 정책 인수, DEB 실제 패키지 설치/제거, 새 서버 메뉴 별도 실제 인수 완료는 확인하지 못했다. 기존 설치/수집·제거 성공을 취소하는 판정이 아니다.
+기능 구현과 추가 인수를 구분한다. 남은 릴리스 인수는 운영 인증서로 서명한 Windows EXE 공급·Portal 연결/조직 정책, 실제 GUI·OS/정책·중단 경계다. DEB 패키지 자체의 실제 설치·동일 소스 합성 낮은 버전 교체·제거 보호/정리는10/27 Ubuntu VM에서 확인했다. 과거 출시 버전/실행 중 수집기의 업그레이드 호환까지 확인한 것은 아니다. sign/verify·Portal release 설정은 구현돼 있다. 서버 메뉴의 WSL 실제 설치·복구·제거와 bootstrap/native의 설치·재설치도 완료됐으므로 이 항목들을 다시 미검증으로 묶지 않는다.
 
-INSTALL-DEVICE-UX-02-RECOVERY는 기존 장치 인수·제거 후 재설치/보존 큐 복원, INSTALL-DEVICE-UX-03-LIFECYCLE은 수집 키 교체·감사 보관/한도·다중 배포·승인/업데이트의 후속 범위다. control channel·RFC8628·공인 인증서 갱신·TUF 업데이트는 포함하지 않았다. 전체 commit 장애/대규모 배포·GUI/OS 정책 매트릭스도 별도 인수다. 이 목록을 새 사용자 우선순위나 실행 허가로 해석하지 않는다.
+INSTALL-DEVICE-UX-02-RECOVERY에 남은 것은 보존 큐·읽기 위치·기존 신원 복원과 키 조정이다. 자료 삭제 후 새 등록 재설치는 하위 REINSTALL-BASIC/WSL로 완료했다. INSTALL-DEVICE-UX-03-LIFECYCLE의 수동 유효기간 연장도 KEY-EXTEND/WSL/CLICK-LAB으로 완료했으며, 새 비밀값 교체/자동 회전·감사 보관/한도 회수·일괄 배포/승인/업데이트는 후속 범위다. manager 자체 제거는 감사/상태 보존 정책을 먼저 선택해야 한다. control channel·RFC8628·공인 인증서 갱신·TUF 업데이트는 이번 범위에 포함하지 않았으며 새 실행 승인으로 해석하지 않는다.

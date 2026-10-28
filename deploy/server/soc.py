@@ -1,5 +1,6 @@
 """Local central-server menu; underlying ownership checks remain authoritative."""
 import importlib.util
+import http.client
 import ipaddress
 import json
 import os
@@ -47,13 +48,37 @@ def host_input(ask, prompt, *, default=''):
         return value.lower()
 
 
+def ec2_public_ipv4():
+    """Read only the EC2 public address through IMDSv2; no proxy or credentials."""
+    def request(method, path, headers):
+        connection = http.client.HTTPConnection('169.254.169.254', timeout=0.5)
+        try:
+            connection.request(method, path, headers=headers)
+            response = connection.getresponse()
+            data = response.read(257)
+            if response.status != 200 or len(data) > 256:
+                return None
+            return data.decode('ascii')
+        finally:
+            connection.close()
+
+    try:
+        token = request('PUT', '/latest/api/token', {'X-aws-ec2-metadata-token-ttl-seconds': '60'})
+        if not token or not token.isascii() or not token.isprintable():
+            return None
+        raw = request('GET', '/latest/meta-data/public-ipv4', {'X-aws-ec2-metadata-token': token})
+        address = ipaddress.IPv4Address(raw.strip()) if raw else None
+        return str(address) if address and address.is_global else None
+    except (OSError, ValueError, UnicodeError, http.client.HTTPException):
+        return None
+
+
 def install(*, ask=input):
     state = ROOT / 'state/server'
     if state.exists() or state.is_symlink():
         raise RuntimeError('기존 서버 자료가 있습니다. 새 설치를 진행하지 않았습니다. soc status로 상태를 확인하고 docs/runtime_deployment.md의 복구 절차를 따르세요.')
     print('\n서버 설치\n  lab    실습\n  lan    사내망\n  cloud  클라우드')
     mode = choice(ask, '설치 환경 [lab]: ', ('lab', 'lan', 'cloud'), default='lab', aliases={'1':'lab','2':'lan','3':'cloud'})
-    host = host_input(ask, '포털 접속 DNS 또는 IPv4: ')
     addresses = command(['ip', '-4', '-j', 'address', 'show'], capture_output=True, text=True)
     if addresses.returncode:
         raise RuntimeError('서버 IP를 조회하지 못했습니다. ip -4 address로 주소를 확인하세요.')
@@ -62,6 +87,20 @@ def install(*, ask=input):
     print('서버에 할당된 IPv4: ' + (', '.join(candidates) or '없음'))
     if mode == 'cloud':
         print('클라우드 공인 접속 주소와 서버에 할당된 사설 IP는 다를 수 있습니다.')
+    proposed = (ec2_public_ipv4() if mode == 'cloud' else
+                candidates[0] if mode == 'lan' and len(candidates) == 1 else
+                '127.0.0.1' if mode == 'lab' else '') or ''
+    if mode == 'cloud' and not proposed:
+        print('공인 IP를 자동으로 확인하지 못했습니다. 접속할 도메인 또는 공인 IPv4를 직접 입력하세요.')
+    hint = f' [{proposed}]' if proposed else ''
+    host = host_input(ask, f'포털 접속 DNS 또는 IPv4{hint}: ', default=proposed)
+    try:
+        public_host = ipaddress.IPv4Address(host)
+    except ValueError:
+        public_host = None
+    if mode == 'cloud' and public_host is not None:
+        print('공인 IP가 변경될 수 있으면 도메인과 자동 DNS 갱신 또는 고정 주소를 사용하세요. '
+              '설치 후 기존 장치의 접속 주소는 자동 변경되지 않습니다.')
     default = '127.0.0.1' if mode == 'lab' else candidates[0] if len(candidates) == 1 else ''
     while True:
         bind = ask(f'바인딩 IPv4 [{default or "직접 입력"}]: ').strip() or default

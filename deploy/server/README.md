@@ -2,6 +2,8 @@
 
 현재 중앙의 신규 설치와 기존 서버 업그레이드는 [공통 런타임 안내](../../docs/runtime_deployment.md)의 버전 있는 Compose·마이그레이션·자동 인수 경로를 사용합니다. `manage.py plan → apply → verify`가 필수 워커·권한·기존 상태와 서버별 설정 차이를 함께 검사합니다. 아래의 과거 수동 `up` 절차만으로 최신 기능의 배포/실수신을 완료 처리하지 않습니다.
 
+ngrok용 추가 설정 때문에 실행 중인 Compose와 보호 기록이 다르면 [ngrok 설정 인수 절차](../../docs/runtime_deployment.md#ngrok-설정-인수-절차--2026-10-28)를 따릅니다. `review-compose`는 명시한 기존 파일과 실제 실행 설정을 비교해 보호 검토 기록만 만들며, 서비스는 바꾸지 않습니다. 검토 기록을 `plan --compose-review`에 지정하고 기존 업그레이드 절차를 이어갑니다. 설정 지문 불일치를 건너뛰거나 기존 실행 기록에 파일명만 추가하지 않습니다.
+
 이 구성은 **단일 노드 졸업작품·실습용**입니다. Elasticsearch, Kibana, 에이전트 배포 포털을 함께 실행합니다. 저장소 루트의 `compose.yaml`은 기존 로컬 개발용으로 유지하며, 아래에서는 항상 `deploy/server/compose.yaml`을 지정합니다.
 
 AWS EC2에 처음 배포하고 Windows PC에서 검증하는 경우에는 [AWS Ubuntu + Windows 실제 수집 테스트](../../docs/installation_reference.md)를 먼저 따라가세요. 아래는 공통 구성과 운영 제약 설명입니다.

@@ -11,6 +11,7 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'src'))
 from cloud_soc.deployment.contract import SERVICES
+from cloud_soc.deployment.compose_review import ComposeReviewError
 from cloud_soc.deployment.dependencies import DependencyError, check as check_dependencies
 from cloud_soc.deployment.host import Docker, DockerCommandError, apply, containers, recover, snapshot, summary, worker_inventory
 from cloud_soc.deployment.migrations import atomic_json
@@ -51,11 +52,15 @@ def prepare_install_images(engine, workspace, state, environment):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('plan', 'apply', 'install', 'recover', 'verify'))
+    parser.add_argument('action', choices=('review-compose', 'plan', 'apply', 'install', 'recover', 'verify'))
     parser.add_argument('--workspace', type=Path, default=ROOT)
     parser.add_argument('--state', type=Path, default=ROOT / 'state/server')
     parser.add_argument('--image', default='cloud-soc-central-runtime:local')
     parser.add_argument('--plan', type=Path)
+    parser.add_argument('--compose-file', action='append', type=Path, default=[],
+                        help='review-compose: explicit existing Compose files in their applied order')
+    parser.add_argument('--compose-review', type=Path,
+                        help='plan: protected review.json from review-compose, rechecked before apply')
     parser.add_argument('--build', action='store_true')
     parser.add_argument('--startup-only', action='store_true', help='Structure only; never claims ingestion/detection acceptance')
     parser.add_argument('--portal-origin')
@@ -68,11 +73,25 @@ def main():
     if args.state.is_symlink() or args.wait_seconds < 0 or args.wait_seconds > 3600:
         raise ValueError('Invalid state path or verification deadline')
     engine = Docker();state = args.state.resolve()
+    if args.compose_file and args.action != 'review-compose' or args.compose_review and args.action != 'plan':
+        raise ValueError('Compose review options do not apply to this action')
+    if args.action == 'review-compose':
+        from cloud_soc.deployment.compose_review import create
+        if len(args.compose_file) < 3:
+            raise ValueError('Specify the original two Compose files and the additional site overrides in order')
+        from cloud_soc.deployment.host import lock
+        with lock(state / 'runtime'):
+            if (state / 'runtime/pending.json').exists():
+                raise ValueError('Recover the interrupted deployment before reviewing Compose configuration')
+            result = create(engine, state, args.compose_file, containers(engine, 'cloud-soc-central'))
+        print(json.dumps(result))
+        return 0
     if args.action == 'recover':
         print(json.dumps(recover(engine, state)))
         return 0
     if args.action == 'plan':
-        p = snapshot(engine, args.workspace, state, args.image)
+        p = snapshot(engine, args.workspace, state, args.image,
+                     **({'compose_review': args.compose_review} if args.compose_review else {}))
         output = args.plan or state / 'runtime-plan.json'
         atomic_json(output, p)
         print(json.dumps(summary(p)))
@@ -137,6 +156,8 @@ if __name__ == '__main__':
     try:
         raise SystemExit(main())
     except (DockerCommandError, DependencyError) as error:
+        raise SystemExit(str(error)) from None
+    except ComposeReviewError as error:
         raise SystemExit(str(error)) from None
     except Exception as error:
         raise SystemExit('서버 작업이 중단됐습니다 (' + type(error).__name__ + '). 기존 설정은 보존됐으며 인증 정보는 출력하지 않습니다.') from None
