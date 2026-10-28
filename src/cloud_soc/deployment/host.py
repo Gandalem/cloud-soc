@@ -223,6 +223,7 @@ def public_environment(obj):
         'SOC_ELASTIC_ENDPOINT', 'SOC_AGENT_ENDPOINT', 'SOC_ADMIN_ALLOWED_CIDRS', 'SOC_USERS_FILE',
         'SOC_LOG_ACCESS_POLICY_FILE', 'SOC_LOG_FORMAT', 'SOC_INTERNAL_ES_URL', 'SOC_CA_FILE',
         'SOC_STATE_DIR', 'SOC_ADMIN_USER', 'SOC_ADMIN_HASH_FILE', 'SOC_ISSUER_PASSWORD_FILE', 'SOC_MONITOR_PASSWORD_FILE'}
+    allowed |= {'SOC_PORTAL_ORIGINS', 'SOC_PORTAL_TLS_ORIGINS'}
     return {k: v for item in obj['Config'].get('Env', []) for k, _, v in [item.partition('=')] if k in allowed}
 
 
@@ -315,7 +316,7 @@ def inspect_prerequisites(engine, state, image, project, value, contract, adopti
                               if (runtime / 'keys/slack-notifier.key').is_file() else None}))
 
 
-def snapshot(engine, workspace, state, image, project='cloud-soc-central', *, compose_review=None):
+def snapshot(engine, workspace, state, image, project='cloud-soc-central', *, compose_review=None, access_path=None):
     workspace, state = Path(workspace).resolve(), Path(state).resolve()
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,62}', project) or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,200}', image):
         raise ValueError('Invalid image/project identity')
@@ -344,6 +345,11 @@ def snapshot(engine, workspace, state, image, project='cloud-soc-central', *, co
                       'mounts': obj.get('Mounts', []), 'environment': public_environment(obj)} for name, obj in objects.items()}
     fingerprints = protected_hashes(state)
     fingerprints.update(reviewed_files)
+    alias_request = None
+    if access_path:
+        from cloud_soc.deployment.access import read_profile
+        alias_request = read_profile(access_path)
+        fingerprints[alias_request['path']] = alias_request['sha256']
     for obj in objects.values():
         for mount in obj.get('Mounts', []):
             path = Path(mount['Source'])
@@ -376,12 +382,15 @@ def snapshot(engine, workspace, state, image, project='cloud-soc-central', *, co
         'worker_inventory': inventory, 'fingerprint': digest(identity)}
     if compose_review:
         result['compose_review'] = str(compose_review)
+    if alias_request:
+        result['alias_request'] = alias_request
     desired = engine.json(['compose', '--profile', 'initialization', '--project-name', project, '--env-file', str(state / 'compose.env'),
         '-f', str(workspace / 'deploy/server/compose.yaml'), '-f', '-', 'config', '--format', 'json'],
         input=json.dumps(configure_site(result, runtime)), env=env)
     if compose_review:
         from cloud_soc.deployment.compose_review import preserved_site
-        preserved_site(original, desired, objects)
+        preserved_site(original, desired, objects, **({'alias_request': alias_request, 'workspace': workspace}
+                                                     if alias_request else {}))
     result['compose_validation'] = validate_rendered(value, desired, image)
     return result
 
@@ -393,6 +402,7 @@ def summary(plan):
         'permissions': 'additive_exact_runtime_grants_with_restricted_scope_refusal',
         'infrastructure_changes': {'kibana': '1536MiB limit / 1024MiB Node heap', 'elasticsearch': '3072MiB limit / 1536MiB heap'},
         'compose_review': plan.get('compose_review'),
+        'additional_portal_addresses': (plan.get('alias_request') or {}).get('profile', {}).get('aliases', []),
         'post_apply_checks': ['portal_direct_login', 'portal_external_link_login', 'mobile_portal_login', 'new_agent_log_receipt']}
 
 
@@ -404,6 +414,9 @@ def configure_site(plan, runtime):
     mounts.append({'type': 'bind', 'source': str(runtime / 'contract.json'), 'target': '/run/runtime/contract.json', 'read_only': True})
     for name in APP_SERVICES:
         site['services'].setdefault(name, {})['image'] = plan['image']
+    if plan.get('alias_request'):
+        from cloud_soc.deployment.access import overlay
+        site = overlay(site, plan['alias_request'], Path(plan['state']), plan['workspace'])
     return site
 
 
@@ -473,8 +486,12 @@ def apply(engine, plan, *, poll=None):
     if not plan['resources']['ok']:
         raise ValueError('Server resource preflight failed; no mutation performed')
     with lock(runtime):
+        request = plan.get('alias_request')
+        extra = {'compose_review': plan['compose_review']} if plan.get('compose_review') else {}
+        if request:
+            extra['access_path'] = request['path']
         current = snapshot(engine, workspace, state, plan['image'], plan['project'],
-                           **({'compose_review': plan['compose_review']} if plan.get('compose_review') else {}))
+                           **extra)
         if current['fingerprint'] != plan['fingerprint']:
             raise ValueError('Deployment changed after planning; no mutation performed')
         if not current['resources']['ok']:
@@ -482,6 +499,10 @@ def apply(engine, plan, *, poll=None):
         for field in ('policy', 'site', 'observed', 'protected_sha256', 'previous_compose', 'source', 'image_id', 'adoption'):
             if current[field] != plan[field]:
                 raise ValueError('Reviewed plan was modified; no mutation performed')
+        if (current.get('alias_request') != request
+                or current.get('compose_environment') != plan.get('compose_environment')):
+            from cloud_soc.deployment.compose_review import ComposeReviewError
+            raise ComposeReviewError('추가 주소 또는 실행 환경이 계획 이후 변경됐습니다. 새 계획을 만드세요')
         from cloud_soc.deployment.contract import stamp
         previous_contract = json.loads((runtime / 'contract.json').read_text()) if (runtime / 'contract.json').is_file() else None
         expected_contract, _ = build_contract(plan['policy'], containers(engine, plan['project']), state,

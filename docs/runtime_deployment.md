@@ -67,6 +67,69 @@ sudo sh deploy/server/install-ubuntu.sh --host 실제주소 --bind-ip 실제사�
 
 ## 기존 서버 업그레이드
 
+### 선택적 추가 Portal 주소 — 학교·집 통합 3안
+
+통합 기준은 학교의 `codex/portal-deployment-handoff-20261027` 커밋751b568이다. 학교의 review-compose·보호된 복구 사본·이전 이미지 확인·릴리스 경로 제한을 유지한다. 집의 이전 미커밋20파일은 별도 파일 사본/해시/패치와 로컬 stash에 보존했고, 중복된 adopt 명령과 대표 URL 변경 모드는 최종 코드에 넣지 않았다. 로컬 기록 위치는 Git 제외 state/dns-integration-20261028/before이며 학교 clone으로 전달되는 자료는 아래 설명·작업 이력·검사 코드다.
+
+기존 주소 하나로 사용하는 서버는 별도 입력이 필요 없다. 필요한 경우에만 Portal의 추가 DNS 또는 IPv4 HTTPS 주소를 설정한다. 대표 Portal URL·ngrok 주소·장치 수신 주소·기존 키·알림 링크는 바꾸지 않는다. 추가 주소는 Portal 접속용이며 Kibana5601·Elasticsearch9200의 접속 이름이나 공개 포트를 늘리지 않는다. DNS 레코드 등록, 방화벽 변경, ngrok 계정/터널 시작, 기존 인증서 교체는 수행하지 않는다.
+
+```bash
+# 새 주소 요청 파일만 생성한다. 이미 있는 파일은 덮어쓰지 않는다.
+python3 deploy/server/configure-access.py \
+  --alias https://soc-internal.example.com \
+  --output /protected/review/portal-aliases.json
+```
+
+주소가 여러 개면 --alias를 반복한다. 요청 파일은 다음 형식만 허용한다. 이전 집 시제품의 mode/public_url 항목을 넣으면 오류로 중단한다.
+
+```json
+{"version":1,"aliases":["https://soc-internal.example.com"]}
+```
+
+추가 주소는 기존 등록된 추가 주소를 포함해 최대8개이며 HTTPS443만 지원한다. 계정·경로·쿼리·와일드카드·임의 Caddy 구문은 거부한다. 추가 주소는 기존 별칭을 보존하며 덧붙인다. 별칭 삭제나 대표 주소 교체는 이번 기능이 아니다. Portal은 등록된 Host와 해당 요청의 정확한 Origin을 확인하고 로그인·조직/역할·CSRF 검사를 유지한다. 도메인을 입력해도 실제 DNS가 생성되거나 외부 연결이 자동 보장되지는 않는다.
+
+**신규 설치:** 기존 설치 명령에 선택적으로 `--access /protected/review/portal-aliases.json`을 추가한다. prepare.py는 새 인증서 SAN에 추가 주소를 포함하고 기존 --host/--agent-host 값을 유지한다. 기존 서버에는 신규 설치기나 prepare.py를 재실행하지 않는다.
+
+**기존 서버:** 같은 수정 소스로 새 후보 이미지를 만든 뒤 원래 plan 명령에 `--access /protected/review/portal-aliases.json`을 추가한다. 학교와 같은 추가 Compose 설정 인수가 필요하면 기존의 `review-compose` 결과를 `--compose-review`로 함께 지정한다. 일반적인 관리 서버는 --compose-review를 새로 강제하지 않는다.
+
+```bash
+# 경로와 이미지 태그는 검토한 실제 값으로 바꾼다.
+sudo python3 deploy/server/manage.py plan --state /opt/cloud-soc/state/server \
+  --image cloud-soc-runtime:reviewed --plan /protected/review/runtime-plan.json \
+  --compose-review /opt/cloud-soc/state/server/runtime/compose-reviews/review-example/review.json \
+  --access /protected/review/portal-aliases.json
+# 검토한 계획의 적용은 기존 절차를 따른다. apply에 --access를 다시 주지 않는다.
+sudo python3 deploy/server/manage.py apply --plan /protected/review/runtime-plan.json
+```
+
+계획은 추가할 주소, 요청 파일의 SHA256, 기존 보호 입력과 실행 구성을 포함한다. 추가 주소는 기존 CA/서버 인증서의 기간·용도·이름 검사에서 통과해야 한다. 인증서에 새 이름이 없으면 계획 단계에서 중단하며 인증서/키를 재생성하거나 검증을 비활성화하지 않는다. 적용 직전에 같은 요청과 학교의 구성 검토 기록을 다시 확인한다. 요청의 값·파일 원문·계획 실행 환경이 바뀌면 서비스를 중지하기 전에 거부한다. apply는 같은 소스의 확인된 후보를 사용하고 복구는 기존 학교의 보호 사본/이미지 경로를 유지한다.
+
+학교의 보존 검사는 추가 주소용 환경값2개와 관리되는 기본 Caddyfile의 연결 경로 변경만 예외로 비교한다. 요청한 주소 외의 대표 URL·수신 URL·포트·접근 제한·자료 연결 변경은 허용하지 않는다. 이전/현재 기본 템플릿과 내용이 다른 사용자 지정 Caddyfile이나 링크 경로는 자동 교체하지 않는다. 다음 배포에서 --access를 생략해도 실제 Portal/gateway에 반영된 주소 목록을 보존한다.
+
+이 절차가 실제 학교 서버 적용을 승인하는 것은 아니다. 실제 학교의 source/image·검토 기록·파일 권한·사용자 지정 gateway 여부와 CA/SAN을 확인하고, 배포와 외부 접속 결과는 별도로 기록한다. ngrok 실제 경유 접속·학교 배포와 격리 검사 결과는 구분한다. Linux 등록 CRL·유동 IP 자동 재연결·DNS/터널 자동 운영·공인 인증서 자동 발급은 별도 보류이며 이번에 구현하지 않는다.
+
+관련 파일: src/cloud_soc/deployment/{access,compose_review,host}.py, portal/{origins,app}.py, deploy/server/{configure-access.py,manage.py,prepare.py,install-ubuntu.sh,Caddyfile}, tests/test_dns_aliases.py·test_alert_navigation.py·test_server_prepare.py와 gateway/CI 연결이다. 검사 결과와 남은 인수는 [작업 목록](work_tracker.md)의 DEPLOY-DNS-INTEGRATION-20261028-01을 따른다. 학교의 실제 SSH 수집98건/정규화98건/AUTH-001 경보1건 기록을 이번 통합본의 새 검증으로 사용하지 않는다.
+
+최종 결과(2026-10-28): 작성100% 이후 학교 구성 인수/복구와 추가 주소 직접 영향 Python132건·12 subtests, Node42건을 통과했다. Windows symlink1건·별도 Docker NAT TLS1건은 제외다. 추가 주소가 있는 coordinator 성공/중단/저장 실패의 보존·복구까지 보완해 해당13건도 통과했다. 실제 Compose의 URL/수신/포트 보존·OpenSSL 이름 검사와 별도로 공식2.11.4 Caddy/실제 Portal을 loopback에서 연결해 기존 Host·추가 DNS의 인증 요구/정상 인증·다른 Origin403·TLS 신뢰/이름 실패1시나리오를 통과했다. 임시 인증서·포트·합성 자격만 사용했으며 실제 DNS 레코드나 인터넷 ngrok/학교 서비스 적용은 하지 않았다. 원격 CI는 실행하지 않았다. 시험 Caddy의 기본 사용자 저장을 발견해 이번 생성 파일만 내용/시각/인스턴스 대조 후 정리했고 시험 저장소를 전용 경로로 고쳐 재확인했다. 제품에는 그 시험 저장 설정을 적용하지 않는다.
+
+#### Ubuntu VM 추가 접속 부분 인수 — 2026-10-28
+
+사용자가 기존 쇼핑몰 Ubuntu VM192.168.235.128의8GB를 유지하도록 선택해 DNS/Portal 접속만 시험했다. 전체 새 SOC의 자원 예산7168MiB와 기존 ES 사용량을 함께 감당하는 전체 설치 인수는 수행하지 않았다. 기존 쇼핑몰18080/18082·ES19200을 중지하거나 새 스택으로 인수하지 않았고 Docker/볼륨·시스템 Python·방화벽·hosts/DNS·기존 키/실제 데이터도 변경하지 않았다.
+
+현재 인계 브랜치751b568 기반 미커밋 소스319개의 SHA256을 원격에서 대조했다. 새 사용자 전용 폴더/venv에서 저장소의 고정 requirements/constraints, Python3.12.3, 공식 해시를 대조한 Caddy2.11.4 Linux amd64를 사용했다. 새 합성 CA·SAN 인증서·계정으로 제품 configure-access.py/read_profile/overlay와 settings_from_environment를 거쳐 실제 Portal WSGI 앱·임시 Werkzeug 서버·Caddy를 연결했다. 운영 Gunicorn/systemd/Compose 설치 결과는 아니다. 논리 주소는 HTTPS443으로 유지하되 실제 리스너는 loopback 임시 포트로 바꾸고 요청별 SNI/Host를 지정했다. 시스템 DNS나 공개 레코드를 만들지 않았다.
+
+- ngrok 형태 대표 Host·기존 DNS·추가 DNS·VM IPv4 이름4개에서 로그인 화면/정적 파일200, 미인증/잘못된 비밀번호401, 정상 세션 로그인/신원/장치 HTML200, 잘못된 Origin/CSRF 누락403을 확인했다. 세션 쿠키의 Secure·HttpOnly·SameSite=Strict도 유지됐다.
+- 미신뢰 CA·알 수 없는 서버 이름의 TLS 거부, SAN 없는 추가 주소의 overlay 검사 거부, 대표 Portal/장치 수신 주소·이전 별칭·인증서/키 원문 보존을 확인했다. 실제 ES로 연결하지 않고 호출 시 실패하는 시험용 데이터 경계를 지정했으며 호출0이었다. 장치 HTML 로딩을 장치 데이터 조회·키 발급·수집·경보 성공으로 해석하지 않는다.
+- 미등록 Host는 현재 Caddy 기본 템플릿에서200/빈 본문이며 포털로 전달되지 않았다. 포털에 직접 전달하면400이다. 따라서 미등록 Host의 빈200을 접속/인증 성공 또는 게이트웨이의 명시적4xx 거부로 기록하지 않는다. 알 수 없는 SNI/TLS 이름은 별도 실패로 확인했다.
+
+시험 실행기의 함수 이름 충돌과 Caddy 미일치 라우트에 대한 잘못된 HTTP 상태 가정을 수정한 뒤 해당 접속 시나리오를 다시 통과했다. 제품 코드/인증 정책을 수정하거나 성공 기준을 로그인 화면 없는 빈 응답으로 바꾸지 않았다. nonce/절대 경로/링크/프로세스를 확인해 이번 원격 폴더·venv·프로세스·CA/키·계정/세션·바이너리와 로컬 전송 압축본을 정리했다. 기존18080/18082/19200은 정리 후에도 리슨했고 사용자 기본 Caddy 경로는 전후 부재였다. 비밀값 없는 result.json·packages.json·manifest.json·cleanup.json은 로컬 Git 제외 state/dns-vm-20261028에 남겼다.
+
+이 결과는 실제 DNS 해석·LAN443 진입·인터넷 ngrok 터널·공인 CA/브라우저 신뢰·전체 Docker 배포/실패 복구·검색/수집/탐지/경보·학교 서버 배포를 대신하지 않는다. 이번 임시 포털은 종료/삭제됐으며 사용자 상시 접속용으로 남겨두지 않았다. 이후 실제 설치 시에는 서버 여유 자원과 실제 CA/SAN·주소 도달 조건을 먼저 확보하고 같은 소스로 전체 배포를 별도로 인수해야 한다.
+
+#### 학교 재개 인계: 2026-10-27 집 작업
+
+이 제목은 이전 집 인계 문서의 연결을 보존한다. ba9ad3b 기준의 광범위한 접속 모드·adopt 제안은 사용자 승인3안과 위 학교 기준 통합으로 대체됐다. 과거 집 구현·제한 검사와 문서 작성 완료 이력은 작업 목록의 집 작업 보존 이력에 남겼다. 현재 재개 기준은 이 절 위의751b568 기반 선택적 추가 주소 기능이며 원격 게시·학교 배포 여부를 각각 확인한다.
+
 검토한 소스를 받은 체크아웃/릴리스 디렉터리에서 후보 이미지를 먼저 빌드한다. 이미지 태그는 배포 계획에서 고정한 digest와 실제 파일 해시로 다시 확인한다. 아래는 서버 로컬 Docker를 사용하며 원격 Docker context와 상속된 SOC/Compose 환경 변수로 대상을 바꾸지 않는다.
 
 ```bash

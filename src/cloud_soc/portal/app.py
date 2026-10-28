@@ -38,6 +38,7 @@ from cloud_soc.portal.rule_library import RuleLibrary
 from cloud_soc.portal.insight_state import InsightStore, InsightError
 from cloud_soc.portal.dashboard_insights import InsightReader, evidence_flow
 from cloud_soc.portal.agent_status import parse_time as datetime_from_iso
+from cloud_soc.portal.origins import additional_origins
 
 PROJECT = Path(__file__).resolve().parents[3]
 
@@ -69,6 +70,7 @@ def settings_from_environment():
         "CA_BYTES": ca,
         "PUBLIC_URL": public_url,
         "LAN_URL": os.environ.get("SOC_PORTAL_LAN_ORIGIN"),
+        "ADDITIONAL_ORIGINS": json.loads(os.environ.get('SOC_PORTAL_ORIGINS') or '[]'),
         "USERS_FILE": os.environ.get("SOC_USERS_FILE"),
         "RUNTIME_CONTRACT_FILE": os.environ.get('SOC_RUNTIME_CONTRACT_FILE'),
         "NOTIFICATION_STATE_DIR": os.environ.get('SOC_NOTIFICATION_STATE_DIR'),
@@ -95,6 +97,8 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     configure_logging()
     settings = settings if settings is not None else settings_from_environment()
     origins = {urlsplit(settings["PUBLIC_URL"]).netloc.lower(): settings["PUBLIC_URL"]}
+    for origin in additional_origins(settings.get('ADDITIONAL_ORIGINS', [])):
+        origins[urlsplit(origin).netloc.lower()] = origin
     if settings.get("LAN_URL"):
         lan = urlsplit(settings["LAN_URL"])
         try:

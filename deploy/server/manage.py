@@ -57,6 +57,7 @@ def main():
     parser.add_argument('--state', type=Path, default=ROOT / 'state/server')
     parser.add_argument('--image', default='cloud-soc-central-runtime:local')
     parser.add_argument('--plan', type=Path)
+    parser.add_argument('--access', type=Path, help='대표/수신 주소를 유지하는 추가 Portal DNS/IP 설정 JSON')
     parser.add_argument('--compose-file', action='append', type=Path, default=[],
                         help='review-compose: explicit existing Compose files in their applied order')
     parser.add_argument('--compose-review', type=Path,
@@ -73,6 +74,8 @@ def main():
     if args.state.is_symlink() or args.wait_seconds < 0 or args.wait_seconds > 3600:
         raise ValueError('Invalid state path or verification deadline')
     engine = Docker();state = args.state.resolve()
+    if args.access and args.action not in ('plan', 'install'):
+        raise ComposeReviewError('추가 주소 파일은 plan 또는 install에서 지정하세요')
     if args.compose_file and args.action != 'review-compose' or args.compose_review and args.action != 'plan':
         raise ValueError('Compose review options do not apply to this action')
     if args.action == 'review-compose':
@@ -91,7 +94,8 @@ def main():
         return 0
     if args.action == 'plan':
         p = snapshot(engine, args.workspace, state, args.image,
-                     **({'compose_review': args.compose_review} if args.compose_review else {}))
+                     **({'compose_review': args.compose_review} if args.compose_review else {}),
+                     **({'access_path': args.access} if args.access else {}))
         output = args.plan or state / 'runtime-plan.json'
         atomic_json(output, p)
         print(json.dumps(summary(p)))
@@ -106,7 +110,8 @@ def main():
             engine.run(['build', '--progress=plain', '--pull=false', '-f', str(args.workspace / 'deploy/server/Dockerfile'), '-t', args.image,
                         str(args.workspace)], timeout=600, stream=True)
         print('[설치] 소스·설정·서버 자원을 확인합니다.', flush=True)
-        p = (snapshot(engine, args.workspace, state, args.image) if args.action == 'install'
+        p = (snapshot(engine, args.workspace, state, args.image,
+                      **({'access_path': args.access} if args.access else {})) if args.action == 'install'
              else json.loads(args.plan.read_text()) if args.plan else None)
         if not p or (args.action == 'install' and not p['fresh']):
             raise ValueError('Use a reviewed plan to upgrade an existing server')

@@ -279,8 +279,10 @@ def test_future_worker_success_is_not_live_acceptance():
     assert not result['verified'] and all(not row['verified'] for row in result['workers'].values())
 
 
-@pytest.mark.parametrize('fault', ['none','migration','activation','interrupt','receipt','stale','modified_site','disk','ownership'])
-def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_path,monkeypatch,fault,ownership_calls):
+@pytest.mark.parametrize('fault,with_alias', [(fault, False) for fault in
+    ('none','migration','activation','interrupt','receipt','stale','modified_site','disk','ownership')]
+    + [(fault, True) for fault in ('none', 'activation', 'interrupt', 'receipt')])
+def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_path,monkeypatch,fault,with_alias,ownership_calls):
     from cloud_soc.deployment import host
     state=tmp_path/'server';old=seed(state,('normalizer','detector'))
     c,adopt=build_contract(POLICY,old,state,now=NOW)
@@ -292,11 +294,17 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
         'fingerprint':'reviewed','observed':{},'protected_sha256':{},'previous_compose':['--project-name','cloud-soc-central','-f','protected-old.json'],
         'source':{},'source_sha256':'verified','site':{},'fresh':False,'new_workers':[n for n in WORKERS if n not in old],
         'compose_environment':{'SOC_STATE_DIR':str(state)}}
+    if with_alias:
+        from cloud_soc.deployment import access
+        request = tmp_path / 'aliases.json'
+        request.write_text(json.dumps({'version': 1, 'aliases': ['https://extra.example.test']}))
+        plan['alias_request'] = access.read_profile(request)
+        monkeypatch.setattr(access, 'certificate_names', lambda *_: None)
     current=deepcopy(plan)
     if fault=='stale':current['fingerprint']='different'
     if fault=='modified_site':plan['site']={'services':{'gateway':{'ports':['0.0.0.0:9999:9999']}}}
     if fault=='disk':current['resources']['ok']=False
-    monkeypatch.setattr(host,'snapshot',lambda *_:deepcopy(current))
+    monkeypatch.setattr(host,'snapshot',lambda *_,**__:deepcopy(current))
     runtime=state/'runtime';runtime.mkdir()
     previous_site=b'{"services":{"gateway":{"environment":{"SOC_PUBLIC_HOST":"existing.example"}}}}\n'
     (runtime/'site.json').write_bytes(previous_site)
@@ -343,6 +351,9 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
         result=host.apply(engine,plan)
         assert result['runtime_ready'] and result['live_ingestion_acceptance']=='not_yet_verified'
         assert (runtime/'current.json').is_file()
+        if with_alias:
+            site = json.loads((runtime / 'site.json').read_text())
+            assert site['services']['gateway']['environment']['SOC_PORTAL_TLS_ORIGINS'] == 'https://extra.example.test'
     else:
         with pytest.raises((ValueError,RuntimeError,KeyboardInterrupt,PermissionError)):host.apply(engine,plan)
         assert not (runtime/'current.json').exists()

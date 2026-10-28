@@ -113,3 +113,18 @@ def test_entry_redirect_cannot_open_queries_apis_or_cross_site_changes(tmp_path)
     assert http.get('/login', base_url='http://evil.test', headers=NAV).status_code == 400
     for path in ('/', '/index.html', '/login', '/api/auth/login', '/api/packages'):
         assert http.post(path, json={}, headers={**headers, **NAV}).status_code == 403
+
+
+def test_explicit_dns_alias_requires_auth_and_exact_request_origin(tmp_path):
+    app = create_app({'STATE_DIR': tmp_path, 'AGENT_SOURCE': ROOT / 'deploy/agents', 'CA_BYTES': CA,
+        'PUBLIC_URL': 'https://public.ngrok-free.app', 'ADDITIONAL_ORIGINS': ['https://soc.example.test'],
+        'ENDPOINT': 'https://receiver.test:9200', 'ADMIN_USER': 'admin', 'ADMIN_HASH': HASH}, issuer=Mock())
+    http = app.test_client()
+    assert http.get('/api/auth/me', base_url='https://soc.example.test').status_code == 401
+    headers = {'Authorization': AUTH, 'Origin': 'https://soc.example.test'}
+    assert http.get('/api/auth/me', base_url='https://soc.example.test', headers=headers).status_code == 200
+    assert http.get('/api/auth/me', base_url='https://soc.example.test',
+        headers={**headers, 'Origin': 'https://public.ngrok-free.app'}).status_code == 403
+    assert http.get('/api/auth/me', base_url='https://evil.test', headers=headers).status_code == 400
+    assert http.get('/api/auth/me', base_url='https://soc.example.test', headers={**headers, **NAV}).status_code == 403
+    assert http.post('/api/auth/me', base_url='https://soc.example.test', json={}, headers=headers).status_code == 403

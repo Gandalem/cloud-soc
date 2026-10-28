@@ -8,6 +8,7 @@ usage() {
         '  --host HOST        대시보드 접속 DNS/IPv4' \
         '  --agent-host HOST  에이전트가 접속할 HTTPS 9200 주소 (기본: --host)' \
         '  --bind-ip IP       이 Ubuntu 서버에 실제 할당된 IPv4' \
+        '  --access FILE      선택적인 추가 Portal DNS/IP 설정 JSON' \
         '  --dry-run          설치 계획만 표시. 변경·다운로드·환경 검사는 실행하지 않음' \
         '  --prepare-only     필수 프로그램과 인증서만 준비. SOC 서버는 시작하지 않음' \
         '  --yes              설치 확인 생략. 관리자 비밀번호는 터미널에서 직접 입력' \
@@ -269,11 +270,10 @@ configure_kernel() {
 
 prepare_state() {
     check_fresh_state
-    if [ -n "${AGENT_HOST:-}" ]; then
-        python3 "$ROOT/deploy/server/prepare.py" --host "$HOST" --agent-host "$AGENT_HOST" --bind-ip "$BIND_IP"
-    else
-        python3 "$ROOT/deploy/server/prepare.py" --host "$HOST" --bind-ip "$BIND_IP"
-    fi
+    set -- --host "$HOST" --bind-ip "$BIND_IP"
+    if [ -n "${AGENT_HOST:-}" ]; then set -- "$@" --agent-host "$AGENT_HOST"; fi
+    if [ -n "${ACCESS:-}" ]; then set -- "$@" --access "$ACCESS"; fi
+    python3 "$ROOT/deploy/server/prepare.py" "$@"
     # The export remains inside protected state; the guide copies only this public file.
     openssl x509 -in "$STATE/tls/ca.crt" -outform DER -out "$STATE/tls/ca.cer"
     chmod 0644 "$STATE/tls/ca.cer"
@@ -282,7 +282,9 @@ prepare_state() {
 }
 
 start_stack() {
-    python3 "$ROOT/deploy/server/manage.py" install --workspace "$ROOT" --state "$STATE" --build
+    set -- install --workspace "$ROOT" --state "$STATE" --build
+    if [ -n "${ACCESS:-}" ]; then set -- "$@" --access "$ACCESS"; fi
+    python3 "$ROOT/deploy/server/manage.py" "$@"
 }
 
 http_status() {
@@ -327,7 +329,7 @@ finish() {
 }
 
 main() {
-    HOST= AGENT_HOST= BIND_IP= DRY_RUN=no PREPARE_ONLY=no YES=no TEMP= STAGE=arguments
+    HOST= AGENT_HOST= BIND_IP= ACCESS= DRY_RUN=no PREPARE_ONLY=no YES=no TEMP= STAGE=arguments
     UBUNTU_VERSION= UBUNTU_SUITE=
     APT_ROOT=/etc/apt
     KEY_FILE=$APT_ROOT/keyrings/cloud-soc-docker.asc
@@ -342,6 +344,7 @@ main() {
         case "$1" in
             --host) [ "$#" -ge 2 ] && [ -n "$2" ] && [ -z "$HOST" ] || die '--host는 값과 함께 한 번만 지정하세요.'; HOST=$2; shift 2 ;;
             --agent-host) [ "$#" -ge 2 ] && [ -n "$2" ] && [ -z "$AGENT_HOST" ] || die '--agent-host는 값과 함께 한 번만 지정하세요.'; AGENT_HOST=$2; shift 2 ;;
+            --access) [ "$#" -ge 2 ] && [ -n "$2" ] && [ -z "$ACCESS" ] || die '--access는 파일 경로와 함께 한 번만 지정하세요.'; ACCESS=$2; shift 2 ;;
             --bind-ip) [ "$#" -ge 2 ] && [ -n "$2" ] && [ -z "$BIND_IP" ] || die '--bind-ip는 값과 함께 한 번만 지정하세요.'; BIND_IP=$2; shift 2 ;;
             --dry-run) DRY_RUN=yes; shift ;;
             --prepare-only) PREPARE_ONLY=yes; shift ;;
@@ -383,6 +386,19 @@ main() {
         BIND_IP=${BIND_IP:-127.0.0.1}
     fi
     [ -n "$HOST" ] || die '포털 접속 주소를 입력하세요.'
+    if [ -n "$ACCESS" ]; then
+        [ -f "$ACCESS" ] && [ ! -L "$ACCESS" ] || die '접속 설정은 링크가 아닌 기존 파일로 지정하세요.'
+        python3 - "$ROOT" "$ACCESS" <<'ACCESS_CHECK'
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1]) / 'src'))
+from cloud_soc.deployment.access import read_profile
+try:
+    read_profile(sys.argv[2])
+except Exception:
+    raise SystemExit('접속 설정 파일의 형식과 경로를 확인하세요.') from None
+ACCESS_CHECK
+    fi
     validate_addresses
     check_fresh_state
     check_resources_and_network

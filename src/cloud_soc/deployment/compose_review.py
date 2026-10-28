@@ -196,18 +196,31 @@ def pin_images(model, inventory):
     return result
 
 
-def preserved_site(original, desired, objects):
+def preserved_site(original, desired, objects, *, alias_request=None, workspace=None):
     """Refuse an upgrade that drops the adopted endpoints or broadens port binds."""
     from cloud_soc.deployment.host import public_environment
+    approved = {}
+    if alias_request:
+        from cloud_soc.deployment.access import approved_environment, profile
+        requested = profile(alias_request['profile'])
+        approved = approved_environment(objects, requested['aliases'])
     for name in ('portal', 'gateway', 'elasticsearch', 'kibana'):
         old, new = original['services'][name], desired['services'][name]
         if sorted(old.get('ports', []), key=digest) != sorted(new.get('ports', []), key=digest):
             raise ComposeReviewError('기존 서비스 포트가 새 계획에서 달라집니다: ' + name)
         volumes = {v['target']: v for v in new.get('volumes', [])}
-        if any(volumes.get(v['target']) != v for v in old.get('volumes', [])):
-            raise ComposeReviewError('기존 서비스 연결 파일이 새 계획에서 달라집니다: ' + name)
+        for volume in old.get('volumes', []):
+            expected_volume = volume
+            if alias_request and name == 'gateway' and volume['target'] == '/etc/caddy/Caddyfile':
+                from cloud_soc.deployment.access import template_mount
+                if workspace is None:
+                    raise ComposeReviewError('추가 주소를 적용할 릴리스 경로가 필요합니다')
+                expected_volume = template_mount(volume, workspace)
+            if volumes.get(volume['target']) != expected_volume:
+                raise ComposeReviewError('기존 서비스 연결 파일이 새 계획에서 달라집니다: ' + name)
         if name in ('portal', 'gateway'):
             expected = public_environment(objects[name])
+            expected.update(approved.get(name, {}))
             if any(new.get('environment', {}).get(k) != v for k, v in expected.items()):
                 raise ComposeReviewError('기존 Portal/ngrok 환경 설정이 새 계획에서 달라집니다: ' + name)
 
