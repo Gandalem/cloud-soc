@@ -49,7 +49,7 @@ def seed(root, names):
                 run_incremental(f.client, state_path=path, start=o['--start'], now=BASE+timedelta(seconds=600),
                     scanner=lambda *_, **__: [], source_id=URL, status_id=o.get('--status-id'), **extra)
         path.chmod(0o600)
-        objects[name] = {'Id': name+'-container', 'Config': {'Cmd': command(row['module'], o)},
+        objects[name] = {'Image': 'sha256:old', 'State': {'Running': True}, 'Id': name+'-container', 'Config': {'Cmd': command(row['module'], o)},
             'Mounts': [{'Source': str(folder), 'Destination': '/data'}, {'Source': str(key), 'Destination': '/run/keys/worker.key'}]}
     return objects
 
@@ -279,8 +279,10 @@ def test_future_worker_success_is_not_live_acceptance():
     assert not result['verified'] and all(not row['verified'] for row in result['workers'].values())
 
 
-@pytest.mark.parametrize('fault', ['none','migration','activation','interrupt','receipt','stale','modified_site','disk','ownership'])
-def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_path,monkeypatch,fault,ownership_calls):
+@pytest.mark.parametrize('fault,with_alias', [(fault, False) for fault in
+    ('none','migration','activation','interrupt','receipt','stale','modified_site','disk','ownership')]
+    + [(fault, True) for fault in ('none', 'activation', 'interrupt', 'receipt')])
+def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_path,monkeypatch,fault,with_alias,ownership_calls):
     from cloud_soc.deployment import host
     state=tmp_path/'server';old=seed(state,('normalizer','detector'))
     c,adopt=build_contract(POLICY,old,state,now=NOW)
@@ -289,14 +291,21 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
     (state/'secrets/elastic_password').write_text('PRIVATE_PASSWORD')
     plan={'workspace':str(tmp_path),'state':str(state),'image':'fixture:verified','image_id':'sha256:verified',
         'project':'cloud-soc-central','policy':POLICY,'contract':c,'adoption':adopt,'resources':{'ok':True},
-        'fingerprint':'reviewed','observed':{},'protected_sha256':{},'previous_compose':['--project-name','cloud-soc-central','-f','protected-old.json'],
+        'fingerprint':'reviewed','observed':{},'protected_sha256':{},'previous_compose':['--project-name','cloud-soc-central','-f','protected-old.json','-f',str(state/'runtime/site.json')],
+        'infrastructure_images':{},'previous_image_mode':'site',
         'source':{},'source_sha256':'verified','site':{},'fresh':False,'new_workers':[n for n in WORKERS if n not in old],
         'compose_environment':{'SOC_STATE_DIR':str(state)}}
+    if with_alias:
+        from cloud_soc.deployment import access
+        request = tmp_path / 'aliases.json'
+        request.write_text(json.dumps({'version': 1, 'aliases': ['https://extra.example.test']}))
+        plan['alias_request'] = access.read_profile(request)
+        monkeypatch.setattr(access, 'certificate_names', lambda *_: None)
     current=deepcopy(plan)
     if fault=='stale':current['fingerprint']='different'
     if fault=='modified_site':plan['site']={'services':{'gateway':{'ports':['0.0.0.0:9999:9999']}}}
     if fault=='disk':current['resources']['ok']=False
-    monkeypatch.setattr(host,'snapshot',lambda *_:deepcopy(current))
+    monkeypatch.setattr(host,'snapshot',lambda *_,**__:deepcopy(current))
     runtime=state/'runtime';runtime.mkdir()
     previous_site=b'{"services":{"gateway":{"environment":{"SOC_PUBLIC_HOST":"existing.example"}}}}\n'
     (runtime/'site.json').write_bytes(previous_site)
@@ -317,19 +326,21 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
         def __init__(self):self.calls=[]
         def json(self,args,**kw):
             self.calls.append(args)
-            if 'config' in args:return {'services':{n:{'image':plan['image']} for n in host.SERVICES}}
+            if args[:2]==['image','inspect']:return [{'Id':args[-1]}]
+            if 'config' in args:return {'services':{n:{'image':plan['image_id']} for n in host.SERVICES}}
             if 'cloud_soc.deployment.migrations' in args:
                 if fault=='migration':raise RuntimeError('isolated migration interruption')
                 return {'version':1}
             raise AssertionError(args)
         def run(self,args,**kw):
             self.calls.append(args)
-            if 'up' in args and 'site.json' in ' '.join(args):
+            if 'up' in args and 'protected-old.json' not in args:
                 self.phase='new'
                 if fault=='activation':raise RuntimeError('isolated activation interruption')
                 if fault=='interrupt':raise KeyboardInterrupt()
             elif 'up' in args:
-                assert (runtime/'site.json').read_bytes()==previous_site
+                assert json.loads((runtime/'site.json').read_text())['services']['gateway']['environment']==json.loads(previous_site)['services']['gateway']['environment']
+                assert all(json.loads((runtime/'site.json').read_text())['services'][n]['image']=='sha256:old' for n in old)
                 self.phase='old'
             return ''
     engine=Engine()
@@ -343,6 +354,9 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
         result=host.apply(engine,plan)
         assert result['runtime_ready'] and result['live_ingestion_acceptance']=='not_yet_verified'
         assert (runtime/'current.json').is_file()
+        if with_alias:
+            site = json.loads((runtime / 'site.json').read_text())
+            assert site['services']['gateway']['environment']['SOC_PORTAL_TLS_ORIGINS'] == 'https://extra.example.test'
     else:
         with pytest.raises((ValueError,RuntimeError,KeyboardInterrupt,PermissionError)):host.apply(engine,plan)
         assert not (runtime/'current.json').exists()
@@ -350,7 +364,7 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
             assert not engine.calls
         else:
             assert engine.phase=='old'
-            assert (runtime/'site.json').read_bytes()==previous_site
+            assert json.loads((runtime/'site.json').read_text())['services']['gateway']['environment']==json.loads(previous_site)['services']['gateway']['environment']
             assert not (runtime/'contract.json').exists()
             # A retry preserves each unactivated copy, instead of deleting state.
             copy_adopted_state({'adoption':adopt,'state':str(state)},runtime)
@@ -448,16 +462,20 @@ def test_process_kill_journal_recovers_execution_without_restoring_any_database(
     db=runtime/'operating.sqlite'
     with closing(sqlite3.connect(db)) as c:c.execute('create table progress(value)');c.execute('insert into progress values(42)');c.commit()
     original=db.read_bytes()
-    old=['--project-name','cloud-soc-central','-f',str(state/'old-compose.json')]
+    old=['--project-name','cloud-soc-central','-f',str(state/'old-compose.json'),'-f',str(runtime/'site.json')]
+    (runtime/'site.json').write_text('{"services":{}}')
+    saved_site=host.save_previous_site(runtime,run)
+    (run/'plan.json').write_text(json.dumps({'observed':{n:{'image':'sha256:old'} for n in ('portal','detector')}}))
     previous={'version':1,'prepared':True,'preserved':'checkpoint'}
     (runtime/'contract.json').write_text(json.dumps({'version':1,'prepared':False,'pinned_start':'unchanged'}))
     (runtime/'pending.json').write_text(json.dumps({'run':str(run)}))
     (run/'recovery.json').write_text(json.dumps({'previous_compose':None if fresh else old,
-       'old_names':['portal','detector'],'old_contract':None if fresh else previous,'old_current':None,
+       'old_site':saved_site,'old_names':['portal','detector'],'old_contract':None if fresh else previous,'old_current':None,
        'canonical':['compose','--project-name','cloud-soc-central','-f','missing-after-kill.json'],'environment':{}}))
     monkeypatch.setattr(host,'lock',lambda _:nullcontext())
-    monkeypatch.setattr(host,'containers',lambda *_:{'portal':{},'detector':{}})
-    engine=Mock();result=host.recover(engine,state)
+    monkeypatch.setattr(host,'containers',lambda *_:{n:{'Image':'sha256:old','State':{'Running':True}} for n in ('portal','detector')})
+    engine=Mock();engine.json.side_effect=lambda args,**kw:[{'Id':args[-1]}]
+    result=host.recover(engine,state)
     assert result['databases_rewound'] is False and result['old_execution_restored']==(not fresh)
     assert db.read_bytes()==original and not (runtime/'pending.json').exists()
     assert json.loads((runtime/'contract.json').read_text())==(previous if not fresh else {'version':1,'prepared':False,'pinned_start':'unchanged'})
@@ -493,13 +511,15 @@ def test_recovery_restores_site_before_starting_old_compose(tmp_path,monkeypatch
     class Engine:
         def run(self,args,**kwargs):
             if 'up' in args:
-                assert site.read_bytes()==original
+                assert json.loads(site.read_text())=={'site':'old','services':{'portal':{'image':'sha256:old'}}}
             return ''
-    monkeypatch.setattr(host,'containers',lambda *_:{})
-    host._restore_execution(Engine(),runtime,run,{'previous_compose':['--project-name','cloud-soc-central'],
+        def json(self,args,**kw):return [{'Id':args[-1]}]
+    monkeypatch.setattr(host,'containers',lambda *_:{'portal':{'Image':'sha256:old','State':{'Running':True}}})
+    host._restore_execution(Engine(),runtime,run,{'previous_compose':['--project-name','cloud-soc-central','-f',str(site)],
+        'image_mode':'site','image_pins':{'portal':'sha256:old'},
         'canonical':['compose','--project-name','cloud-soc-central'], 'old_names':['portal'],
         'old_contract':None,'old_current':None,'old_site':saved})
-    assert site.read_bytes()==original
+    assert json.loads(site.read_text())=={'site':'old','services':{'portal':{'image':'sha256:old'}}}
 
 
 def test_site_snapshot_repository_and_compose_numeric_strings_are_supported():
@@ -552,7 +572,7 @@ def test_fresh_common_install_and_retry_preserve_pinned_start_and_state(tmp_path
     c,_=build_contract(POLICY,{},state,now=NOW)
     plan={'workspace':str(tmp_path),'state':str(state),'image':'fixture:verified','image_id':'sha256:verified',
         'project':'cloud-soc-central','policy':POLICY,'contract':c,'adoption':{},'resources':{'ok':True},
-        'fingerprint':'reviewed','observed':{},'protected_sha256':{},'previous_compose':None,
+        'fingerprint':'reviewed','observed':{},'protected_sha256':{},'previous_compose':None,'infrastructure_images':{},'previous_image_mode':'none',
         'source':{},'source_sha256':'verified','site':{},'fresh':True,'new_workers':list(WORKERS),
         'compose_environment':{'SOC_STATE_DIR':str(state)}}
     monkeypatch.setattr(host,'lock',lambda _:nullcontext())
@@ -568,7 +588,8 @@ def test_fresh_common_install_and_retry_preserve_pinned_start_and_state(tmp_path
             if 'stop' in args:self.phase='stopped'
             return ''
         def json(self,args,**kw):
-            if 'config' in args:return {'services':{n:{'image':plan['image']} for n in host.SERVICES}}
+            if args[:2]==['image','inspect']:return [{'Id':args[-1]}]
+            if 'config' in args:return {'services':{n:{'image':plan['image_id']} for n in host.SERVICES}}
             if 'cloud_soc.deployment.migrations' in args:
                 checkpoint=state/'runtime/state/detector/runtime.sqlite'
                 if not checkpoint.exists():

@@ -1,6 +1,6 @@
 # 현재 구현과 검증 상태
 
-기능 대조의 코드 기준: 2026-10-26, Gandalem/cloud-soc `main ac64198`. 설치 기능 커밋 e4a3d65/08a99c3와 후속 CI 수정50ebce9를 포함한다. 문서 기준은 학교에서 게시한31de814의 통합·보관본에 이번 문서 수정을 더한 상태다. 문서 기준이 달라졌다고 기능을 다시 개발하거나 실제 서비스를 갱신한 것으로 보지 않는다. **사용 안내는 [문서 색인](README.md), 작업 승인/완료 이력은 [작업 목록](work_tracker.md)**을 따른다. 여기서 작업 순서나 실제 운영 상태를 새로 확정하지 않는다.
+상태 기준: 2026-10-27, Gandalem/cloud-soc `main b737b23`과 이번 문서 수정. PR21은 장치 재설치·수동 키 연장·서버 설치/삭제 개선b71d300과 시간 상한 수정5bcef7f를 포함하고 e804569로 main에 병합됐다. b737b23은 병합 결과 기록이며 양 OS CI가 확인한 head는5bcef7f다. 최초 기능 대조ac64198·문서 통합31de814와 각 시험 날짜는 이력으로 유지한다. **사용 안내는 [문서 색인](README.md), 작업 승인/완료 이력은 [작업 목록](work_tracker.md)**을 따른다. Git/CI 상태만으로 현재 서버 배포를 확정하지 않는다.
 
 ## 읽는 기준
 
@@ -26,6 +26,10 @@
 |10/25 Ubuntu24.04 WSL | 제품 설치/receipt·합성 WAF 정규화/경보·근거·stop/start·보존 제거/키 폐기 | [장치 검증](device_installation.md#검증-이력). 실제 DEB 패키지·일반 VM 부팅·실제 웹 공격은 별도 |
 |10/25 Windows10 VM | Restricted 그대로 제품 native EXE 설치·service/COM/ACL/DPAPI·receipt·합성 WAF 경보/근거·보존 제거/purge·키 폐기·TLS6경계 | [장치 검증](device_installation.md#검증-이력). unsigned lab·CLI 엔진 결과이며 운영 서명/GUI/모든 중단/부팅/network 인수 아님 |
 |10/26 Git/CI | PR20 main 병합17a32c4, 코드50ebce9의 Actions40204762899 Ubuntu/Windows 성공, 기록ac64198 | 운영 이미지/장치 자동 배포를 뜻하지 않음 |
+|10/26 Windows VM·Ubuntu24.04.5 WSL | 보존 제거 후 새 설치 차단→명시 자료 삭제→이전 장치 종료→새 장치/수집기 ID·receipt·새 일반 로그 수신, 이전 원본/제거 이력 보존·시험 정리 | [재설치](device_installation.md#자료-삭제-후-새-설치). 기존 신원/큐 복원·실제 DEB·운영 서명 인수는 아님 |
+|10/26 WSL·키 연장 클릭 시험 | 같은 host 수집 키의 수동 연장 전후 실제 Filebeat 수신·서비스/keystore/권한 보존, 사용자 화면 클릭 성공과 서버 만료 대조·정리 | [수동 키 연장](agent_management.md#정상-장치의-수동-유효기간-연장). 새 비밀값 교체·기존 만료 시각 경과·Windows 추가 인수는 별도 |
+|10/27 Ubuntu24.04.2 VMware | 실제 DEB1.0.0 설치·도움말·제거, 동일 소스 합성 낮은 버전 교체·비활성 수집기 표식 잔존 시 제거 보호·시험 정리6단계 통과, 독립 사후 대조 | [장치 검증](device_installation.md#검증-이력). 과거 출시 버전/실행 중 수집기 업그레이드·새 수신 인수 아님 |
+|10/27 Git/CI | PR21 head5bcef7f의 Actions40424825929 Ubuntu/Windows 성공, main 병합e804569·기록b737b23 | 첫 CI의 종료 시간 반올림 실패를 수정함. Git 제외 WSL 보고서 재실행·운영 배포는 아님 |
 
 10/19~20은 실제 HTTP/SQLi 요청,10/25는 파일에 넣은 합성 WAF 입력이다. 서로의 성공을 취소하거나 둘을 모두 실공격/합성으로 묶지 않는다.
 
@@ -38,31 +42,34 @@
 - 지속 heartbeat는 tools/device_heartbeat.py의 SCM/systemctl 관측·15~300초 HTTPS 반복/실패 후 재전송, insight_state의 인증·신선도 저장, dashboard-insights.js의 보고 중/지연/두절·collector 상태 표시까지 구현돼 있다. 특정 managed API의 unknown을 전체 heartbeat 미구현으로 해석하지 않는다.
 - 키 폐기·미사용 등록 정보 갱신, 확인된 실패 설치의 새 토큰 재등록, 기존 Windows Repair/Resume는 구현/기록돼 있다. 아래 정상 설치의 수집 키 교체·제거 후 복원과 범위가 다르다.
 - EXE sign/verify·Portal release mount/SHA pin, DEB 빌드, 서버 soc 메뉴는 구현돼 있다. 산출물/추가 실제 인수 증거와 기능 부재를 구분한다.
+- 서버 메뉴의 실제 설치·보존 제거/동일 자료 복구·purge는10/27 새 WSL에서 완료했다. 자료 삭제 후 새 등록 재설치는10/26 Windows/WSL에서 새 일반 로그 수신까지 확인했다. 이 두 경로를 현재 미구현/미검증으로 되돌리지 않는다.
 
 <a id="implementation-gaps"></a>
 ## 확인된 제한과 구현 공백
 
 | 범위 | 코드에서 확인한 제한 | 이미 있는 범위/정책 |
 | --- | --- | --- |
-| 정상 등록 장치의 수집 키 교체 | device_management.prepare는 issued/complete를409로 거부하고 managed 수동 키 발급도 금지. 로컬 keystore 교체/구키 종료의 통합 절차 없음 | 미사용 토큰 갱신·실패 재등록·별도 heartbeat credential rotate는 있음 |
-| 제거 완료 뒤 재설치/큐 복원 | 자료 삭제 완료 뒤 새 장치로 설치하는 최소 경로는10/26 구현·필수 검사와 실제 Windows VM/Ubuntu24.04.5 WSL의 재설치·새 중앙 수신 통과. 보존 큐 복원·기존 신원 재사용은 범위 밖 | 기존 Repair/Resume·일부 설치/제거 재시도는 있음. WSL 결과는 DEB 패키지 설치·일반 Linux VM 부팅·모든 장애 인수를 뜻하지 않음 |
+| 새 비밀값으로 수집 키 교체 | issued/complete 세션을 새 등록으로 덮어쓰지 않으며 로컬 keystore 교체/구키 종료의 통합 절차 없음 | 기존 키의 수동 유효기간 연장은 완료. 미사용 토큰 갱신·실패 재등록·별도 heartbeat 회전도 있음 |
+| 보존 큐·기존 신원 복원 | 보존한 큐/읽기 위치와 기존 신원·키를 인수하는 복원 경로는 후속 범위 | 자료 삭제 후 새 장치로 설치·새 중앙 수신은10/26 양 OS에서 완료. 기존 Repair/Resume와 별도 |
 | Windows manager 완전 제거 | purge 뒤에도 ProgramData의 관리 EXE·상태/감사 보존. GUI는 보존 기본·명시 자료 삭제 선택 제공 | 수집기/큐 purge는 있음. 보존 정책 변경을 무조건 필수 버그 수정으로 단정하지 않음 |
 | 종료 이력/한도 | ended 포함 managed_devices 전체200개와 packages200개 한도. managed 패키지 일반 삭제 차단, 한도 회수 절차 없음 | 종료·폐기·이력 조회는 있음. 감사 보관/참조 보존 정책을 먼저 정해야 함 |
 | 새 native Windows network | require_scope와 native 계약에서 network=true 거부 | 시스템/웹 지원, 기존 고급 Packetbeat/Npcap 경로와 별도 |
 
-근거 소스: src/cloud_soc/portal/{device_management.py,packages.py,windows_native.py,app.py}, deploy/agents/agent-manager.py, deploy/agents/native/{Installer.cs,Program.cs}.10/26 소스 읽기/원격 refs 확인 결과이며 해당 실패를 실장치에서 새로 재현한 결과가 아니다.
+근거 소스: src/cloud_soc/portal/{device_management.py,key_extension.py,packages.py,windows_native.py,app.py}, deploy/agents/{agent-manager.py,enrollment-linux.py}, deploy/agents/native/{Installer.cs,Program.cs}. 최초10/26 소스 대조에 PR21의 후속 구현/인수 기록을 반영했다. 모든 제한을 새 실장치에서 실패 재현했다는 뜻은 아니다.
 
 ## 배포와 추가 인수
 
 | 트랙 | 남은 것으로 기록된 범위 | 확대하지 않는 해석 |
 | --- | --- | --- |
-| 설치 릴리스 | 운영 서명 EXE 공급·Portal 연결/조직 정책, 실제 DEB 설치/제거, 새 soc 메뉴 별도 실제 인수 | 빌드/서명·메뉴 코드 부재가 아님. 기존 설치/경보/제거 재검증을 통째로 요구하지 않음 |
+| 설치 릴리스 | 운영 서명 EXE 공급·Portal 연결/조직 정책, Windows 실제 GUI·OS/정책·중단 경계 | DEB 실제 설치·합성 낮은 버전 교체·제거 보호/정리는10/27 Ubuntu VM에서 완료. 과거 출시 버전/실행 중 수집기 업그레이드와 별도. 새 soc 메뉴의 WSL 전체 인수도 완료 |
 | native 운영 | manager 자체 제거/보존 큐 재설치, commit 중단 지점·GUI/OS 매트릭스·대규모 배포 | 기존 Windows 복구 전체가 없는 것이 아님 |
-| 대시보드 추가 연결 | 정확한 원본·장치 원장 결합·평가/GeoIP/계정/실제 cloud의 명시 후속 | 기본 경보 상세·일반 로그 수신 구분·지속 heartbeat는 이미 있음 |
+| 대시보드 추가 연결 | 새 위젯/장치 원장의 정확한 연결과 계정·조직/실패 경계, 실제 평가·GeoIP·계정 근거·AWS 연결 | 기본 경보 상세·일반 로그 수신 구분·지속 heartbeat는 있음. 자동 평가/설정 수집은 선택 확장 |
 | 위젯 위치 이동 | 구현·실습 정적 반영 뒤 사용자 지시로 검수 생략 | 자동 재검증/브라우저 실행 허가 아님 |
 | 상시 운영 | 선택 규칙 실제 유지·지속 지연/적체·키 만료/Portal guard·PC 터널 자동 연결 | 실제 재부팅/신규 요청 경보 기록은 이미 있음 |
-| 클라우드/규칙 | CloudTrail/OCI의 실제 인증·수신, 공급자별 인수·모든 규칙 정상/경계/양성 | EC2 웹 수집을 CloudTrail 인수로 세지 않음 |
+| 클라우드/규칙 | 사용할 공급자·규칙별 실제 인증/수신·정상/경계/양성, 신규 범용 경보의 Slack 채널 대조 | EC2 웹 수집을 CloudTrail로 세지 않음. OCI/보류된 cloud 운영 인수는 자동 재개하지 않음 |
 | 백업/DR | 독립 저장소·호스트 손실/실제 RPO/RTO·장기 무손실 | SQLite 보호 백업·격리 snapshot/복원은 이미 있음. 기존 사용자 보류 유지 |
+| 대상 서버 배포·시연 | 선택한 서버에 최신본을 보호 반영하고 해당 배포본의 입력→경보/근거·사건 저장/녹화를 확인 | 과거 다른 환경의 성공이나 PR 병합을 현재 배포로 바꾸지 않음 |
+| 별도 로컬 수정·안내 | 이 PC의 Portal 외부 링크 수정 검토/별도 반영, 웹 로그 경로 거부 조건 설명 | Portal 미커밋 수정 두 파일은 PR21에서 제외·보존됨. 장치 UI 정리와 키 연장은 완료 |
 
 각 트랙의 기존 계획은 [설치](device_installation.md#남은-범위), [대시보드](dashboard_capabilities.md#후속-연결-계획--2026-10-21), [상시 운영](live_ajax_runtime.md), [독립 백업](p2_capacity_backup.md)에 있다. 하나의 최신 승인된 전체 순위는 아니다. 소스 검토자의 제안과 사용자 승인 우선순위를 구분한다.
 

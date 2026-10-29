@@ -1,9 +1,13 @@
 """Render the real discovery input and require runtime locale enrichment."""
 import json
+import os
+
+import pytest
 from pathlib import Path
 import subprocess
 
 
+@pytest.mark.skipif(os.name != 'posix', reason='Linux discovery requires native Bash and host paths')
 def test_discovered_file_input_uses_live_host_offset_without_static_timezone():
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run(['bash','-c',

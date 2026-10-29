@@ -15,6 +15,7 @@ import warnings
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'deploy/server'))
+sys.path.insert(0, str(ROOT / 'src'))
 from server_cli import KoreanParser
 from enrollment_pki import repair as prepare_enrollment_pki
 
@@ -63,10 +64,17 @@ def password_hash(password):
     return f"pbkdf2:sha256:600000${salt}${digest}"
 
 
-def prepare(host, bind_ip, state, password, *, agent_host=None):
+def prepare(host, bind_ip, state, password, *, agent_host=None, access_path=None):
     san = validate_host(host)
     agent_host = agent_host or host
     agent_san = validate_host(agent_host)
+    extra_sans = []
+    if access_path:
+        from urllib.parse import urlsplit
+        from cloud_soc.deployment.access import read_profile
+        access = read_profile(access_path)['profile']
+        origins = access['aliases']
+        extra_sans = [validate_host(urlsplit(origin).hostname) for origin in origins]
     try:
         ipaddress.IPv4Address(bind_ip)
     except ValueError:
@@ -106,7 +114,7 @@ def prepare(host, bind_ip, state, password, *, agent_host=None):
     openssl("req", "-x509", "-newkey", "rsa:3072", "-nodes", "-sha256", "-days", "3650", "-subj", "/CN=Cloud SOC Lab CA", "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign", "-keyout", ca_key, "-out", ca_crt)
     openssl("req", "-newkey", "rsa:3072", "-nodes", "-sha256", "-subj", f"/CN={host}", "-keyout", key, "-out", csr)
     extensions = state / "private/server.ext"
-    sans = list(dict.fromkeys([san, agent_san, "DNS:elasticsearch", "DNS:localhost", "IP:127.0.0.1"]))
+    sans = list(dict.fromkeys([san, agent_san, *extra_sans, "DNS:elasticsearch", "DNS:localhost", "IP:127.0.0.1"]))
     extensions.write_text(f"subjectAltName={','.join(sans)}\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth,clientAuth\n", encoding="ascii")
     openssl("x509", "-req", "-in", csr, "-CA", ca_crt, "-CAkey", ca_key, "-CAcreateserial", "-out", cert, "-days", "365", "-sha256", "-extfile", extensions)
     for file in (ca_crt, cert):
@@ -135,6 +143,7 @@ def main():
     parser = KoreanParser(description="신규 서버 인증서와 자격 증명 생성")
     parser.add_argument("--host", required=True, help="포털 접속 DNS 또는 IPv4")
     parser.add_argument("--agent-host", help="장치가 접속할 DNS 또는 IPv4 (기본: --host)")
+    parser.add_argument('--access', type=Path, help='선택적인 추가 Portal DNS/IP 설정 JSON')
     parser.add_argument("--bind-ip", default="127.0.0.1", help="포트를 열 서버 IPv4 (기본: 127.0.0.1)")
     parser.add_argument("--state", type=Path, default=ROOT / "state" / "server")
     args = parser.parse_args()
@@ -143,6 +152,8 @@ def main():
     try:
         password = read_admin_password()
         options = {"agent_host": args.agent_host} if args.agent_host else {}
+        if getattr(args, 'access', None):
+            options['access_path'] = args.access
         prepare(args.host, args.bind_ip, args.state, password, **options)
     except PreparationError as error:
         parser.exit(1, f"인증서 준비 실패: {error}. 기존 설정과 부분 설치 상태는 보존됐습니다.\n")

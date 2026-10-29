@@ -1,4 +1,5 @@
 """Fixed error codes preserve actionable failures without exporting secrets."""
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -23,7 +24,7 @@ class WorkerErrorTests(unittest.TestCase):
     def test_sqlite_lock_is_reported_without_path(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'state.sqlite'
-            with sqlite3.connect(path) as first, sqlite3.connect(path, timeout=0) as second:
+            with closing(sqlite3.connect(path)) as first, closing(sqlite3.connect(path, timeout=0)) as second:
                 first.execute('CREATE TABLE sample(id INTEGER)'); first.commit()
                 first.execute('BEGIN IMMEDIATE')
                 try:

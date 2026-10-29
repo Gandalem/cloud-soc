@@ -11,9 +11,12 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'src'))
 from cloud_soc.deployment.contract import SERVICES
+from cloud_soc.deployment.compose_review import ComposeReviewError
 from cloud_soc.deployment.dependencies import DependencyError, check as check_dependencies
+from cloud_soc.deployment.downloads import build_runtime_image, public_operation
 from cloud_soc.deployment.host import Docker, DockerCommandError, apply, containers, recover, snapshot, summary, worker_inventory
 from cloud_soc.deployment.migrations import atomic_json
+from cloud_soc.deployment import image_safety
 from cloud_soc.deployment.verify import portal
 
 
@@ -32,30 +35,35 @@ def ready(engine, name, project):
 
 
 def prepare_install_images(engine, workspace, state, environment):
-    """Prepare registry images before activation, retaining cached versions."""
+    """Let Compose resolve image references and cache policy from the release."""
+    compose = ['compose', '--project-name', 'cloud-soc-central',
+        '--env-file', str(state / 'compose.env'), '-f', str(workspace / 'deploy/server/compose.yaml'),
+    ]
+    rendered = engine.json([*compose, 'config', '--format', 'json'], env=environment)
+    images = image_safety.infrastructure_images(engine, rendered, allow_missing=True)
+    if any(row['image_id'] is None for row in images.values()):
+        image_safety.check_disk_budget(engine, workspace, 'download')
     print('[설치] Elasticsearch·Kibana·게이트웨이 이미지를 준비합니다. 다운로드 진행은 아래에 표시됩니다.', flush=True)
-    for service, image in (
-        ('Elasticsearch', 'docker.elastic.co/elasticsearch/elasticsearch:9.5.2'),
-        ('Kibana', 'docker.elastic.co/kibana/kibana:9.5.2'), ('게이트웨이', 'caddy:2.11.4-alpine'),
-    ):
-        present = engine.run(['image', 'ls', '--filter', 'reference=' + image, '--format', '{{.ID}}']).strip()
-        if present:
-            print('[설치] ' + service + ': 검증된 호환 이미지가 있어 재사용합니다.', flush=True)
-        else:
-            print('[설치] ' + service + ': 검증 버전 이미지가 필요해 다운로드합니다. 다른 버전은 자동 대체하지 않습니다.', flush=True)
-    engine.run(['compose', '--project-name', 'cloud-soc-central', '--env-file', str(state / 'compose.env'),
-                '-f', str(workspace / 'deploy/server/compose.yaml'),
-                'pull', '--policy', 'missing', 'elasticsearch', 'kibana', 'gateway'],
-               env=environment, timeout=1800, stream=True)
+    for service, label in (('elasticsearch', 'Elasticsearch'), ('kibana', 'Kibana'), ('gateway', '게이트웨이')):
+        print('[설치] ' + label + ': 배포 설정에 지정된 이미지를 확인합니다. 이미 있으면 재사용합니다.', flush=True)
+        public_operation(engine, [*compose, 'pull', '--policy', 'missing', service],
+                         env=environment, timeout=1800,
+                         before_attempt=(lambda: image_safety.check_disk_budget(engine, workspace, 'reserve'))
+                         if images[service]['image_id'] is None else None)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('plan', 'apply', 'install', 'recover', 'verify'))
+    parser.add_argument('action', choices=('build', 'prepare-images', 'review-compose', 'plan', 'apply', 'install', 'recover', 'verify'))
     parser.add_argument('--workspace', type=Path, default=ROOT)
     parser.add_argument('--state', type=Path, default=ROOT / 'state/server')
-    parser.add_argument('--image', default='cloud-soc-central-runtime:local')
+    parser.add_argument('--image', help='후보 이미지 태그 (build에서 필수)')
     parser.add_argument('--plan', type=Path)
+    parser.add_argument('--access', type=Path, help='대표/수신 주소를 유지하는 추가 Portal DNS/IP 설정 JSON')
+    parser.add_argument('--compose-file', action='append', type=Path, default=[],
+                        help='review-compose: explicit existing Compose files in their applied order')
+    parser.add_argument('--compose-review', type=Path,
+                        help='plan: protected review.json from review-compose, rechecked before apply')
     parser.add_argument('--build', action='store_true')
     parser.add_argument('--startup-only', action='store_true', help='Structure only; never claims ingestion/detection acceptance')
     parser.add_argument('--portal-origin')
@@ -65,14 +73,54 @@ def main():
     args = parser.parse_args()
     if os.name != 'posix' or os.geteuid() != 0:
         raise ValueError('Run on the approved Linux Docker host with sudo')
+    if args.action == 'build':
+        if not args.image:
+            raise ValueError('업데이트 후보 태그를 --image로 지정하세요')
+        if (args.build or args.plan or args.access or args.compose_file or args.compose_review
+                or args.startup_only or args.portal_origin or args.password_stdin or args.probe or args.wait_seconds):
+            raise ValueError('build에서는 --workspace와 --image만 지정하세요. 적용은 별도 배포 계획으로 진행합니다')
+        engine = Docker()
+        print('[빌드] 업데이트 후보 이미지를 준비합니다. 실행 중인 서비스는 변경하지 않습니다.', flush=True)
+        build_runtime_image(engine, args.workspace, args.image)
+        image_id = engine.json(['image', 'inspect', args.image])[0]['Id']
+        print(json.dumps({'built': True, 'image': args.image, 'image_id': image_id, 'activation_performed': False}))
+        return 0
+    args.image = args.image or 'cloud-soc-central-runtime:local'
     if args.state.is_symlink() or args.wait_seconds < 0 or args.wait_seconds > 3600:
         raise ValueError('Invalid state path or verification deadline')
     engine = Docker();state = args.state.resolve()
+    if args.access and args.action not in ('plan', 'install'):
+        raise ComposeReviewError('추가 주소 파일은 plan 또는 install에서 지정하세요')
+    if args.compose_file and args.action != 'review-compose' or args.compose_review and args.action != 'plan':
+        raise ValueError('Compose review options do not apply to this action')
+    if args.action == 'prepare-images':
+        if (args.build or args.plan or args.startup_only or args.portal_origin or args.password_stdin
+                or args.probe or args.wait_seconds):
+            raise image_safety.DeploymentSafetyError('prepare-images에서는 이미지 준비만 수행할 수 있습니다')
+        check_dependencies(engine)
+        from cloud_soc.deployment.host import compose_environment
+        prepare_install_images(engine, args.workspace, state,
+                               compose_environment(state, args.image, containers(engine, 'cloud-soc-central')))
+        print(json.dumps({'images_prepared': True, 'activation_performed': False}))
+        return 0
+    if args.action == 'review-compose':
+        from cloud_soc.deployment.compose_review import create
+        if len(args.compose_file) < 3:
+            raise ValueError('Specify the original two Compose files and the additional site overrides in order')
+        from cloud_soc.deployment.host import lock
+        with lock(state / 'runtime'):
+            if (state / 'runtime/pending.json').exists():
+                raise ValueError('Recover the interrupted deployment before reviewing Compose configuration')
+            result = create(engine, state, args.compose_file, containers(engine, 'cloud-soc-central'))
+        print(json.dumps(result))
+        return 0
     if args.action == 'recover':
         print(json.dumps(recover(engine, state)))
         return 0
     if args.action == 'plan':
-        p = snapshot(engine, args.workspace, state, args.image)
+        p = snapshot(engine, args.workspace, state, args.image,
+                     **({'compose_review': args.compose_review} if args.compose_review else {}),
+                     **({'access_path': args.access} if args.access else {}))
         output = args.plan or state / 'runtime-plan.json'
         atomic_json(output, p)
         print(json.dumps(summary(p)))
@@ -84,10 +132,10 @@ def main():
             if args.action != 'install':
                 raise ValueError('Build the upgrade candidate before reviewing its plan')
             print('[설치] Cloud SOC 이미지를 빌드합니다. 최초 설치는 몇 분 걸릴 수 있습니다.', flush=True)
-            engine.run(['build', '--progress=plain', '--pull=false', '-f', str(args.workspace / 'deploy/server/Dockerfile'), '-t', args.image,
-                        str(args.workspace)], timeout=600, stream=True)
+            build_runtime_image(engine, args.workspace, args.image)
         print('[설치] 소스·설정·서버 자원을 확인합니다.', flush=True)
-        p = (snapshot(engine, args.workspace, state, args.image) if args.action == 'install'
+        p = (snapshot(engine, args.workspace, state, args.image, allow_missing_images=True,
+                      **({'access_path': args.access} if args.access else {})) if args.action == 'install'
              else json.loads(args.plan.read_text()) if args.plan else None)
         if not p or (args.action == 'install' and not p['fresh']):
             raise ValueError('Use a reviewed plan to upgrade an existing server')
@@ -95,6 +143,8 @@ def main():
             raise ValueError('Server resource preflight failed; no activation performed')
         if args.action == 'install':
             prepare_install_images(engine, args.workspace, state, p['compose_environment'])
+            p = snapshot(engine, args.workspace, state, args.image,
+                         **({'access_path': args.access} if args.access else {}))
         print(json.dumps(apply(engine, p, poll=ready)))
         return 0
     runtime = state / 'runtime';current = json.loads((runtime / 'current.json').read_text())
@@ -136,7 +186,9 @@ def main():
 if __name__ == '__main__':
     try:
         raise SystemExit(main())
-    except (DockerCommandError, DependencyError) as error:
+    except (DockerCommandError, DependencyError, image_safety.DeploymentSafetyError) as error:
+        raise SystemExit(str(error)) from None
+    except ComposeReviewError as error:
         raise SystemExit(str(error)) from None
     except Exception as error:
         code = getattr(error, 'sqlite_errorname', None)

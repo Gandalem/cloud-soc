@@ -2,6 +2,10 @@
 
 현재 중앙의 신규 설치와 기존 서버 업그레이드는 [공통 런타임 안내](../../docs/runtime_deployment.md)의 버전 있는 Compose·마이그레이션·자동 인수 경로를 사용합니다. `manage.py plan → apply → verify`가 필수 워커·권한·기존 상태와 서버별 설정 차이를 함께 검사합니다. 아래의 과거 수동 `up` 절차만으로 최신 기능의 배포/실수신을 완료 처리하지 않습니다.
 
+ngrok용 추가 설정 때문에 실행 중인 Compose와 보호 기록이 다르면 [ngrok 설정 인수 절차](../../docs/runtime_deployment.md#ngrok-설정-인수-절차--2026-10-28)를 따릅니다. `review-compose`는 명시한 기존 파일과 실제 실행 설정을 비교해 보호 검토 기록만 만들며, 서비스는 바꾸지 않습니다. 검토 기록을 `plan --compose-review`에 지정하고 기존 업그레이드 절차를 이어갑니다. 설정 지문 불일치를 건너뛰거나 기존 실행 기록에 파일명만 추가하지 않습니다.
+
+Portal에 DNS/IP 주소를 추가할 때만 [선택적 추가 주소](../../docs/runtime_deployment.md#선택적-추가-portal-주소--학교집-통합-3안)를 사용합니다. 대표/ngrok/장치 수신 주소와 기존 키는 유지하며, DNS 레코드·터널·기존 인증서는 자동 변경하지 않습니다.
+
 이 구성은 **단일 노드 졸업작품·실습용**입니다. Elasticsearch, Kibana, 에이전트 배포 포털을 함께 실행합니다. 저장소 루트의 `compose.yaml`은 기존 로컬 개발용으로 유지하며, 아래에서는 항상 `deploy/server/compose.yaml`을 지정합니다.
 
 AWS EC2에 처음 배포하고 Windows PC에서 검증하는 경우에는 [AWS Ubuntu + Windows 실제 수집 테스트](../../docs/installation_reference.md)를 먼저 따라가세요. 아래는 공통 구성과 운영 제약 설명입니다.
@@ -91,6 +95,8 @@ sudo ls -ld state/server
 `No such file or directory`이면 인증서 준비 상태가 없는 것입니다. Git 변경을 보존하며 `git pull --ff-only origin main`으로 수정본을 받고 설치기를 다시 실행합니다. 기존 Docker는 재사용하며 삭제할 필요가 없습니다. **폴더가 존재하거나 권한 오류 등 다른 결과이면 지우거나 덮어쓰지 말고 먼저 검토합니다.** 예상 가능한 검증 오류는 비밀번호를 노출하지 않는 구체적 메시지로 안내하며, 알 수 없는 암호화·OS·OpenSSL 오류의 원문은 계속 숨깁니다.
 
 신규 공통 설치는 애플리케이션 이미지 빌드와 Elasticsearch·Kibana·Caddy의 누락 이미지 다운로드를 자동 수행한 뒤 런타임을 시작합니다. 이미 있는 인프라 이미지는 교체하지 않으며 활성화 단계는 계속 `--pull never`를 사용합니다. 공개 이미지 빌드·다운로드 진행은 터미널에 표시하고, 계정 준비·마이그레이션 등 민감한 응답은 원문 대신 단계와 제한된 오류 사유만 표시합니다.
+
+기존 서버의 업데이트 후보도 같은 다운로드·빌드 재시도를 사용합니다. 저장소 루트에서 `sudo python3 deploy/server/manage.py build --image cloud-soc-runtime:reviewed`로 후보만 준비한 뒤 [공통 런타임의 plan/apply 절차](../../docs/runtime_deployment.md#기존-서버-업그레이드)를 따르세요. 후보 태그는 명시해야 하며 `build` 성공만으로 실행 중인 서버가 교체되지는 않습니다.
 
 기존 Docker CLI/Engine은 이 설치 경로의 최소 지원선 24.0.0, Compose는 2.24.0과 필수 기능(`pull --policy`, 빌드 `--progress`)을 확인합니다. 호환되면 재사용하고, 오래됐거나 기능이 없으면 인증서 생성 전에 업데이트 안내와 함께 중단합니다. 기존 프로그램을 자동 업그레이드하지 않습니다. 인프라 이미지는 Compose에 고정한 검증 버전만 재사용하며, 다른 버전만 있다면 검증 버전이 필요하다고 안내하고 해당 이미지를 별도로 받습니다.
 

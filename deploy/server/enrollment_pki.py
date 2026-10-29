@@ -5,7 +5,6 @@ No Docker operations, credentials, application databases or agent state access.
 """
 from contextlib import contextmanager
 from datetime import datetime, timezone
-import fcntl
 import hashlib
 import ipaddress
 import json
@@ -78,6 +77,7 @@ def subject_alternatives(cert):
 
 @contextmanager
 def locked(state):
+    import fcntl
     path = safe_path(state, 'private/enrollment-pki.lock')
     fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:

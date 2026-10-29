@@ -199,6 +199,29 @@ class ServerPreparationTests(unittest.TestCase):
                 prepare.prepare("dashboard.example.test", "10.0.0.5", self.state, PASSWORD, agent_host=host)
             self.assertFalse(self.state.exists())
 
+    def test_optional_alias_adds_only_san_and_preserves_existing_addresses(self):
+        import json
+        request = self.state.parent / 'aliases.json'
+        request.write_text(json.dumps({'version': 1, 'aliases': ['https://extra.example.test']}), encoding='utf-8')
+        def fake_openssl(command, **_):
+            for option in ('-keyout', '-out'):
+                if option in command:
+                    Path(command[command.index(option) + 1]).write_text('synthetic certificate', encoding='ascii')
+        with patch.object(prepare.shutil, 'which', return_value='openssl'), \
+                patch.object(prepare.subprocess, 'run', side_effect=fake_openssl), \
+                patch.object(prepare, 'prepare_enrollment_pki') as pki, \
+                patch.object(prepare, 'password_hash', return_value='SYNTHETIC_HASH'), \
+                patch.object(prepare.os, 'umask'), patch.object(prepare.os, 'chown', create=True), \
+                patch.object(Path, 'chmod', autospec=True), redirect_stdout(io.StringIO()):
+            prepare.prepare('portal.example.test', '127.0.0.1', self.state, PASSWORD,
+                            agent_host='receiver.example.test', access_path=request)
+            pki.assert_called_once_with(self.state.resolve(), 'https://portal.example.test')
+        ext = (self.state / 'private/server.ext').read_text(encoding='ascii')
+        self.assertIn('DNS:extra.example.test', ext)
+        env = (self.state / 'compose.env').read_text(encoding='utf-8')
+        self.assertIn('SOC_PUBLIC_HOST=portal.example.test\n', env)
+        self.assertIn('SOC_AGENT_ENDPOINT=https://receiver.example.test:9200\n', env)
+
     def test_elastic_secret_ownership_failure_preserves_state_without_weakening_mode(self):
         with patch.object(prepare.shutil, "which", return_value="openssl"), \
                 patch.object(prepare, "password_hash", return_value="SYNTHETIC_HASH"), \

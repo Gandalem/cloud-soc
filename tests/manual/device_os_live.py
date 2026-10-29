@@ -133,9 +133,9 @@ class Lab:
         p = subprocess.run(list(map(str, args)), input=data, capture_output=True, timeout=timeout)
         text = self.safe((p.stdout+p.stderr).decode('utf-8', 'replace'))
         if name:
-            (self.log_dir/(name+'.log')).write_text(text)
+            (self.log_dir/(name+'.log')).write_text(text, encoding='utf-8')
         if check and p.returncode:
-            (self.log_dir/'last-failure.log').write_text(text)
+            (self.log_dir/'last-failure.log').write_text(text, encoding='utf-8')
             raise RuntimeError(f'Lab command failed ({name or Path(str(args[0])).name}, exit {p.returncode})')
         return p.stdout.decode('utf-8', 'replace').strip()
 

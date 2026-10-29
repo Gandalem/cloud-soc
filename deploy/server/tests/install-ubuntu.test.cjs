@@ -249,7 +249,8 @@ installed() { [ "$1" != curl ] && [ "$1" != openssl ]; }
 ${aptGetStub('printf \'%s\\n\' "$*"')}
 install_packages
 `));
-  assert.equal(result, 'update\ninstall -y --no-remove --no-upgrade --no-install-recommends curl openssl\n');
+  const limits = '-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o APT::Update::Error-Mode=any ';
+  assert.equal(result, limits + 'update\n' + limits + 'install -y --no-remove --no-upgrade --no-install-recommends curl openssl\n');
   ok(fixture('installed() { return 0; }; install_packages'));
 });
 
@@ -287,7 +288,8 @@ install_docker
 cat "$SOURCE_FILE"
 `));
   assert.match(output, /--proto =https --tlsv1.2/);
-  assert.match(output, /APT install -y --no-remove --no-upgrade/);
+  assert.match(output, /APT .*Acquire::Retries=3 .*Acquire::https::Timeout=30 .*install -y --no-remove --no-upgrade/);
+  assert.match(output, /--retry 3 --retry-delay 5 --retry-max-time 180/);
   assert.match(output, /docker-compose-plugin/);
   assert.match(output, /SYSTEMCTL enable --now docker/);
   assert.match(output, /CHECK STACK/);
