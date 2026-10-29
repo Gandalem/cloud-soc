@@ -34,6 +34,16 @@ class ImagePreparationTests(unittest.TestCase):
         checker = patch.object(manage, 'check_dependencies')
         checker.start()
         self.addCleanup(checker.stop)
+        for target in ('cloud_soc.deployment.downloads.check_disk_budget',
+                       'cloud_soc.deployment.downloads.retain_images',
+                       'cloud_soc.deployment.image_safety.check_disk_budget',
+                       'cloud_soc.deployment.image_safety.infrastructure_images'):
+            guard = patch(target)
+            mocked = guard.start()
+            if target.endswith('infrastructure_images'):
+                mocked.return_value = {name: {'image_id': 'sha256:cached'}
+                                       for name in ('elasticsearch', 'kibana', 'gateway')}
+            self.addCleanup(guard.stop)
 
     def test_disabled_enrollment_cleanup_idles_without_connecting(self):
         class IdleReached(Exception):
@@ -58,12 +68,18 @@ class ImagePreparationTests(unittest.TestCase):
                 patch.object(manage, 'apply', side_effect=lambda *_a, **_kw: events.append(('activate', {})) or {}), \
                 redirect_stdout(io.StringIO()):
             self.assertEqual(manage.main(), 0)
-        self.assertEqual(events[0][0][0], 'build')
-        self.assertIn('--progress=plain', events[0][0])
-        pull = next(event for event in events if event[0][0] == 'compose')
-        self.assertEqual(pull[0][-6:], ['pull', '--policy', 'missing', 'elasticsearch', 'kibana', 'gateway'])
-        self.assertTrue(pull[1]['stream'])
-        self.assertEqual(pull[1]['env'], plan['compose_environment'])
+        build = next(event for event in events if event[0][0] == 'build')
+        self.assertIn('--progress=plain', build[0])
+        pulls = [event for event in events if event[0][0] == 'pull']
+        self.assertEqual([event[0][1] for event in pulls], ['python:3.12-slim-bookworm'])
+        compose_pulls = [event for event in events if event[0][0] == 'compose']
+        self.assertEqual([event[0][-1] for event in compose_pulls], ['elasticsearch', 'kibana', 'gateway'])
+        for pull in compose_pulls:
+            self.assertEqual(pull[0][-4:-1], ['pull', '--policy', 'missing'])
+            self.assertTrue(pull[1]['stream'])
+            self.assertEqual(pull[1]['idle_timeout'], 120)
+            self.assertEqual(pull[1]['env'], plan['compose_environment'])
+        pull = compose_pulls[-1]
         self.assertLess(events.index(pull), next(i for i, event in enumerate(events) if event[0] == 'activate'))
 
     def test_failed_pull_never_activates_or_changes_prepared_credentials(self):
@@ -74,7 +90,7 @@ class ImagePreparationTests(unittest.TestCase):
             secret.write_bytes(b'SYNTHETIC_PRESERVE')
             engine = Mock()
             def fail_pull(args, **_kw):
-                if args[0] == 'compose':
+                if args[0] == 'compose' and 'pull' in args:
                     raise DockerCommandError(args, returncode=1)
                 return ''
             engine.run.side_effect = fail_pull
@@ -103,6 +119,42 @@ class ImagePreparationTests(unittest.TestCase):
                         manage.main()
                 engine.run.assert_not_called()
 
+    def test_compose_release_path_and_environment_survive_download_retry(self):
+        engine = Mock()
+        environment = {'SOC_STATE_DIR': '/synthetic/state', 'SOC_RUNTIME_IMAGE': 'fixture:candidate'}
+        first = True
+        def command(args, **kw):
+            nonlocal first
+            if first:
+                first = False
+                raise DockerCommandError(args, returncode=1, stderr='connection reset by peer')
+            return ''
+        engine.run.side_effect = command
+        with patch('cloud_soc.deployment.downloads.time.sleep') as sleep, redirect_stdout(io.StringIO()):
+            manage.prepare_install_images(engine, Path('/synthetic/release'), Path('/synthetic/state'), environment)
+        calls = engine.run.call_args_list
+        self.assertEqual(calls[0], calls[1])
+        self.assertEqual([c.args[0][-1] for c in calls], ['elasticsearch','elasticsearch','kibana','gateway'])
+        for call in calls:
+            self.assertEqual(call.args[0], ['compose', '--project-name', 'cloud-soc-central',
+                '--env-file', str(Path('/synthetic/state') / 'compose.env'),
+                '-f', str(Path('/synthetic/release') / 'deploy/server/compose.yaml'),
+                'pull', '--policy', 'missing', call.args[0][-1]])
+            self.assertEqual(call.kwargs['env'], environment)
+        sleep.assert_called_once_with(5)
+
+    def test_compose_configuration_failure_stops_without_fallback_or_secret_output(self):
+        engine = Mock()
+        engine.run.side_effect = DockerCommandError(['compose', 'pull'], returncode=1,
+            stderr='invalid configuration PRIVATE_CONFIG_CANARY')
+        with patch('cloud_soc.deployment.downloads.time.sleep') as sleep, redirect_stdout(io.StringIO()) as output:
+            with self.assertRaises(DockerCommandError) as caught:
+                manage.prepare_install_images(engine, Path('/synthetic/release'), Path('/synthetic/state'),
+                                              {'SOC_SYNTHETIC_SECRET': 'PRIVATE_ENV_CANARY'})
+        self.assertEqual(engine.run.call_count, 1)
+        self.assertNotIn('PRIVATE', output.getvalue() + str(caught.exception))
+        sleep.assert_not_called()
+
     def test_private_command_keeps_output_captured_and_reports_only_safe_reason(self):
         output = SimpleNamespace(returncode=1, stdout='PRIVATE_RESPONSE', stderr='no space left on device PRIVATE_KEY')
         with patch('cloud_soc.deployment.host.subprocess.run', return_value=output) as call:
@@ -118,9 +170,9 @@ class ImagePreparationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     Docker().run(args, input=payload, stream=True)
                 command.assert_not_called()
-        with patch('cloud_soc.deployment.host.subprocess.run', return_value=SimpleNamespace(returncode=0, stdout=None)) as command:
+        with patch('cloud_soc.deployment.public_stream.run', return_value=(0, '')) as command:
             self.assertEqual(Docker().run(['build', '.'], stream=True), '')
-            self.assertFalse(command.call_args.kwargs['capture_output'])
+            self.assertEqual(command.call_args.kwargs['idle_timeout'], 120)
 
     def test_timeout_does_not_reveal_stdin_or_captured_output(self):
         error = subprocess.TimeoutExpired(['run', 'PRIVATE'], 5, output='PRIVATE_OUTPUT', stderr='PRIVATE_KEY')
@@ -188,6 +240,41 @@ class RemovalTests(unittest.TestCase):
         self.assertTrue(result['data_preserved'])
         mutate.assert_not_called()
         self.assertTrue((self.state / 'compose.env').is_file())
+
+    def test_explicit_image_removal_includes_only_verified_recovery_tags(self):
+        self.args.remove_images = True
+        identity = 'sha256:' + 'a' * 64
+        tag = 'cloud-soc-recovery:' + 'a' * 64
+        def command(*args):
+            if args[:2] == ('image', 'inspect'):
+                return '[{"Id":"' + identity + '"}]'
+            if 'reference=cloud-soc-recovery:*' in args:
+                return tag
+            return 'cached' if 'reference=' + tag in args else ''
+        with patch.object(remove.shutil, 'which', return_value='/usr/bin/docker'), \
+                patch.object(remove, 'objects', return_value=[]), patch.object(remove, 'docker', side_effect=command):
+            self.assertEqual(remove.plan(self.args)['images'], [tag])
+            identity = 'sha256:' + 'b' * 64
+            with self.assertRaises(remove.RemovalError):
+                remove.plan(self.args)
+
+    def test_recovery_image_shared_by_foreign_container_is_not_removed(self):
+        self.args.remove_images = True
+        identity = 'sha256:' + 'a' * 64
+        tag = 'cloud-soc-recovery:' + 'a' * 64
+        foreign = self.row(project='foreign-project')
+        foreign['Image'] = identity
+        def command(*args):
+            if args[:2] == ('image', 'inspect'):
+                return '[{"Id":"' + identity + '"}]'
+            if 'reference=cloud-soc-recovery:*' in args:
+                return tag
+            return 'cached' if 'reference=' + tag in args else ''
+        with patch.object(remove.shutil, 'which', return_value='/usr/bin/docker'), \
+                patch.object(remove, 'objects', side_effect=lambda kind: [foreign] if kind == 'container' else []), \
+                patch.object(remove, 'docker', side_effect=command):
+            with self.assertRaises(remove.RemovalError):
+                remove.plan(self.args)
 
     def test_same_project_different_checkout_is_refused(self):
         with patch.object(remove.shutil, 'which', return_value='/usr/bin/docker'), \

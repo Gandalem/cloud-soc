@@ -255,6 +255,74 @@ class ServerStatusTests(unittest.TestCase):
         self.assertNotIn('실행 서비스 없음', output.getvalue())
 
 
+class ExternalReleaseOwnershipTests(unittest.TestCase):
+    def setUp(self):
+        self.tool = load('uninstall')
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name) / 'original'
+        self.release = Path(self.tmp.name) / 'release'
+        self.files = [str(self.release / 'deploy/server/compose.yaml'),
+                      str(self.root / 'state/server/runtime/site.json')]
+        self.portal = container(self.release, 'portal')
+        self.portal['Config']['Labels']['com.docker.compose.project.config_files'] = ','.join(self.files)
+        self.args = ['--project-name', 'cloud-soc-central', '-f', self.files[0], '-f', self.files[1]]
+
+    def test_status_and_removal_accept_only_the_proven_external_pair(self):
+        from cloud_soc.deployment import host
+        with patch.object(host, 'active_command', return_value=self.args) as proof:
+            allowed = self.tool.managed_external_files(self.root, [self.portal])
+        proof.assert_called_once_with(self.root / 'state/server', {'portal': self.portal}, workspace=self.root)
+        self.assertEqual(allowed, self.files)
+        self.assertTrue(self.tool.owned_configuration(self.root, self.files, allowed))
+        self.assertFalse(self.tool.owned_configuration(self.root, [*self.files, '/extra.json'], allowed))
+        self.assertFalse(self.tool.owned_configuration(self.root, list(reversed(self.files)), allowed))
+        self.assertFalse(self.tool.owned_configuration(self.root, ['/other/compose.yaml', self.files[1]], allowed))
+        soc = load('soc')
+        with patch.object(soc, 'ROOT', self.root), patch.object(soc, 'removal_tool', return_value=self.tool), \
+                patch.object(self.tool, 'objects', return_value=[self.portal]), \
+                patch.object(host, 'active_command', return_value=self.args), redirect_stdout(io.StringIO()) as output:
+            # The one supplied Portal is recognized; remaining services are correctly missing.
+            self.assertEqual(soc.status(), 1)
+        self.assertIn('portal: 실행 중', output.getvalue())
+
+    def test_missing_duplicate_and_unproven_portal_are_refused(self):
+        from cloud_soc.deployment import host
+        worker = container(self.release, 'detector')
+        with self.assertRaises(self.tool.RemovalError):
+            self.tool.managed_external_files(self.root, [worker])
+        with self.assertRaises(self.tool.RemovalError):
+            self.tool.managed_external_files(self.root, [self.portal, self.portal])
+        with patch.object(host, 'active_command', side_effect=ValueError('proof mismatch')):
+            with self.assertRaises(self.tool.RemovalError):
+                self.tool.managed_external_files(self.root, [self.portal])
+
+    def test_extra_compose_receipt_is_not_a_canonical_shared_release(self):
+        from cloud_soc.deployment import host
+        with patch.object(host, 'active_command', return_value=[*self.args, '-f', '/extra.json']):
+            with self.assertRaises(self.tool.RemovalError):
+                self.tool.managed_external_files(self.root, [self.portal])
+
+    def test_foreign_project_is_not_used_as_release_proof(self):
+        from cloud_soc.deployment import host
+        self.portal['Config']['Labels']['com.docker.compose.project'] = 'another-project'
+        with patch.object(host, 'active_command') as proof:
+            self.assertIsNone(self.tool.managed_external_files(self.root, [self.portal]))
+        proof.assert_not_called()
+
+    def test_stop_rechecks_external_pair_and_refuses_changed_files(self):
+        from cloud_soc.deployment import host
+        self.portal['Image'] = 'accepted'
+        args = SimpleNamespace(workspace=self.root)
+        with patch.object(self.tool, 'docker', side_effect=lambda *a: json.dumps([self.portal])), \
+                patch.object(self.tool, 'objects', return_value=[self.portal]), \
+                patch.object(host, 'active_command', return_value=self.args):
+            self.assertEqual(self.tool.inspect_owned(args, [self.portal['Id']]), [self.portal])
+            self.portal['Config']['Labels']['com.docker.compose.project.config_files'] += ',/extra.json'
+            with self.assertRaises(self.tool.RemovalError):
+                self.tool.inspect_owned(args, [self.portal['Id']])
+
+
 class RemovalWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.tool = load('uninstall')

@@ -67,6 +67,79 @@ sudo sh deploy/server/install-ubuntu.sh --host 실제주소 --bind-ip 실제사�
 
 ## 기존 서버 업그레이드
 
+<a id="update-safety-20261029"></a>
+
+### 업데이트 이미지·복구·자원 사전 보호 — 2026-10-29
+
+중앙 후속 반영(2026-10-29): 사용자 승인으로 이 수정본을 실제 중앙 VM에 배포했다. 실행 이미지는 `sha256:355a45e8b2fb7dc1663e7fd9973a7bb5e31b427f5560b75331fe3b7990c80a38`, 공개 소스 지문은 `c9f96e22530b4dcd9b5e4426f640125c8ca97dedea4af6418843291d0cfdaa0e`다. 보호 릴리스는 `/home/kopo/cloud-soc-publish-20261029-c9f96e2/workspace`이며 실행/복구에 필요하므로 삭제하지 않는다. 기존 인수 이미지와 의존성3파일의 LF 정규화 지문/Python 기반 일치 확인 후 오프라인 파생 빌드를 사용했다. 서비스12개·공통 앱 이미지·보호 입력 보존, 직접 HTTPS와 기존 ngrok 각각의 TLS/로그인·대시보드 API10개·처리/알림 상태, 원래 관리 경로의 상태·제거 미리보기와 다음 계획 생성이 통과했다. 사용자 결과와 별도 회수한 `state/central-publish-20261029/central-result.json`을 대조했다. 실제 삭제·새 실장치 수신/경보·Slack 채널/브라우저 화면·새 도메인 인수와 원래 체크아웃 전체의 Git 최신화는 수행하지 않았다. 아래 WSL 당시의 중앙 미반영 표시는 당시 기록이며 이 결과로 갱신한다. 알려진 출력 정체/전체 대기 예산 및 복구 예외3개는 계속 후순위다. 커밋·CI·main 병합의 실제 결과는 후속 Git/PR 이력을 따른다.
+
+후보 빌드는 실행 중인 서비스의 이미지에 `cloud-soc-recovery:이미지ID` 보존 태그를 먼저 붙인다. 같은 후보 태그를 재사용해도 이전 이미지의 마지막 조회 기록을 잃지 않도록 하기 위함이다. 실제 적용은 후보/기반 이미지의 로컬 ID를 계획에 고정하며, 복구는 이전 컨테이너의 실제 ID로 실행한다. 복구 후 실행 이미지와 기동 상태를 대조한 뒤에만 완료 처리한다. 원래 site.json의 백업은 그대로 보관하고, 복원한 실행 설정의 이미지 필드만 고정하며 다른 사이트 설정·DB·키는 되감지 않는다. 기존 두 Compose 경로를 유지해 상태/삭제 도구의 소유 관계도 보존한다.
+
+기반 이미지가 없으면 plan은 서비스를 중지하지 않고 거부한다. 같은 최신 workspace에서 아래 순서로 준비한다. 경로는 실제 최신 소스와 기존 보호 상태로 바꾼다. prepare-images는 Compose가 지정한 이미지를 캐시 정책으로 준비하며 컨테이너를 시작하지 않는다. install은 신규 준비 시 이를 자동 수행하고, 이미지 준비 후 완전한 계획을 다시 만든다.
+
+```bash
+cd /배포할/최신/workspace
+sudo python3 deploy/server/manage.py build --image cloud-soc-runtime:reviewed
+sudo python3 deploy/server/manage.py prepare-images \
+  --state /기존/state/server --image cloud-soc-runtime:reviewed
+sudo python3 deploy/server/manage.py plan \
+  --state /기존/state/server --image cloud-soc-runtime:reviewed \
+  --plan /기존/state/server/runtime-plan.json
+sudo python3 deploy/server/manage.py apply --plan /기존/state/server/runtime-plan.json
+```
+
+Docker가 보고한 저장소의 실제 여유 공간을 빌드/다운로드 전에 확인한다. 현재 정책의 빌드 최소치는2GiB+512MiB, 없는 기반 이미지를 준비할 때는10GiB이며 각 재시도 전에도 빌드 예산 또는 다운로드 여유512MiB를 재확인한다. 호환 캐시만 재사용하는 이미지 준비에는10GiB를 새 다운로드 조건처럼 요구하지 않는다. 공간이 부족하거나 측정할 수 없으면 중단하며 자동 정리하지 않는다. 이 값은 정책상 최소치이며 이미지 크기나 다른 프로세스의 동시 사용을 보장하는 예약 공간이 아니다.
+
+보존 태그는 기본 제거에서 이미지 캐시와 함께 유지한다. 이미지까지 지우려면 uninstall.py의 명시 `--remove-images`를 사용한다. 복구 태그 형식·실제 ID를 대조하고 다른 컨테이너가 쓰면 거부한다. 일반 벤더 태그와 Docker 빌드 캐시까지 모두 지우는 옵션은 아니다. 제품 도우미 밖의 수동 빌드/정리로 이전 이미지가 이미 사라졌다면 자동 복구를 추측해 강행하지 않는다. 과거 중단 journal은 plan의 observed 이미지 증거로 복구하며, 증거가 부족하면 pending을 보존한다. 기존 계획은 새 코드로 다시 생성한다.
+
+최종 검증: 첫 WSL15의 실제 신규 다운로드/설치·TLS·사전 차단은 통과했고, 태그 재사용으로 이전 이미지 기록이 사라진 경우 적용 전에 중단되는 것을 확인했다. 이후 보존 태그를 추가한 WSL16에서 벤더 이미지4개의 확인된 캐시를 사용해 설치12서비스·HTTPS/API10개, 실제 새 후보 기동 뒤 합성 실패/이전12이미지 복구, 새 태그 유지, 상태·삭제 미리보기·다음 계획, 보존 제거/재설치·키/인증서/합성 원본 보존, purge/반복 제거와 명시 복구 태그 제거를 통과했다. 디스크 부족은 실제 Docker 정보와 합성 free 값으로 시험했으며 디스크를 채우지 않았다. 기반 이미지 참조 변경은 같은 벤더 바이너리의 별칭을 사용했으므로 새 벤더 버전 호환 인수가 아니다. 최종 공개 소스/복구 기록의 지문은 c9f96e22530b4dcd9b5e4426f640125c8ca97dedea4af6418843291d0cfdaa0e다.
+
+시험 WSL/VHD·임시 소스와 재검사용 벤더 압축본4개는 제거했고 기존 배포판/iptables/커널 값을 유지했다. 시험 증거와 캐시 지문 목록은 Git 제외 상태 경로에 보존했다. 요약은 `state/update-safety-20261029/result.json`, 상세는 `state/server-deploy-wsl-20261029-15`·`16`이다. 직접 영향 검사/보완 재검사·Linux 다운로드 검사·Ruff를 통과했으며 실행별 수는 [작업 목록](work_tracker.md)의 해당 ID를 따른다. 중앙 VM 반영·새 실장치 수신/경보·Slack/ngrok·Windows VM·CI·커밋/푸시는 수행하지 않았다. 출력 정체 판정과 전체 재시도 대기 예산은 기존 동작이며 별도 남은 문제다.
+
+후속 복구 경계 검토(2026-10-29): 위 WSL16 결과는 정상 보관된 설정/백업과 정상 기동 조건의 범위다. 추가 합성 검토에서 일반 두 파일 구성의 기본 Compose가 바뀌어도 복구가 이를 사용함, 이전 site 백업 손상을 서비스 stop 뒤에 발견함, Running=true·Health=unhealthy여도 복구 완료/pending 제거로 처리함을 확인했다. 수정 전이므로 이전 구성 파일을 임의 갱신하거나 복구 증거를 삭제하지 않는다. 설정 지문/백업 사전 검사와 제한된 준비 상태 확인이 후속으로 남아 있으며 [작업 목록](work_tracker.md)의 DEPLOY-RECOVERY-20261029-02 세 항목을 따른다. 근거는 Git 제외 state/deployment-review-20261029/reproduction-result.json이며, 일회용 파일/Docker 대역의 코드 경로 재현이다. 이번 검토에서 실제 중앙 장애나 서비스 중지·재배포를 확인/실행한 것은 아니다.
+
+### WSL 설치·갱신·제거 검증 — 2026-10-29
+
+당시638abc5에 이전 릴리스 경로 및 상태/제거 소유권 보완을 더한 소스 지문 `91f1c227d5494a45da52e0dd46693b58a9c108a04b26a2cb1740905ce780f0e2`를 새 Ubuntu24.04.5 Base/systemd·독립 Docker·전용 네트워크에서 시험했다. 당시 최종 실행은 공식 벤더 이미지4개(Python/Caddy/Elasticsearch/Kibana)를 사전 캐시로 사용하고 제품 Dockerfile로 새 Cloud SOC 앱을 빌드하는 프로필이다. 기존 Cloud SOC 런타임을 덧씌우는 방식은 사용하지 않았다.
+
+제품 prepare-only/공통 install로 새 서버를 설치하고12서비스를 확인했다. 이후 다른 릴리스 폴더로 실제 plan/apply를 두 번 수행했고 같은 키·인증서·합성 원본을 보존했다. 최초/갱신 후 HTTPS CA 검증 로그인·Portal API10개·대시보드 상태/자산·알림 워커 heartbeat가 각각 통과했다. 삭제 취소, 보존 제거, 보존 자료가 있을 때 새 soc install 거부, 공통 관리자로 같은 자료 복구, SOC 자료 purge와 반복 제거까지 통과했고 마지막 SOC 컨테이너·볼륨·상태가 없음을 확인했다. 동일 소스의 릴리스 경로 전환 시험이며 모든 과거 버전과의 호환 시험은 아니다.
+
+실제 갱신에서 원래 soc status가 새 릴리스를 다른 설치로 오인하는 문제를 발견했다. soc.py와 uninstall.py는 기본 체크아웃을 계속 허용하면서 외부 릴리스만 보호된 실행/성공 기록과 현재 Portal로 확인한 정확한 두 Compose 파일에 제한한다. 임의 외부 설치/추가 파일/기록 불일치는 계속 거부한다. 직접 영향18검사·15 subtests와 위 실제 갱신 후 상태/제거 흐름이 통과했다. WSL 검증 당시 중앙에는 미반영이었으나 아래 후속 관리 도구 보완으로 원래 중앙 경로에도 반영했다. 커밋/푸시는 아직 하지 않았다.
+
+일반 다운로드 프로필의 과거 실패:02에서는 실제 신규 설치·원본 Dockerfile 빌드/필수 이미지 다운로드가 통과했지만, 이후 Ubuntu HTTP·Docker Hub 메타데이터·ES/Kibana 대형 레이어의 timeout/정체가 재현됐다. 신규 설치에도 나타나 업데이트만의 문제로 볼 수 없었다. 당시09의 캐시 성공을 직접 다운로드 성공으로 대체하지 않았으며, 아래 후속 수정과 직접 다운로드 인수로 구분한다.09에서는 OS 기본 도구와 시험 전용 HTTPS Ubuntu 저장소/고정 공개 CA를 준비하고 TLS/Ubuntu 패키지 서명 검증을 유지했다. Windows 경로에서 받은 공식 이미지의 매니페스트/config/모든 레이어 지문을 대조했으며 이 준비는 시험 WSL에만 적용했다.
+
+최종 근거는 Git 제외 `state/server-deploy-wsl-20261029-09/final-result.json`·`reports`·`cleanup.json`이다. 최초 설치/두 번 갱신/복구의 소스 지문도 당시 파일319개와 대조했다.01~09의 시험 WSL/VHD/임시 소스와 공개 이미지/도구 약1.60GB를 정리했고 원래3개 배포판 이름과 공유 map-count 원복을 확인했다. 실제 에이전트 수신/경보·Slack 채널·외부 DNS/ngrok·호스트 재부팅 인수는 포함하지 않는다. 기존 중앙 VM은 아래 배포본 그대로다.
+
+### 직접 다운로드 정체 대응·최종 인수 — 2026-10-29
+
+인프라 이미지의 버전 원본은 배포할 workspace의 `deploy/server/compose.yaml`이다. 설치기는 별도 버전 목록을 보관하지 않고 같은 `compose.env`와 계획 환경을 전달해 `docker compose ... pull --policy missing 서비스명`을 하나씩 실행한다. Compose가 설정의 태그/다이제스트·환경 변수 치환·캐시 재사용을 처리하며 기존 일시 오류 재시도는 유지한다. Python 기반 이미지는 Dockerfile의 FROM을 읽는 기존 방식을 유지한다. [Compose 공식 문서](https://docs.docker.com/reference/cli/docker/compose/pull/)의 서비스별 다운로드/캐시 정책을 사용하며 이 단계는 컨테이너를 기동하지 않는다.
+
+버전 원본 통합 검증(2026-10-29): 설치/업데이트 영향23건·17 subtests 및 Linux 다운로드10건이 통과했다(호스트 링크1건 skip, 새 경로 기대값1건 보완 후 해당 검사만 재실행). 새 WSL14의 실제 Compose에서 최초 참조·설정 파일만 변경한 참조·환경 변수 우선순위3사례가 일치했고 캐시 재사용과 실행 중인12컨테이너의 시작/재시작 상태·보호 입력 불변을 확인했다. 참조 시험은 같은 이미지의 합성 별칭 태그를 사용했다. 실제 제품 신규 설치/CA 검증 로그인/API10개·보존 복구·완전 삭제·반복 제거도 통과했고 시험 WSL/VHD 제거·기존 배포판/iptables/공유 커널 값 원복을 확인했다. 실제 설치/복구 소스는 `13e833098ee76450d0f1424e3ba9483ec6e55b3d595d30e32d9f994c782d2a80`, 결과는 Git 제외 `state/install-image-source-20261029/result.json`, 상세 근거는 `state/server-deploy-wsl-20261029-14/reports`·`cleanup.json`이다. 새 벤더 버전의 서비스 호환 인수나 중앙 VM 추가 반영을 뜻하지 않으며, 정체 판단·전체 대기 한도는 이번에 변경하지 않았다.
+
+이미지는 하나씩 받고 지정 버전이 있으면 재사용한다. 공개 다운로드의 표시가120초 동안 바뀌지 않거나 빌드가180초 동안 전진하지 않으면 해당 명령을 종료한다. 다운로드 한 번은 최대30분, 빌드 한 번은 최대15분이며 일시적인 네트워크 오류/시간 초과만 최대3회(5초·10초 대기) 시도한다. 권한·인증·인증서·디스크·없는 이미지 오류는 반복하지 않는다. 출력 전용 터미널로 Docker의 바이트 진행을 유지해 느린 다운로드를 무응답으로 오인하지 않도록 했고, 비공개 명령의 출력/입력 보호는 유지한다. APT의 명령별 접속 제한30초/재시도3회와 서명 키/pip의 다운로드 제한도 추가했다. DNS·전역 IPv6·관리자의 Docker 데몬/저장소 설정은 변경하지 않는다. 동시 다운로드와 취소 동작은 [Docker 공식 문서](https://docs.docker.com/reference/cli/docker/image/pull/)를 참고했다. 네트워크가 계속 불통이면 제한 뒤 실패하며 기존 준비 상태를 보존한다. 이 경우 위 준비 상태 복구 절차로 재개한다.
+
+새 WSL10의 직접 설치/삭제 성공 후 최종11에서 사전 이미지 적재 없이 공식 Python/Caddy/Elasticsearch/Kibana4개를 직접 받았다. 제품 설치기 신규 설치→12서비스→기존 CA를 검증한 로그인/API10개→보존 제거·같은 키/인증서/합성 원본 복구→완전 삭제·반복 제거가 통과했다. 마지막 SOC 컨테이너/볼륨/상태가 없고 시험 WSL/VHD/임시 소스 제거·기존 배포판 목록/iptables/공유 커널 값 원복도 확인했다. 실제 실행 소스 지문 `9de9a92d0aff8a8b6e44b0e70ae6236e79cdc90c5b9dfb3dc427e7af45d34e55`와 검증 당시 공개 소스321개가 일치한다. 근거는 Git 제외 `state/server-deploy-wsl-20261029-11/final-result.json`·`reports`·`cleanup.json`이다. 다운로드 회귀10건과 설치 영향 검사, shell41건을 통과했으며 수정 후 재검사는 영향 항목에 한정했다.
+
+최종 실다운로드는 재시도 없이 완료됐고 오류/정체 재시도는 회귀 시험으로 확인했다. 시험 OS 준비에 기본 도구·HTTPS Ubuntu 저장소/고정 공개 CA를 사용했으며 TLS/패키지 서명 검증을 유지했다. 과거 외부망 장애의 영구 원인을 제거했다는 결과는 아니다. 이번 인수는 설치·다운로드·보존 복구·삭제 범위다. 중앙 VM 추가 반영, 새 실장치 수신/경보·Slack·재부팅·커밋/푸시는 하지 않았다.
+
+### 중앙 배포 완료 — 2026-10-29
+
+후속 관리 도구 감사(2026-10-29): 원래 `/home/kopo/cloud-soc`에는 `soc`와 `deploy/server/soc.py`가 없었고, 실제 제거 미리보기는 같은 프로젝트를 다른 설치로 거부했다. 당시 uninstall.py는 원래 Compose 경로 고정 검사만 있고 외부 릴리스 소유권 helper가 없었다. 앱 배포/Portal 인수와 원래 경로의 관리 도구 최신화가 별개임을 확인했으며, 아래 관리 파일 보완으로 이 문제를 해소했다.
+
+관리 도구 반영 완료(2026-10-29): 원래 경로의 관리 파일8개만 보호 백업 후 교체했다. 실제 `soc status`와 제거 기본 미리보기가 각각 종료코드0으로 통과했고 서비스12개를 인식했다. 사용자 출력과 별도 회수 결과를 대조해 컨테이너·보호 입력·실행 기록 불변을 확인했다. 실제 삭제·서비스 재시작·앱 재배포는 하지 않았다. 원본 백업은 `/home/kopo/cloud-soc/state/server/runtime/management-repairs/20261029T030138674139Z`, 안전 결과는 Git 제외 `state/central-management-fix-20261029/result.json`이다. 중앙의 실제 삭제까지 실행한 검증은 아니며, 원래 체크아웃 전체가 최신 앱 소스로 바뀐 것도 아니다.
+
+후속 build 명령 호환 반영(2026-10-29): 원래 중앙 manage.py는 이전 명령 목록을 유지하고 있어 새 build 명령을 거부했다. 기존 명령을 유지하는 호환 manage.py와 host.py/downloads.py/public_stream.py4개만 보호 백업 후 반영했다. 관련7검사와 중앙의 명령 인식·상태 조회·삭제 미리보기가 통과했고 서비스12개·컨테이너·보호 입력·실행 기록이 유지됐다. 별도 SSH에서도 반영 지문4개 일치와 실제 도움말의 build 표시를 확인했다. 실제 후보 빌드·앱 적용·서비스 재시작·삭제는 실행하지 않았다. 백업은 `/home/kopo/cloud-soc/state/server/runtime/management-repairs/20261029T042934991943Z`, 안전 결과는 Git 제외 `state/central-upgrade-build-fix-20261029/result.json`이다. 이는 기존 체크아웃 전체의 Git 최신화가 아니므로, 최신 앱 후보를 만들 때는 먼저 빌드 대상 workspace의 소스 버전을 확인한다.
+
+중앙 호환 도구의 WSL 추가 인수(2026-10-29): 중앙에서 가져온 공개 관리 파일15개와 없는 access.py까지 동일하게 맞춘 새 WSL13의 합성 서버에서 시험했다. 정확한 중앙 CLI로 상태/삭제 미리보기, 연결 오류1회 뒤 재시도한 실제 Docker 후보 빌드와 별도 정상 빌드, 각각의 plan/apply·갱신 후 HTTPS 로그인/API10개가 통과했다. 빌드 전후12컨테이너의 ID·이미지·시작 시각·재시작 횟수/실행 상태가 같았고 키/인증서/합성 원본도 보존됐다. 보존 복구·완전 삭제·반복 제거와 시험 WSL/VHD 정리·기존 배포판/iptables/커널 값 원복도 확인했다. 입력 지문 목록과 실제 실행 기록을 대조한 결과는 Git 제외 `state/central-upgrade-build-wsl-20261029/result.json`, 상세 근거는 `state/server-deploy-wsl-20261029-13/reports`·`cleanup.json`에 있다. 중앙 운영 자료·키·전체 VM을 복제한 시험은 아니며 별도 현재 앱/합성 자료를 사용했다. 중앙 서버의 실제 후보 빌드·배포나 ngrok·실장치 수신 재인수로 확대하지 않는다.
+
+이 PC와 중앙 VM의 별도 clone을 인계 브랜치638abc5로 최신화하고, 이전 외부 릴리스 경로 검사를 보완한 후보를 적용했다. 실행 이미지는 `sha256:769f1353897f7422577acacdd1f8ea9b8f60f86009ae0287d891062c4b06071b`, 소스 지문은 `27f83f170053ba88a045a005dd51ff09f7fc554b5bd8d94000722125cd5ee751`이다. 실제 관리 workspace는 `/home/kopo/cloud-soc-offline-20261029-pathfix/workspace`이며 실행/복구에 필요하므로 삭제하지 않는다. host.py의 경로 수정과 관련 검사/문서는 아직 미커밋이며 원격638abc5만 다시 받으면 이 보완은 포함되지 않는다.
+
+서비스12개와 공통 워커/앱 이미지 기동, 기존 CA를 검증하는 HTTPS 로그인, Portal API10개와 대시보드 현재/적체 상태·자산 검사가 통과했다. 적용 직후 남은 처리 지연은 재배포·체크포인트 변경·지연 기준 완화 없이 해소됐고 검사 전용 재실행은 `release_reapplied=false`로 통과했다. 기존 ngrok 로그인 경로의 HTTP200도 확인했다. 기존 설정·키·자료 보존은 제품 apply 절차에서 확인했으며 Portal 검사도 저장 설정을 변경하지 않았다.
+
+초기 일반 Dockerfile 빌드는 Docker Hub IPv6 연결 오류로 중단됐다. 이전 실제 인수 이미지8463a7e...의 정확 ID와 세 의존성 파일의 CRLF/LF 정규화 지문 일치를 확인한 뒤, 전용 로컬 태그와 외부 네트워크 없는 파생 빌드로 준비했다. 의존성 내용이 다른 릴리스에는 이 방법을 사용할 수 없고, 신규 서버의 이미지 다운로드 문제를 일반적으로 해결한 결과도 아니다. 이전 기본 Compose는 보호된 current/applied/plan/recovery 기록·실제 Portal 이미지·정확한 두 파일 명령·원문 SHA256이 일치할 때만 허용한다. 정상 전환과 변조 거부의 직접 영향15검사를 통과했다.
+
+최종 안전 요약은 중앙 `/home/kopo/cloud-soc-deploy-result-20261029.json`, 이 PC의 Git 제외 `state/central-deploy-20261029/deployment-result.json`에 있다. 이번 결과는 배포/기동/Portal 인수이며 `live_ingestion_verified=false`다. 새 장치 수집/경보, 새 DNS 별칭의 실제 접속, 외부 인증/모바일·브라우저 화면, 실제 Slack 채널 수신은 새로 인수하지 않았다. 기존10/28 실제 수집→정규화→경보/근거10건 인수 기록은 당시 버전의 별도 이력으로 보존한다.
+
 ### 선택적 추가 Portal 주소 — 학교·집 통합 3안
 
 통합 기준은 학교의 `codex/portal-deployment-handoff-20261027` 커밋751b568이다. 학교의 review-compose·보호된 복구 사본·이전 이미지 확인·릴리스 경로 제한을 유지한다. 집의 이전 미커밋20파일은 별도 파일 사본/해시/패치와 로컬 stash에 보존했고, 중복된 adopt 명령과 대표 URL 변경 모드는 최종 코드에 넣지 않았다. 로컬 기록 위치는 Git 제외 state/dns-integration-20261028/before이며 학교 clone으로 전달되는 자료는 아래 설명·작업 이력·검사 코드다.
@@ -133,10 +206,14 @@ sudo python3 deploy/server/manage.py apply --plan /protected/review/runtime-plan
 검토한 소스를 받은 체크아웃/릴리스 디렉터리에서 후보 이미지를 먼저 빌드한다. 이미지 태그는 배포 계획에서 고정한 digest와 실제 파일 해시로 다시 확인한다. 아래는 서버 로컬 Docker를 사용하며 원격 Docker context와 상속된 SOC/Compose 환경 변수로 대상을 바꾸지 않는다.
 
 ```bash
-sudo docker build -f deploy/server/Dockerfile -t cloud-soc-runtime:reviewed .
+sudo python3 deploy/server/manage.py build --workspace "$PWD" --image cloud-soc-runtime:reviewed
 sudo python3 deploy/server/manage.py plan --state /실제/state/server --image cloud-soc-runtime:reviewed --plan /실제/state/server/runtime-plan.json
 sudo python3 deploy/server/manage.py apply --plan /실제/state/server/runtime-plan.json
 ```
+
+`build`는 기존 로컬 Docker에서 후보 이미지만 준비한다. 신규 설치와 같은 기반 이미지 준비·빌드 재시도/정체 감지를 사용하며, 후보 태그를 `--image`로 명시해야 한다. 성공 출력의 `built=true`·`image_id`·`activation_performed=false`는 배포 완료를 뜻하지 않는다. 실행 중인 서버의 적용은 검토한 `plan` 이후 별도 `apply`로 진행한다. 이 재시도 처리는 위 공통 관리자 명령을 사용할 때 적용되며 직접 실행한 `docker build` 자체를 변경하지 않는다.
+
+업데이트 빌드 검증(2026-10-29): 새 WSL12에서 합성 연결 오류1회 뒤 재시도1회로 실제 Docker 빌드가 완료됐다. 별도의 정상 후보 빌드도 통과했고, 두 빌드 전후 컨테이너ID·키/인증서·합성 원본이 유지됐다. 각각의 plan/apply와 갱신 후 CA 검증 로그인/API10개, 보존 복구·완전 삭제·시험 WSL 정리가 통과했다. 실제 적용 소스는 `a1ed4f44aa3f1481bac74a0192b85300d07830a4aefe7b3e57dc4c6ff7a5262a`이며 결과는 Git 제외 `state/upgrade-build-retry-20261029/result.json`과 `state/server-deploy-wsl-20261029-12/reports`에 있다. 관련21검사·17 subtests와 Linux 다운로드10검사가 통과했다(호스트 링크1검사 skip). 같은 소스의 릴리스 경로 전환이며 과거 버전 호환·실제 외부망 장애 주입·중앙 VM 추가 반영 인수는 아니다. 이미지 버전 중복·정체 기준·전체 대기 한도는 이번 수정 범위에 포함하지 않았다.
 
 계획에는 서버 사양, 전체 메모리 한도+여유 예산, Docker/state 디스크의 실제 여유, DB 두 벌 백업 공간, 기존 실행 명령·mount·site 주소 차이, 새 워커, 누락된 인덱스·역할/API키 권한이 나타난다. 인증 값은 출력하지 않는다. 실제 image 파일 검증·기존 DB identity 확인·권한 scope 검토를 통과해야 한다. 계획 이후 구성/권한/후보가 바뀌거나 자원이 부족하면 서비스를 멈추기 전에 거부한다.
 

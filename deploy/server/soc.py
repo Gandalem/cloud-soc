@@ -142,6 +142,7 @@ def status():
     state = ROOT / 'state/server'
     print('\n서버 상태\n설정 위치: ' + str(state))
     rows = remove.objects('container')
+    external = remove.managed_external_files(ROOT, rows)
     owned = {}
     initializations = []
     for row in rows:
@@ -150,7 +151,7 @@ def status():
             continue
         files = labels.get('com.docker.compose.project.config_files', '').split(',')
         service = labels.get('com.docker.compose.service')
-        if not files or Path(files[0]) != ROOT / 'deploy/server/compose.yaml' or service not in remove.SERVICES:
+        if not remove.owned_configuration(ROOT, files, external) or service not in remove.SERVICES:
             raise RuntimeError('같은 프로젝트 이름의 다른 설치가 있습니다. 현재 저장소의 상태로 표시하지 않았습니다.')
         if service in owned or any(s == service for s, _ in initializations):
             raise RuntimeError('중복된 서버 서비스가 있습니다. 컨테이너 구성을 확인하세요.')

@@ -16,6 +16,7 @@ import tempfile
 from cloud_soc.deployment.contract import (ALL_WORKERS, APP_SERVICES, SERVICES, WORKERS, build_contract, digest,
     policy, resource_check, source_files, validate_rendered)
 from cloud_soc.deployment.migrations import atomic_json
+from cloud_soc.deployment import image_safety
 
 
 class DockerCommandError(RuntimeError):
@@ -24,12 +25,25 @@ class DockerCommandError(RuntimeError):
     def __init__(self, args, *, returncode=None, timed_out=False, stderr=''):
         if args[0] == 'build':
             operation = 'image build'
+        elif args[0] == 'pull':
+            operation = 'image pull'
         elif args[0] == 'compose':
             operation = 'compose ' + next((v for v in ('pull', 'config', 'up', 'run', 'stop') if v in args), 'operation')
         else:
             operation = args[0] if args[0] in ('run', 'inspect', 'info', 'stats', 'ps', 'image', 'stop', 'exec') else 'operation'
         reason = 'Docker 서비스와 해당 단계의 출력을 확인하세요'
         lowered = stderr.lower()
+        self.image_missing = args[:2] == ['image', 'inspect'] and any(
+            word in lowered for word in ('no such image', 'image is not present locally', 'no such object'))
+        terminal = ('no space left on device', 'permission denied', 'unauthorized', 'authentication required',
+                    'manifest unknown', 'not found: manifest', 'pull access denied', 'x509:', 'invalid reference format')
+        transient = ('no such host', 'network is unreachable', 'i/o timeout', 'tls handshake timeout',
+                     'connection reset', 'connection refused', 'context deadline exceeded',
+                     'temporary failure', 'temporary error', 'unexpected eof', 'awaiting headers',
+                     '500 internal server error', '502 bad gateway', '503 service unavailable',
+                     '504 gateway timeout', 'download timed out', 'read timed out', 'readtimeout',
+                     'connecttimeout', 'network is down')
+        self.retryable = not any(s in lowered for s in terminal) and (timed_out or any(s in lowered for s in transient))
         for patterns, hint in (
             (('no such image', 'image is not present locally'), '필요한 이미지가 서버에 없습니다'),
             (('manifest unknown', 'not found: manifest'), '저장소에서 해당 이미지 버전을 찾을 수 없습니다'),
@@ -51,11 +65,21 @@ class Docker:
         self.env = {k: v for k, v in os.environ.items() if not k.startswith(('DOCKER_', 'COMPOSE_', 'SOC_'))}
         self.prefix = ['docker', '--host', 'unix:///var/run/docker.sock']
 
-    def run(self, args, *, input=None, env=None, timeout=180, stream=False):
+    def run(self, args, *, input=None, env=None, timeout=180, stream=False, idle_timeout=120):
         # Only public build/pull operations may inherit terminal output. JSON,
         # bootstrap and migration responses remain captured to protect secrets.
-        if stream and (input is not None or not (args[0] == 'build' or args[0] == 'compose' and 'pull' in args)):
+        if stream and (input is not None or not (args[0] in ('build', 'pull') or args[0] == 'compose' and 'pull' in args)):
             raise ValueError('Streaming is restricted to public image build/pull commands')
+        if stream:
+            from cloud_soc.deployment.public_stream import run
+            try:
+                code, tail = run(self.prefix + args, env={**self.env, **(env or {})},
+                                 timeout=timeout, idle_timeout=idle_timeout)
+            except subprocess.TimeoutExpired:
+                raise DockerCommandError(args, timed_out=True) from None
+            if code:
+                raise DockerCommandError(args, returncode=code, stderr=tail)
+            return ''
         try:
             p = subprocess.run(self.prefix + args, input=input, text=True, capture_output=not stream,
                                env={**self.env, **(env or {})}, timeout=timeout)
@@ -186,6 +210,37 @@ def worker_inventory(engine, project, *, stopped=False):
     return found
 
 
+def applied_release_root(state, objects, command):
+    """Trust a previous external base only through its protected successful run."""
+    from cloud_soc.deployment.compose_review import regular
+    runtime = Path(state) / 'runtime'
+    current = json.loads(regular(runtime / 'current.json', protected=True).read_text())
+    if current.get('runtime_ready') is not True or current.get('image_id') != objects['portal']['Image']:
+        raise ValueError('Applied release identity differs from the running Portal')
+    for run in (runtime / 'upgrades').glob('*'):
+        applied = run / 'applied.json'
+        if not applied.is_file():
+            continue
+        if json.loads(regular(applied, protected=True).read_text()) != current:
+            continue
+        plan = json.loads(regular(run / 'plan.json', protected=True).read_text())
+        saved = json.loads(regular(run / 'recovery.json', protected=True).read_text())
+        previous = Path(plan['workspace'])
+        base = previous / 'deploy/server/compose.yaml'
+        canonical = ['docker', 'compose', '--project-name', 'cloud-soc-central',
+                     '--env-file', str(Path(state) / 'compose.env'), '-f', str(base),
+                     '-f', str(runtime / 'site.json')]
+        if (not previous.is_absolute() or command != canonical or saved.get('canonical') != canonical[1:]
+                or plan.get('state') != str(state) or plan.get('project') != 'cloud-soc-central'
+                or plan.get('image_id') != current['image_id']
+                or plan.get('source_sha256') != current.get('source_sha256')
+                or digest(plan.get('source')) != current.get('source_sha256')
+                or hashlib.sha256(regular(base).read_bytes()).hexdigest() != plan['source'].get('deploy/server/compose.yaml')):
+            raise ValueError('Previous applied release proof differs from the active command/source')
+        return previous
+    raise ValueError('No protected successful run proves the previous external release')
+
+
 def active_command(state, objects, *, workspace=None):
     if (Path(state) / 'runtime/install.json').exists() and not (Path(state) / 'runtime/current.json').exists():
         return None
@@ -208,8 +263,16 @@ def active_command(state, objects, *, workspace=None):
                 # Only its exact canonical pair gains this additional root.
                 base = Path(workspace).resolve() / 'deploy/server/compose.yaml' if workspace else None
                 canonical = base and observed == [str(base), str(Path(state) / 'runtime/site.json')]
+                previous_root = None
                 for name in observed:
                     root = Path(workspace).resolve() if canonical and Path(name) == base else Path(state).parent.parent
+                    if (not Path(name).resolve().is_relative_to(root.resolve()) and not canonical
+                            and (Path(state) / 'runtime/current.json').is_file()):
+                        from cloud_soc.deployment.compose_review import regular
+                        regular(path, protected=True)
+                        previous_root = previous_root or applied_release_root(state, objects, value)
+                        if Path(name) == previous_root / 'deploy/server/compose.yaml':
+                            root = previous_root
                     checked_path(name, root, file=True)
                 return value[2:]
     from cloud_soc.deployment.compose_review import ComposeReviewError
@@ -316,7 +379,8 @@ def inspect_prerequisites(engine, state, image, project, value, contract, adopti
                               if (runtime / 'keys/slack-notifier.key').is_file() else None}))
 
 
-def snapshot(engine, workspace, state, image, project='cloud-soc-central', *, compose_review=None, access_path=None):
+def snapshot(engine, workspace, state, image, project='cloud-soc-central', *, compose_review=None, access_path=None,
+             allow_missing_images=False):
     workspace, state = Path(workspace).resolve(), Path(state).resolve()
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,62}', project) or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,200}', image):
         raise ValueError('Invalid image/project identity')
@@ -362,13 +426,13 @@ def snapshot(engine, workspace, state, image, project='cloud-soc-central', *, co
     candidate = engine.json(['image', 'inspect', image])[0]['Id']
     # Verify actual image bytes; labels and checkout SHA alone are insufficient.
     script = "import hashlib,json,pathlib,sys;from cloud_soc.deployment.contract import policy,validate_rules;root=pathlib.Path('/app');m=json.load(sys.stdin);assert all((root/p).is_file() and hashlib.sha256((root/p).read_bytes()).hexdigest()==h for p,h in m.items());validate_rules(policy(root));print('verified')"
-    if engine.run(['run', '--rm', '--network', 'none', '-i', '--entrypoint', 'python', image, '-c', script], input=json.dumps(source)).strip() != 'verified':
+    if engine.run(['run', '--rm', '--network', 'none', '-i', '--entrypoint', 'python', candidate, '-c', script], input=json.dumps(source)).strip() != 'verified':
         raise ValueError('Candidate source verification failed')
     if objects and not active and not fresh:
         raise ValueError('Existing infrastructure has no adoption receipt; not a fresh installation')
     prerequisites = {'state': 'fresh_bootstrap_required'}
     if not fresh:
-        prerequisites = inspect_prerequisites(engine, state, image, project, value, contract, adoption)
+        prerequisites = inspect_prerequisites(engine, state, candidate, project, value, contract, adoption)
     # Only stable configuration participates in the stale-plan guard, not progress counters.
     identity = {'containers': selected, 'protected_sha256': fingerprints, 'image': candidate,
                 'source_sha256': digest(source), 'prerequisites': prerequisites,
@@ -391,7 +455,12 @@ def snapshot(engine, workspace, state, image, project='cloud-soc-central', *, co
         from cloud_soc.deployment.compose_review import preserved_site
         preserved_site(original, desired, objects, **({'alias_request': alias_request, 'workspace': workspace}
                                                      if alias_request else {}))
-    result['compose_validation'] = validate_rendered(value, desired, image)
+    result['compose_validation'] = validate_rendered(value, desired, candidate)
+    result['infrastructure_images'] = image_safety.infrastructure_images(
+        engine, desired, allow_missing=allow_missing_images and fresh)
+    result['previous_image_mode'] = image_safety.recovery_mode(engine, runtime, active, objects, original)
+    identity.update({key: result[key] for key in ('infrastructure_images', 'previous_image_mode')})
+    result['fingerprint'] = digest(identity)
     return result
 
 
@@ -412,8 +481,11 @@ def configure_site(plan, runtime):
     mounts = portal.setdefault('volumes', [])
     # Compose merges by target: preserve the inspected site mounts and add the managed contract.
     mounts.append({'type': 'bind', 'source': str(runtime / 'contract.json'), 'target': '/run/runtime/contract.json', 'read_only': True})
-    for name in APP_SERVICES:
-        site['services'].setdefault(name, {})['image'] = plan['image']
+    for name in (*APP_SERVICES, 'bootstrap'):
+        site['services'].setdefault(name, {})['image'] = plan.get('image_id', plan['image'])
+    for name, row in plan.get('infrastructure_images', {}).items():
+        if row['image_id']:
+            site['services'].setdefault(name, {})['image'] = row['image_id']
     if plan.get('alias_request'):
         from cloud_soc.deployment.access import overlay
         site = overlay(site, plan['alias_request'], Path(plan['state']), plan['workspace'])
@@ -496,7 +568,8 @@ def apply(engine, plan, *, poll=None):
             raise ValueError('Deployment changed after planning; no mutation performed')
         if not current['resources']['ok']:
             raise ValueError('Resource budget changed after review; no mutation performed')
-        for field in ('policy', 'site', 'observed', 'protected_sha256', 'previous_compose', 'source', 'image_id', 'adoption'):
+        for field in ('policy', 'site', 'observed', 'protected_sha256', 'previous_compose', 'source', 'image_id', 'adoption',
+                      'infrastructure_images', 'previous_image_mode'):
             if current[field] != plan[field]:
                 raise ValueError('Reviewed plan was modified; no mutation performed')
         if (current.get('alias_request') != request
@@ -524,6 +597,10 @@ def apply(engine, plan, *, poll=None):
             backup_database(p, run / 'online' / p.relative_to(state))
         active = plan['previous_compose']
         old_objects = containers(engine, plan['project'])
+        image_pins = {name: obj['Image'] for name, obj in old_objects.items()}
+        for identity in set(image_pins.values()):
+            if image_safety.local_image(engine, identity) != identity:
+                raise image_safety.DeploymentSafetyError('이전 실행의 이미지가 없습니다. 서비스는 중지하지 않았습니다')
         old_contract = (runtime / 'contract.json').read_bytes() if (runtime / 'contract.json').is_file() else None
         old_site = save_previous_site(runtime, run)
         canonical = ['compose', '--project-name', plan['project'], '--env-file', str(state / 'compose.env'),
@@ -539,7 +616,8 @@ def apply(engine, plan, *, poll=None):
             'old_site': old_site, 'canonical': canonical, 'environment': plan['compose_environment'],
             'reviewed_compose_files': {name: h for name, h in plan['protected_sha256'].items()
                                       if plan.get('compose_review') and Path(name).is_relative_to(runtime / 'compose-reviews')},
-            'previous_images': sorted({o['Image'] for o in old_objects.values()}) if plan.get('compose_review') else []})
+            'previous_images': sorted(set(image_pins.values())), 'image_pins': image_pins,
+            'image_mode': plan['previous_image_mode']})
         atomic_json(runtime / 'pending.json', {'run': str(run)})
         try:
             if active:
@@ -549,7 +627,7 @@ def apply(engine, plan, *, poll=None):
             for p in databases(state):
                 backup_database(p, run / 'stopped' / p.relative_to(state))
             saved_rows = portal_rows(state)
-            saved_docs = {} if plan['fresh'] else immutable_documents(engine, state, plan['image'], plan['project'])
+            saved_docs = {} if plan['fresh'] else immutable_documents(engine, state, plan['image_id'], plan['project'])
             atomic_json(run / 'preservation-before.json', {'portal_rows': saved_rows, 'documents': saved_docs})
             if not old_contract:
                 copy_adopted_state(plan, runtime)
@@ -561,7 +639,7 @@ def apply(engine, plan, *, poll=None):
             if not set(SERVICES) <= set(rendered['services']):
                 raise ValueError('Common Compose omitted required services')
             for name in APP_SERVICES:
-                if rendered['services'][name]['image'] != plan['image']:
+                if rendered['services'][name]['image'] != plan['image_id']:
                     raise ValueError('Mixed application image versions refused')
             if plan['fresh']:
                 print('[설치] Elasticsearch를 시작하고 준비 상태를 기다립니다.', file=sys.stderr, flush=True)
@@ -576,7 +654,7 @@ def apply(engine, plan, *, poll=None):
             migration = engine.json(['run', '--rm', '-i', '--network', plan['project'] + '_default', '--user', '0:0',
                 '-v', str(state / 'tls/ca.crt') + ':/run/certs/ca.crt:ro', '-v', str(runtime) + ':/deployment',
                 '-v', str(state / 'notifications') + ':/notifications',
-                '--entrypoint', 'python', plan['image'], '-m', 'cloud_soc.deployment.migrations'],
+                '--entrypoint', 'python', plan['image_id'], '-m', 'cloud_soc.deployment.migrations'],
                 input=json.dumps({'password': password, 'policy': plan['policy'], 'contract': contract, 'existing_keys': keys}))
             contract['prepared'] = True
             atomic_json(runtime / 'contract.json', contract, uid=1000)
@@ -599,7 +677,7 @@ def apply(engine, plan, *, poll=None):
             after_rows = portal_rows(state)
             if any(not set(rows) <= set(after_rows.get(name, [])) for name, rows in saved_rows.items()):
                 raise ValueError('Existing case/dashboard rows changed')
-            preservation = immutable_documents(engine, state, plan['image'], plan['project'], before=saved_docs)
+            preservation = immutable_documents(engine, state, plan['image_id'], plan['project'], before=saved_docs)
             receipt = {'version': plan['policy']['version'], 'policy_sha256': digest(plan['policy']), 'runtime_ready': True, 'source_sha256': plan['source_sha256'],
                 'image_id': plan['image_id'], 'migrations': migration, 'preservation': preservation,
                 'portal_saved_rows_preserved': sum(len(rows) for rows in saved_rows.values()), 'new_workers': plan['new_workers'],
@@ -622,20 +700,47 @@ def apply(engine, plan, *, poll=None):
 
 def _restore_execution(engine, runtime, run, saved):
     active = saved['previous_compose']
+    pins = saved.get('image_pins')
+    mode = saved.get('image_mode')
+    if active and pins is None:
+        # Older protected journals already recorded actual container image IDs.
+        old_plan = json.loads(checked_path(run / 'plan.json', run, file=True).read_text())
+        pins = {name: old_plan.get('observed', {}).get(name, {}).get('image') for name in saved['old_names']}
+        files = [active[i + 1] for i, word in enumerate(active[:-1]) if word == '-f']
+        mode = 'site' if str(runtime / 'site.json') in files else 'immutable'
+    pins = pins or {}
+    if active and (set(pins) != set(saved['old_names']) or not all(pins.values())):
+        raise image_safety.DeploymentSafetyError('이전 실행 이미지의 증거가 부족합니다. 복구 기록을 보존했습니다')
     # A changed/missing frozen configuration must not be used to stop or replace services.
     for name, expected in saved.get('reviewed_compose_files', {}).items():
         path = checked_path(name, runtime / 'compose-reviews', file=True)
         if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
             raise ValueError('Reviewed recovery configuration changed; pending recovery retained')
-    for image in saved.get('previous_images', []):
-        if engine.json(['image', 'inspect', image])[0]['Id'] != image:
+    for image in set(pins.values()) | set(saved.get('previous_images', [])):
+        if image_safety.local_image(engine, image) != image:
             raise ValueError('Previous recovery image is not available locally')
+    if active and mode == 'immutable':
+        rendered = engine.json(['compose', *active, 'config', '--format', 'json'])
+        image_safety.recovery_mode(engine, runtime, active,
+                                   {name: {'Image': image} for name, image in pins.items()}, rendered)
+    elif active and (mode != 'site' or not saved.get('old_site')):
+        raise image_safety.DeploymentSafetyError('이전 실행 설정을 안전하게 고정할 수 없습니다. 복구 기록을 보존했습니다')
     project = saved['canonical'][saved['canonical'].index('--project-name') + 1]
     present = containers(engine, project)
     targets = [project + '-' + name + '-1' for name in APP_SERVICES if name in present]
     if targets:
         engine.run(['stop', *targets])
     restore_previous_site(runtime, run, saved.get('old_site'))
+    if active and mode == 'site':
+        path = checked_path(runtime / 'site.json', runtime, file=True)
+        info = path.stat()
+        site = json.loads(path.read_text())
+        for name, image in pins.items():
+            site.setdefault('services', {}).setdefault(name, {})['image'] = image
+        atomic_json(path, site)
+        os.chmod(path, info.st_mode & 0o777)
+        if os.name == 'posix' and (path.stat().st_uid, path.stat().st_gid) != (info.st_uid, info.st_gid):
+            os.chown(path, info.st_uid, info.st_gid)
     # Restore metadata before starting the previous image; never restore a database.
     for name, value in (('contract.json', saved['old_contract']), ('current.json', saved['old_current'])):
         path = runtime / name
@@ -645,6 +750,10 @@ def _restore_execution(engine, runtime, run, saved):
             shutil.copy2(path, run / ('interrupted-' + name));path.unlink()
     if active:
         engine.run(['compose', *active, 'up', '-d', '--no-build', '--pull', 'never', *saved['old_names']], timeout=300)
+        restored = containers(engine, project)
+        if any(name not in restored or restored[name]['Image'] != image
+               or not restored[name]['State']['Running'] for name, image in pins.items()):
+            raise image_safety.DeploymentSafetyError('이전 실행 이미지의 복구를 확인하지 못했습니다. 복구 기록을 보존했습니다')
         atomic_json(runtime / 'compose.active.json', ['docker', 'compose', *active])
 
 

@@ -184,6 +184,59 @@ def test_canonical_external_release_is_limited_to_explicit_workspace(tmp_path, f
             active_command(state, objects, workspace=selected)
 
 
+@pytest.mark.parametrize('fault', ['none', 'base_changed', 'missing_run', 'different_current',
+                                    'wrong_image', 'source_manifest', 'wrong_state', 'extra_file',
+                                    'different_command', 'unprotected_receipt'])
+def test_next_workspace_requires_protected_successful_previous_release(tmp_path, monkeypatch, fault):
+    import hashlib
+    from cloud_soc.deployment.contract import digest
+    state = tmp_path / 'checkout/state/server'
+    runtime = state / 'runtime'
+    run = runtime / 'upgrades/accepted'
+    run.mkdir(parents=True)
+    old = tmp_path / 'previous-release'
+    base = old / 'deploy/server/compose.yaml'
+    base.parent.mkdir(parents=True)
+    base.write_text('services: {}')
+    site = runtime / 'site.json'
+    site.write_text('{}')
+    source = {'deploy/server/compose.yaml': hashlib.sha256(base.read_bytes()).hexdigest()}
+    current = {'runtime_ready': True, 'image_id': 'sha256:accepted', 'source_sha256': digest(source)}
+    args = ['--project-name', 'cloud-soc-central', '--env-file', str(state / 'compose.env'),
+            '-f', str(base), '-f', str(site)]
+    command = ['docker', 'compose', *args]
+    atomic_json(runtime / 'current.json', current)
+    atomic_json(run / 'applied.json', current)
+    plan = {'workspace': str(old), 'state': str(state), 'project': 'cloud-soc-central',
+            'image_id': current['image_id'], 'source_sha256': digest(source), 'source': source}
+    if fault == 'source_manifest': plan['source']['deploy/server/compose.yaml'] = '0'*64
+    if fault == 'wrong_state': plan['state'] = str(tmp_path / 'other-state')
+    atomic_json(run / 'plan.json', plan)
+    saved = {'canonical': ['compose', *args]}
+    if fault == 'different_command': saved['canonical'] += ['--profile', 'unexpected']
+    atomic_json(run / 'recovery.json', saved)
+    if fault == 'base_changed': base.write_text('services: {unexpected: {}}')
+    if fault == 'missing_run': (run / 'applied.json').unlink()
+    if fault == 'different_current': atomic_json(runtime / 'current.json', {**current, 'utc': 'different'})
+    if fault == 'extra_file': command += ['-f', str(old / 'extra.json')]
+    atomic_json(runtime / 'compose.active.json', command)
+    names = [command[i+1] for i, v in enumerate(command[:-1]) if v == '-f']
+    objects = {'portal': {'Image': 'sha256:other' if fault == 'wrong_image' else current['image_id'],
+                          'Config': {'Labels': {'com.docker.compose.project.config_files': ','.join(names)}}}}
+    if fault == 'unprotected_receipt':
+        regular = review.regular
+        def refuse(path, **kwargs):
+            if Path(path) == runtime / 'compose.active.json' and kwargs.get('protected'):
+                raise review.ComposeReviewError('unprotected receipt')
+            return regular(path, **kwargs)
+        monkeypatch.setattr(review, 'regular', refuse)
+    if fault == 'none':
+        assert active_command(state, objects, workspace=tmp_path / 'new-release') == args
+    else:
+        with pytest.raises(ValueError):
+            active_command(state, objects, workspace=tmp_path / 'new-release')
+
+
 @pytest.mark.parametrize('fault', ['port', 'mount', 'origin'])
 def test_new_plan_must_preserve_existing_site_settings(tmp_path, fault):
     _, _, objects, old, _ = fixture(tmp_path)

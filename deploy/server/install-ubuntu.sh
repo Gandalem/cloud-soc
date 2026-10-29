@@ -21,6 +21,11 @@ die() { printf '오류: %s\n' "$*" >&2; exit 1; }
 has_command() { command -v "$1" >/dev/null 2>&1; }
 path_exists() { [ -e "$1" ] || [ -L "$1" ]; }
 installed() { [ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null || true)" = 'install ok installed' ]; }
+apt_download() {
+    # Per-command limits only: retain the administrator's repositories/IP policy.
+    apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+        -o APT::Update::Error-Mode=any "$@"
+}
 
 valid_ipv4() {
     printf '%s\n' "$1" | awk '
@@ -218,9 +223,9 @@ install_packages() {
         if ! installed "$package"; then MISSING="$MISSING $package"; fi
     done
     if [ -n "$MISSING" ]; then
-        apt-get update
+        apt_download update
         # MISSING contains only the fixed package names above, never user input.
-        apt-get install -y --no-remove --no-upgrade --no-install-recommends $MISSING
+        apt_download install -y --no-remove --no-upgrade --no-install-recommends $MISSING
     fi
 }
 
@@ -230,6 +235,7 @@ install_docker() {
     TEMP=$(mktemp -d /tmp/cloud-soc-server.XXXXXXXX)
     if ! path_exists "$KEY_FILE"; then
         curl --fail --silent --show-error --proto '=https' --tlsv1.2 --connect-timeout 20 --max-time 120 \
+            --retry 3 --retry-delay 5 --retry-max-time 180 \
             https://download.docker.com/linux/ubuntu/gpg -o "$TEMP/docker.asc"
         [ -s "$TEMP/docker.asc" ] || die '다운로드한 Docker 서명 키가 비어 있습니다.'
         grep -q '^-----BEGIN PGP PUBLIC KEY BLOCK-----' "$TEMP/docker.asc" || die '다운로드한 Docker 서명 키의 형식이 올바르지 않습니다.'
@@ -242,8 +248,8 @@ install_docker() {
         (set -C; render_docker_source > "$SOURCE_FILE")
         chmod 0644 "$SOURCE_FILE"
     fi
-    apt-get update
-    apt-get install -y --no-remove --no-upgrade --no-install-recommends docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    apt_download update
+    apt_download install -y --no-remove --no-upgrade --no-install-recommends docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     systemctl enable --now docker
     check_docker_stack
 }
