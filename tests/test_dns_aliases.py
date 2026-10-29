@@ -124,8 +124,9 @@ def test_certificate_failure_does_not_echo_output_or_mutate_site(tmp_path, monke
 def test_modified_plan_stops_before_service_or_database_mutation(tmp_path, monkeypatch, changed):
     plan = {'resources': {'ok': True}, 'workspace': str(ROOT), 'state': str(tmp_path), 'image': 'fixture:test',
             'project': 'cloud-soc-central', 'fingerprint': 'same', 'alias_request': {'path': 'aliases.json'},
-            'compose_review': 'review.json',
-            **{k: {} for k in ('policy', 'site', 'observed', 'protected_sha256', 'previous_compose', 'source', 'image_id', 'adoption')}}
+            'compose_review': 'review.json', 'previous_image_mode': 'site',
+            **{k: {} for k in ('policy', 'site', 'observed', 'protected_sha256', 'previous_compose', 'source',
+                              'image_id', 'adoption', 'infrastructure_images')}}
     current = deepcopy(plan);current[changed] = {'modified': True}
     snapshot = Mock(return_value=current)
     monkeypatch.setattr(host, 'snapshot', snapshot);monkeypatch.setattr(host, 'lock', lambda _: nullcontext())
@@ -190,7 +191,8 @@ def test_fresh_plan_binds_alias_file_and_rejects_later_bytes_by_fingerprint(tmp_
                 return [{'Id': 'sha256:candidate'}]
             assert 'config' in args
             self.overlay = json.loads(kwargs['input'])
-            return {}
+            return {'services': {name: {'image': 'fixture:' + name}
+                                 for name in ('elasticsearch', 'kibana', 'gateway')}}
     engine = Engine()
     before = host.snapshot(engine, ROOT, tmp_path, 'candidate:verified', access_path=file)
     assert before['fresh'] and before['alias_request']['path'] == str(file)
