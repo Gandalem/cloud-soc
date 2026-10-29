@@ -24,7 +24,8 @@ class ServerPreparationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="cloud-soc-preparation-test-")
         self.addCleanup(self.temp.cleanup)
-        self.state = Path(self.temp.name) / "server"
+        # Match prepare() canonicalization, including Windows RUNNER~1 temp aliases.
+        self.state = (Path(self.temp.name) / "server").resolve()
 
     def run_main(self, entries, error=None):
         args = argparse.Namespace(host="soc.example.test", agent_host=None, bind_ip="10.0.0.5", state=self.state)
