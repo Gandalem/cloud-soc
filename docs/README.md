@@ -33,14 +33,14 @@
 
 긴 이전 작업 목록과 모든 완료/미완료 체크·승인/제한 원문은 history-docs.zip에 보존했다. 날짜별 검증은 해당 환경/범위의 기록이며 현재 서비스가 실행 중임을 보장하지 않는다. 압축을 새 검증이나 배포로 해석하지 않는다.
 
-[로컬 개발](local_development.md), [공통 화면](portal_layout.md), [조회 계약](log_query_contract.md), [증분 탐지](incremental_detection.md), [수신→탐지 연결](intake_detection_bridge.md), [파이프라인 복구](pipeline_reliability.md), [조사 품질](investigation_quality.md), [공격 시나리오](p5_03_attack_scenarios.md)를 참고합니다. 테스트 통과는 실제 배포·수신 완료를 의미하지 않습니다.
+[로컬 개발](local_development.md), [공통 화면](archive/README.md#record-docs-portal-layout-md), [조회 계약](log_query_contract.md), [증분 탐지](archive/README.md#record-docs-incremental-detection-md), [수신→탐지 연결](archive/README.md#record-docs-intake-detection-bridge-md), [파이프라인 복구](pipeline_reliability.md), [조사 품질](archive/README.md#record-docs-investigation-quality-md), [공격 시나리오](archive/README.md#record-docs-p5-03-attack-scenarios-md)를 참고합니다. 테스트 통과는 실제 배포·수신 완료를 의미하지 않습니다.
 
 ## 과거 기록과 개인 자료
 
-- [전체 작업 이력·기존 인수 기준](work_history_20261012.md): 완료 체크·날짜·검증 결과·제한·보류를 보존한 2026-10-12 정리 전 기록.
+- [전체 작업 이력·기존 인수 기준](archive/README.md#record-docs-work-history-20261012-md): 완료 체크·날짜·검증 결과·제한·보류를 보존한 2026-10-12 정리 전 기록.
 - [보관 색인](archive/README.md): 이전 설계·중복 설치 안내·날짜별 검증·포트폴리오 README.
-- [후속 확장/제외 사유](deferred_work_20261012.md): 제외를 완료로 처리하지 않습니다.
-- [포트폴리오](portfolio/demo.md): 당시 측정·시연 자료이며 현재 전체 인수 결과와 구분합니다.
+- [후속 확장/제외 사유](archive/README.md#record-docs-deferred-work-20261012-md): 제외를 완료로 처리하지 않습니다.
+- [포트폴리오](archive/README.md#record-docs-portfolio-demo-md): 당시 측정·시연 자료이며 현재 전체 인수 결과와 구분합니다.
 
 기존 DOCX 보고서·개인 소감·포트폴리오 이미지/측정값은 수정하거나 삭제하지 않았습니다. 보존/삭제·독립 백업 P2-02의 사용자 보류는 유지합니다.
 
@@ -55,9 +55,9 @@
 
 - 다음 작업: [대시보드 실제 자료 연결의 순서·필요 조건·인수 기준](dashboard_capabilities.md#후속-연결-계획--2026-10-21)
 
-- [계산·권한·조회·장치·폼 테스트 보강과 검수 범위](test_quality.md)
+- [계산·권한·조회·장치·폼 테스트 보강과 검수 범위](archive/README.md#record-docs-test-quality-md)
 
-- [백업 형식 2·3·4·5 호환성 회귀와 PR18 수정](backup_format_regression.md)
+- [백업 형식 2·3·4·5 호환성 회귀와 PR18 수정](archive/README.md#record-docs-backup-format-regression-md)
 
 - [Security Mall 로그인 감사 배포 패키지](../deploy/security-mall/login-audit/README.md): 별도 쇼핑몰 패치와 전용 수집기. HTTPS 중앙 ES가 필요하며 인증 없는 로컬 개발 Compose와 구분합니다.
 

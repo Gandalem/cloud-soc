@@ -61,7 +61,7 @@ python3() { forbidden python3 "$@"; }
 check_runtime_compatibility() { :; }
 openssl() { forbidden openssl "$@"; }
 mkdir -p "$ROOT/deploy/server" "$APT_ROOT/sources.list.d" "$APT_ROOT/keyrings"
-touch "$ROOT/deploy/server/server_cli.py" "$ROOT/deploy/server/prepare.py" "$ROOT/deploy/server/compose.yaml" "$ROOT/deploy/server/Dockerfile"
+touch "$ROOT/deploy/server/enrollment_pki.py" "$ROOT/deploy/server/repair-enrollment-tls.py" "$ROOT/deploy/server/server_cli.py" "$ROOT/deploy/server/prepare.py" "$ROOT/deploy/server/compose.yaml" "$ROOT/deploy/server/Dockerfile"
 `;
     return run(['-s'], prelude + '\n' + body + '\n');
   } finally {
@@ -205,7 +205,9 @@ main --dry-run
 
 test('existing state and incomplete checkouts fail closed', () => {
   fail(fixture('mkdir -p "$STATE"; check_fresh_state'), /이미 있습니다/);
-  fail(fixture('rm "$ROOT/deploy/server/prepare.py"; check_fresh_state'), /필수 파일이 없습니다/);
+  for (const name of ['prepare.py', 'enrollment_pki.py', 'repair-enrollment-tls.py']) {
+    fail(fixture(`rm "$ROOT/deploy/server/${name}"; check_fresh_state`), /필수 파일이 없습니다/);
+  }
   ok(fixture('check_fresh_state'));
 });
 
