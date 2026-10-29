@@ -74,12 +74,12 @@ def test_profile_change_is_visible_to_plan_fingerprint(tmp_path):
     assert access.read_profile(file)['sha256'] != original['sha256']
 
 
-@pytest.mark.parametrize('version', ['current', 'without_aliases', 'pre-crl', 'pre-crl-aliases'])
+@pytest.mark.parametrize('version', ['current', 'without_aliases', 'pre-crl', 'pre-crl-aliases', 'pre-route', 'pre-route-aliases'])
 def test_review_accepts_only_requested_alias_changes_and_known_gateway_template(tmp_path, monkeypatch, version):
     state, _, objects, original, _ = fixture(tmp_path)
     template = tmp_path / 'Caddyfile'
     current = (ROOT / 'deploy/server/Caddyfile').read_text(encoding='utf-8')
-    content = (ROOT / 'tests/fixtures/caddy' / (version + '.Caddyfile')).read_text(encoding='utf-8') if version.startswith('pre-crl') else (
+    content = (ROOT / 'tests/fixtures/caddy' / (version + '.Caddyfile')).read_text(encoding='utf-8') if version.startswith('pre-') else (
         current if version == 'current' else current.replace(' {$SOC_PORTAL_TLS_ORIGINS:}', ''))
     template.write_text(content, encoding='utf-8')
     original['services']['gateway']['volumes'] = [{'type': 'bind', 'target': '/etc/caddy/Caddyfile',
@@ -105,7 +105,7 @@ def test_review_accepts_only_requested_alias_changes_and_known_gateway_template(
             compose_review.preserved_site(original, changed, compared_objects, alias_request=request(), workspace=ROOT)
 
 
-@pytest.mark.parametrize('version', ['pre-crl', 'pre-crl-aliases'])
+@pytest.mark.parametrize('version', ['pre-crl', 'pre-crl-aliases', 'pre-route', 'pre-route-aliases'])
 @pytest.mark.parametrize('fault', ['allowlist', 'proxy', 'tls', 'extra_route'])
 def test_modified_legacy_gateway_is_refused_without_mutating_input(tmp_path, monkeypatch, version, fault):
     content = (ROOT / 'tests/fixtures/caddy' / (version + '.Caddyfile')).read_text(encoding='utf-8')

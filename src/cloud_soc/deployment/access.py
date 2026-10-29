@@ -13,11 +13,14 @@ from cloud_soc.portal.origins import additional_origins
 PORTAL_KEY = 'SOC_PORTAL_ORIGINS'
 GATEWAY_KEY = 'SOC_PORTAL_TLS_ORIGINS'
 GATEWAY_TARGET = '/etc/caddy/Caddyfile'
-# Exact shipped pre-CRL templates, UTF-8 with LF (5009741 and ce2c7bc).
+# Exact shipped historical templates, UTF-8 with LF (pre-CRL: 5009741 and ce2c7bc).
 # Never strip directives to recognize an older template: that could hide custom policy.
 LEGACY_GATEWAY_SHA256 = frozenset({
     'd74986a8790c4ed2c68ebd23d1649892e9b656f46b9fd865afb04ab2ee7f9028',
     'b72a6a618436d82de72f56dd9bf092501b379c06d3cc83939af0ada40f0813e4',
+    # CRL templates before the ACL ordering repair (with/without Portal aliases).
+    '58894ed3e0a299833b4a5b43a4c29bcb10d779de3b1d01e7c4e8cd6306f2c5c9',
+    'f06b6fc9ddb728fc92ea2e6d461c19f51792554bff82c764389d705a930c7db1',
 })
 
 

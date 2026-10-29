@@ -10,16 +10,19 @@ https://{$SOC_PUBLIC_HOST} {$SOC_PORTAL_LAN_ORIGIN:} {$SOC_PORTAL_TLS_ORIGINS:} 
 	header Strict-Transport-Security "max-age=31536000"
 	# Explicit peer allowlist; default preserves existing LAN/VPN connectivity.
 	@unapproved not remote_ip {$SOC_ADMIN_ALLOWED_CIDRS:0.0.0.0/0 ::/0}
-	respond @unapproved "Forbidden" 403
-	handle /.well-known/cloud-soc/ca.crl {
-		root * /certs
-		rewrite * /ca.crl
-		header Content-Type application/pkix-crl
-		header Cache-Control "no-cache"
-		file_server
-	}
-	handle {
-		reverse_proxy portal:8000
+	# Preserve ACL-before-handler order; Caddy otherwise sorts handle before respond.
+	route {
+		respond @unapproved "Forbidden" 403
+		handle /.well-known/cloud-soc/ca.crl {
+			root * /certs
+			rewrite * /ca.crl
+			header Content-Type application/pkix-crl
+			header Cache-Control "no-cache"
+			file_server
+		}
+		handle {
+			reverse_proxy portal:8000
+		}
 	}
 }
 

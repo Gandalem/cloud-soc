@@ -44,7 +44,7 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
-    def exercise(self, allowed, expected):
+    def exercise(self, allowed, expected, paths=('/', '/api/keys', '/api/enrollment/exchange')):
         config = deepcopy(self.adapt(allowed))
         # Preserve production routes/matchers; substitute only TLS/listeners and
         # upstreams so no production certificate, port or server is touched.
@@ -78,7 +78,7 @@ class GatewayTests(unittest.TestCase):
                             self.fail('Isolated gateway did not start')
                         time.sleep(.05)
                 for number in ports:
-                    for path in ('/', '/api/keys', '/api/enrollment/exchange'):
+                    for path in paths:
                         with self.subTest(port=number, path=path, allowed=allowed):
                             req = Request(f'http://127.0.0.1:{number}{path}', headers={
                                 'Host': 'soc.invalid', 'X-Forwarded-For': '192.0.2.35', 'Forwarded': 'for=192.0.2.35'})
@@ -105,7 +105,8 @@ class GatewayTests(unittest.TestCase):
         self.exercise('127.0.0.1/32 ::1/128', 204)
 
     def test_other_peer_is_denied_despite_spoofed_forwarded_headers(self):
-        self.exercise('192.0.2.0/24', 403)
+        self.exercise('192.0.2.0/24', 403,
+                      paths=('/', '/api/keys', '/api/enrollment/exchange', '/.well-known/cloud-soc/ca.crl'))
 
     def test_compose_passes_allowlist_without_changing_receiver_ports(self):
         import yaml
