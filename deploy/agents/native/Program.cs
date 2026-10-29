@@ -55,6 +55,7 @@ internal static class Program {
         string code = error is System.IO.InvalidDataException || error is System.IO.IOException ? error.Message : error.GetType().Name;
         if (!System.Text.RegularExpressions.Regex.IsMatch(code, @"\A[a-z_0-9]{1,70}\z")) code = error.GetType().Name;
         string message = "작업을 완료하지 못했습니다 (" + code + "). 기존 상태와 큐를 보존합니다. 포털 장치 상태와 관리자용 설치 문서를 확인하세요.";
+        if (code == "installation_state_missing") message = "설치 기록을 찾을 수 없습니다. 기존 수집기와 자료를 확인하고 설치 묶음 또는 관리 도구를 사용하세요. 수집기 자료는 변경하지 않았습니다.";
         if (code == "reinstall_preserved_data") message = "보존한 수집기 자료가 있습니다. 자료를 삭제하고 새로 설치하려면 기존 관리 프로그램에서 '수집기 자료까지 삭제'를 선택하세요. 미전송 자료와 읽기 위치는 복원되지 않습니다.";
         if (code == "reinstall_new_registration_required" || code == "reinstall_use_new_bundle") message = "포털에서 새 장치를 등록하고 새로 다운로드한 설치 묶음을 실행하세요. 이전 설치 정보는 재사용하지 않습니다.";
         Console.Error.WriteLine("cloud_soc_error={0} hresult={1}", code, error.HResult);

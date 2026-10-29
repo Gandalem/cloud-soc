@@ -2,6 +2,7 @@
 from contextlib import ExitStack
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -10,6 +11,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'deploy/server'))
+sys.path.insert(0, str(ROOT / 'src'))
 from server_cli import KoreanParser
 
 PROJECT = 'cloud-soc-central'
@@ -61,6 +63,32 @@ def safe_path(path):
     return path
 
 
+def managed_external_files(workspace, rows):
+    """Only a protected, currently applied release may share this state root."""
+    own = [r for r in rows if (r.get('Config', {}).get('Labels') or {}).get('com.docker.compose.project') == PROJECT]
+    base = workspace / 'deploy/server/compose.yaml'
+    if not any(Path((r.get('Config', {}).get('Labels') or {}).get(
+            'com.docker.compose.project.config_files', '').split(',')[0]) != base for r in own):
+        return None
+    portals = [r for r in own if (r.get('Config', {}).get('Labels') or {}).get('com.docker.compose.service') == 'portal']
+    if len(portals) != 1:
+        raise RemovalError('기존 릴리스의 Portal을 식별할 수 없어 중단했습니다.')
+    try:
+        from cloud_soc.deployment.host import active_command
+        command = active_command(workspace / 'state/server', {'portal': portals[0]}, workspace=workspace)
+        files = [command[i+1] for i, v in enumerate(command[:-1]) if v == '-f']
+        if len(files) != 2 or files[1] != str(workspace / 'state/server/runtime/site.json'):
+            raise ValueError('Only the canonical release pair may share state')
+        return files
+    except (ValueError, OSError, KeyError, TypeError):
+        raise RemovalError('기존 릴리스의 보호된 배포 기록이 일치하지 않아 중단했습니다.') from None
+
+
+def owned_configuration(workspace, files, external):
+    return bool(files and (Path(files[0]) == workspace / 'deploy/server/compose.yaml'
+                           or external is not None and files == external))
+
+
 def plan(args):
     workspace = safe_path(args.workspace)
     if not (workspace / 'deploy/server/install-ubuntu.sh').is_file():
@@ -72,13 +100,14 @@ def plan(args):
     central = args.component in ('central', 'all')
     containers = objects('container') if central and has_docker else []
     if central and has_docker:
+        external = managed_external_files(workspace, containers)
         for row in containers:
             labels = row.get('Config', {}).get('Labels') or {}
             if labels.get('com.docker.compose.project') != PROJECT:
                 continue
             files = labels.get('com.docker.compose.project.config_files', '').split(',')
             if (labels.get('com.docker.compose.service') not in SERVICES or
-                    not files or Path(files[0]) != workspace / 'deploy/server/compose.yaml'):
+                    not owned_configuration(workspace, files, external)):
                 raise RemovalError('같은 프로젝트 이름의 다른 설치가 있습니다. 자동 제거하지 않습니다.')
             result['containers'].append(row['Id'])
         for kind, key, allowed in (
@@ -99,10 +128,18 @@ def plan(args):
                     raise RemovalError('해당 저장소의 설정이 없어 기존 Docker 리소스의 소유 관계를 확인할 수 없습니다.')
                 result[key].append(row['Name'])
         if args.remove_images:
-            tag = 'cloud-soc-central-runtime:local'
-            images = docker('image', 'ls', '--filter', 'reference=' + tag, '--format', '{{.ID}}').split()
-            if images:
+            tags = ['cloud-soc-central-runtime:local']
+            tags += docker('image', 'ls', '--filter', 'reference=cloud-soc-recovery:*',
+                           '--format', '{{.Repository}}:{{.Tag}}').split()
+            for tag in sorted(set(tags)):
+                if tag.startswith('cloud-soc-recovery:') and not re.fullmatch(r'cloud-soc-recovery:[0-9a-f]{64}', tag):
+                    raise RemovalError('예상하지 못한 복구 이미지 태그가 있어 제거하지 않습니다.')
+                images = docker('image', 'ls', '--filter', 'reference=' + tag, '--format', '{{.ID}}').split()
+                if not images:
+                    continue
                 image = json.loads(docker('image', 'inspect', tag))[0]
+                if tag.startswith('cloud-soc-recovery:') and tag.split(':')[1] != image['Id'].removeprefix('sha256:'):
+                    raise RemovalError('복구 이미지 태그와 실제 식별자가 달라 제거하지 않습니다.')
                 if any(c.get('Image') == image['Id'] and c['Id'] not in result['containers'] for c in containers):
                     raise RemovalError('다른 컨테이너가 공통 이미지를 사용하고 있어 제거하지 않습니다.')
                 result['images'].append(tag)
@@ -167,12 +204,15 @@ def inspect_owned(args, identifiers):
     rows = json.loads(docker('inspect', *identifiers)) if identifiers else []
     if not isinstance(rows, list) or {r.get('Id') for r in rows} != set(identifiers):
         raise RemovalError('종료 대상 조회 결과가 다릅니다. 삭제하지 않았습니다.')
+    needs_external = any(Path((r.get('Config', {}).get('Labels') or {}).get(
+        'com.docker.compose.project.config_files', '').split(',')[0]) != args.workspace / 'deploy/server/compose.yaml' for r in rows)
+    external = managed_external_files(args.workspace, objects('container')) if needs_external else None
     for row in rows:
         labels = row.get('Config', {}).get('Labels') or {}
         files = labels.get('com.docker.compose.project.config_files', '').split(',')
         if (labels.get('com.docker.compose.project') != PROJECT
                 or labels.get('com.docker.compose.service') not in SERVICES or not files
-                or Path(files[0]) != args.workspace / 'deploy/server/compose.yaml'
+                or not owned_configuration(args.workspace, files, external)
                 or type(row.get('State', {}).get('Running')) is not bool
                 or str(row.get('Config', {}).get('StopSignal', '')).upper() in ('9', 'SIGKILL', 'KILL', '19', 'SIGSTOP', 'STOP')):
             raise RemovalError('종료 대상의 소유 관계나 상태가 바뀌었습니다. 삭제하지 않았습니다.')

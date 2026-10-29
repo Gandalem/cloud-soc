@@ -75,7 +75,7 @@ jobs:
         if: runner.os == 'Windows'
         run: python -m pytest -q tests/test_server_cli.py tests/test_install_device_tools.py tests/test_install_lifecycle.py
       - name: Common runtime parity and upgrade failure regression
-        run: python -m pytest -q tests/test_deployment_parity.py tests/test_slack_notifications.py tests/test_slack_messages.py tests/test_alert_navigation.py tests/test_deployment_permissions.py
+        run: python -m pytest -q tests/test_deployment_parity.py tests/test_compose_review.py tests/test_dns_aliases.py tests/test_slack_notifications.py tests/test_slack_messages.py tests/test_alert_navigation.py tests/test_deployment_permissions.py
       - name: Windows PowerShell parser and offline agent tests
         if: runner.os == 'Windows'
         shell: pwsh
@@ -156,4 +156,4 @@ jobs:
           docker cp cloud-soc-test-gateway:/usr/bin/caddy /tmp/cloud-soc-test-caddy
           docker rm cloud-soc-test-gateway
           chmod u+x /tmp/cloud-soc-test-caddy
-          python -m pytest -q tests/test_gateway_allowlist.py
+          python -m pytest -q tests/test_gateway_allowlist.py tests/test_dns_gateway_tls.py

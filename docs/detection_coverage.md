@@ -1,6 +1,8 @@
 # Cloud SOC Detection Capability and Coverage
 
-2026-10-12 추가 대조: 아래 날짜가 붙은 과거 현황은 유지한다. 현재 single/threshold/인증 sequence에 선택적 ordered/diversity 로컬 탐지를 추가했다. [P5-03 명세](archive/README.md#record-docs-p5-03-attack-scenarios-md)와 [검증 기록](archive/README.md#record-docs-archive-validation-p5-03-attack-detection-validation-md)을 참고한다. 웹 SQLi/웹 실행 연계·정상 활동 기준선·완전한 SSH 세션 연결은 미지원이며 운영 coverage 완료를 주장하지 않는다.
+2026-10-27 상태 안내: 아래9/10 설계·초기 코드 대조와10/12 후속 기록은 이력이다. 현재 구현은 [탐지 레지스트리](../src/cloud_soc/detection/registry.py)·[규칙 작성](rule_authoring.md), 실제 환경별 결과는 [프로젝트 상태](project_status.md)를 따른다. single/sequence·상주 상태·웹/WAF 후속 성공을 과거 표의 미지원으로 되돌리지 않는다. 운영 coverage 전체 완료를 주장하는 문서도 아니다.
+
+2026-10-12 추가 대조 당시 single/threshold/인증 sequence와 선택적 ordered/diversity 로컬 탐지를 확인했다. [P5-03 명세](archive/README.md#record-docs-p5-03-attack-scenarios-md)와 [검증 기록](archive/README.md#record-docs-archive-validation-p5-03-attack-detection-validation-md)을 보존한다. 당시 웹 SQLi 등의 미지원 표시는 이후10/19~20 실제 CRS SQLi 관측·경보 결과로 해당 범위에서 갱신됐으며, 웹 실행 인과관계·정상 활동 기준선·완전한 SSH 세션 복원을 증명한 것은 아니다.
 
 2026-09-10 / 제품 설계 제안. 순서: 분석가 질문 -> 필요한 탐지 기능 -> Telemetry/필드 -> 로컬 규칙 -> 검증 -> 조사 화면. 새 Rule을 작성/배포하지 않았다.
 
@@ -108,9 +110,19 @@ MVP에서 고급 ML/risk-based correlation보다 single/threshold의 설명 가�
 
 ## 7. 현재 구현 대조
 
-외부 조사/목표 설계 후 2026-09-10 작업 트리를 읽기 전용으로 확인했다. 실행 시험이나 새 Rule 배포는 하지 않았다. `지원`은 코드 존재이며 운영 검증 완료를 뜻하지 않는다. 상세 코드 근거와 신뢰성 Gap은 [로드맵 §3~4](archive/README.md#record-docs-archive-design-implementation-roadmap-v2-md)에 있다.
+2026-10-27 현재 상태와 최초 대조를 구분한다. `지원`은 각 코드/계약의 존재이며 실제 활성화·입력별 탐지·운영 배포는 [현재 상태](project_status.md)와 런타임 revision으로 확인한다.
 
-| Capability | 현재 지원 여부 / 코드 근거 | 부족한 계약 | MVP 도입 순서 |
+| 현재 구분 | 확인한 코드/경계 |
+| --- | --- |
+| single/threshold/sequence | registry.py에 독립 detector가 있고 rule_loader.py가 유형별 계약을 검증. sequence는 인증 실패→성공의 명시 범위이며 모든 단계형 공격을 지원하는 뜻은 아님 |
+| ordered/diversity/cardinality | 선택 detector가 존재. YAML 존재를 실제 운영 규칙 활성화로 세지 않음 |
+| 상태·재시작 | incremental/managed/retrospective 경로가 상태/범위를 관리. 한 detect_rule 호출의 상태만을 제품 전체의 영속성으로 설명하지 않음 |
+| 수집 상태·부재 | 지속 heartbeat/신선도·수신 시각·수집 품질은 구현됨. 임의 보안 이벤트의 부재 탐지와 구분 |
+| 요청 연관·위험 | Mall snapshot/조사와 단일 경보의 설명 가능한 risk 계산은 있음. 범용 연관의 상주 갱신·자동 다중 경보 risk correlation과 별도 |
+
+아래 표와 연산자/cooldown 설명은 **2026-09-10 최초 작업 트리의 읽기 전용 대조**를 보존한 것이다. 당시 실행 시험/새 Rule 배포는 없었으며 부족한 계약·MVP 순서를 현재 미구현 목록이나 승인 우선순위로 재사용하지 않는다. 당시 상세 근거는 [로드맵 §3~4](archive/README.md#record-docs-archive-design-implementation-roadmap-v2-md)에 있다.
+
+| Capability | 9/10 당시 지원 여부 / 코드 근거 | 당시 부족한 계약 | 당시 MVP 도입 순서 |
 | --- | --- | --- | --- |
 | Single Event Rule | 독립 유형 미지원. engine의 threshold=1로 일부 조건을 흉내 낼 수 있음 | rule_loader가 group/window/threshold를 필수 요구하고 cooldown 의미가 남음 | MUST, Phase C에서 명시적 유형/근거 계약 추가 |
 | Threshold Detection | 지원: engine.py의 detect_rule, deque 길이와 count 비교 | unique event/attempt 구분, 재처리/영속 상태/시험 | MUST, 현재 기반 재사용 |
@@ -123,9 +135,9 @@ MVP에서 고급 ML/risk-based correlation보다 single/threshold의 설명 가�
 | Risk-based | 미지원. rule severity는 risk score가 아님 | 설명 가능한 결합/정답 검증 | 첫 MVP OUT OF SCOPE |
 | Indicator Match | 전용 지표 저장소/유효기간/매칭 미지원 | 단순 equals/in 연산자만으로 CTI capability 충족 불가 | COULD, F 이후 |
 
-현재 AND 연산자는 `equals/not_equals/contains/in/greater_than`이다. 필드 결측에서 `not_equals`가 참이 될 수 있고, 결측 group/time은 제외되며 통계가 남지 않는다. 타입별 평가 불가와 실제 조건 불일치를 분리해야 한다. Rule loader의 safe_load/필수값 검증은 유지할 기반이다.
+9/10 당시 AND 연산자는 `equals/not_equals/contains/in/greater_than`이었다. 당시 필드 결측에서 `not_equals`가 참이 될 수 있고 결측 group/time은 제외되며 통계가 남지 않는 제약을 기록했다. 최신 조건/평가 계약은 현재 loader와 규칙 작성 문서를 따른다. 이 기록으로 현재 모든 경로의 통계 부재를 단정하지 않는다.
 
-Cooldown은 구현되어 있다. YAML의 미구현을 암시하는 TODO 주석보다 engine.py 327~430행을 근거로 판정했다. 다만 **한 detect_rule 호출 내 그룹별 상태**이며 프로세스/증분 배치 사이의 영속 suppression은 아니다. 같은 입력을 다시 계산한 뒤 Alert ID로 재저장하는 효과와 suppression 상태 보존을 혼동하지 않는다.
+9/10 당시에도 cooldown은 구현돼 있었고 한 detect_rule 호출의 그룹별 상태를 확인했다. 이후 추가된 영속 실행 경로와 같은 범위로 읽지 않는다. 현재도 같은 Alert ID의 저장 충돌 방지와 suppression/재시작 상태 보존은 별도 계약이므로 선택한 실행 경로의 상태와 revision을 확인한다.
 
 ### AUTH-001의 위치
 

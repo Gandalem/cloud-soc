@@ -22,7 +22,7 @@ internal sealed class Installer {
     private Action<string> report;
     internal Installer(Action<string> report) { this.report = report; }
     private void Phase(string phase) { state["phase"] = phase; state["updated_at"] = DateTime.UtcNow.ToString("o"); Safe.Json(StatePath, state); report(phase); }
-    internal static Dictionary<string, object> Load() { Safe.CheckAcl(StatePath); var value = Contract.Parse(Contract.Utf8.GetString(Safe.Read(StatePath, 131072))); Contract.Require(Convert.ToInt32(value["schema"]) == 1 && Object.Equals(value["root"], Root), "state_schema"); return value; }
+    internal static Dictionary<string, object> Load() { Contract.Require(File.Exists(StatePath), "installation_state_missing"); Safe.CheckAcl(StatePath); var value = Contract.Parse(Contract.Utf8.GetString(Safe.Read(StatePath, 131072))); Contract.Require(Convert.ToInt32(value["schema"]) == 1 && Object.Equals(value["root"], Root), "state_schema"); return value; }
     internal static void Verify(Dictionary<string, object> state) {
         Safe.CheckAcl(StateRoot); Safe.CheckAcl(Root);
         var files = (Dictionary<string, object>)state["files"];

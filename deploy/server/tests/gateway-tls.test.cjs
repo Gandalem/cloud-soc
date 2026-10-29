@@ -15,7 +15,7 @@ const dockerHost = process.platform === 'win32' ? 'npipe:////./pipe/docker_engin
 test('gateway supplies the configured host for no-SNI clients without disabling TLS', () => {
   assert.match(source, /^\s*default_sni \{\$SOC_PUBLIC_HOST\}\s*$/m);
   assert.match(source, /^\s*admin off\s*$/m);
-  assert.equal((source.match(/^https:\/\/\{\$SOC_PUBLIC_HOST\}(?::5601)? \{/gm) || []).length, 2);
+  assert.equal((source.match(/^https:\/\/\{\$SOC_PUBLIC_HOST\}(?::5601)?(?: \{\$SOC_PORTAL_LAN_ORIGIN:\} \{\$SOC_PORTAL_TLS_ORIGINS:\})? \{/gm) || []).length, 2);
   assert.equal((source.match(/tls \/certs\/server\.crt \/certs\/server\.key/g) || []).length, 2);
   assert.doesNotMatch(source, /tls_insecure_skip_verify|http:\/\//);
 });

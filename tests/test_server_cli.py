@@ -84,13 +84,112 @@ class ServerMenuTests(unittest.TestCase):
                     {'scope': 'global', 'local': '10.0.0.8'}]}]))
             return SimpleNamespace(returncode=0, stdout='yes\n')
         with tempfile.TemporaryDirectory() as temporary, patch.object(tool, 'ROOT', Path(temporary)), \
-                patch.object(tool, 'command', side_effect=command) as execute, redirect_stdout(io.StringIO()):
+                patch.object(tool, 'command', side_effect=command) as execute, \
+                patch.object(tool, 'ec2_public_ipv4', return_value=None), redirect_stdout(io.StringIO()):
             self.assertEqual(tool.install(ask=answers), 0)
         call = list(map(str, execute.call_args.args[0]))
         self.assertEqual(call[-6:], ['--host', 'soc.example.test', '--bind-ip', '10.0.0.8',
                                      '--agent-host', 'ingest.example.test'])
         self.assertNotIn('--yes', call)
         self.assertEqual(answers.call_count, 9)
+
+    def test_install_suggests_single_lan_address_for_portal_and_receiver(self):
+        tool = load('soc')
+        answers = Mock(side_effect=['lan', '', '', ''])
+        def command(args, **kwargs):
+            if args[0] == 'ip':
+                return SimpleNamespace(returncode=0, stdout=json.dumps([{'addr_info': [
+                    {'scope': 'global', 'local': '192.168.1.10'}]}]))
+            return SimpleNamespace(returncode=0, stdout='yes\n')
+        with tempfile.TemporaryDirectory() as temporary, patch.object(tool, 'ROOT', Path(temporary)), \
+                patch.object(tool, 'command', side_effect=command) as execute, \
+                patch.object(tool, 'ec2_public_ipv4') as metadata, redirect_stdout(io.StringIO()):
+            self.assertEqual(tool.install(ask=answers), 0)
+        self.assertEqual(list(map(str, execute.call_args.args[0]))[-6:],
+                         ['--host', '192.168.1.10', '--bind-ip', '192.168.1.10', '--agent-host', '192.168.1.10'])
+        self.assertIn('[192.168.1.10]', answers.call_args_list[1].args[0])
+        metadata.assert_not_called()
+
+    def test_cloud_suggests_detected_public_ip_but_binds_private_ip(self):
+        tool = load('soc')
+        answers = Mock(side_effect=['cloud', '', '', ''])
+        def command(args, **kwargs):
+            if args[0] == 'ip':
+                return SimpleNamespace(returncode=0, stdout=json.dumps([{'addr_info': [
+                    {'scope': 'global', 'local': '10.0.0.8'}]}]))
+            return SimpleNamespace(returncode=0, stdout='yes\n')
+        with tempfile.TemporaryDirectory() as temporary, patch.object(tool, 'ROOT', Path(temporary)), \
+                patch.object(tool, 'command', side_effect=command) as execute, \
+                patch.object(tool, 'ec2_public_ipv4', return_value='8.8.8.8'), redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(tool.install(ask=answers), 0)
+        self.assertEqual(list(map(str, execute.call_args.args[0]))[-6:],
+                         ['--host', '8.8.8.8', '--bind-ip', '10.0.0.8', '--agent-host', '8.8.8.8'])
+        self.assertIn('기존 장치의 접속 주소는 자동 변경되지 않습니다', output.getvalue())
+
+    def test_metadata_unavailable_keeps_cloud_domain_input_and_no_guess(self):
+        tool = load('soc')
+        answers = Mock(side_effect=['cloud', 'SOC.EXAMPLE.TEST', '', ''])
+        def command(args, **kwargs):
+            if args[0] == 'ip':
+                return SimpleNamespace(returncode=0, stdout=json.dumps([{'addr_info': [
+                    {'scope': 'global', 'local': '10.0.0.8'}]}]))
+            return SimpleNamespace(returncode=0, stdout='yes\n')
+        with tempfile.TemporaryDirectory() as temporary, patch.object(tool, 'ROOT', Path(temporary)), \
+                patch.object(tool, 'command', side_effect=command) as execute, \
+                patch.object(tool, 'ec2_public_ipv4', return_value=None), redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(tool.install(ask=answers), 0)
+        self.assertEqual(list(map(str, execute.call_args.args[0]))[-6:],
+                         ['--host', 'soc.example.test', '--bind-ip', '10.0.0.8', '--agent-host', 'soc.example.test'])
+        self.assertIn('공인 IP를 자동으로 확인하지 못했습니다', output.getvalue())
+
+    def test_explicit_domain_takes_precedence_over_detected_public_ip(self):
+        tool = load('soc')
+        answers = Mock(side_effect=['cloud', 'SOC.EXAMPLE.TEST', '', ''])
+        def command(args, **kwargs):
+            if args[0] == 'ip':
+                return SimpleNamespace(returncode=0, stdout=json.dumps([{'addr_info': [
+                    {'scope': 'global', 'local': '10.0.0.8'}]}]))
+            return SimpleNamespace(returncode=0, stdout='yes\n')
+        with tempfile.TemporaryDirectory() as temporary, patch.object(tool, 'ROOT', Path(temporary)), \
+                patch.object(tool, 'command', side_effect=command) as execute, \
+                patch.object(tool, 'ec2_public_ipv4', return_value='8.8.8.8'), redirect_stdout(io.StringIO()):
+            self.assertEqual(tool.install(ask=answers), 0)
+        self.assertEqual(list(map(str, execute.call_args.args[0]))[-6:],
+                         ['--host', 'soc.example.test', '--bind-ip', '10.0.0.8', '--agent-host', 'soc.example.test'])
+
+    def test_multiple_lan_addresses_require_explicit_choice(self):
+        tool = load('soc')
+        answers = Mock(side_effect=['lan', '', '192.168.1.10', '', '192.168.1.10', ''])
+        def command(args, **kwargs):
+            if args[0] == 'ip':
+                return SimpleNamespace(returncode=0, stdout=json.dumps([{'addr_info': [
+                    {'scope': 'global', 'local': '192.168.1.10'},
+                    {'scope': 'global', 'local': '10.8.0.10'}]}]))
+            return SimpleNamespace(returncode=0, stdout='yes\n')
+        with tempfile.TemporaryDirectory() as temporary, patch.object(tool, 'ROOT', Path(temporary)), \
+                patch.object(tool, 'command', side_effect=command) as execute, redirect_stdout(io.StringIO()):
+            self.assertEqual(tool.install(ask=answers), 0)
+        self.assertEqual(list(map(str, execute.call_args.args[0]))[-6:],
+                         ['--host', '192.168.1.10', '--bind-ip', '192.168.1.10', '--agent-host', '192.168.1.10'])
+
+    def test_ec2_detection_uses_imdsv2_and_rejects_invalid_metadata(self):
+        tool = load('soc')
+        token_response = Mock(status=200);token_response.read.return_value = b'test-token'
+        address_response = Mock(status=200);address_response.read.return_value = b'8.8.8.8'
+        first, second = Mock(), Mock()
+        first.getresponse.return_value, second.getresponse.return_value = token_response, address_response
+        with patch.object(tool.http.client, 'HTTPConnection', side_effect=[first, second]) as connect:
+            self.assertEqual(tool.ec2_public_ipv4(), '8.8.8.8')
+        self.assertEqual(connect.call_args_list[0].args, ('169.254.169.254',))
+        first.request.assert_called_once_with('PUT', '/latest/api/token', headers={'X-aws-ec2-metadata-token-ttl-seconds': '60'})
+        second.request.assert_called_once_with('GET', '/latest/meta-data/public-ipv4', headers={'X-aws-ec2-metadata-token': 'test-token'})
+        self.assertEqual(first.close.call_count, 1)
+        self.assertEqual(second.close.call_count, 1)
+        address_response.read.return_value = b'192.168.1.10'
+        with patch.object(tool.http.client, 'HTTPConnection', side_effect=[first, second]):
+            self.assertIsNone(tool.ec2_public_ipv4())
+        with patch.object(tool.http.client, 'HTTPConnection', side_effect=OSError('unavailable')):
+            self.assertIsNone(tool.ec2_public_ipv4())
 
 
 class ServerStatusTests(unittest.TestCase):
@@ -154,6 +253,74 @@ class ServerStatusTests(unittest.TestCase):
             with self.assertRaises(remove.RemovalError):
                 self.tool.status()
         self.assertNotIn('실행 서비스 없음', output.getvalue())
+
+
+class ExternalReleaseOwnershipTests(unittest.TestCase):
+    def setUp(self):
+        self.tool = load('uninstall')
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name) / 'original'
+        self.release = Path(self.tmp.name) / 'release'
+        self.files = [str(self.release / 'deploy/server/compose.yaml'),
+                      str(self.root / 'state/server/runtime/site.json')]
+        self.portal = container(self.release, 'portal')
+        self.portal['Config']['Labels']['com.docker.compose.project.config_files'] = ','.join(self.files)
+        self.args = ['--project-name', 'cloud-soc-central', '-f', self.files[0], '-f', self.files[1]]
+
+    def test_status_and_removal_accept_only_the_proven_external_pair(self):
+        from cloud_soc.deployment import host
+        with patch.object(host, 'active_command', return_value=self.args) as proof:
+            allowed = self.tool.managed_external_files(self.root, [self.portal])
+        proof.assert_called_once_with(self.root / 'state/server', {'portal': self.portal}, workspace=self.root)
+        self.assertEqual(allowed, self.files)
+        self.assertTrue(self.tool.owned_configuration(self.root, self.files, allowed))
+        self.assertFalse(self.tool.owned_configuration(self.root, [*self.files, '/extra.json'], allowed))
+        self.assertFalse(self.tool.owned_configuration(self.root, list(reversed(self.files)), allowed))
+        self.assertFalse(self.tool.owned_configuration(self.root, ['/other/compose.yaml', self.files[1]], allowed))
+        soc = load('soc')
+        with patch.object(soc, 'ROOT', self.root), patch.object(soc, 'removal_tool', return_value=self.tool), \
+                patch.object(self.tool, 'objects', return_value=[self.portal]), \
+                patch.object(host, 'active_command', return_value=self.args), redirect_stdout(io.StringIO()) as output:
+            # The one supplied Portal is recognized; remaining services are correctly missing.
+            self.assertEqual(soc.status(), 1)
+        self.assertIn('portal: 실행 중', output.getvalue())
+
+    def test_missing_duplicate_and_unproven_portal_are_refused(self):
+        from cloud_soc.deployment import host
+        worker = container(self.release, 'detector')
+        with self.assertRaises(self.tool.RemovalError):
+            self.tool.managed_external_files(self.root, [worker])
+        with self.assertRaises(self.tool.RemovalError):
+            self.tool.managed_external_files(self.root, [self.portal, self.portal])
+        with patch.object(host, 'active_command', side_effect=ValueError('proof mismatch')):
+            with self.assertRaises(self.tool.RemovalError):
+                self.tool.managed_external_files(self.root, [self.portal])
+
+    def test_extra_compose_receipt_is_not_a_canonical_shared_release(self):
+        from cloud_soc.deployment import host
+        with patch.object(host, 'active_command', return_value=[*self.args, '-f', '/extra.json']):
+            with self.assertRaises(self.tool.RemovalError):
+                self.tool.managed_external_files(self.root, [self.portal])
+
+    def test_foreign_project_is_not_used_as_release_proof(self):
+        from cloud_soc.deployment import host
+        self.portal['Config']['Labels']['com.docker.compose.project'] = 'another-project'
+        with patch.object(host, 'active_command') as proof:
+            self.assertIsNone(self.tool.managed_external_files(self.root, [self.portal]))
+        proof.assert_not_called()
+
+    def test_stop_rechecks_external_pair_and_refuses_changed_files(self):
+        from cloud_soc.deployment import host
+        self.portal['Image'] = 'accepted'
+        args = SimpleNamespace(workspace=self.root)
+        with patch.object(self.tool, 'docker', side_effect=lambda *a: json.dumps([self.portal])), \
+                patch.object(self.tool, 'objects', return_value=[self.portal]), \
+                patch.object(host, 'active_command', return_value=self.args):
+            self.assertEqual(self.tool.inspect_owned(args, [self.portal['Id']]), [self.portal])
+            self.portal['Config']['Labels']['com.docker.compose.project.config_files'] += ',/extra.json'
+            with self.assertRaises(self.tool.RemovalError):
+                self.tool.inspect_owned(args, [self.portal['Id']])
 
 
 class RemovalWorkflowTests(unittest.TestCase):
