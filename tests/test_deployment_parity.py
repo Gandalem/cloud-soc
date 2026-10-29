@@ -657,5 +657,5 @@ def test_active_compose_receipt_rejects_symlink_inside_allowed_workspace(tmp_pat
     (runtime / 'compose.active.json').write_text(json.dumps(receipt))
     objects = {'portal':{'Config':{'Labels':{
         'com.docker.compose.project.config_files':str(link)}}}}
-    with pytest.raises(ValueError, match='State path escapes'):
+    with pytest.raises(ValueError, match='escapes.*approved'):
         active_command(state, objects, workspace=workspace)
