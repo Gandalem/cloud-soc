@@ -1,0 +1,30 @@
+# Separate opt-in collector. Do not replace an existing Filebeat configuration.
+# The metadata export command emits sanitized NDJSON to the configured spool.
+filebeat.inputs:
+  - type: filestream
+    id: security-scenarios-v1
+    enabled: true
+    paths: ["${SCENARIO_SPOOL_PATH}"]
+    message_max_bytes: 65536
+    parsers:
+      - ndjson:
+          target: ""
+          add_error_key: true
+          # Honor the exporter's event timestamp instead of Filebeat read time.
+          overwrite_keys: true
+    processors:
+      - drop_event:
+          when.has_fields: [error.message]
+
+setup.ilm.enabled: false
+setup.template.enabled: false
+output.elasticsearch:
+  hosts: ["${SOC_ES_URL}"]
+  api_key: "${SOC_SCENARIO_API_KEY}"
+  ssl.certificate_authorities: ["${SOC_CA_FILE}"]
+  ssl.verification_mode: full
+  index: "soc-host-raw-scenarios-%{+yyyy.MM.dd}"
+  pipeline: soc-security-scenarios-receipt-v1
+
+logging.level: warning
+logging.to_files: true

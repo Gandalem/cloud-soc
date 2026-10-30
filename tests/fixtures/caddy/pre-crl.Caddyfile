@@ -1,0 +1,23 @@
+{
+	auto_https off
+	admin off
+	# IP clients omit SNI; Docker/NAT listener IPs are not the public certificate IP.
+	default_sni {$SOC_PUBLIC_HOST}
+}
+
+https://{$SOC_PUBLIC_HOST} {$SOC_PORTAL_LAN_ORIGIN:} {
+	tls /certs/server.crt /certs/server.key
+	header Strict-Transport-Security "max-age=31536000"
+	# Explicit peer allowlist; default preserves existing LAN/VPN connectivity.
+	@unapproved not remote_ip {$SOC_ADMIN_ALLOWED_CIDRS:0.0.0.0/0 ::/0}
+	respond @unapproved "Forbidden" 403
+	reverse_proxy portal:8000
+}
+
+https://{$SOC_PUBLIC_HOST}:5601 {
+	tls /certs/server.crt /certs/server.key
+	header Strict-Transport-Security "max-age=31536000"
+	@unapproved not remote_ip {$SOC_ADMIN_ALLOWED_CIDRS:0.0.0.0/0 ::/0}
+	respond @unapproved "Forbidden" 403
+	reverse_proxy kibana:5601
+}

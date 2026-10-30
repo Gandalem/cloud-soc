@@ -1,0 +1,6 @@
+# Optional isolated local policy: reserves loopback TCP port 18081.
+# Does not change existing tables, default policies, SSH, portal or mall port 8080.
+# Actual connection attempts to this reserved port are logged and dropped.
+add table inet cloud_soc_scenarios
+add chain inet cloud_soc_scenarios input { type filter hook input priority 10; policy accept; }
+add rule inet cloud_soc_scenarios input iifname "lo" tcp dport 18081 log prefix "SOC_DROP " drop

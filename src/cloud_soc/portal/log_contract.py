@@ -19,7 +19,7 @@ MAX_RESPONSE_BYTES = 256 * 1024
 MAX_DETAIL_BYTES = 64 * 1024
 MAX_CURSOR_LENGTH = 8192
 TIME_FIELDS = {"ingested": "event.ingested", "event": "@timestamp"}
-HOST_SOURCES = {"windows_event", "windows_file", "linux_file", "linux_journald", "web_access_metadata", "generic_web_access", "generic_modsecurity", "security_mall_audit", "security_mall_edge", "agent_health", "agent_collection_notice"}
+HOST_SOURCES = {"security_scenario", "windows_event", "windows_file", "linux_file", "linux_journald", "web_access_metadata", "generic_web_access", "generic_modsecurity", "security_mall_audit", "security_mall_edge", "agent_health", "agent_collection_notice"}
 SOURCE_FIELDS = (
     "@timestamp", "event.ingested", "organization.id", "agent.id", "agent.type", "labels.privacy_policy", "host.id", "service.id", "service.name",
     "host.name", "host.ip", "host.os.type", "host.os.name", "labels.log_source",

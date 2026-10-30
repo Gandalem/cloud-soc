@@ -1,0 +1,40 @@
+diff --git a/src/main/java/com/security/securitymall/controller/HomeController.java b/src/main/java/com/security/securitymall/controller/HomeController.java
+index 29291fd..bb2c3e7 100644
+--- a/src/main/java/com/security/securitymall/controller/HomeController.java
++++ b/src/main/java/com/security/securitymall/controller/HomeController.java
+@@ -56,7 +56,17 @@ public class HomeController {
+     public String signupForm() { return "signup"; }
+ 
+     @PostMapping("/signup")
+-    public String signup(User user) {
++    public synchronized String signup(User user) {
++        if (user.getUsername() == null || user.getUsername().isBlank()) {
++            return "redirect:/signup?error";
++        }
++        try {
++            if (userRepository.findByUsername(user.getUsername()) != null) {
++                return "redirect:/signup?error";
++            }
++        } catch (org.springframework.dao.IncorrectResultSizeDataAccessException duplicate) {
++            return "redirect:/signup?error";
++        }
+         user.setRole("USER");
+         userRepository.save(user);
+         return "redirect:/login";
+@@ -67,8 +77,14 @@ public class HomeController {
+ 
+     @PostMapping("/login")
+     public String login(@RequestParam String username, @RequestParam String password, HttpSession session, HttpServletRequest request) {
+-        User user = userRepository.findByUsername(username);
+-        boolean authenticated = user != null && user.getPassword().equals(password);
++        User user;
++        try {
++            user = userRepository.findByUsername(username);
++        } catch (org.springframework.dao.IncorrectResultSizeDataAccessException duplicate) {
++            // Ambiguous existing identities must never authenticate an arbitrary row.
++            user = null;
++        }
++        boolean authenticated = user != null && user.getPassword() != null && user.getPassword().equals(password);
+         loginAudit.record(username, request.getRemoteAddr(), authenticated);
+         if (authenticated) {
+             session.setAttribute("loginUser", user);

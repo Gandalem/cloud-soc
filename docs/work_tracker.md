@@ -1,3 +1,60 @@
+# 새 CI·운영 배포 검증 — 2026-10-30
+
+- [ ] RECOVERY-CI-DEPLOY-20261030-01 진행 중: 사용자가 복구 CONFIG/BACKUP/HEALTH 보완 이후 새 CI와 운영 배포 검증을 요청했다. 기존 제외는 이번 통합 후보 게시·Ubuntu/Windows Actions 및 현재 중앙 서버의 상태 확인·보존형 배포 계획/검증 범위에서 대체한다. main/JEONGRIM-SEO 직접 병합·재부팅·CA/키 재발급·데이터/체크포인트 되감기는 하지 않는다. 실제 대상·소유/실행 기록·백업/이미지 보존을 확인한 검토 가능한 계획을 선행하고, CI와 운영 적용/실수신 결과를 구분해 기록한다.
+
+# 최신 병합 후보 CI — 2026-10-29
+
+- 최종 결과(2026-10-29 KST): integration/resolve-5009741 검증 SHA 2c3b53882fb6453e8a986c349a7bc19523dbda71. push run40864719605 Ubuntu/Windows 모두 success. PR23 run40864725337도 Ubuntu/Windows 모두 success(Windows만 attempt2 재실행). Ubuntu 전체2660통과/37제외/406subtests, 공통332통과/1제외, UI185·서버58통과, 취약점0·이미지 빌드·격리 Linux 권한 및 Caddy5통과/20subtests. Windows 기본876통과/8제외와 신규수집114·적체79·설치기52·운영111·대시보드82·서버53·공통332통과, 에이전트115·UI185·서버58통과. 제외는 플랫폼/선택 통합 등 기존 조건이며 실운영 수신 인수로 확대하지 않는다.
+- 수정/추가 발견: Ruff 미사용 import2개, PKI의 import 시 fcntl 의존, SQLite 테스트 연결 미종료, 모의 인증서 검사 누락, Windows 짧은 임시경로 비교, 심볼릭 링크 차단 문구 계약, 보관 문서의 끊어진 링크, PKI 필수파일 누락 설치fixture. 실제 Caddy에서는 handle이 respond보다 먼저 정렬돼 IP차단을 우회하던 문제를 route로 수정하고 CRL 경로의 위조 전달헤더 차단도 검사했다. 이전 CRL 템플릿2종은 정확한 SHA256으로 안전한 현행 마운트로 전환한다.
+- PR Windows 첫 실행의 네이티브 지표 테스트30초 초과는 동일 SHA push 성공과 실패 작업 재실행 성공으로 구분했다. 해당 테스트를 제외하거나 제한을 늘리지 않았다. 코드/병합 후보는 원격 게시했으며 main·JEONGRIM-SEO 직접 병합·운영 배포·재부팅·기존 데이터/키 변경은 없다. 이 최종 작업 기록은 검증 SHA를 유지하기 위해 로컬 문서 변경으로만 남긴다.
+
+- [x] MERGE-CI-20261029-01 CI 검증 완료: 사용자가 기존 CI 오류 수정 및 최신 병합 후보의 Ubuntu/Windows 검사 통과를 요청했다. 이전 커밋·푸시 제외 지시는 이번 후보 integration/resolve-5009741 게시와 CI 실행에 한해 대체한다. main·JEONGRIM-SEO 원격 브랜치 병합 및 운영 배포는 하지 않는다. 실패 원인별 수정·직접 재검증 후 두 OS의 실제 Actions 결과와 검증 SHA를 기록한다.
+
+# Caddy 기존 템플릿 호환 — 2026-10-29
+
+- [x] CADDY-TEMPLATE-COMPAT-20261029-01 구현·격리 회귀 완료: 사용자 요청으로 CRL 도입 전 정식 템플릿(5009741·ce2c7bc)을 정확한 내용 지문으로 인식한다. 현재 CRL 템플릿/별칭 미포함 형식도 유지하며 사용자 지정 라우팅·접근 제한·TLS 변경은 계속 거부한다. 이전 원본을 수정하지 않고 검토 대상 마운트만 현행 템플릿으로 전환한다. 직접 영향 회귀 검사와 기록만 수행하며 커밋·푸시·배포는 하지 않는다.
+- 결과: access.py에 정식 과거 템플릿 2종의 SHA256 allowlist를 추가했다. Git의 5009741·ce2c7bc 원문을 독립 fixture로 보존했다. 현행/별칭 미포함/CRL 이전 4종의 overlay+Compose 보존 검사, 과거 템플릿의 ACL·proxy·TLS·추가 route 변경 거부, mount 계약 검사를 포함해 DNS aliases·Compose review 90통과/3제외. 제외는 실제 OpenSSL·Docker 미설정 및 심볼릭 링크 생성 불가 검사이며 실서비스 TLS/배포 인수를 뜻하지 않는다. 수정 Python 2파일 Ruff와 범위 한정 diff --check 통과. 이전 원본은 변경하지 않았고 merge pending 상태와 기존 수정도 유지했다.
+
+# 병합 충돌 해결 — 2026-10-29
+
+- [x] MERGE-5009741-JEONGRIM-20261029-01 로컬 충돌 해결 완료: 사용자 요청으로 5009741과 JEONGRIM-SEO f13be54의 host.py·작업 기록 충돌만 해결한다. main의 Compose 검토·이전 릴리스 증명·이미지 ID 고정을 유지하고 브랜치의 중지 SQLite 복구 백업을 결합한다. 양쪽 작업 이력은 보존한다. 직접 영향 로컬 검사 후 결과를 기록하며 커밋·푸시·운영 배포는 수행하지 않는다. Caddy 호환·기존 CI/Windows 문제는 별도 잔여 사항이다.
+- 검증: host.py Ruff 및 git diff --check 통과. 배포 parity·Compose 검토·이미지 안전·중지 SQLite 백업 직접 검사 110통과/4실패/2제외 후, 오류 문구의 계약 불일치만 수정하고 해당 실패를 포함한 5건 재검사 통과(최종 고유 114통과/2제외). 제외된 POSIX 검사는 Windows에서 실행하지 않았다. 미해결 충돌0이며 양쪽 배포 이력과 9종 운영 이력을 보존했다. 실제 배포/서비스/데이터/키 변경 및 커밋·푸시는 없다.
+
+# 9종 실제 생산자 연결 — 2026-10-28 KST
+
+- [ ] SCENARIO-PRODUCERS-20261028-01 진행 중: 사용자 Ubuntu+security-mall만 대상으로 auditd 파일/서비스구성/보안정책 감사, Suricata DNS·IDS, 커널 방화벽 차단 및 실제 쇼핑몰 권한변경/상품내보내기/격리업로드 기능을 연결한다. 새 전용 원본 인덱스·create_doc 키·수신파이프라인을 준비하며 기존 CA/키/회원/상품/수집기/체크포인트는 보존한다. 테스트·빌드·구문검사·합성 활동을 실행하지 않는다. 운영 적용은 사용자가 로컬 명령을 실행해야 한다.
+- 코드 작성: prepare-intake.py에 전용 raw 인덱스/수신 파이프라인/30일 create_doc 키를, collect.py에 auditd syscall+PATH/CWD·Suricata DNS/IDS·커널 차단·실제 업무 NDJSON 어댑터와 소스별 SQLite inbox/ES create 중복 방지·재시도를 추가했다. 새 audit watch는 기존 규칙을 flush하지 않는다. 업무 페이지는 기존 관리자·CSRF·loopback 접근과 실제 역할 저장/상품 CSV/비공개 격리 업로드를 제공하며 기존 소스파일/회원/상품/키를 덮어쓰지 않는다. 재시작 도구는 이전 JAR 보존·정상 종료·test 제외 빌드·실행 요청만 제공하고 health 요청을 만들지 않는다. 선택 nft 정책은 loopback18081만 예약하며 기존 테이블/SSH/포털은 보존한다. 상세 설치/상시터미널/지연·회전 한계·작업당1000건 조건을 운영 문서에 기록했다. 검증 금지를 유지해 테스트/빌드/린트/구문검사/센서 실행/자동 활동을 전혀 수행하지 않았다. 사용자 제공 출력으로 9종 워커의 이벤트 처리와 created0을 기록하며, 새 생산자 운영 적용·실제9종 경보는 여전히 미완료다.
+
+# 9종 운영 연결 — 2026-10-28 KST
+
+- [ ] SCENARIO-LIVE-20261028-01 진행 중: 사용자 요청으로 9종 운영 탐지 시작 경로를 준비한다. 기존 기본·쇼핑몰 워커/키/SQLite/체크포인트는 보존한다. 전용 detector-security-scenarios 상태 소유권과 실행 안내를 추가한다. 실제 생산자 설치·앱 업무 기능 연결은 사용자 대상 정보가 필요하며, 합성 이벤트·자동 시험·검증 명령은 실행하지 않는다. 사용자 제공 결과로 쇼핑몰 원본38/정규화38/참조누락0 및 WEB-AUTH-01 경보1건(증거7건)은 확인됐으나 9종 운영 완료를 뜻하지 않는다.
+- 작성 결과: detection CLI/incremental에 정확한 9종 선택만 허용하는 detector-security-scenarios 상태를 추가했다. deploy/security-scenarios/start-detector.sh는 기존 쇼핑몰 venv를 재사용하고 새 키/CA사본/고정 시작 시각/SQLite/프로세스 잠금으로 명시적 운영 시작을 제공한다. docs/security_scenarios_operations.md에 실행과 실제 생산자별 추가 연결을 구분했다. 사용자 답변으로 대상은 Ubuntu+security-mall만으로 확정했다. 테스트·검증·실제 워커 실행은 수행하지 않았다. auditd/Suricata/방화벽 해석기 및 쇼핑몰 실제 권한/내보내기/업로드 연결은 남아 있으므로 인수 항목을 완료 처리하지 않는다.
+
+# 두 브랜치 통합 기록 — 2026-10-27
+
+- MALL-LOGIN-DETECTOR-20261027-01 권한 안내 수정: 사용자 첨부에서 Python의존성설치는완료됐지만root보호state하위mkdir/start.txt생성이Permissiondenied로실패했다. 전용탐지키·시각·SQLite를$HOME/.local/state/cloud-soc/mall-login-detector로분리하는안내로수정한다. 서버state재귀chown/chmod는하지않고사용자출력범위에서는아직키발급·워커시작전으로구분한다.
+
+- [ ] MALL-LOGIN-DETECTOR-20261027-01: 사용자 출력으로 원본10건·정규화10건·참조누락0·경보0 및기존워커에WEB-AUTH-01미포함을확인했다. 기존배포정책/워커/체크포인트를유지하고 별도호스트Python워커·키·SQLite·detector-mall-login상태로쇼핑몰탐지를연결하는경로를준비한다. 기존detector-additional상태덮어쓰기를막기위해전용status-id는정확한WEB-AUTH-01선택에만허용한다. 사용자서버의규칙/프로세스/키에는직접접근하지않는다.
+- 코드/격리검사: detection CLI와incremental에전용status소유권을추가하고모의ES의실제WEB-AUTH-01시퀀스/기존상태보존/오선택거부및기존증분·시퀀스26건pass. 최초새테스트2건은mockstatus기록방식·명시별도state누락을수정후pass했다. Ruffpass. docs/mall_login_detector.md에신규전용키발급·호스트Python실행·사용자실제5실패후성공·조회명령을작성했다. 기존정책/컨테이너/키/체크포인트는직접변경하지않았고실제사용자경보인수는미완료다.
+
+- MALL-ANALYSIS-STATUS-20261027-01: 사용자가 실제 중앙수신6건(성공3·실패3) 이후정규화/탐지경보확인을요청했다. connect.py --analysis-status에 원본/정규화ID대조·해당원본의증거가연결된경보·워커보고규칙의읽기전용조회를추가한다. 실패3건은WEB-AUTH-01의5건임계값미달이며기본정책에는쇼핑몰규칙이없음을구분한다. 실제사용자ES에는접근하지않으며규칙/체크포인트는변경하지않는다.
+
+- [ ] MALL-DUPLICATE-LOGIN-20261027-01 진행 중: 사용자 첨부 실제 로그의 HomeController.login에서 사용자조회2건으로 NonUniqueResultException/HTTP500이 발생했다. 기존 H2회원·주문·감사키는 보존하고 중복아이디 인증거부·중복가입방지 보완 패치를 기존감사패치 다음에 적용한다. 기존 중복계정을 임의선택·병합·삭제하거나 DB를 초기화하지 않는다.
+- 코드 기록: security-mall-duplicate-login.patch와apply.py의순차·반복 적용 경로를 추가했다. 중복조회 예외는 인증실패로기록하고 신규중복가입은단일controller의synchronized영역에서거부한다. H2파일·회원행·주문·감사키변경도구는추가하지않았다. 원격쇼핑몰사본에기존감사패치후보완/반복적용성공, 패키지5검사/Ruff/diff공백pass. 최초fixture는기존로그인패치에없던signup본문이생략돼실패했으며preimage보완후pass. 실제Java재빌드/사용자DB로그인재실행은미수행이므로운영인수완료로표시하지않는다.
+
+- [ ] LOCAL-AUDIT-APP-20261027-01 진행 중: 실제 앱 감사 로그를 발생시키는 로컬 앱 추가 방법 요청에 따라 loopback 전용 Flask 앱을 작성한다. 실제 SQLite 권한 변경·업무 예제 데이터 내보내기·업로드 격리 저장 결과에서 감사 기록을 생성하고 기존 앱3개 시나리오 입력으로 내보낸다. 업무 데이터는 예제이며 감사 로그는 사용자가 실제 수행한 작업에서 생성한다. 기존 중앙 서버·등록·키는 변경하지 않는다.
+- 범위 변경: 사용자가 별도 로컬 앱 대신 ZIYA0614/security-mall 사용을 지정했다. 방금 작성하던 미커밋 독립 앱은 제외하고 쇼핑몰 기존 소스·감사 패키지로 전환한다. 실제 앱 기능에 없는 권한 관리·자료 내보내기·파일 업로드 이벤트를 만들어 내지 않는다.
+- [x] LOCAL-AUDIT-APP-20261027-01-MALL-CONNECTION 코드·안내 작성: 지정 쇼핑몰을/tmp 별도 경로에 복제해 원격aba2b42에 기존 로그인 감사 패치를 적용했다. start-and-connect.py에--manual-actions·--mall·--sudo-docker와 Java/Gradle 메모리 제한을 추가했다. manual 경로는 자동 실패 로그인을 만들지 않고 실제 브라우저 작업 뒤 connect.py로 별도 전송한다. connect.py도 사용자 소유 경로를 유지하며 Docker에만 sudo를 적용한다. README에Java17설치·실제회원가입/로그인·원본중앙수신·캡처 절차와 기존9종 앱규칙과의 입력 차이를 기록했다. 기존패키지/쇼핑몰수집/탐지62검사pass, 새help/manual2검사는 최초manual1실패(기존프로세스args변수 충돌)를options로수정후pass했다. Ruff/diff공백pass. 사용자쇼핑몰/DB/키·기존서버는 변경하지 않았으며 실제 Java빌드/브라우저작업/Filebeat/ES 수신은 사용자Ubuntu에서 별도 실행해야 한다.
+
+- [ ] ENROLLMENT-CRL-REPAIR-20261027-01 진행 중: 사용자 실제 Ubuntu 등록에서 CRL 배포 주소 부재를 확인하고 기존 CA·개인키·데이터·등록 상태를 보존하는 코드 수정을 요청했다. 신규 설치의 CRL 발급/제공과 기존 서버의 명시적 인증서 보완 도구를 작성한다. 기존 CA/서버 키를 재생성하지 않고 SAN·subject를 보존하며 인증서/CRL만 교체한다. 보호 백업·오류 시 원복을 포함하고 실제 사용자 서버에는 적용하지 않는다.
+- [x] ENROLLMENT-CRL-REPAIR-20261027-01-CODE 코드·격리 검사 완료: deploy/server/enrollment_pki.py와repair-enrollment-tls.py에 기존 CA/키 보존형 발급·갱신·해시 보호 백업·명시 원복·매일 갱신 타이머를 추가했다. prepare.py·install-ubuntu.sh의 신규 설치에 연결하고 Caddyfile에서 공개 DER CRL 경로만 제공한다. 실제 OpenSSL/loopback Ubuntu 등록기/신규 설치8건, 기존prepare20건 및12subtests, 등록/설치/CLI36건 및39subtests 통과. 초기 loopback 검사는 샌드박스 소켓 제한으로 실패해 격리 승인 실행으로pass했고 mock OpenSSL 테스트2건은 새 helper를 명시 mock한 후pass했다. Ruff·셸 구문·diff 공백 검사 통과. Docker gate4건은 실행 환경 부재로skip했다. docs/enrollment_crl_repair.md에 사용자192.168.1.159의 적용·CRL갱신·게이트웨이만재생성·원복 명령을 기록했다. 실제 사용자 서버·등록 상태·DB·CA·키는 변경하지 않았으므로 부모 운영 인수는미완료다.
+
+- [ ] INTEGRATION-REVIEW-20261027-01 진행 중: 최신 사용자 요청으로 통합 브랜치의 충돌·정상 동작 검증을 승인했다. 이전 검증 금지는 이번 검사에 대해 대체된다. 충돌 표식·구문·규칙 카탈로그·새 수집/정규화/탐지/Portal 경로와 직접 영향 회귀를 격리 환경에서 검사하고 발견된 결함을 수정한다. 실제 운영 배포·서비스·키·원본 로그는 변경하지 않는다.
+- [x] INTEGRATION-REVIEW-20261027-01-LOCAL 격리 코드 검사 완료: 시작 커밋 d1c1893, Python3.12.14의 /tmp 전용 환경에서 수행했다. 충돌 표식 없음·Git 공백 검사·Python382파일 AST·변경 Python Ruff·logs.js 구문·수신 JSON 파싱을 통과했다. 규칙 카탈로그34개 중 신규 시나리오9개 로딩 성공. 새 수집→정규화→9종 최소3건 탐지·범위/시간/개인정보·CLI 스트림 검사33건 통과. 기존 처리·패턴·Portal·배포·규칙 라이브러리137건 및21 subtests 통과. 확장 규칙/증분 재시작/SQLite/모의ES·Flask/회고/규칙 관리 그룹은 처음486pass/4fail 후 테스트 경계·site 원본 fixture를 수정해 실패4건 재검사pass(고유490건; 앞선137건과 패턴17건 중복). Sydney·사이트·SSH 직접 영향109건 통과. 로그·실시간 로그·원문 UI3파일 통과. 합성/모의 결과이며 실제 ES·Filebeat·운영 로그 수신 인수가 아니다.
+- 검사 중 수정/제한: 새 테스트의 오래된 배치 재전달 기대가 기존 finalized 시간 순서 계약과 달라 실패했으며 분석기 변경 시도는 전부 되돌리고 테스트를 기존 계약에 맞췄다. 카탈로그19개 고정 테스트는34개로 갱신하고15종 추가 규칙 fixture·단계 경계·site 증거 원본을 보강했다. UI 요약은 기존 테스트 DOM에서도 지원되는 querySelector로 통일했다. Filebeat NDJSON overwrite_keys를true로 바꿔 exporter의 발생 시각이 기본 읽기 시각에 가려지지 않게 했다. Filebeat 바이너리/실행 ES가 없어 이 설정의 실제 전송·타임스탬프와 생산자별 native 내보내기 연결은 미검증이다. 운영 배포·키·서비스·기존 데이터 변경 없음. 상세는 docs/security_scenarios.md 검사 기록을 따른다.
+
+사용자 요청으로 origin/JEONGRIM-SEO와 codex/security-nine-scenarios를 codex/jeongrim-security-scenarios에 병합한다. 기존 원격 브랜치는 변경하지 않는다. 서버 관리자의 한국어 오류 안내와 안전한 SQLite 오류 코드 표시를 함께 보존한다. JEONGRIM-SEO 작업 이력 전체는 [원문 보존본](archive/jeongrim_work_tracker_20261027.md)에 보관하며 그 안의 과거 승인·테스트 기록을 현재 작업의 승인이나 검증 결과로 해석하지 않는다. 문서 색인은 양쪽 링크를 유지한다. 테스트·시험·검수·검사·린트·빌드·구문 확인·실행 확인은 일절 수행하지 않는다. 이 기록과 Git 병합은 운영 배포·게시·실제 수집 성공을 뜻하지 않는다.
+
 # Cloud SOC 작업 목록
 
 상태 대조 기준: 2026-10-27, Gandalem/cloud-soc `main b737b23`과 이번 문서 수정. PR21의 기능/수정 head는5bcef7f, main 병합은e804569, b737b23은 병합 결과의 문서 기록이다. 이전 ac64198 코드 대조와31de814 문서 통합은 아래에 이력으로 보존한다. Git 반영·CI 성공·각 환경의 실제 인수·현재 서버 배포는 별개다. 현재 기능/검증은 [프로젝트 상태](project_status.md), 사용은 [문서 색인](README.md)을 따른다.
@@ -12,14 +69,35 @@
 
 ## 현재 작업
 
+- GitHub 반영 승인(2026-10-27): 사용자가 9개 시나리오 코드의 GitHub 푸시를 명시 요청했다. 이번 대화에서 작성한 9종 시나리오와 선행 통합 규칙·수집·정규화·Portal 화면·문서를 codex/security-nine-scenarios 새 브랜치로 커밋·푸시한다. 기존 JEONGRIM-SEO는 덮어쓰지 않는다. 검증 금지 지시는 유지하므로 테스트·검사·린트·빌드·실행 확인을 수행하지 않는다. Git 반영은 실제 수집·경보 성공 또는 배포·게시를 뜻하지 않는다.
+
+- [ ] SECURITY-NINE-SCENARIOS-20261027-01 진행 중: 사용자 승인한 서버 3종(중요 파일·서비스/예약 작업·보안 정책), 앱 3종(권한 변경·대량 조회/내보내기·위험 업로드), 네트워크 3종(DNS·방화벽·IDS)을 위한 구조화 수집 어댑터·정규화·선택 규칙·수집 설정을 작성한다. 기존 최소 3건 기준을 유지한다. 소스 독해·작성 외 모든 검증·시험·검사·빌드·실행 확인을 금지하며 실제 서비스 실행·배포·게시·커밋·푸시는 하지 않는다.
+- 작성 기록: parsers/security_scenarios.py·security_scenario_export.py에 허용 메타데이터 계약과 NDJSON 수집 프로그램, processing/contract.py와 portal/security_detail.py에 정규화·근거 조회 연결을 작성했다. rules/security_scenarios.yml의 9개 최소 3건 규칙을 profiles.py에 명시 선택 등록했다. 기존 최소 3건 앱 규칙의 service.name을 patterns.py 허용 집계 필드로 추가하고 분석 유형을 규칙에서 지정하도록 했다. Portal 목록·유형·환경별 요약·상세 라벨과 Filebeat/수신 파이프라인 예시, docs/security_scenarios.md를 추가했다. 생산자별 구조화 내보내기 연결은 별도 운영 설정이 필요하며 임의 native 로그 자동 해석은 구현 범위가 아니다. 모든 검증 및 실제 실행·배포·게시·커밋·푸시 미수행; 인수 완료 체크하지 않는다.
+
+- UNIFIED-SCENARIO-20261027-01 최소 수량 확대(2026-10-27): 최신 요청을 환경별 최소 3건씩 총 9건 이상으로 적용했다. rules/unified_environment.yml에 서버 인증·앱 HTTP 401/403·네트워크 종료 Flow 각각의 cardinality 규칙 3개를 작성하고 profiles.py의 고정 카탈로그·소스 연결과 시나리오 문서를 갱신했다. 네트워크는 서로 다른 Flow ID 3종을 요구한다. 기존 1건씩의 순차 상관 규칙은 보조 분석으로 유지하며 환경별 3건 충족으로 혼동하지 않는다. 각 규칙 결과는 독립적이며 통합 완료 자동 판정은 추가하지 않았다. 사용자 지시대로 어떠한 검증·실제 수집 실행·배포·게시도 수행하지 않았다.
+
+- UNIFIED-SCENARIO-20261027-01 목적 구체화(2026-10-27): 사용자가 서버·애플리케이션·네트워크에서 각각 최소 1건 이상의 보안 로그 및 네트워크 트래픽 수집·분석이 목적임을 명시했다. 반복 5건은 기본 요건에서 제외하고 선택 확장으로 유지한다. UNIFIED-THREE-SOURCE-001에 웹 401/403 1건→서버 인증 1건→종료 Flow 1건의 3단계 활동 상관 규칙을 작성하고 카탈로그 및 시나리오 문서의 기본 선택을 연결했다. 개별 수집·분석과 순서·동일 범위를 요구하는 상관 경보를 구분한다. 작성만 수행했으며 어떤 검증·실제 수집 실행·배포·게시도 하지 않았다. 실제 3종 수신·분석 성공을 주장하지 않는다.
+
+- [ ] UNIFIED-SCENARIO-20261027-01 진행 중(2026-10-27): 사용자 요청으로 서버·애플리케이션·네트워크 수집 및 상관분석 시나리오와 선택형 탐지 규칙을 구현한다. 기존 Filebeat/Packetbeat→정규화→증거 포함 경보 파이프라인을 재사용한다. 사용자가 별도로 명령하기 전까지 테스트·시험·검수·검사·린트·빌드·구문 확인·실행 확인·코드 검증을 일절 수행하지 않는다. 소스 독해와 작성만 수행하며 기존 운영 서비스·활성 규칙·키·데이터·게시 상태는 변경하지 않는다.
+- 작성 기록(2026-10-27): rules/unified_environment.yml에 웹 404 반복→호스트 인증 성공 및 동일 계정 인증 실패·성공→종료 네트워크 Flow의 ordered 규칙 2개를 작성하고 detection/profiles.py에 명시 선택 카탈로그와 소스 계열 연결을 추가했다. docs/unified_collection_scenario.md에 수집 배치·범위·연결 필드·증거·제한·추후 운영 실행 형식을 작성하고 README에서 연결했다. 기본 워커 프로필은 자동 활성화하지 않는다. 사용자 지시대로 작성 후 어떤 검증도 실행하지 않았으며 운영 실행·배포·게시·커밋·푸시도 수행하지 않았다. 미검증이므로 완료 체크는 남겨 둔다.
+
+- GitHub 연결 복구 기록(2026-10-27): 사용자 연결 오류 수정 요청에 따라 원인을 진단했다. github.com은 환경 정책상 허용되고 proxy DNS도 정상이나 기본 실행 샌드박스에서 proxy:8080 연결이 Operation not permitted로 차단된다. 승인된 샌드박스 밖 실행에서 기존 프록시·TLS 검증을 유지한 git ls-remote가 성공했고 JEONGRIM-SEO head는 3f025671dde10a8a15d4acca915cb27ee4b3e535로 확인됐다. 후속 Git 네트워크 작업은 같은 승인 경로를 사용한다. 환경 정책·프록시·Git 원격 설정과 작업 파일 기준 브랜치는 변경하지 않았다. 원격 코드 fetch/대조·병합은 수행하지 않았으며 테스트·게시·배포·커밋·푸시 없음.
+
+- [ ] LOG-ENVIRONMENT-OVERVIEW-20261027-01 진행 중(2026-10-27): 최신 사용자 요청에 따라 서버·애플리케이션·네트워크 등 지속 수집 로그의 통합 조회 화면에 환경별 설명과 현재 페이지 요약을 추가한다. 기존 조회·실시간 갱신·상세 권한 구조를 유지한다. 사용자 명시 지시로 테스트·빌드·린트·브라우저 검증을 실행하지 않으며 게시·배포·커밋·푸시는 하지 않는다. 현재 checkout은 work/ce2c7bc이며 GitHub 프록시 연결 실패로 요청한 JEONGRIM-SEO 브랜치 대조는 불가하다. 이전 운영 작업의 승인 범위는 재적용하지 않는다.
+- 구현 기록(2026-10-27): prototype/logs.html·logs.css·logs.js에 반응형 환경별 요약 카드와 현재 API 페이지의 source_kind 기반 건수를 구현했다. 기타/수집 상태는 별도로 표기하고 조회 전·초기화 시 미조회 표시를 사용한다. 기존 실시간 따라보기 안내도 실제 갱신 방식에 맞췄다. 테스트·빌드·린트·실행·브라우저 검증은 사용자 지시로 전혀 수행하지 않았다. 동작 인수와 요청 브랜치 대조는 미확인으로 남기며 작업 완료 체크하지 않는다. 게시·배포·커밋·푸시 없음.
+
+
 - [x] CENTRAL-PUBLISH-20261029-01 중앙 배포·검증 완료(2026-10-29): 사용자가 현재 수정본의 중앙 VM 배포와 검증 통과 후 커밋/푸시·main 병합을 명시 승인했다. 이전 게시/병합 제외는 이 요청 범위에서 대체하며, 추가 예외5개는 후순위로 유지한다. 현재 origin/main은 작업 브랜치의 조상이며 별도 새 main 변경은 없었다. WSL16과 같은 공개 소스324파일/패키지 지문을 대조해 별도 보호 릴리스 /home/kopo/cloud-soc-publish-20261029-c9f96e2/workspace에 배포했다. 기존 인수 이미지769f135...와 의존성3파일의 LF 정규화 지문 및 Python FROM 일치를 확인한 뒤 외부 네트워크 없는 파생 빌드를 사용했다. 이미지 내부의 이전 공개 소스 디렉터리만 교체했으며 호스트의 운영 자료/키를 빌드에 넣지 않았다.
   - 실제 결과: image_id=sha256:355a45e8b2fb7dc1663e7fd9973a7bb5e31b427f5560b75331fe3b7990c80a38, source_sha256=c9f96e22530b4dcd9b5e4426f640125c8ca97dedea4af6418843291d0cfdaa0e. 서비스12개·공통 워커/앱 이미지와 보호 입력 보존을 확인했다. 직접 HTTPS와 기존 ngrok 각각의 CA 검증/로그인·대시보드 API10개·현재/적체 상태·알림 워커 검사가 통과했다. 원래 관리 경로의 status/제거 미리보기는 종료0이며 다음 배포 계획 생성도 통과했다. 실제 삭제는 하지 않았다. 사용자 출력과 별도 SSH 회수한 안전 결과 state/central-publish-20261029/central-result.json을 대조했다. 중앙 공개 결과는 /home/kopo/cloud-soc-publish-result-20261029.json이며 실행/복구에 필요한 릴리스 폴더를 삭제하지 않는다.
   - 제한/게시: 이번 결과는 배포·기동·Portal·관리 경로 인수이며 새 실장치 수신/경보·Slack 채널·브라우저 화면·새 도메인 인수가 아니다(live_ingestion_verified=false). 원래 /home/kopo/cloud-soc 체크아웃 전체를 Git 최신화한 것도 아니다. 제품 소스/키/데이터를 추가 변경하거나 새 WSL/Windows 시험을 반복하지 않았다. 기존 미커밋 수정과 이 기록을 현재 브랜치에 게시하고 CI 통과 뒤 main에 병합하는 후속 Git 작업은 사용자 승인 범위다. 실제 커밋/CI/병합 여부는 이후 Git·PR 이력을 기준으로 하며 이 배포 체크를 게시 성공으로 간주하지 않는다.
 
 - DEPLOY-RECOVERY-AUDIT-20261029-02 검토 완료(2026-10-29): 사용자 추가 검토 요청으로 현재 미커밋 설치/업데이트/제거/복구 코드를 읽고, 기존 출력 정체 판정·전체 재시도 대기 예산2개와 별도로 아래 복구 경계3개를 확인했다. Git 제외 state/deployment-review-20261029/reproduce.py의 일회용 파일과 Docker 대역으로3조건을 모두 재현했으며 실제 Docker/VM 명령은 실행하지 않았다. 결과는 같은 폴더의 reproduction-result.json, 관련 코드는 host.py의 _restore_execution/recover다. 운영 장애가 발생했다고 판단한 것이 아니며 이전 WSL16의 정상 백업/설정·기동 조건에서의 인수 결과는 유지한다. 이번에는 제품 코드 수정·배포·실제 서비스 중지·전체 시험·커밋/푸시를 하지 않았다. 문서는 검토 종료 후 일괄 기록했다. 아래 순서는 검토상 제안이며 신규 기능 확장/수정 실행 승인을 뜻하지 않는다.
-  - [ ] DEPLOY-RECOVERY-20261029-02-CONFIG: 일반 두 파일 방식의 이전 기본 Compose도 복구 전에 지문/보호 사본을 대조해야 한다. 현재는 compose-review의 별도 동결 파일만 검사하며 image_mode=site는 기본 Compose 검사를 건너뛴다. 보관 후 기본 파일의 합성 환경 값을 바꾸자 바뀐 값으로 up을 호출하고 복구 완료/pending 제거가 진행됐다. 인수 기준: 기본 파일 변경/누락/연결 이탈을 서비스 중지 전에 거부하고 원래 검토한 설정으로만 복구할 것.
-  - [ ] DEPLOY-RECOVERY-20261029-02-BACKUP: 이전 site 백업의 지문/형식 검사를 실행 중 서비스 중지 앞으로 옮겨야 한다. 현재 restore_previous_site의 지문 검사는 stop 뒤에 실행된다. 합성 백업 손상 때 stop 호출 후 ValueError로 종료되고 이전 up은 호출되지 않았다. 인수 기준: 손상/누락/잘못된 JSON을 중지 전에 거부하며 현재 서비스와 pending/증거를 보존할 것.
-  - [ ] DEPLOY-RECOVERY-20261029-02-HEALTH: 복구의 이미지/Running 대조에 준비 상태 확인을 추가해야 한다. 합성 Running=true·Health=unhealthy에서도 recover가 old_execution_restored=true를 기록하고 pending을 제거했다. Kibana는 healthcheck가 있지만 gateway의 단축 depends_on은 기동 조건이므로 up -d 성공만으로 정상 상태를 증명하지 않는다. 인수 기준: 제한된 준비 대기/건강 검사 후에만 복구 완료를 기록하고 실패 시 복구 필요 상태를 남길 것. 실제 신규 수집/경보 인수와는 구분한다.
+  - [x] DEPLOY-RECOVERY-20261029-02-CONFIG 로컬 구현·직접 회귀 완료(2026-10-30): 이전 일반 정적 Compose의 지문을 계획/fingerprint 및 복구 기록에 포함하고 적용·복구의 중지 직전과 이전 up 직전에 검사한다. 파일 변경/누락/파일·부모 링크 전환/불완전 지문은 중지 전 거부하며 pending/원본 자료를 보존한다. 새 지문 필드가 없는 과거 기록은 같은 명령의 보호 계획/동결 파일 지문이 완전한 경우에만 사용한다. 현재 파일로 증거를 새로 만들지 않는다. 기존 CI 결과의 미커밋 기록을 보존했다.
+    - 검증: 실제 임시 Compose/SQLite 파일과 Docker 대역을 사용한 직접 영향 검사 최초186통과/1실패/6제외. 실패는 동결 검토 경로를 잘못 지정한 새 테스트 fixture였고 해당 fixture 수정 및 적용 coordinator journal 검사 보강 후 관련15건 통과, 계획 기록 직후/중지 직전 변경 차단 추가1건 통과(고유 최종188통과/6제외). 변경 Python3파일 Ruff와 diff --check 통과. 서비스 중지 명령 부재·원본 site/복구 journal/pending 보존, 정상 지문 복구 및 계획 지문 변화, 재기동 직전 변경 차단을 확인했다. 제외에는 Windows의 실제 링크 생성 불가2건과 기존 플랫폼/선택 통합 조건이 포함된다. host.py·test_recovery_compose_files.py·test_deployment_parity.py·runtime_deployment.md 수정이며 실제 Docker/운영 배포·전체 CI·커밋/푸시는 수행하지 않았다. BACKUP·HEALTH 항목은 그대로 미완료다.
+  - [x] DEPLOY-RECOVERY-20261029-02-BACKUP 로컬 구현·직접 회귀 완료(2026-10-30): validate_previous_site에서 이전 site 백업의 SHA256·UTF-8/JSON·객체/services 구조·소유권 메타데이터와 경로를 서비스 중지 전에 확인한다. 정상 검증한 바이트/속성을 메모리로 전달해 restore_previous_site가 중지 후 원본 백업을 다시 열지 않는다. 복원 파일은 원자 교체하며 기존 모드/시각/소유권을 보존하고 이미지 고정 시 UTF-8을 명시한다. CONFIG 수정과 기존 미커밋 이력을 유지했다.
+    - 검증: BACKUP·CONFIG·배포 parity·이미지 안전·Compose 검토·별칭·권한 직접 영향208통과/7제외, UTF-8 실제 설정 값 유지 추가1통과(고유209통과/7제외). 변조·누락·디렉터리·잘못된 JSON/인코딩/중복 키/NaN/구조/소유권 정보는 중지 명령 없이 거부되고 현재 site·pending·journal이 보존된다. 검사 후 백업 변경/삭제도 검증된 원래 바이트로 복원됨을 확인했다. 수정 Python Ruff와 diff --check 통과. 제외에는 Windows 실제 링크 생성 불가 등이 포함된다. 실제 Docker/운영 복구·전체 CI·커밋/푸시는 수행하지 않았으며 HEALTH 항목은 미완료다.
+  - [x] DEPLOY-RECOVERY-20261029-02-HEALTH 로컬 구현·직접 회귀 완료(2026-10-30): 공통180초 준비 검사에서 복구 대상의 정확한 이미지/Running/Paused/Restarting 및 Docker Health를 대조한다. Elasticsearch·Kibana는 healthy 증거를 필수로 요구한다. Portal은 복구된 이미지 안에서 표준 라이브러리로 로컬 login HTTP200을, gateway는 같은 컨테이너에서 기존 CA/SNI를 검증하며443 및 해당 시5601의 login 응답을 확인한다. Docker inspect와 HTTP exec는 남은 공통 예산 안에서 제한한다. 실패 시 pending/증거를 유지하고 compose.active·복구 완료/실패 복구성공 기록을 작성하지 않는다. 성공 후에만 recovery_startup_verified=true를 남기며 이는 실제 수집/경보 인수가 아니다.
+    - 검증: 영향 범위 최종 검사238통과/7제외 후 여러 서비스/Kibana 동시 대기·Docker null healthcheck·기반 서비스 health 누락 조건을 보강하고 직접 재검증했다(최종 고유242통과/7제외). Docker 대역과 단일 가상 시계로 unhealthy/starting/미실행/일시정지/재시작/누락 상태·이미지 불일치·inspect 실패·HTTP 실패·기한 뒤 성공을 차단함을 확인했다. 실제 임시 HTTP/TLS 서버로 정상200·정책상403, 허용된 peer의403 거부, TLS CA/호스트명 오류, backend503/gateway502를 검사했다. 자동 롤백과 recover의 준비 실패 시 pending 보존·완료 기록 부재도 확인했다. 기존 CONFIG·BACKUP과 이전 미커밋 이력을 유지했다. 수정 Python Ruff와 diff --check 통과. 실제 Docker/운영 서비스의 준비 인수·전체 CI·커밋/푸시·배포는 수행하지 않았다.
 
 - [x] DEPLOY-UPDATE-SAFETY-20261029-01 완료(2026-10-29): 사용자 우선 지시인 추가 문제3개만 수정했다. 후보 빌드 전에 현재 실행 이미지의 복구 태그를 보존하고, 적용/복구는 태그 대신 실제 이미지 ID를 사용한다. 기반 이미지가 없으면 계획을 거부하며 prepare-images는 서비스 변경 없이 같은 Compose의 이미지만 준비한다. 빌드/다운로드 전 Docker 저장소의 정책상 여유 공간을 확인하고 재시도 직전에도 재확인한다. 구현 중 진행 상태는 Git 제외 JSON으로 관리하고 문서는 최종 검사 뒤 일괄 갱신했다.
   - 검사: 초기 직접 영향102통과·17 subtests/2 skip, 보완 영향32통과, Linux 다운로드10통과. 이미지 보존 후속36통과/1 skip이며 새 제거 fixture의 JSON 형식2건은 보완 후 해당2건만 재통과했다. 실행별 수를 고유 총합으로 더하지 않는다. 변경 파일 Ruff와 diff 공백 검사도 통과했다.

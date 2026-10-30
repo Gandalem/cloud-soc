@@ -3,13 +3,19 @@ from copy import deepcopy
 from cloud_soc.detection.rule_loader import load_rules, PROJECT_ROOT
 from cloud_soc.detection.engine import get_field_value
 
-CORE_FILES = ('authentication.yml', 'authentication_sequence.yml', 'attacks.yml', 'cloud.yml', 'metadata_patterns.yml', 'web_generic.yml')
+CORE_FILES = ('authentication.yml', 'authentication_sequence.yml', 'attacks.yml', 'cloud.yml', 'metadata_patterns.yml', 'web_generic.yml', 'unified_environment.yml', 'security_scenarios.yml')
 APPLICATION_FILES = ('security_mall.yml',)
 APPLICATION_IDS = ('WEB-ACCESS-01', 'WEB-AUTH-01', 'WEB-WAF-01')
 FILES = (*CORE_FILES, *APPLICATION_FILES)
 RULE_IDS = ('AUTH-001', 'AUTH-SEQ-001', 'AUTH-SPRAY-001', 'ATTACK-01', 'ATTACK-02', 'ATTACK-03',
             'AWS-IAM-001', 'AWS-AUDIT-001', 'AWS-NETWORK-001', 'OCI-IAM-001', 'WIN-AUTH-001',
-            'WEB-404-001', 'NET-PORT-001', 'AWS-CONSOLE-001', 'WEB-ACCESS-01', 'WEB-AUTH-01', 'WEB-WAF-01', 'WEB-SITE-404-001', 'WEB-SITE-WAF-001')
+            'WEB-404-001', 'NET-PORT-001', 'AWS-CONSOLE-001', 'WEB-ACCESS-01', 'WEB-AUTH-01', 'WEB-WAF-01', 'WEB-SITE-404-001', 'WEB-SITE-WAF-001',
+            'UNIFIED-WEB-HOST-001', 'UNIFIED-HOST-NET-001', 'UNIFIED-THREE-SOURCE-001',
+            'UNIFIED-SERVER-MIN3-001', 'UNIFIED-APP-MIN3-001', 'UNIFIED-NET-MIN3-001',
+            'SCENARIO-SERVER-FILE-001', 'SCENARIO-SERVER-PERSIST-001', 'SCENARIO-SERVER-DEFENSE-001',
+            'SCENARIO-APP-ROLE-001', 'SCENARIO-APP-EXPORT-001', 'SCENARIO-APP-UPLOAD-001',
+            'SCENARIO-NET-DNS-001', 'SCENARIO-NET-FIREWALL-001', 'SCENARIO-NET-IDS-001')
+SCENARIO_RULE_IDS = tuple(key for key in RULE_IDS if key.startswith('SCENARIO-'))
 CORE_RULE_IDS = tuple(key for key in RULE_IDS if key not in APPLICATION_IDS)
 
 
@@ -46,6 +52,36 @@ def select(*, isolated_all=False, rule_ids=None, retain_auth=True):
 def source_observed(event, identifier):
     """Known source family, independent of whether an attack condition matches."""
     adapter = get_field_value(event, 'cloud_soc.detail.adapter')
+    scenario_kinds = {
+        'SCENARIO-SERVER-FILE-001': 'server_file',
+        'SCENARIO-SERVER-PERSIST-001': 'server_persistence',
+        'SCENARIO-SERVER-DEFENSE-001': 'server_defense',
+        'SCENARIO-APP-ROLE-001': 'app_role',
+        'SCENARIO-APP-EXPORT-001': 'app_export',
+        'SCENARIO-APP-UPLOAD-001': 'app_upload',
+        'SCENARIO-NET-DNS-001': 'network_dns',
+        'SCENARIO-NET-FIREWALL-001': 'network_firewall',
+        'SCENARIO-NET-IDS-001': 'network_ids',
+    }
+    if identifier in scenario_kinds:
+        return (adapter == 'security_scenarios_v1' and
+                get_field_value(event, 'cloud_soc.detail.fields.scenario_kind') == scenario_kinds[identifier])
+    if identifier == 'UNIFIED-SERVER-MIN3-001':
+        return adapter in ('linux_ssh_v1', 'linux_ssh_v2', 'windows_security_v1')
+    if identifier == 'UNIFIED-APP-MIN3-001':
+        return adapter in ('web_access_site_v2', 'web_access_metadata_v1',
+                           'web_access_agent_v1', 'linux_operational_v1')
+    if identifier == 'UNIFIED-NET-MIN3-001':
+        return adapter == 'packetbeat_metadata_v1'
+    if identifier == 'UNIFIED-THREE-SOURCE-001':
+        return adapter in ('web_access_site_v2', 'web_access_metadata_v1', 'web_access_agent_v1',
+                           'linux_operational_v1', 'linux_ssh_v1', 'linux_ssh_v2',
+                           'windows_security_v1', 'packetbeat_metadata_v1')
+    if identifier == 'UNIFIED-WEB-HOST-001':
+        return adapter in ('web_access_site_v2', 'web_access_metadata_v1', 'web_access_agent_v1',
+                           'linux_operational_v1', 'linux_ssh_v1', 'linux_ssh_v2', 'windows_security_v1')
+    if identifier == 'UNIFIED-HOST-NET-001':
+        return adapter in ('linux_ssh_v1', 'linux_ssh_v2', 'windows_security_v1', 'packetbeat_metadata_v1')
     if identifier == 'WEB-SITE-404-001':
         return adapter == 'web_access_site_v2'
     if identifier == 'WEB-SITE-WAF-001':

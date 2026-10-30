@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.class
+*.db
+*.sqlite
+*.sqlite3
+*.ndjson
+*.jsonl
+*.log
+*.key
+*.pem
+*.crt
+*.env
+*-private*
+work/
+state/
+runtime/

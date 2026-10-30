@@ -1,6 +1,6 @@
 """All fourteen real engines, immutable evidence and safe profile selection."""
 from copy import deepcopy
-from datetime import timedelta
+from datetime import datetime, timedelta
 import io
 import json
 from contextlib import redirect_stdout
@@ -56,7 +56,9 @@ def test_normal_outcome_wrong_source_and_organization_do_not_become_attacks(iden
         assign(row, rule['conditions'][0]['field'], 'unrelated-source')
     assert detect_rule(rows, rule) == []
     rows = positive(identifier)
-    if rule.get('type') == 'single':
+    if identifier.startswith(('SCENARIO-', 'UNIFIED-')):
+        rows.pop()  # Observation coverage is independent of attack outcome.
+    elif rule.get('type') == 'single':
         rows[0]['event']['outcome'] = 'success' if identifier == 'WEB-ACCESS-01' else 'failure'
     elif identifier == 'NET-PORT-001':
         assign(rows[-1], 'cloud_soc.detail.fields.flow_final', False)
@@ -106,6 +108,14 @@ def test_missing_fields_are_unknown_not_negative_safety_claim(identifier):
 @pytest.mark.parametrize('identifier', RULE_IDS)
 def test_time_window_closed_boundary_and_just_outside(identifier):
     rule = RULES[identifier]
+    if identifier.startswith('UNIFIED-') and rule['type'] == 'ordered':
+        for delta, expected in ((0, 1), (.001, 0)):
+            rows = positive(identifier)
+            previous = datetime.fromisoformat(rows[0 if len(rule['stages']) == 2 else -2]['@timestamp'])
+            rows[-1]['@timestamp'] = (previous + timedelta(
+                seconds=rule['stages'][-1]['within_seconds'] + delta)).isoformat()
+            assert len(detect_rule(rows, rule)) == expected
+        return
     if rule.get('type') == 'single':
         # Single events have no aggregation interval or suppression of later events.
         assert len(detect_rule(positive(identifier) + second_burst(positive(identifier), 86400), rule)) == 2
@@ -150,7 +160,7 @@ def test_duplicates_raw_revision_and_cooldown_across_runtime_serialization(ident
 
 def test_complete_inventory_explicit_selection_cli_and_live_write_gate():
     assert tuple(RULES) == CATALOG_IDS
-    assert len(catalog()) == 19
+    assert len(catalog()) == 34
     assert [r['id'] for r in approved_rules()] == ['AUTH-001']
     assert [r['id'] for r in approved_rules(rule_ids=['AUTH-SEQ-001'])] == ['AUTH-001', 'AUTH-SEQ-001']
     assert rule_revision(approved_rules()[0]) == rule_revision(RULES['AUTH-001'])

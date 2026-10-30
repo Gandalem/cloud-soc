@@ -74,17 +74,21 @@ def test_profile_change_is_visible_to_plan_fingerprint(tmp_path):
     assert access.read_profile(file)['sha256'] != original['sha256']
 
 
-def test_review_accepts_only_requested_alias_changes_and_known_gateway_template(tmp_path, monkeypatch):
+@pytest.mark.parametrize('version', ['current', 'without_aliases', 'pre-crl', 'pre-crl-aliases', 'pre-route', 'pre-route-aliases'])
+def test_review_accepts_only_requested_alias_changes_and_known_gateway_template(tmp_path, monkeypatch, version):
     state, _, objects, original, _ = fixture(tmp_path)
     template = tmp_path / 'Caddyfile'
     current = (ROOT / 'deploy/server/Caddyfile').read_text(encoding='utf-8')
-    template.write_text(current.replace(' {$SOC_PORTAL_TLS_ORIGINS:}', ''), encoding='utf-8')
+    content = (ROOT / 'tests/fixtures/caddy' / (version + '.Caddyfile')).read_text(encoding='utf-8') if version.startswith('pre-') else (
+        current if version == 'current' else current.replace(' {$SOC_PORTAL_TLS_ORIGINS:}', ''))
+    template.write_text(content, encoding='utf-8')
     original['services']['gateway']['volumes'] = [{'type': 'bind', 'target': '/etc/caddy/Caddyfile',
                                                  'source': template.as_posix(), 'read_only': True}]
     monkeypatch.setattr(access, 'certificate_names', lambda *_: None)
     desired = access.overlay(original, request(), state, ROOT)
     compose_review.preserved_site(original, desired, objects, alias_request=request(), workspace=ROOT)
-    assert template.read_text(encoding='utf-8') == current.replace(' {$SOC_PORTAL_TLS_ORIGINS:}', '')
+    assert template.read_text(encoding='utf-8') == content
+    assert desired['services']['gateway']['volumes'][0]['source'] == (ROOT / 'deploy/server/Caddyfile').as_posix()
     for fault in ('public', 'bind', 'receiver', 'caddy'):
         changed = deepcopy(desired)
         compared_objects = deepcopy(objects)
@@ -99,6 +103,38 @@ def test_review_accepts_only_requested_alias_changes_and_known_gateway_template(
             changed['services']['gateway']['volumes'][0]['source'] = '/unreviewed/Caddyfile'
         with pytest.raises(compose_review.ComposeReviewError):
             compose_review.preserved_site(original, changed, compared_objects, alias_request=request(), workspace=ROOT)
+
+
+@pytest.mark.parametrize('version', ['pre-crl', 'pre-crl-aliases', 'pre-route', 'pre-route-aliases'])
+@pytest.mark.parametrize('fault', ['allowlist', 'proxy', 'tls', 'extra_route'])
+def test_modified_legacy_gateway_is_refused_without_mutating_input(tmp_path, monkeypatch, version, fault):
+    content = (ROOT / 'tests/fixtures/caddy' / (version + '.Caddyfile')).read_text(encoding='utf-8')
+    if fault == 'allowlist':
+        content = content.replace('\trespond @unapproved "Forbidden" 403\n', '')
+    elif fault == 'proxy':
+        content = content.replace('reverse_proxy portal:8000', 'reverse_proxy other:8000')
+    elif fault == 'tls':
+        content = content.replace('tls /certs/server.crt /certs/server.key', 'tls internal')
+    else:
+        content += '\nhttps://custom.test { respond "custom" }\n'
+    template = tmp_path / 'Caddyfile'
+    template.write_text(content, encoding='utf-8')
+    site = {'services': {'gateway': {'volumes': [{'type': 'bind', 'target': access.GATEWAY_TARGET,
+                                                'source': str(template), 'read_only': True}]}}}
+    before = deepcopy(site)
+    monkeypatch.setattr(access, 'certificate_names', lambda *_: None)
+    with pytest.raises(compose_review.ComposeReviewError, match='사용자 지정'):
+        access.overlay(site, request(), tmp_path, ROOT)
+    assert site == before and template.read_text(encoding='utf-8') == content
+
+
+@pytest.mark.parametrize('change', [{'read_only': False}, {'type': 'volume'}, {'target': '/other/Caddyfile'}])
+def test_legacy_template_does_not_bypass_mount_contract(tmp_path, change):
+    template = tmp_path / 'Caddyfile'
+    template.write_bytes((ROOT / 'tests/fixtures/caddy/pre-crl-aliases.Caddyfile').read_bytes())
+    mount = {'type': 'bind', 'target': access.GATEWAY_TARGET, 'source': str(template), 'read_only': True, **change}
+    with pytest.raises(compose_review.ComposeReviewError, match='사용자 지정'):
+        access.template_mount(mount, ROOT)
 
 
 def test_custom_gateway_is_refused_before_changing_files(tmp_path, monkeypatch):

@@ -11,6 +11,7 @@ from cloud_soc.aws.__main__ import endpoint, protected_key
 from cloud_soc.detection.worker import approved_rules, run_once
 from cloud_soc.detection.incremental import run_incremental, utc
 from cloud_soc.detection.retrospective import run_retrospective
+from cloud_soc.processing.errors import error_code
 
 
 def main(argv=None):
@@ -35,8 +36,8 @@ def main(argv=None):
     parser.add_argument("--retrospective", action="store_true",
                         help="Separate-state historical-context review for events normalized beyond the lateness allowance")
     parser.add_argument("--early-auth", action="store_true", help="Opt in to separate AUTH-001 provisional notices; needs explicit notice setup/permissions")
-    parser.add_argument('--status-id', choices=('detector', 'detector-priority'), default=None,
-                        help='Independent priority AUTH telemetry; state and alert IDs stay unchanged')
+    parser.add_argument('--status-id', choices=('detector', 'detector-priority', 'detector-mall-login', 'detector-security-scenarios'), default=None,
+                        help='Independent worker telemetry; explicit profiles require separate state')
     parser.add_argument("--es-url")
     parser.add_argument("--ca-file")
     parser.add_argument("--api-key-file")
@@ -47,7 +48,9 @@ def main(argv=None):
         if (not 10 <= args.interval <= 3600 or not 1 <= args.max_documents <= 100000
                 or not 1 <= args.max_active_events <= 1_000_000 or args.once and not args.run
                 or args.early_auth and args.snapshot
-                or args.status_id and (args.retrospective or args.additional_rules is not None or args.snapshot)
+                or args.status_id and (args.retrospective or args.snapshot
+                                      or args.additional_rules is not None and args.status_id not in ('detector-mall-login', 'detector-security-scenarios'))
+                or args.status_id == 'detector-mall-login' and (args.additional_rules != 'WEB-AUTH-01' or args.early_auth)
                 or args.status_id == 'detector-priority' and args.early_auth):
             raise ValueError("Invalid options")
         selection = dict(include_cloud=args.include_cloud, include_sequence=args.include_sequence,
@@ -95,16 +98,16 @@ def main(argv=None):
                                               accept_legacy_exclusion=args.accept_legacy_exclusion, **selection, early_auth=args.early_auth,
                                               status_id=args.status_id))
                     print(json.dumps(result), flush=True)
-                except Exception:
+                except Exception as error:
                     failed = True
-                    print("detection_cycle_failed; checkpoint retained; check portal health, state and permissions", flush=True)
+                    print("detection_cycle_failed reason=" + error_code(error, "incremental_cycle_failed") + "; checkpoint retained", flush=True)
                 if args.once:
                     return int(failed)
                 time.sleep(args.interval)
     except KeyboardInterrupt:
         return 130
-    except Exception:
-        print("detector_configuration_or_connection_failed; credentials and payloads omitted")
+    except Exception as error:
+        print("detector_configuration_or_connection_failed reason=" + error_code(error, "configuration_failed") + "; credentials omitted")
         return 1
 
 

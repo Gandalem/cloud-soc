@@ -39,6 +39,8 @@ def certificates(tmp_path_factory):
                                 capture_output=True, timeout=30, env={**os.environ, 'MSYS_NO_PATHCONV': '1'})
         assert result.returncode == 0, 'Disposable certificate generation failed'
         (folder / (name + '.key')).chmod(0o600)
+        # The reporter refuses group-writable CA files even under umask 0002.
+        (folder / (name + '.crt')).chmod(0o644)
     yield folder
     # The pytest temporary directory is disposable; remove private keys explicitly.
     for path in folder.iterdir():

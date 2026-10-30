@@ -1,4 +1,5 @@
 """Transactional incremental threshold detection; ES writes precede local commit."""
+from cloud_soc.processing.errors import WorkerFailure, error_code
 from copy import deepcopy
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -17,7 +18,7 @@ from cloud_soc.elastic.repository import ensure_provenance_mapping, save_securit
 from cloud_soc.main import make_alert_id, build_security_alert
 from cloud_soc.processing.contract import NORMALIZED, STATUS
 from cloud_soc.detection.telemetry import evaluate, exclusion, stats_for, runs, queue_committed_runs, flush_outbox, runtime_manifest
-from cloud_soc.detection.profiles import source_observed
+from cloud_soc.detection.profiles import source_observed, SCENARIO_RULE_IDS
 from cloud_soc.detection.sequence import retention_seconds
 
 
@@ -38,7 +39,20 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
     """
     now, start = utc(now or datetime.now(timezone.utc)), utc(start)
     expected_status = 'detector-additional' if additional_rule_ids is not None else 'detector'
-    if status_id not in (None, expected_status, 'detector-priority') or (status_id == 'detector-priority' and (additional_rule_ids is not None or early_auth)):
+    scenario_owner = status_id == 'detector-security-scenarios'
+    if scenario_owner and (not isinstance(additional_rule_ids, (list, tuple))
+                           or len(additional_rule_ids) != len(SCENARIO_RULE_IDS)
+                           or set(additional_rule_ids) != set(SCENARIO_RULE_IDS)
+                           or early_auth or rule_ids is not None
+                           or any((include_cloud, include_sequence, include_attacks, include_patterns, isolated_all))):
+        raise ValueError('Scenario status requires only the separate nine-scenario worker')
+    mall_owner = status_id == 'detector-mall-login'
+    if mall_owner and (additional_rule_ids != ['WEB-AUTH-01'] or early_auth
+                       or any((include_cloud, include_sequence, include_attacks, include_patterns, isolated_all))
+                       or rule_ids is not None):
+        raise ValueError('Mall status requires only the separate WEB-AUTH-01 worker')
+    if (status_id not in (None, expected_status, 'detector-priority', 'detector-mall-login', 'detector-security-scenarios')
+            or status_id == 'detector-priority' and (additional_rule_ids is not None or early_auth)):
         raise ValueError('Invalid status ownership')
     status_id = status_id or expected_status
     if (type(max_documents) is not int or type(max_active_events) is not int
@@ -273,8 +287,7 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                     pass
             return counts
         except Exception as error:
-            code = str(error) if isinstance(error, ValueError) and str(error) in {
-                'active_state_limit', 'input_spool_limit', 'input_document_size_limit'} else 'incremental_cycle_failed'
+            code = error_code(error, 'incremental_cycle_failed')
             db.rollback()
             if early_auth:
                 try:
@@ -296,4 +309,4 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                 publish('failed', code)
             except Exception:
                 pass
-            raise RuntimeError('incremental_cycle_failed; checkpoint retained') from None
+            raise WorkerFailure('incremental_cycle_failed; checkpoint retained', code) from None

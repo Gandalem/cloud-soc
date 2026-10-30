@@ -13,6 +13,15 @@ from cloud_soc.portal.origins import additional_origins
 PORTAL_KEY = 'SOC_PORTAL_ORIGINS'
 GATEWAY_KEY = 'SOC_PORTAL_TLS_ORIGINS'
 GATEWAY_TARGET = '/etc/caddy/Caddyfile'
+# Exact shipped historical templates, UTF-8 with LF (pre-CRL: 5009741 and ce2c7bc).
+# Never strip directives to recognize an older template: that could hide custom policy.
+LEGACY_GATEWAY_SHA256 = frozenset({
+    'd74986a8790c4ed2c68ebd23d1649892e9b656f46b9fd865afb04ab2ee7f9028',
+    'b72a6a618436d82de72f56dd9bf092501b379c06d3cc83939af0ada40f0813e4',
+    # CRL templates before the ACL ordering repair (with/without Portal aliases).
+    '58894ed3e0a299833b4a5b43a4c29bcb10d779de3b1d01e7c4e8cd6306f2c5c9',
+    'f06b6fc9ddb728fc92ea2e6d461c19f51792554bff82c764389d705a930c7db1',
+})
 
 
 def profile(value):
@@ -82,7 +91,12 @@ def template_mount(old, workspace):
     source = Path(old.get('source', ''))
     if (old.get('type') != 'bind' or old.get('target') != GATEWAY_TARGET or not old.get('read_only')
             or not source.is_absolute() or any(p.is_symlink() for p in (source, *source.parents))
-            or not source.is_file() or source.read_text(encoding='utf-8') not in (previous, current)):
+            or not source.is_file()):
+        raise ComposeReviewError('사용자 지정 게이트웨이 설정이 있습니다. 기존 라우팅을 먼저 확인하세요.')
+    # read_text normalizes Windows CRLF, as it does for the current template.
+    content = source.read_text(encoding='utf-8')
+    if (content not in (previous, current)
+            and hashlib.sha256(content.encode('utf-8')).hexdigest() not in LEGACY_GATEWAY_SHA256):
         raise ComposeReviewError('사용자 지정 게이트웨이 설정이 있습니다. 기존 라우팅을 먼저 확인하세요.')
     return {**old, 'source': template.as_posix()}
 

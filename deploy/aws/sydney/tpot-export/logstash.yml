@@ -1,0 +1,10 @@
+# Persistent state and disk queue; separate writable volume for each exporter.
+http.host: 127.0.0.1
+xpack.monitoring.enabled: false
+pipeline.workers: 1
+pipeline.batch.size: 125
+queue.type: persisted
+queue.max_bytes: 256mb
+queue.checkpoint.writes: 1
+path.data: /usr/share/logstash/data
+log.level: warn

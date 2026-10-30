@@ -176,6 +176,9 @@ sudo sh deploy/server/uninstall-ubuntu.sh --purge-data --remove-images --apply
 
 ## 9. 선택 실습과 개발
 
+서버·애플리케이션·네트워크의 수집 배치와 선택형 상관분석 규칙은 [통합 수집·분석 시나리오](docs/unified_collection_scenario.md)를 참고하세요.
+인증·HTTP 접근 거부·Packetbeat 흐름 외의 환경별 3종 추가 규칙과 구조화 감사 수집은 [추가 보안 시나리오 9종](docs/security_scenarios.md)에 있습니다.
+
 Security Mall·ModSecurity WAF는 일반 SOC 설치에 포함되지 않습니다. 현재 범위와 과거 계약/검증 압축본은 [선택 실습·참고](docs/optional_integrations.md)를 따릅니다. 별도 실험 성공을 새 중앙 서버의 상주 작동으로 해석하지 않습니다.
 
 [로컬 개발](docs/local_development.md) · [중앙 서버 상세](deploy/server/README.md) · [전체 문서 색인](docs/README.md) · [작업 상태·남은 인수](docs/work_tracker.md)

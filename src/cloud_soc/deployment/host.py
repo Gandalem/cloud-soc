@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shutil
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,7 @@ from cloud_soc.deployment.contract import (ALL_WORKERS, APP_SERVICES, SERVICES, 
     policy, resource_check, source_files, validate_rendered)
 from cloud_soc.deployment.migrations import atomic_json
 from cloud_soc.deployment import image_safety
+from cloud_soc.deployment.recovery_health import wait_for_recovery
 
 
 class DockerCommandError(RuntimeError):
@@ -107,6 +109,64 @@ def checked_path(path, root, *, file=False):
     return path
 
 
+def previous_compose_paths(active, runtime):
+    """Static -f inputs only; site.json has its own mutable-state backup contract."""
+    if not active:
+        return []
+    if not isinstance(active, list) or not all(isinstance(word, str) for word in active):
+        raise image_safety.DeploymentSafetyError('이전 Compose 파일 목록을 확인할 수 없습니다')
+    files = []
+    for number, word in enumerate(active):
+        if word != '-f':
+            continue
+        if number + 1 == len(active) or not Path(active[number + 1]).is_absolute():
+            raise image_safety.DeploymentSafetyError('이전 Compose 파일은 명시적인 절대 경로여야 합니다')
+        files.append(active[number + 1])
+    if not files:
+        raise image_safety.DeploymentSafetyError('이전 Compose 파일 목록이 없어 복구를 중단했습니다')
+    return list(dict.fromkeys(name for name in files if Path(name) != Path(runtime) / 'site.json'))
+
+
+def previous_compose_hashes(active, runtime):
+    from cloud_soc.deployment.compose_review import regular
+    try:
+        return {name: hashlib.sha256(regular(name).read_bytes()).hexdigest()
+                for name in previous_compose_paths(active, runtime)}
+    except (ValueError, OSError):
+        raise image_safety.DeploymentSafetyError('이전 Compose 파일이 없거나 안전한 일반 파일이 아닙니다') from None
+
+
+def verify_previous_compose(active, runtime, expected):
+    actual = previous_compose_hashes(active, runtime)
+    if (not isinstance(expected, dict) or actual != expected
+            or any(not isinstance(value, str) or not re.fullmatch(r'[0-9a-f]{64}', value)
+                   for value in expected.values())):
+        raise image_safety.DeploymentSafetyError('이전 Compose 파일의 검토 지문이 없거나 변경됐습니다. 기존 서비스와 복구 기록을 보존했습니다')
+    return actual
+
+
+def recovery_compose_hashes(active, runtime, run, saved):
+    """Legacy journals need recorded evidence too; never trust today's file bytes."""
+    names = previous_compose_paths(active, runtime)
+    expected = saved.get('previous_compose_sha256')
+    if expected is None:
+        recorded = saved.get('reviewed_compose_files', {})
+        if not isinstance(recorded, dict):
+            raise image_safety.DeploymentSafetyError('이전 Compose 검토 기록 형식이 올바르지 않습니다')
+        if not all(name in recorded for name in names):
+            try:
+                plan = json.loads(checked_path(run / 'plan.json', run, file=True).read_text())
+                if not isinstance(plan, dict) or plan.get('previous_compose') != active:
+                    raise ValueError('Previous command differs from its plan')
+                recorded = plan.get('previous_compose_sha256', plan.get('protected_sha256', {}))
+                if not isinstance(recorded, dict):
+                    raise ValueError('Previous Compose hashes are not a mapping')
+            except (ValueError, OSError):
+                raise image_safety.DeploymentSafetyError('이전 Compose 검토 지문을 찾을 수 없습니다. 복구 기록을 보존했습니다') from None
+        expected = {name: recorded.get(name) for name in names}
+    return verify_previous_compose(active, runtime, expected)
+
+
 def protected_hashes(state):
     root = Path(state)
     paths = [p for folder in ('tls', 'private', 'secrets') for p in (root / folder).rglob('*') if p.is_file()]
@@ -140,7 +200,48 @@ def backup_database(source, target):
     target.chmod(0o600)
 
 
-def portal_rows(state):
+def backup_stopped_database(source, target):
+    """Snapshot a stopped writer's journal set; recover only disposable copies.
+
+    A process terminated during a rollback transaction can leave a hot journal.
+    Opening its live database mode=ro then fails with SQLITE_READONLY_ROLLBACK.
+    Preserve committed WAL frames too, but never copy stale shared-memory locks.
+    Caller must have stopped and verified every writer before invoking this.
+    """
+    source, target = Path(source), Path(target)
+    if target.exists() or target.is_symlink():
+        raise ValueError('Backup output already exists')
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    paths = [source, Path(str(source) + '-wal'), Path(str(source) + '-journal')]
+    def signature():
+        result = {}
+        for path in paths:
+            if path.is_symlink():
+                raise ValueError('Symlinked database journal refused')
+            if path.exists():
+                info = path.stat()
+                result[path.name] = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+        if source.name not in result:
+            raise ValueError('Stopped source database missing')
+        return result
+    before = signature()
+    with tempfile.TemporaryDirectory(prefix='.stopped-sqlite-', dir=target.parent) as temporary:
+        root = Path(temporary).resolve()
+        for path in paths:
+            if path.name in before:
+                shutil.copyfile(path, root / path.name)
+                (root / path.name).chmod(0o600)
+        if signature() != before:
+            raise ValueError('Stopped database changed during snapshot')
+        staged = root / source.name
+        # SQLite performs rollback/WAL recovery here, never on the live files.
+        with closing(sqlite3.connect(staged.as_uri() + '?mode=rw', uri=True)) as recovered:
+            if recovered.execute('pragma integrity_check').fetchall() != [('ok',)]:
+                raise ValueError('Stopped snapshot integrity failed')
+        backup_database(staged, target)
+
+
+def portal_rows(state, *, stopped=False):
     """Hash saved case/dashboard rows from online snapshots, excluding SQLite counters."""
     result = {}
     with tempfile.TemporaryDirectory(prefix='portal-preservation-', dir=Path(state).parent) as temporary:
@@ -148,7 +249,8 @@ def portal_rows(state):
             source = Path(state) / 'portal' / name
             if not source.exists():
                 continue
-            copy = Path(temporary) / name;backup_database(source, copy)
+            copy = Path(temporary) / name
+            (backup_stopped_database if stopped else backup_database)(source, copy)
             with closing(sqlite3.connect(copy)) as conn:
                 result[name] = sorted(hashlib.sha256(line.encode()).hexdigest() for line in conn.iterdump()
                     if line.startswith(('CREATE TABLE ', 'INSERT INTO ')) and '"sqlite_sequence"' not in line)
@@ -273,10 +375,12 @@ def active_command(state, objects, *, workspace=None):
                         previous_root = previous_root or applied_release_root(state, objects, value)
                         if Path(name) == previous_root / 'deploy/server/compose.yaml':
                             root = previous_root
+                    if not Path(name).resolve().is_relative_to(root.resolve()):
+                        raise ValueError('Active Compose file escapes approved root (state/workspace)')
                     checked_path(name, root, file=True)
                 return value[2:]
     from cloud_soc.deployment.compose_review import ComposeReviewError
-    raise ComposeReviewError('실행 중인 Compose 설정과 보호 기록이 다릅니다. '
+    raise ComposeReviewError('Cannot identify the exact active Compose command. 실행 중인 Compose 설정과 보호 기록이 다릅니다. '
                              '기존 설정 파일을 확인해 manage.py review-compose로 검토한 뒤 '
                              'plan --compose-review에 보호된 검토 기록을 지정하세요')
 
@@ -396,6 +500,7 @@ def snapshot(engine, workspace, state, image, project='cloud-soc-central', *, co
         active, reviewed_files = load(engine, state, compose_review, objects, project)
     else:
         active = active_command(state, objects, workspace=workspace)
+    previous_hashes = previous_compose_hashes(active, state / 'runtime')
     env = compose_environment(state, image, objects)
     original = engine.json(['compose', *active, 'config', '--format', 'json']) if active else {}
     runtime = state / 'runtime'
@@ -436,11 +541,12 @@ def snapshot(engine, workspace, state, image, project='cloud-soc-central', *, co
     # Only stable configuration participates in the stale-plan guard, not progress counters.
     identity = {'containers': selected, 'protected_sha256': fingerprints, 'image': candidate,
                 'source_sha256': digest(source), 'prerequisites': prerequisites,
-                'previous_compose': active}
+                'previous_compose': active, 'previous_compose_sha256': previous_hashes}
     result = {'plan_version': 1, 'policy': value, 'workspace': str(workspace), 'state': str(state), 'project': project,
         'image': image, 'image_id': candidate, 'source': source, 'source_sha256': digest(source),
         'fresh': fresh, 'contract': contract, 'adoption': adoption, 'resources': resources,
         'observed': selected, 'protected_sha256': fingerprints, 'previous_compose': active,
+        'previous_compose_sha256': previous_hashes,
         'site': site_overlay(original, objects) if original else {}, 'compose_environment': env,
         'new_workers': [n for n in ALL_WORKERS if n not in objects], 'prerequisites': prerequisites,
         'worker_inventory': inventory, 'fingerprint': digest(identity)}
@@ -508,7 +614,7 @@ def copy_adopted_state(plan, runtime):
                         raise ValueError('Active managed state cannot be re-adopted')
                     # Preserve an unactivated copy before retrying from the resumed legacy DB.
                     os.replace(dest, folder / (dest.name + '.unactivated-' + datetime.now(timezone.utc).strftime('%H%M%S%f')))
-                backup_database(path, dest)
+                backup_stopped_database(path, dest)
                 if os.name == 'posix':
                     os.chown(dest, 1000, 1000)
         if os.name == 'posix':
@@ -532,18 +638,54 @@ def save_previous_site(runtime, run):
     return {'sha256': checksum, 'uid': info.st_uid, 'gid': info.st_gid}
 
 
-def restore_previous_site(runtime, run, saved):
+def validate_previous_site(runtime, run, saved):
+    """Read and validate once before stop; return the exact bytes to restore."""
     if saved is None:
         return
+    if (not isinstance(saved, dict) or not isinstance(saved.get('sha256'), str)
+            or not re.fullmatch(r'[0-9a-f]{64}', saved['sha256'])
+            or any(type(saved.get(key)) is not int or not 0 <= saved[key] < 2**32 - 1 for key in ('uid', 'gid'))):
+        raise ValueError('Previous site backup metadata is invalid; recovery stopped')
     backup = checked_path(run / 'site.before.json', run, file=True)
-    if hashlib.sha256(backup.read_bytes()).hexdigest() != saved['sha256']:
+    data = backup.read_bytes()
+    if hashlib.sha256(data).hexdigest() != saved['sha256']:
         raise ValueError('Previous site backup changed; recovery stopped')
+    def object_fields(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('Duplicate site field')
+            result[key] = value
+        return result
+    def reject_constant(_):
+        raise ValueError('Non-JSON site value')
+    try:
+        value = json.loads(data.decode('utf-8'), object_pairs_hook=object_fields, parse_constant=reject_constant)
+    except (ValueError, UnicodeError, RecursionError):
+        raise ValueError('Previous site backup JSON is invalid; recovery stopped') from None
+    if (not isinstance(value, dict) or not isinstance(value.get('services', {}), dict)
+            or any(not isinstance(service, dict) for service in value.get('services', {}).values())):
+        raise ValueError('Previous site backup structure is invalid; recovery stopped')
+    target = checked_path(runtime / 'site.json', runtime)
+    if target.exists():
+        checked_path(target, runtime, file=True)
+    return data, backup.stat()
+
+
+def restore_previous_site(runtime, run, saved, validated=None):
+    if saved is None:
+        return
+    data, metadata = validated if validated is not None else validate_previous_site(runtime, run, saved)
     target = checked_path(runtime / 'site.json', runtime)
     fd, name = tempfile.mkstemp(prefix='.site-recovery-', dir=runtime)
-    os.close(fd)
     temporary = Path(name)
     try:
-        shutil.copy2(backup, temporary)
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, stat.S_IMODE(metadata.st_mode))
+        os.utime(temporary, ns=(metadata.st_atime_ns, metadata.st_mtime_ns))
         info = temporary.stat()
         if os.name == 'posix' and (info.st_uid, info.st_gid) != (saved['uid'], saved['gid']):
             os.chown(temporary, saved['uid'], saved['gid'])
@@ -576,6 +718,8 @@ def apply(engine, plan, *, poll=None):
                 or current.get('compose_environment') != plan.get('compose_environment')):
             from cloud_soc.deployment.compose_review import ComposeReviewError
             raise ComposeReviewError('추가 주소 또는 실행 환경이 계획 이후 변경됐습니다. 새 계획을 만드세요')
+        if current.get('previous_compose_sha256') != plan.get('previous_compose_sha256'):
+            raise ValueError('Previous Compose file review changed after planning; no services stopped')
         from cloud_soc.deployment.contract import stamp
         previous_contract = json.loads((runtime / 'contract.json').read_text()) if (runtime / 'contract.json').is_file() else None
         expected_contract, _ = build_contract(plan['policy'], containers(engine, plan['project']), state,
@@ -610,7 +754,9 @@ def apply(engine, plan, *, poll=None):
             active_now, reviewed_now = load(engine, state, plan['compose_review'], old_objects, plan['project'])
             if active_now != active or any(plan['protected_sha256'].get(p) != h for p, h in reviewed_now.items()):
                 raise ValueError('Compose review changed before activation; no services stopped')
+        previous_hashes = verify_previous_compose(active, runtime, plan.get('previous_compose_sha256', {}))
         atomic_json(run / 'recovery.json', {'previous_compose': active, 'old_names': list(old_objects),
+            'previous_compose_sha256': previous_hashes,
             'old_contract': json.loads(old_contract) if old_contract else None,
             'old_current': json.loads((runtime / 'current.json').read_text()) if (runtime / 'current.json').is_file() else None,
             'old_site': old_site, 'canonical': canonical, 'environment': plan['compose_environment'],
@@ -620,13 +766,20 @@ def apply(engine, plan, *, poll=None):
             'image_mode': plan['previous_image_mode']})
         atomic_json(runtime / 'pending.json', {'run': str(run)})
         try:
+            verify_previous_compose(active, runtime, previous_hashes)
             if active:
                 stop = [n for n in APP_SERVICES if n in old_objects]
                 engine.run(['compose', *active, 'stop', *stop])
             worker_inventory(engine, plan['project'], stopped=True)
             for p in databases(state):
-                backup_database(p, run / 'stopped' / p.relative_to(state))
-            saved_rows = portal_rows(state)
+                try:
+                    backup_stopped_database(p, run / 'stopped' / p.relative_to(state))
+                except sqlite3.Error as error:
+                    atomic_json(run / 'backup-failed.json', {
+                        'phase': 'stopped', 'database': p.relative_to(state).as_posix(),
+                        'sqlite_error': getattr(error, 'sqlite_errorname', None)})
+                    raise
+            saved_rows = portal_rows(state, stopped=True)
             saved_docs = {} if plan['fresh'] else immutable_documents(engine, state, plan['image_id'], plan['project'])
             atomic_json(run / 'preservation-before.json', {'portal_rows': saved_rows, 'documents': saved_docs})
             if not old_contract:
@@ -693,7 +846,7 @@ def apply(engine, plan, *, poll=None):
             # Revert execution only. Original DBs were retained; migrated DBs are never rewound.
             _restore_execution(engine, runtime, run, json.loads((run / 'recovery.json').read_text()))
             atomic_json(run / 'failed.json', {'state': 'failed', 'error_type': type(error).__name__,
-                'old_execution_restored': bool(active), 'databases_rewound': False})
+                'old_execution_restored': bool(active), 'recovery_startup_verified': bool(active), 'databases_rewound': False})
             (runtime / 'pending.json').unlink()
             raise
 
@@ -709,8 +862,9 @@ def _restore_execution(engine, runtime, run, saved):
         files = [active[i + 1] for i, word in enumerate(active[:-1]) if word == '-f']
         mode = 'site' if str(runtime / 'site.json') in files else 'immutable'
     pins = pins or {}
-    if active and (set(pins) != set(saved['old_names']) or not all(pins.values())):
+    if active and (not pins or set(pins) != set(saved['old_names']) or not all(pins.values())):
         raise image_safety.DeploymentSafetyError('이전 실행 이미지의 증거가 부족합니다. 복구 기록을 보존했습니다')
+    previous_hashes = recovery_compose_hashes(active, runtime, run, saved)
     # A changed/missing frozen configuration must not be used to stop or replace services.
     for name, expected in saved.get('reviewed_compose_files', {}).items():
         path = checked_path(name, runtime / 'compose-reviews', file=True)
@@ -728,13 +882,15 @@ def _restore_execution(engine, runtime, run, saved):
     project = saved['canonical'][saved['canonical'].index('--project-name') + 1]
     present = containers(engine, project)
     targets = [project + '-' + name + '-1' for name in APP_SERVICES if name in present]
+    verify_previous_compose(active, runtime, previous_hashes)
+    validated_site = validate_previous_site(runtime, run, saved.get('old_site'))
     if targets:
         engine.run(['stop', *targets])
-    restore_previous_site(runtime, run, saved.get('old_site'))
+    restore_previous_site(runtime, run, saved.get('old_site'), validated_site)
     if active and mode == 'site':
         path = checked_path(runtime / 'site.json', runtime, file=True)
         info = path.stat()
-        site = json.loads(path.read_text())
+        site = json.loads(path.read_text(encoding='utf-8'))
         for name, image in pins.items():
             site.setdefault('services', {}).setdefault(name, {})['image'] = image
         atomic_json(path, site)
@@ -749,11 +905,9 @@ def _restore_execution(engine, runtime, run, saved):
         elif path.exists() and (active or name != 'contract.json'):
             shutil.copy2(path, run / ('interrupted-' + name));path.unlink()
     if active:
+        verify_previous_compose(active, runtime, previous_hashes)
         engine.run(['compose', *active, 'up', '-d', '--no-build', '--pull', 'never', *saved['old_names']], timeout=300)
-        restored = containers(engine, project)
-        if any(name not in restored or restored[name]['Image'] != image
-               or not restored[name]['State']['Running'] for name, image in pins.items()):
-            raise image_safety.DeploymentSafetyError('이전 실행 이미지의 복구를 확인하지 못했습니다. 복구 기록을 보존했습니다')
+        wait_for_recovery(engine, project, pins)
         atomic_json(runtime / 'compose.active.json', ['docker', 'compose', *active])
 
 
@@ -768,7 +922,9 @@ def recover(engine, state):
         saved = json.loads(checked_path(run / 'recovery.json', runtime, file=True).read_text())
         active = saved['previous_compose']
         _restore_execution(engine, runtime, run, saved)
-        atomic_json(run / 'recovered.json', {'old_execution_restored': bool(active), 'databases_rewound': False})
+        atomic_json(run / 'recovered.json', {'old_execution_restored': bool(active),
+                                          'recovery_startup_verified': bool(active), 'databases_rewound': False})
         pending.unlink()
         return {'recovery_required': True, 'old_execution_restored': bool(active), 'databases_rewound': False,
+                'recovery_startup_verified': bool(active),
                 'fresh_install_can_resume': not bool(active)}

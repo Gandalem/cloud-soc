@@ -51,6 +51,44 @@ class IncrementalTests(unittest.TestCase):
             row = db.execute('SELECT body FROM runtime').fetchone()
             return json.loads(row[0]) if row else None
 
+    def test_millisecond_boundary_candidate_does_not_stall_checkpoint(self):
+        # The real failing checkpoint has microseconds while the ES date index
+        # returns an older _source from the very same millisecond bucket.
+        self.base = utc('2026-10-19T07:41:47.618125Z')
+        before = normalized(raw(0))
+        before['_source']['cloud_soc']['normalized_at'] = '2026-10-19T07:41:47.618105Z'
+        valid = normalized(raw(1))
+        valid['_source']['cloud_soc']['normalized_at'] = self.base.isoformat()
+        with patch.object(self, 'scan', return_value=[before, valid]):
+            result = self.run_at(70)
+        self.assertEqual(result['events'], 1)
+        self.assertEqual(utc(self.stored()['checkpoint']), self.base + timedelta(seconds=40))
+        self.assertNotIn(before['_id'], self.stored()['seen'])
+        self.assertIn(valid['_id'], self.stored()['seen'])
+        with patch.object(self, 'scan', return_value=[]):
+            self.run_at(140)
+        self.assertEqual(utc(self.stored()['checkpoint']), self.base + timedelta(seconds=110))
+
+    def test_server_denial_reports_safe_reason_and_recovers_without_reset(self):
+        from elasticsearch import ApiError
+        from unittest.mock import Mock
+        from cloud_soc.processing.errors import WorkerFailure
+        self.run_at(70)
+        old = self.stored()
+        self.client.field_caps.side_effect = ApiError(
+            'PRIVATE_CANARY', meta=Mock(status=403), body={'reason': 'PRIVATE_CANARY'})
+        with self.assertRaises(WorkerFailure) as caught:
+            self.run_at(140)
+        self.assertEqual(caught.exception.code, 'authorization_denied')
+        status = self.client.index.call_args.kwargs['document']
+        self.assertEqual(status['state'], 'failed')
+        self.assertEqual(status['error'], 'authorization_denied')
+        self.assertNotIn('PRIVATE_CANARY', json.dumps(status))
+        self.assertEqual(self.stored(), old)
+        self.client.field_caps.side_effect = None
+        self.run_at(140)
+        self.assertGreater(self.stored()['checkpoint'], old['checkpoint'])
+
     def test_cross_batch_restart_overlap_and_cooldown(self):
         self.add(9, 10)
         self.assertEqual(self.run_at(70)['created'], 0)

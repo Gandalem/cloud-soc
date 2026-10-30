@@ -1,4 +1,24 @@
 .logs-main { min-width:0; }
+.log-eyebrow { display:block; margin-bottom:9px; font-size:10px; font-weight:700; letter-spacing:.18em; color:var(--blue); }
+.log-environments { margin:24px 0; }
+.log-environments-heading { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:14px; }
+.log-environments-heading h2 { font-size:14px; }
+.log-environments-heading p,.log-environment-state { color:var(--muted); font-size:11px; line-height:1.7; }
+.log-environment-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
+.log-environment-card { position:relative; padding:22px 20px 18px; border:1px solid var(--border); border-radius:10px; background:var(--panel); overflow:hidden; }
+.log-environment-card::before { content:''; position:absolute; inset:0 0 auto; height:3px; background:var(--environment-accent,#5582d9); }
+.log-environment-card[data-environment="application"] { --environment-accent:#8c74cf; }
+.log-environment-card[data-environment="network"] { --environment-accent:#319c92; }
+.log-environment-card[data-environment="cloud"] { --environment-accent:#ca9545; }
+.log-environment-icon { display:inline-flex; align-items:center; justify-content:center; width:29px; height:29px; margin-bottom:14px; border:1px solid var(--border); border-radius:7px; background:var(--ui-soft,var(--panel)); color:var(--muted); font:11px ui-monospace,monospace; }
+.log-environment-card h3 { font-size:14px; margin:0 0 8px; }
+.log-environment-card p { min-height:36px; margin:0 0 18px; color:var(--muted); font-size:11px; line-height:1.7; }
+.log-environment-card > div { display:flex; gap:8px; align-items:baseline; }
+.log-environment-card strong { font-size:28px; font-weight:650; letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
+.log-environment-card > div > span { color:var(--muted); font-size:10px; }
+.log-environment-state { margin:10px 0 0; }
+@media(max-width:1050px) { .log-environment-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:520px) { .log-environment-grid { gap:10px; } .log-environment-card { padding:16px 12px; } .log-environments-heading { flex-direction:column; gap:6px; } .log-environment-card p { min-height:54px; } }
 .log-scope-note { padding:18px 20px; margin-bottom:20px; border-left:3px solid #447eb7; background:linear-gradient(110deg,#fff,#edf4fb); }
 .log-scope-note h2 { margin-bottom:9px; }
 .log-scope-note p { color:var(--muted); font-size:12px; line-height:1.9; }

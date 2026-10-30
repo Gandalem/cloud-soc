@@ -1,0 +1,85 @@
+# Standalone, opt-in isolation example. Never merge into an existing agent config.
+# Requires Filebeat 9.5.x with filestream compression:auto support.
+path.data: '${MALL_TEST_DATA_PATH:?Set a new isolated registry directory}'
+path.logs: '${MALL_TEST_LOG_PATH:?Set a new isolated diagnostics directory}'
+
+filebeat.inputs:
+  - type: filestream
+    id: security-mall-audit-isolated-v1
+    enabled: true
+    paths:
+      - '${MALL_TEST_AUDIT_PATH:?Set an absolute synthetic JSONL path}'
+      - '${MALL_TEST_AUDIT_PATH:?Set an absolute synthetic JSONL path}.*'
+    compression: auto
+    file_identity.fingerprint: ~
+    prospector.scanner.fingerprint.offset: 0
+    prospector.scanner.fingerprint.length: 64
+    # Larger than the script limit: a truncated oversized prefix cannot be accepted.
+    message_max_bytes: 65536
+    close.on_state_change.renamed: false
+    close.on_state_change.removed: false
+
+processors:
+  - add_fields:
+      target: '@metadata'
+      fields:
+        mall_validated: false
+        op_type: create
+  - script:
+      lang: javascript
+      tag: security_mall_audit_v1
+      tag_on_exception: mall_script_failure
+      timeout: 100ms
+      file: '${path.config}/security-mall-audit.js'
+      params:
+        organization_id: mall-isolated
+        host_id: mall-host-isolated
+  - drop_event:
+      when:
+        not:
+          equals:
+            '@metadata.mall_validated': true
+  - fingerprint:
+      fields: [organization.id, host.id, security_mall.audit.service_name, security_mall.audit.event_id]
+      target_field: '@metadata._id'
+      method: sha256
+      encoding: hex
+      ignore_missing: false
+  - drop_event:
+      when:
+        not:
+          has_fields: ['@metadata._id']
+  - include_fields:
+      fields:
+        - organization.id
+        - host.id
+        - labels.log_source
+        - security_mall.audit.schema_version
+        - security_mall.audit.@timestamp
+        - security_mall.audit.event_id
+        - security_mall.audit.service_name
+        - security_mall.audit.event_action
+        - security_mall.audit.event_outcome
+        - security_mall.audit.source_ip
+        - security_mall.audit.account_id
+        - security_mall.audit.account_key_id
+        - security_mall.audit.resource_type
+        - security_mall.audit.authorization_reason
+        - security_mall.audit.request_id
+
+output.elasticsearch:
+  hosts: ['${MALL_TEST_ES_URL:?Set the HTTPS URL of an isolated local ES instance}']
+  ssl.certificate_authorities: ['${MALL_TEST_ES_CA:?Set the isolated ES CA path}']
+  ssl.verification_mode: full
+  api_key: '${MALL_TEST_ES_API_KEY:?Use a separate test create-only key via keystore}'
+  index: '${MALL_TEST_RAW_INDEX:?Precreate a unique soc-host-raw-mall-isolated-* index}'
+  bulk_max_size: 16
+
+setup.ilm.enabled: false
+setup.ilm.check_exists: false
+setup.template.enabled: false
+monitoring.enabled: false
+queue.mem.events: 64
+queue.mem.flush.min_events: 1
+logging.level: info
+logging.metrics.enabled: true

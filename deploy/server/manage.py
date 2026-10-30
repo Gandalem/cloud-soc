@@ -191,4 +191,8 @@ if __name__ == '__main__':
     except ComposeReviewError as error:
         raise SystemExit(str(error)) from None
     except Exception as error:
-        raise SystemExit('서버 작업이 중단됐습니다 (' + type(error).__name__ + '). 기존 설정은 보존됐으며 인증 정보는 출력하지 않습니다.') from None
+        code = getattr(error, 'sqlite_errorname', None)
+        safe_code = (' sqlite=' + code if isinstance(code, str) and code.startswith('SQLITE_')
+                     and all(c.isupper() or c == '_' or c.isdigit() for c in code) else '')
+        raise SystemExit('서버 작업이 중단됐습니다 (' + type(error).__name__ + safe_code
+                         + '). 기존 설정은 보존됐으며 인증 정보는 출력하지 않습니다.') from None

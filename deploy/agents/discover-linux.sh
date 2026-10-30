@@ -159,7 +159,7 @@ render_discovered_inputs() {
         printf '{"type":"filestream","id":"cloud-soc-linux-discovered-v2","paths":['
         local path separator=
         for path in "${DISCOVERED_PATHS[@]}"; do printf '%s%s' "$separator" "$(json_string "$path")"; separator=,; done
-        printf '%s' '],"prospector.scanner.symlinks":false,"file_identity.fingerprint":{"growing":true},"fields_under_root":true,"fields":{"labels":{"log_source":"linux_file","collection_mode":"auto_discovery","collection_policy":"security-focused-v1"}}}'
+        printf '%s' '],"prospector.scanner.symlinks":false,"file_identity.fingerprint":{"growing":true},"fields_under_root":true,"fields":{"labels":{"log_source":"linux_file","collection_mode":"auto_discovery","collection_policy":"security-focused-v1"}},"processors":[{"add_locale":{"format":"offset"}}]}'
     fi
     printf ']\n'
 }

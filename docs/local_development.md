@@ -46,15 +46,15 @@ git log --oneline HEAD..origin/main
 
 ## 개발환경 실행
 
-이 절은 **Windows 개발 PC의 PowerShell** 기준입니다. Git, Python, Docker Desktop과 Docker Compose가 준비되어 있어야 합니다. 원격 에이전트만 설치하려면 [빠른 시작의 에이전트 설치](../README.md#2-에이전트-설치)로 이동합니다.
+이 절은 **Windows 개발 PC의 PowerShell** 기준입니다. Git, Python 3.12 이상, Docker Desktop과 Docker Compose가 준비되어 있어야 합니다. 원격 에이전트만 설치하려면 [빠른 시작의 에이전트 설치](../README.md#2-에이전트-설치)로 이동합니다.
 
 ### Elasticsearch와 Kibana
 
 Docker Desktop을 실행한 뒤 다음 명령을 실행합니다.
 
 ```powershell
-docker compose up -d
-docker compose ps
+docker compose -f compose.yaml -f compose.dev.yaml up -d
+docker compose -f compose.yaml -f compose.dev.yaml ps
 ```
 
 초기 실행은 이미지 다운로드와 서비스 기동에 시간이 걸릴 수 있습니다.
@@ -65,7 +65,7 @@ docker compose ps
 기동되지 않으면 로그를 확인합니다.
 
 ```powershell
-docker compose logs --tail 100 elasticsearch kibana
+docker compose -f compose.yaml -f compose.dev.yaml logs --tail 100 elasticsearch kibana
 ```
 
 현재 포트는 `127.0.0.1`에만 연결됩니다. 인증 없는 9200·5601 포트를 외부로 열지 않습니다.
@@ -74,7 +74,7 @@ docker compose logs --tail 100 elasticsearch kibana
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -c constraints.txt -r requirements.txt
 if (-not (Test-Path -LiteralPath .env)) { Copy-Item .env.example .env }
 $env:PYTHONPATH = (Join-Path (Get-Location) "src")
 .\.venv\Scripts\python.exe -m cloud_soc.elastic.client

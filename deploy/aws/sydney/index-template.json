@@ -1,0 +1,201 @@
+{
+  "index_patterns": [
+    "soc-ingest-aws-*",
+    "soc-ingest-tpot-*"
+  ],
+  "priority": 300,
+  "_meta": {
+    "contract": "aws-sydney-stream-metadata-v1",
+    "portal_connected": false
+  },
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 1,
+      "index.final_pipeline": "cloud-soc-received-at-v1"
+    },
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "@timestamp": {
+          "type": "date"
+        },
+        "organization": {
+          "properties": {
+            "id": {
+              "type": "keyword"
+            }
+          }
+        },
+        "event": {
+          "properties": {
+            "id": {
+              "type": "keyword"
+            },
+            "kind": {
+              "type": "keyword"
+            },
+            "dataset": {
+              "type": "keyword"
+            },
+            "outcome": {
+              "type": "keyword"
+            },
+            "action": {
+              "type": "keyword"
+            },
+            "provider": {
+              "type": "keyword"
+            },
+            "code": {
+              "type": "keyword"
+            },
+            "ingested": {
+              "type": "date"
+            },
+            "start": {
+              "type": "date"
+            },
+            "end": {
+              "type": "date"
+            }
+          }
+        },
+        "labels": {
+          "properties": {
+            "log_source": {
+              "type": "keyword"
+            },
+            "privacy_policy": {
+              "type": "keyword"
+            },
+            "team": {
+              "type": "keyword"
+            },
+            "team_basis": {
+              "type": "keyword"
+            },
+            "source_id": {
+              "type": "keyword"
+            },
+            "collection_region": {
+              "type": "keyword"
+            },
+            "collection_path": {
+              "type": "keyword"
+            }
+          }
+        },
+        "cloud": {
+          "properties": {
+            "provider": {
+              "type": "keyword"
+            },
+            "region": {
+              "type": "keyword"
+            },
+            "account": {
+              "properties": {
+                "id": {
+                  "type": "keyword"
+                }
+              }
+            }
+          }
+        },
+        "source": {
+          "properties": {
+            "ip": {
+              "type": "ip"
+            },
+            "port": {
+              "type": "integer"
+            },
+            "address": {
+              "type": "keyword"
+            }
+          }
+        },
+        "destination": {
+          "properties": {
+            "ip": {
+              "type": "ip"
+            },
+            "port": {
+              "type": "integer"
+            }
+          }
+        },
+        "agent": {
+          "properties": {
+            "type": {
+              "type": "keyword"
+            },
+            "id": {
+              "type": "keyword"
+            }
+          }
+        },
+        "observer": {
+          "properties": {
+            "type": {
+              "type": "keyword"
+            },
+            "name": {
+              "type": "keyword"
+            }
+          }
+        },
+        "network": {
+          "properties": {
+            "bytes": {
+              "type": "long"
+            },
+            "packets": {
+              "type": "long"
+            },
+            "iana_number": {
+              "type": "long"
+            }
+          }
+        },
+        "http": {
+          "properties": {
+            "request": {
+              "properties": {
+                "method": {
+                  "type": "keyword"
+                }
+              }
+            },
+            "response": {
+              "properties": {
+                "status_code": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "aws": {
+          "type": "object",
+          "enabled": false
+        },
+        "user": {
+          "type": "object",
+          "enabled": false
+        },
+        "ingest": {
+          "properties": {
+            "object_id": {
+              "type": "keyword"
+            },
+            "ordinal": {
+              "type": "long"
+            }
+          }
+        }
+      }
+    }
+  }
+}

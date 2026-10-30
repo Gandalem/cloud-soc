@@ -229,9 +229,16 @@ refresh_linux_inputs "$r/agent"
   assert.equal(result.status, 0, result.stderr);
   const summary = JSON.parse(readFileSync(path.join(dir, 'agent', 'health.ndjson'), 'utf8'));
   assert.equal(summary.policy_version, 3);
-  assert.equal(summary.selected, 0);
+  // Excluding this file leaves the independent security journal input active.
+  assert.equal(summary.selected, 1);
   assert.equal(summary.excluded, 1);
+  assert.equal(summary.total, 2);
   assert.equal(summary.sources[0].status, 'policy_excluded');
+  assert.equal(summary.sources[1].status, 'selected');
+  const discovered = JSON.parse(readFileSync(path.join(dir, 'agent', 'inputs', 'discovered.yml'), 'utf8'));
+  assert.deepEqual(discovered.map(input => input.type), ['journald']);
+  assert.equal(discovered[0].id, 'cloud-soc-journal-v2');
+  assert.ok(discovered[0].include_matches.match.includes('SYSLOG_IDENTIFIER=sshd'));
   assert.match(summary.sources[0].id, /^[a-f0-9]{64}$/);
   assert.ok(!JSON.stringify(summary).includes('app.log'));
   assert.equal(summary.queue_state, 'unknown');

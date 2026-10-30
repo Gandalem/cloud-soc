@@ -3,12 +3,37 @@
   "use strict";
   const sources = { generic_web_access:"웹 사이트 접근 기록", web_access_metadata:"AWS DVWA 웹 접근 기록", windows_event: "Windows 이벤트", windows_file: "Windows 파일", linux_file: "Linux 파일", linux_journald: "Linux 저널", network_packetbeat: "네트워크", aws_cloudtrail: "AWS 관리 이벤트", oci_audit: "OCI 감사 이벤트", unknown: "미분류" };
   sources.generic_modsecurity = 'ModSecurity WAF 메타데이터';
+  sources.security_scenario = '보안 시나리오 감사 기록';
   Object.assign(sources,{security_mall_audit:'쇼핑몰 보안 감사',security_mall_edge:'쇼핑몰 웹·WAF',agent_health:'수집 상태 보고',agent_collection_notice:'수집 입력 오류'});
   const osNames = { windows: "Windows", linux: "Linux", cloud: "해당 없음 (클라우드 API)", unknown: "미확인" };
   const outcomes = { success: "성공", failure: "실패", unknown: "미확인" };
   const label = (map, value, fallback = "미확인") => Object.hasOwn(map, value) ? map[value] : fallback;
   const escape = value => String(value ?? "미관측").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const time = value => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(new Date(value)) : "미관측";
+  const environmentKinds = {
+    server: ['windows_event', 'windows_file', 'linux_file', 'linux_journald'],
+    application: ['generic_web_access', 'web_access_metadata', 'generic_modsecurity', 'security_mall_audit', 'security_mall_edge'],
+    network: ['network_packetbeat'],
+    cloud: ['aws_cloudtrail', 'oci_audit']
+  };
+  function renderEnvironments(rows) {
+    let classified = 0;
+    for (const [environment, kinds] of Object.entries(environmentKinds)) {
+      const count = rows === null ? null : rows.filter(row => {
+        if (kinds.includes(row.source_kind)) return true;
+        if (row.source_kind !== 'security_scenario') return false;
+        const code = row.log_type?.code || '';
+        return (environment === 'server' && code.startsWith('server_')) ||
+          (environment === 'application' && code.startsWith('app_')) ||
+          (environment === 'network' && code.startsWith('network_'));
+      }).length;
+      const output = document.querySelector(`#log-count-${environment}`);
+      if (output) output.textContent = count === null ? '—' : count.toLocaleString('ko-KR');
+      classified += count || 0;
+    }
+    const state = document.querySelector('#log-environment-state');
+    if (state) state.textContent = rows === null ? '로그를 조회하면 환경별 건수가 표시됩니다.' : `현재 페이지 ${rows.length.toLocaleString('ko-KR')}건 · 기타 및 수집 상태 ${(rows.length - classified).toLocaleString('ko-KR')}건 · 조회 결과 기준`;
+  }
   function rowMarkup(row, index, timeBasis = 'ingested') {
     const interpreted = row.interpretation || {};
     const supported = ['recognized', 'partial'].includes(interpreted.status);
@@ -76,6 +101,12 @@
     login: "로그인", special_privileges_assigned: "특수 권한 할당", process_created: "프로세스 생성", account_created: "계정 생성", account_deleted: "계정 삭제", local_group_member_added: "로컬 그룹 구성원 추가", local_group_member_removed: "로컬 그룹 구성원 제거", access_right_used: "객체 접근 권한 사용", object_permissions_changed: "객체 권한 변경", service_installed: "서비스 설치", scheduled_task_created: "예약 작업 생성", scheduled_task_updated: "예약 작업 변경", audit_policy_changed: "감사 정책 변경", connection_observed: "연결 관측", file_created_or_overwritten: "파일 생성 또는 덮어쓰기", file_delete_detected: "파일 삭제 관측", traffic_observed: "통신 관측",
     read_data_or_list_directory: "데이터 읽기 / 디렉터리 열람", write_data_or_add_file: "데이터 쓰기 / 파일 추가", append_data_or_add_subdirectory: "데이터 추가 / 하위 디렉터리 추가", delete_right: "삭제 권한", write_dacl: "DACL 변경", write_owner: "소유자 변경"
   };
+  Object.assign(securityLabels, {
+    scenario_kind: '보안 시나리오', object_name: '대상 이름', critical_asset: '중요 자산 지정',
+    role_before: '변경 전 역할', role_after: '변경 후 역할', resource_type: '자료 유형',
+    record_count: '작업별 처리 건수', risk_reason: '업로드 위험 근거', dns_rcode: 'DNS 응답 코드',
+    dns_name_length: 'DNS 이름 길이', signature_id: 'IDS 시그니처 ID', signature_name: 'IDS 시그니처 이름'
+  });
   const securityLimits = { not_a_detection: "이 해석은 공격 판정이나 탐지 경보가 아닙니다.", conflicting_event_code: "이벤트 코드가 서로 달라 해석하지 않았습니다.", privilege_assignment_not_use: "권한 할당은 실제 권한 사용을 의미하지 않습니다.", pid_not_stable_identity: "PID만으로 다른 시점의 프로세스를 연결하지 않습니다.", access_right_not_exfiltration_or_completed_delete: "접근 권한 사용만으로 유출이나 삭제 완료를 단정하지 않습니다.", not_file_read_audit: "이 이벤트는 파일 읽기 감사가 아닙니다.", no_process_or_file_attribution: "Packetbeat만으로 실행 프로세스나 유출 파일을 알 수 없습니다.", flow_counters_cumulative_do_not_sum_reports: "흐름 카운터는 누적값입니다. 중간 보고들을 합산하지 마세요." };
   Object.assign(securityLimits,{
     protected_projection_not_native_log:'보호된 메타데이터이며 서버의 전체 원문과 다릅니다.',
@@ -140,6 +171,7 @@
   }
   function clearRows() {
     $("#log-rows").innerHTML = ""; $("#log-empty").hidden = true;
+    renderEnvironments(null);
     $("#log-result").textContent = "-"; $("#log-query-range").textContent = "조회 결과 없음";
     clearDetail();
   }
@@ -162,6 +194,7 @@
   }
   function render() {
     const current = pages[page];
+    renderEnvironments(current.rows);
     $("#log-error").hidden = true;
     $("#log-rows").innerHTML = current.rows.map((row,index)=>rowMarkup(row,index,current.filters.time_basis)).join("");
     $("#log-empty").hidden = current.rows.length !== 0;

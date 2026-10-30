@@ -1,0 +1,221 @@
+# Explicit rule-ID selection only. Never added to a default worker profile.
+rules:
+  - id: UNIFIED-SERVER-MIN3-001
+    name: At least three server authentication security observations
+    type: cardinality
+    enabled: true
+    severity: low
+    group_by: [organization.id, host.id]
+    threshold: {count: 3}
+    distinct: {field: host.id, count: 1}
+    time_window: {seconds: 900}
+    cooldown: {seconds: 900}
+    conditions:
+      - {field: cloud_soc.detail.adapter, operator: in, value: [linux_ssh_v1, linux_ssh_v2, windows_security_v1]}
+      - {field: event.category, operator: contains, value: authentication}
+      - {field: event.outcome, operator: in, value: [failure, success]}
+    required_fields: [organization.id, host.id, user.name, source.ip]
+    dedup_fields: []
+    limitations:
+      - minimum_observation_count_is_not_an_attack_verdict
+      - authentication_success_and_failure_are_both_counted
+      - count_is_scoped_to_one_organization_and_host
+      - candidate_rule_not_operationally_verified
+    alert:
+      title: 서버 인증 보안 기록 3건 이상 관측
+      message: 동일 조직·호스트의 15분 구간에서 서버 인증 성공·실패 기록이 3건 이상 관측되었습니다. 계정·출발지·시각·인증 결과와 원본 참조를 분석하세요. 공격이나 침해 성공을 의미하지 않습니다.
+      category: authentication
+      tags: [minimum-three, server, activity-correlation]
+
+  - id: UNIFIED-APP-MIN3-001
+    name: At least three application access security observations
+    type: cardinality
+    enabled: true
+    severity: low
+    group_by: [organization.id, host.id, service.name]
+    threshold: {count: 3}
+    distinct: {field: service.name, count: 1}
+    time_window: {seconds: 900}
+    cooldown: {seconds: 900}
+    conditions:
+      - {field: cloud_soc.detail.adapter, operator: in, value: [web_access_site_v2, web_access_metadata_v1, web_access_agent_v1, linux_operational_v1]}
+      - {field: cloud_soc.detail.fields.http_status, operator: in, value: [401, 403]}
+    required_fields: [organization.id, host.id, service.name, source.ip]
+    dedup_fields: []
+    limitations:
+      - http_401_or_403_does_not_prove_malicious_activity
+      - count_is_scoped_to_one_organization_host_and_service
+      - multiple_sites_with_the_same_service_name_can_contribute
+      - candidate_rule_not_operationally_verified
+    alert:
+      title: 애플리케이션 보안 관련 기록 3건 이상 관측
+      message: 동일 조직·호스트·서비스의 15분 구간에서 HTTP 401 또는 403 기록이 3건 이상 관측되었습니다. 사이트·서비스·출발지·응답 상태와 원본 참조를 분석하세요. 정상 인증 오류나 권한 거부도 포함됩니다.
+      category: web
+      tags: [minimum-three, application, activity-correlation]
+
+  - id: UNIFIED-NET-MIN3-001
+    name: At least three distinct finalized network flows
+    type: cardinality
+    enabled: true
+    severity: low
+    group_by: [organization.id, host.id]
+    threshold: {count: 3}
+    distinct: {field: cloud_soc.detail.fields.flow_id, count: 3}
+    time_window: {seconds: 900}
+    cooldown: {seconds: 900}
+    conditions:
+      - {field: cloud_soc.detail.adapter, operator: equals, value: packetbeat_metadata_v1}
+      - {field: event.category, operator: contains, value: network}
+      - {field: cloud_soc.detail.fields.flow_final, operator: equals, value: true}
+    required_fields: [organization.id, host.id, source.ip, destination.ip, network.transport, cloud_soc.detail.fields.flow_id]
+    dedup_fields: [organization.id, host.id, source.ip, destination.ip, network.transport, cloud_soc.detail.fields.flow_id]
+    limitations:
+      - three_distinct_flow_ids_are_required
+      - finalized_flow_time_is_not_connection_start_time
+      - cumulative_flow_counters_must_not_be_summed_across_reports
+      - no_payload_process_account_or_exfiltration_attribution
+      - candidate_rule_not_operationally_verified
+    alert:
+      title: 네트워크 트래픽 흐름 3건 이상 관측
+      message: 동일 조직·호스트의 15분 구간에서 서로 다른 Flow ID의 종료 흐름이 3건 이상 관측되었습니다. 출발지·목적지·포트·프로토콜·통신량과 원본 참조를 분석하세요. 흐름 관측만으로 악성 통신이나 유출을 확정하지 않습니다.
+      category: network
+      tags: [minimum-three, network, activity-correlation]
+
+  - id: UNIFIED-THREE-SOURCE-001
+    name: Application security response then host authentication then network flow
+    type: ordered
+    enabled: true
+    severity: low
+    group_by: [organization.id, host.id, source.ip]
+    threshold: {count: 1}
+    time_window: {seconds: 900}
+    cooldown: {seconds: 900}
+    detection_type: activity_correlation
+    conditions:
+      - field: cloud_soc.detail.adapter
+        operator: in
+        value: [web_access_site_v2, web_access_metadata_v1, web_access_agent_v1, linux_operational_v1, linux_ssh_v1, linux_ssh_v2, windows_security_v1, packetbeat_metadata_v1]
+    stages:
+      - name: application_security_response
+        count: 1
+        conditions:
+          - {field: cloud_soc.detail.adapter, operator: in, value: [web_access_site_v2, web_access_metadata_v1, web_access_agent_v1, linux_operational_v1]}
+          - {field: cloud_soc.detail.fields.http_status, operator: in, value: [401, 403]}
+        required_fields: [service.name]
+      - name: server_authentication_event
+        within_seconds: 300
+        conditions:
+          - {field: cloud_soc.detail.adapter, operator: in, value: [linux_ssh_v1, linux_ssh_v2, windows_security_v1]}
+          - {field: event.category, operator: contains, value: authentication}
+          - {field: event.outcome, operator: in, value: [failure, success]}
+        required_fields: [user.name]
+      - name: network_traffic_observation
+        within_seconds: 300
+        conditions:
+          - {field: cloud_soc.detail.adapter, operator: equals, value: packetbeat_metadata_v1}
+          - {field: event.category, operator: contains, value: network}
+          - {field: cloud_soc.detail.fields.flow_final, operator: equals, value: true}
+        required_fields: [cloud_soc.detail.fields.flow_id, destination.ip]
+    limitations:
+      - three_source_activity_is_not_an_attack_verdict
+      - http_401_or_403_does_not_prove_malicious_activity
+      - same_organization_host_and_observed_source_ip_required
+      - stage_order_is_required_and_not_all_three_source_activity_will_match
+      - network_flow_is_not_attributed_to_the_authenticated_account
+      - finalized_flow_time_is_not_connection_start_time
+      - same_host_id_requires_target_local_network_collection
+      - candidate_rule_not_operationally_verified
+    alert:
+      title: 애플리케이션·서버·네트워크 3종 활동 연관 관측
+      message: 같은 조직·호스트·관측 출발지에서 웹 인증·접근 거부 응답 1건, 이후 서버 인증 기록 1건, 이후 종료 네트워크 Flow 1건 이상이 순서대로 관측되었습니다. 각 단계의 증거를 함께 조사하세요. 활동의 연관 관측이며 공격 성공이나 동일 사용자 활동을 확정하지 않습니다.
+      category: network
+      tags: [cross-environment, application, host, network, activity-correlation]
+
+  - id: UNIFIED-WEB-HOST-001
+    name: Repeated web not-found responses followed by host authentication
+    type: ordered
+    enabled: true
+    severity: medium
+    group_by: [organization.id, host.id, source.ip]
+    threshold: {count: 5}
+    time_window: {seconds: 600}
+    cooldown: {seconds: 600}
+    conditions:
+      - field: cloud_soc.detail.adapter
+        operator: in
+        value: [web_access_site_v2, web_access_metadata_v1, web_access_agent_v1, linux_operational_v1, linux_ssh_v1, linux_ssh_v2, windows_security_v1]
+    stages:
+      - name: repeated_web_not_found
+        count: 5
+        conditions:
+          - {field: cloud_soc.detail.adapter, operator: in, value: [web_access_site_v2, web_access_metadata_v1, web_access_agent_v1, linux_operational_v1]}
+          - {field: cloud_soc.detail.fields.http_status, operator: equals, value: 404}
+        required_fields: [service.name]
+      - name: successful_host_authentication
+        within_seconds: 300
+        conditions:
+          - {field: cloud_soc.detail.adapter, operator: in, value: [linux_ssh_v1, linux_ssh_v2, windows_security_v1]}
+          - {field: event.category, operator: contains, value: authentication}
+          - {field: event.outcome, operator: equals, value: success}
+        required_fields: [user.name]
+    limitations:
+      - shared_ip_does_not_identify_a_person
+      - same_host_id_requires_consistent_collector_inventory
+      - multiple_sites_on_the_same_host_can_contribute
+      - temporal_correlation_does_not_establish_causation_or_compromise
+      - clock_skew_and_late_events_can_change_order
+    alert:
+      title: 반복 웹 404 이후 동일 호스트 인증 성공 관측
+      message: 같은 조직·호스트·관측 출발지에서 웹 404 5건 이후 5분 이내 호스트 인증 성공이 관측되었습니다. 사이트·계정·승인된 작업을 조사하세요. 같은 IP만으로 동일 사용자나 침해 성공을 확정하지 않습니다.
+      category: authentication
+      tags: [cross-environment, web, host, temporal-correlation]
+
+  - id: UNIFIED-HOST-NET-001
+    name: Host authentication failures and success followed by finalized traffic
+    type: ordered
+    enabled: true
+    severity: medium
+    group_by: [organization.id, host.id, source.ip]
+    threshold: {count: 5}
+    time_window: {seconds: 900}
+    cooldown: {seconds: 900}
+    conditions:
+      - {field: cloud_soc.detail.adapter, operator: in, value: [linux_ssh_v1, linux_ssh_v2, windows_security_v1, packetbeat_metadata_v1]}
+    stages:
+      - name: repeated_host_authentication_failures
+        count: 5
+        reset_on_next: true
+        conditions:
+          - {field: cloud_soc.detail.adapter, operator: in, value: [linux_ssh_v1, linux_ssh_v2, windows_security_v1]}
+          - {field: event.category, operator: contains, value: authentication}
+          - {field: event.outcome, operator: equals, value: failure}
+        required_fields: [user.name]
+      - name: successful_host_authentication
+        within_seconds: 300
+        latest_only: true
+        link_fields: [user.name]
+        conditions:
+          - {field: cloud_soc.detail.adapter, operator: in, value: [linux_ssh_v1, linux_ssh_v2, windows_security_v1]}
+          - {field: event.category, operator: contains, value: authentication}
+          - {field: event.outcome, operator: equals, value: success}
+        required_fields: [user.name]
+      - name: finalized_network_flow
+        within_seconds: 300
+        conditions:
+          - {field: cloud_soc.detail.adapter, operator: equals, value: packetbeat_metadata_v1}
+          - {field: event.category, operator: contains, value: network}
+          - {field: cloud_soc.detail.fields.flow_final, operator: equals, value: true}
+        required_fields: [cloud_soc.detail.fields.flow_id, destination.ip]
+    limitations:
+      - network_flow_is_not_attributed_to_the_authenticated_account
+      - matching_source_ip_only_covers_the_observed_traffic_direction
+      - finalized_flow_time_is_not_connection_start_time
+      - no_payload_process_or_exfiltration_attribution
+      - shared_ip_and_normal_authentication_retries_can_match
+      - same_host_id_requires_target_local_network_collection
+      - candidate_thresholds_not_operationally_verified
+    alert:
+      title: 호스트 인증 실패·성공 이후 네트워크 흐름 관측
+      message: 같은 조직·호스트·관측 출발지에서 동일 계정의 인증 실패 5건 이후 성공, 이후 5분 이내 종료 Flow가 관측되었습니다. 흐름은 해당 계정이나 프로세스에 귀속되지 않으며 침해·유출을 확정하지 않습니다.
+      category: network
+      tags: [cross-environment, host, network, temporal-correlation]

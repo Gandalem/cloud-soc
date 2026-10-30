@@ -1,0 +1,7 @@
+{
+  "description": "Server receipt time for explicitly collected security scenario metadata",
+  "processors": [
+    {"set": {"field": "event.ingested", "value": "{{{_ingest.timestamp}}}", "override": true}},
+    {"set": {"field": "labels.log_source", "value": "security_scenario", "override": true}}
+  ]
+}

@@ -92,12 +92,13 @@ def ssh_collection_mirror(first, second):
     """Match only opposite journal/ISO views of one bounded SSH observation."""
     observations = [get_field_value(e, 'cloud_soc.observation') for e in (first, second)]
     for event, observation in zip((first, second), observations):
-        if (get_field_value(event, 'cloud_soc.detail.adapter') != 'linux_ssh_v2'
+        if (get_field_value(event, 'cloud_soc.detail.adapter') not in ('linux_ssh_v2', 'linux_ssh_invalid_user_v1')
                 or not isinstance(observation, dict) or type(observation.get('version')) is not int
                 or observation['version'] != 1 or not isinstance(observation.get('id'), str)
                 or not re.fullmatch(r'[0-9a-f]{64}', observation['id'])):
             return False
-    if {o.get('origin') for o in observations if isinstance(o.get('origin'), str)} != {'journald', 'rfc3339'}:
+    origins = {o.get('origin') for o in observations if isinstance(o.get('origin'), str)}
+    if origins not in ({'journald', 'rfc3339'}, {'journald', 'rfc3164'}):
         return False
     paths = ('organization.id', 'host.id', 'process.pid', 'source.ip', 'source.port',
              'user.name', 'event.action', 'event.outcome', 'network.protocol', 'cloud_soc.detail.fields.auth_method')
@@ -106,6 +107,10 @@ def ssh_collection_mirror(first, second):
         return False
     # rsyslog can stamp its file mirror about 1ms after the journal event.
     # Preserve both original times; never merge same-source or separate attempts.
+    if 'rfc3164' in origins:
+        # RFC3164 has second precision. Match the same connection identity and
+        # second only; never collapse two journal or two file observations.
+        return parse_event_timestamp(first).replace(microsecond=0) == parse_event_timestamp(second).replace(microsecond=0)
     return abs(parse_event_timestamp(first) - parse_event_timestamp(second)) <= timedelta(milliseconds=5)
 
 

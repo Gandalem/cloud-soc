@@ -1,0 +1,555 @@
+{
+  "rules": [
+    {
+      "id": "SCENARIO-SERVER-FILE-001",
+      "name": "중요 파일 변경",
+      "type": "cardinality",
+      "enabled": true,
+      "severity": "medium",
+      "detection_type": "security_observation",
+      "group_by": [
+        "organization.id",
+        "host.id"
+      ],
+      "threshold": {
+        "count": 3
+      },
+      "distinct": {
+        "field": "host.id",
+        "count": 1
+      },
+      "time_window": {
+        "seconds": 900
+      },
+      "cooldown": {
+        "seconds": 900
+      },
+      "conditions": [
+        {
+          "field": "cloud_soc.detail.adapter",
+          "operator": "equals",
+          "value": "security_scenarios_v1"
+        },
+        {
+          "field": "cloud_soc.detail.fields.scenario_kind",
+          "operator": "equals",
+          "value": "server_file"
+        },
+        {
+          "field": "cloud_soc.detail.fields.critical_asset",
+          "operator": "equals",
+          "value": true
+        }
+      ],
+      "required_fields": [
+        "organization.id",
+        "host.id"
+      ],
+      "dedup_fields": [],
+      "limitations": [
+        "three_distinct_raw_observations_required",
+        "exporter_metadata_requires_configured_source",
+        "thresholds_not_operationally_verified",
+        "no_attack_success_or_causation_established"
+      ],
+      "alert": {
+        "title": "중요 파일 변경 3건 이상 관측",
+        "message": "15분 구간에서 조건에 맞는 고유 관측이 3건 이상 집계되었습니다. 원본 참조와 수행 주체·대상·시각을 조사하세요. 승인된 작업과 오탐 가능성이 있으며 침해 성공을 확정하지 않습니다.",
+        "category": "file",
+        "tags": [
+          "security-scenarios",
+          "server_file",
+          "minimum-three"
+        ]
+      }
+    },
+    {
+      "id": "SCENARIO-SERVER-PERSIST-001",
+      "name": "서비스·예약 작업 등록 및 변경",
+      "type": "cardinality",
+      "enabled": true,
+      "severity": "medium",
+      "detection_type": "security_observation",
+      "group_by": [
+        "organization.id",
+        "host.id"
+      ],
+      "threshold": {
+        "count": 3
+      },
+      "distinct": {
+        "field": "host.id",
+        "count": 1
+      },
+      "time_window": {
+        "seconds": 900
+      },
+      "cooldown": {
+        "seconds": 900
+      },
+      "conditions": [
+        {
+          "field": "cloud_soc.detail.adapter",
+          "operator": "equals",
+          "value": "security_scenarios_v1"
+        },
+        {
+          "field": "cloud_soc.detail.fields.scenario_kind",
+          "operator": "equals",
+          "value": "server_persistence"
+        }
+      ],
+      "required_fields": [
+        "organization.id",
+        "host.id"
+      ],
+      "dedup_fields": [],
+      "limitations": [
+        "three_distinct_raw_observations_required",
+        "exporter_metadata_requires_configured_source",
+        "thresholds_not_operationally_verified",
+        "no_attack_success_or_causation_established"
+      ],
+      "alert": {
+        "title": "서비스·예약 작업 등록 및 변경 3건 이상 관측",
+        "message": "15분 구간에서 조건에 맞는 고유 관측이 3건 이상 집계되었습니다. 원본 참조와 수행 주체·대상·시각을 조사하세요. 승인된 작업과 오탐 가능성이 있으며 침해 성공을 확정하지 않습니다.",
+        "category": "configuration",
+        "tags": [
+          "security-scenarios",
+          "server_persistence",
+          "minimum-three"
+        ]
+      }
+    },
+    {
+      "id": "SCENARIO-SERVER-DEFENSE-001",
+      "name": "보안 기능 중지·정책 변경",
+      "type": "cardinality",
+      "enabled": true,
+      "severity": "medium",
+      "detection_type": "security_observation",
+      "group_by": [
+        "organization.id",
+        "host.id"
+      ],
+      "threshold": {
+        "count": 3
+      },
+      "distinct": {
+        "field": "host.id",
+        "count": 1
+      },
+      "time_window": {
+        "seconds": 900
+      },
+      "cooldown": {
+        "seconds": 900
+      },
+      "conditions": [
+        {
+          "field": "cloud_soc.detail.adapter",
+          "operator": "equals",
+          "value": "security_scenarios_v1"
+        },
+        {
+          "field": "cloud_soc.detail.fields.scenario_kind",
+          "operator": "equals",
+          "value": "server_defense"
+        }
+      ],
+      "required_fields": [
+        "organization.id",
+        "host.id"
+      ],
+      "dedup_fields": [],
+      "limitations": [
+        "three_distinct_raw_observations_required",
+        "exporter_metadata_requires_configured_source",
+        "thresholds_not_operationally_verified",
+        "no_attack_success_or_causation_established"
+      ],
+      "alert": {
+        "title": "보안 기능 중지·정책 변경 3건 이상 관측",
+        "message": "15분 구간에서 조건에 맞는 고유 관측이 3건 이상 집계되었습니다. 원본 참조와 수행 주체·대상·시각을 조사하세요. 승인된 작업과 오탐 가능성이 있으며 침해 성공을 확정하지 않습니다.",
+        "category": "configuration",
+        "tags": [
+          "security-scenarios",
+          "server_defense",
+          "minimum-three"
+        ]
+      }
+    },
+    {
+      "id": "SCENARIO-APP-ROLE-001",
+      "name": "관리자 권한·역할 변경",
+      "type": "cardinality",
+      "enabled": true,
+      "severity": "medium",
+      "detection_type": "security_observation",
+      "group_by": [
+        "organization.id",
+        "host.id",
+        "service.name"
+      ],
+      "threshold": {
+        "count": 3
+      },
+      "distinct": {
+        "field": "host.id",
+        "count": 1
+      },
+      "time_window": {
+        "seconds": 900
+      },
+      "cooldown": {
+        "seconds": 900
+      },
+      "conditions": [
+        {
+          "field": "cloud_soc.detail.adapter",
+          "operator": "equals",
+          "value": "security_scenarios_v1"
+        },
+        {
+          "field": "cloud_soc.detail.fields.scenario_kind",
+          "operator": "equals",
+          "value": "app_role"
+        }
+      ],
+      "required_fields": [
+        "organization.id",
+        "host.id",
+        "service.name"
+      ],
+      "dedup_fields": [],
+      "limitations": [
+        "three_distinct_raw_observations_required",
+        "exporter_metadata_requires_configured_source",
+        "thresholds_not_operationally_verified",
+        "no_attack_success_or_causation_established"
+      ],
+      "alert": {
+        "title": "관리자 권한·역할 변경 3건 이상 관측",
+        "message": "15분 구간에서 조건에 맞는 고유 관측이 3건 이상 집계되었습니다. 원본 참조와 수행 주체·대상·시각을 조사하세요. 승인된 작업과 오탐 가능성이 있으며 침해 성공을 확정하지 않습니다.",
+        "category": "iam",
+        "tags": [
+          "security-scenarios",
+          "app_role",
+          "minimum-three"
+        ]
+      }
+    },
+    {
+      "id": "SCENARIO-APP-EXPORT-001",
+      "name": "민감정보 대량 조회·내보내기",
+      "type": "cardinality",
+      "enabled": true,
+      "severity": "medium",
+      "detection_type": "security_observation",
+      "group_by": [
+        "organization.id",
+        "host.id",
+        "service.name"
+      ],
+      "threshold": {
+        "count": 3
+      },
+      "distinct": {
+        "field": "host.id",
+        "count": 1
+      },
+      "time_window": {
+        "seconds": 900
+      },
+      "cooldown": {
+        "seconds": 900
+      },
+      "conditions": [
+        {
+          "field": "cloud_soc.detail.adapter",
+          "operator": "equals",
+          "value": "security_scenarios_v1"
+        },
+        {
+          "field": "cloud_soc.detail.fields.scenario_kind",
+          "operator": "equals",
+          "value": "app_export"
+        },
+        {
+          "field": "cloud_soc.detail.fields.record_count",
+          "operator": "greater_than",
+          "value": 999
+        }
+      ],
+      "required_fields": [
+        "organization.id",
+        "host.id",
+        "service.name"
+      ],
+      "dedup_fields": [],
+      "limitations": [
+        "three_distinct_raw_observations_required",
+        "exporter_metadata_requires_configured_source",
+        "thresholds_not_operationally_verified",
+        "no_attack_success_or_causation_established",
+        "threshold_applies_to_each_operation_not_total_window_volume"
+      ],
+      "alert": {
+        "title": "민감정보 대량 조회·내보내기 3건 이상 관측",
+        "message": "15분 구간에서 조건에 맞는 고유 관측이 3건 이상 집계되었습니다. 원본 참조와 수행 주체·대상·시각을 조사하세요. 승인된 작업과 오탐 가능성이 있으며 침해 성공을 확정하지 않습니다.",
+        "category": "web",
+        "tags": [
+          "security-scenarios",
+          "app_export",
+          "minimum-three"
+        ]
+      }
+    },
+    {
+      "id": "SCENARIO-APP-UPLOAD-001",
+      "name": "위험 파일 업로드",
+      "type": "cardinality",
+      "enabled": true,
+      "severity": "high",
+      "detection_type": "security_observation",
+      "group_by": [
+        "organization.id",
+        "host.id",
+        "service.name"
+      ],
+      "threshold": {
+        "count": 3
+      },
+      "distinct": {
+        "field": "host.id",
+        "count": 1
+      },
+      "time_window": {
+        "seconds": 900
+      },
+      "cooldown": {
+        "seconds": 900
+      },
+      "conditions": [
+        {
+          "field": "cloud_soc.detail.adapter",
+          "operator": "equals",
+          "value": "security_scenarios_v1"
+        },
+        {
+          "field": "cloud_soc.detail.fields.scenario_kind",
+          "operator": "equals",
+          "value": "app_upload"
+        }
+      ],
+      "required_fields": [
+        "organization.id",
+        "host.id",
+        "service.name"
+      ],
+      "dedup_fields": [],
+      "limitations": [
+        "three_distinct_raw_observations_required",
+        "exporter_metadata_requires_configured_source",
+        "thresholds_not_operationally_verified",
+        "no_attack_success_or_causation_established"
+      ],
+      "alert": {
+        "title": "위험 파일 업로드 3건 이상 관측",
+        "message": "15분 구간에서 조건에 맞는 고유 관측이 3건 이상 집계되었습니다. 원본 참조와 수행 주체·대상·시각을 조사하세요. 승인된 작업과 오탐 가능성이 있으며 침해 성공을 확정하지 않습니다.",
+        "category": "web",
+        "tags": [
+          "security-scenarios",
+          "app_upload",
+          "minimum-three"
+        ]
+      }
+    },
+    {
+      "id": "SCENARIO-NET-DNS-001",
+      "name": "반복 NXDOMAIN 질의",
+      "type": "cardinality",
+      "enabled": true,
+      "severity": "medium",
+      "detection_type": "security_observation",
+      "group_by": [
+        "organization.id",
+        "host.id",
+        "source.ip"
+      ],
+      "threshold": {
+        "count": 3
+      },
+      "distinct": {
+        "field": "host.id",
+        "count": 1
+      },
+      "time_window": {
+        "seconds": 900
+      },
+      "cooldown": {
+        "seconds": 900
+      },
+      "conditions": [
+        {
+          "field": "cloud_soc.detail.adapter",
+          "operator": "equals",
+          "value": "security_scenarios_v1"
+        },
+        {
+          "field": "cloud_soc.detail.fields.scenario_kind",
+          "operator": "equals",
+          "value": "network_dns"
+        },
+        {
+          "field": "cloud_soc.detail.fields.dns_rcode",
+          "operator": "equals",
+          "value": "NXDOMAIN"
+        }
+      ],
+      "required_fields": [
+        "organization.id",
+        "host.id",
+        "source.ip"
+      ],
+      "dedup_fields": [],
+      "limitations": [
+        "three_distinct_raw_observations_required",
+        "exporter_metadata_requires_configured_source",
+        "thresholds_not_operationally_verified",
+        "no_attack_success_or_causation_established"
+      ],
+      "alert": {
+        "title": "반복 NXDOMAIN 질의 3건 이상 관측",
+        "message": "15분 구간에서 조건에 맞는 고유 관측이 3건 이상 집계되었습니다. 원본 참조와 수행 주체·대상·시각을 조사하세요. 승인된 작업과 오탐 가능성이 있으며 침해 성공을 확정하지 않습니다.",
+        "category": "network",
+        "tags": [
+          "security-scenarios",
+          "network_dns",
+          "minimum-three"
+        ]
+      }
+    },
+    {
+      "id": "SCENARIO-NET-FIREWALL-001",
+      "name": "차단된 통신 반복",
+      "type": "cardinality",
+      "enabled": true,
+      "severity": "medium",
+      "detection_type": "security_observation",
+      "group_by": [
+        "organization.id",
+        "host.id",
+        "source.ip"
+      ],
+      "threshold": {
+        "count": 3
+      },
+      "distinct": {
+        "field": "host.id",
+        "count": 1
+      },
+      "time_window": {
+        "seconds": 900
+      },
+      "cooldown": {
+        "seconds": 900
+      },
+      "conditions": [
+        {
+          "field": "cloud_soc.detail.adapter",
+          "operator": "equals",
+          "value": "security_scenarios_v1"
+        },
+        {
+          "field": "cloud_soc.detail.fields.scenario_kind",
+          "operator": "equals",
+          "value": "network_firewall"
+        }
+      ],
+      "required_fields": [
+        "organization.id",
+        "host.id",
+        "source.ip"
+      ],
+      "dedup_fields": [],
+      "limitations": [
+        "three_distinct_raw_observations_required",
+        "exporter_metadata_requires_configured_source",
+        "thresholds_not_operationally_verified",
+        "no_attack_success_or_causation_established"
+      ],
+      "alert": {
+        "title": "차단된 통신 반복 3건 이상 관측",
+        "message": "15분 구간에서 조건에 맞는 고유 관측이 3건 이상 집계되었습니다. 원본 참조와 수행 주체·대상·시각을 조사하세요. 승인된 작업과 오탐 가능성이 있으며 침해 성공을 확정하지 않습니다.",
+        "category": "network",
+        "tags": [
+          "security-scenarios",
+          "network_firewall",
+          "minimum-three"
+        ]
+      }
+    },
+    {
+      "id": "SCENARIO-NET-IDS-001",
+      "name": "IDS 침입 징후 반복",
+      "type": "cardinality",
+      "enabled": true,
+      "severity": "medium",
+      "detection_type": "security_observation",
+      "group_by": [
+        "organization.id",
+        "host.id",
+        "source.ip"
+      ],
+      "threshold": {
+        "count": 3
+      },
+      "distinct": {
+        "field": "host.id",
+        "count": 1
+      },
+      "time_window": {
+        "seconds": 900
+      },
+      "cooldown": {
+        "seconds": 900
+      },
+      "conditions": [
+        {
+          "field": "cloud_soc.detail.adapter",
+          "operator": "equals",
+          "value": "security_scenarios_v1"
+        },
+        {
+          "field": "cloud_soc.detail.fields.scenario_kind",
+          "operator": "equals",
+          "value": "network_ids"
+        }
+      ],
+      "required_fields": [
+        "organization.id",
+        "host.id",
+        "source.ip"
+      ],
+      "dedup_fields": [],
+      "limitations": [
+        "three_distinct_raw_observations_required",
+        "exporter_metadata_requires_configured_source",
+        "thresholds_not_operationally_verified",
+        "no_attack_success_or_causation_established",
+        "ids_signature_can_be_false_positive"
+      ],
+      "alert": {
+        "title": "IDS 침입 징후 반복 3건 이상 관측",
+        "message": "15분 구간에서 조건에 맞는 고유 관측이 3건 이상 집계되었습니다. 원본 참조와 수행 주체·대상·시각을 조사하세요. 승인된 작업과 오탐 가능성이 있으며 침해 성공을 확정하지 않습니다.",
+        "category": "network",
+        "tags": [
+          "security-scenarios",
+          "network_ids",
+          "minimum-three"
+        ]
+      }
+    }
+  ]
+}

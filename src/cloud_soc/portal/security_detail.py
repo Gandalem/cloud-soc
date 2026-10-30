@@ -9,6 +9,10 @@ import re
 
 from cloud_soc.portal.log_contract import field
 from cloud_soc.portal.privacy import display, REDACTED
+from cloud_soc.parsers.security_scenarios import (
+    ADAPTER as SCENARIO_ADAPTER, SOURCE as SCENARIO_SOURCE,
+    READ_FIELDS as SCENARIO_FIELDS, parse as parse_scenario,
+)
 from cloud_soc.web.metadata import validate as validate_web
 from cloud_soc.web.agent_metadata import validate as validate_agent_web
 from cloud_soc.web.modsecurity import validate as validate_modsecurity, ADAPTER as WAF_ADAPTER, SOURCE_KIND as WAF_SOURCE
@@ -31,6 +35,7 @@ WINDOWS_FIELDS = (
     "DestinationIp", "DestinationPort", "Protocol",
 )
 DETAIL_FIELDS = (
+    *SCENARIO_FIELDS,
     'waf.schema', 'waf.engine_mode', 'waf.interruption', 'waf.rules', 'http.request.id',
     *EDGE_FIELDS,
     *MALL_FIELDS,
@@ -123,6 +128,14 @@ def security_detail(source):
     if not isinstance(source, dict):
         return result
     get = lambda path: field(source, path)
+    if get('labels.log_source') == SCENARIO_SOURCE:
+        result['adapter'] = SCENARIO_ADAPTER
+        try:
+            result.update(status='recognized', fields=parse_scenario(source))
+        except (ValueError, TypeError):
+            result.update(status='invalid', reason='security_scenario_metadata_invalid')
+        result['limitations'] += ['exporter_metadata_not_native_payload', 'not_attack_confirmation']
+        return result
     if get('labels.log_source') == EDGE_SOURCE:
         result['adapter'] = EDGE_ADAPTER
         try:

@@ -7,7 +7,7 @@ from cloud_soc.portal.agent_status import iso, parse_time
 from cloud_soc.portal.log_contract import document_reference, field
 from cloud_soc.portal.security_detail import security_detail, address, text
 from cloud_soc.privacy import REDACTED
-from cloud_soc.parsers.linux_security import parse_linux_ssh, parse_linux_ssh_source
+from cloud_soc.parsers.linux_security import parse_linux_ssh, parse_linux_ssh_source, SSH_INVALID_USER_VERSION
 from cloud_soc.parsers.linux_operational import parse_linux_operational, VERSION as LINUX_OPERATIONAL_VERSION, SUDO_SESSION_VERSION
 from cloud_soc.normalizers.ecs import parse_syslog_timestamp
 from cloud_soc.normalizers.time_context import raw_time_context, parse_utc_offset
@@ -42,6 +42,39 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
     if not received or not occurred or not organization or organization == REDACTED or organization != raw_organization:
         return identifier, record, None
     detail = security_detail(source)
+    if detail['adapter'] == 'security_scenarios_v1':
+        version = 'security-scenarios-v1'
+        identifier = hashlib.sha256(json.dumps([version, reference], sort_keys=True).encode()).hexdigest()
+        record.update(version=version, adapter=detail['adapter'])
+        host_id = field(source, 'host.id')
+        if (detail['status'] != 'recognized' or not reference['index'].startswith('soc-host-raw-')
+                or not isinstance(host_id, str) or not host_id or text(host_id) != host_id):
+            record.update(reason='security_scenario_scope_or_metadata_invalid')
+            return identifier, record, None
+        values = detail['fields']
+        event = {'@timestamp': iso(occurred), 'organization': {'id': organization},
+                 'host': {'id': host_id},
+                 'event': {'kind': 'event', 'category': [values['category']],
+                           'action': values['action'], 'outcome': values['outcome'],
+                           'dataset': 'security_scenarios.' + values['scenario_kind'], 'ingested': iso(received)},
+                 'cloud_soc': {'normalized_at': processed_at, 'normalizer_version': version,
+                               'parse_status': 'recognized', 'detail': detail,
+                               'provenance': {'schema_version': 1, 'raw': reference,
+                                              'time': {'basis': 'exporter_event_timestamp', 'year_inferred': False}}}}
+        if values.get('actor'):
+            event['user'] = {'name': values['actor']}
+        service_name = text(field(source, 'service.name'))
+        if service_name not in (None, REDACTED):
+            event['service'] = {'name': service_name}
+        for endpoint in ('source', 'destination'):
+            if values.get(endpoint + '_ip'):
+                event[endpoint] = {'ip': values[endpoint + '_ip']}
+                if endpoint + '_port' in values:
+                    event[endpoint]['port'] = values[endpoint + '_port']
+        if values.get('transport'):
+            event['network'] = {'transport': values['transport']}
+        record.update(status='normalized', reason='recognized', normalized={'index': NORMALIZED, 'id': identifier})
+        return identifier, record, event
     if detail['adapter'] == EDGE_ADAPTER:
         identifier = hashlib.sha256(json.dumps([EDGE_VERSION, reference], sort_keys=True).encode()).hexdigest()
         record.update(version=EDGE_VERSION, adapter=EDGE_ADAPTER)
@@ -119,8 +152,14 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
     if modern_ssh:
         occurred = modern_ssh.pop('occurred')
         origin = modern_ssh.pop('origin')
-        time_metadata = {'basis': 'journald_timestamp' if origin == 'journald' else 'rfc3339_timestamp', 'year_inferred': False}
-        detail = {'adapter': 'linux_ssh_v2', 'status': 'recognized', 'fields': modern_ssh,
+        time_metadata = {'basis': {'journald': 'journald_timestamp', 'rfc3339': 'rfc3339_timestamp',
+                                   'rfc3164': 'syslog_timestamp_with_collector_timezone'}[origin],
+                         'year_inferred': origin == 'rfc3164'}
+        ssh_adapter = modern_ssh['adapter']
+        if ssh_adapter == 'linux_ssh_invalid_user_v1':
+            record['version'] = SSH_INVALID_USER_VERSION
+            identifier = hashlib.sha256(json.dumps([record['version'], reference], sort_keys=True).encode()).hexdigest()
+        detail = {'adapter': ssh_adapter, 'status': 'recognized', 'fields': modern_ssh,
                   'missing': [], 'limitations': ['metadata_only', 'authentication_failure_not_attack_confirmation']}
     if detail["status"] == "unsupported":
         operational = parse_linux_operational(source)
@@ -178,7 +217,7 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
     if detail["status"] == "unsupported":
         record.update(status="unsupported", reason="adapter_not_supported")
         return identifier, record, None
-    expected = {MALL_ADAPTER: "soc-host-raw-", "web_access_agent_v1":"soc-host-raw-", "web_access_metadata_v1":"soc-host-raw-web-", "windows_security_v1": "soc-host-raw-", "sysmon_v1": "soc-host-raw-", "linux_ssh_v1": "soc-host-raw-", "linux_ssh_v2": "soc-host-raw-",
+    expected = {MALL_ADAPTER: "soc-host-raw-", "web_access_agent_v1":"soc-host-raw-", "web_access_metadata_v1":"soc-host-raw-web-", "windows_security_v1": "soc-host-raw-", "sysmon_v1": "soc-host-raw-", "linux_ssh_v1": "soc-host-raw-", "linux_ssh_v2": "soc-host-raw-", "linux_ssh_invalid_user_v1": "soc-host-raw-",
                 "linux_operational_v1": "soc-host-raw-", "linux_sudo_session_v1": "soc-host-raw-", "linux_unclassified_v1": "soc-host-raw-", "packetbeat_metadata_v1": "soc-network-", "aws_cloudtrail_metadata_v1": "soc-cloud-aws-", "oci_audit_metadata_v1": "soc-cloud-oci-"}
     expected[SITE_ADAPTER] = 'soc-host-raw-'
     expected[WAF_ADAPTER] = 'soc-host-raw-'

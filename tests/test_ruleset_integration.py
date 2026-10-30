@@ -108,7 +108,8 @@ def test_all_enabled_split_receipts_fresh_process_replay_and_exact_portal_eviden
         store[(hit['_index'], hit['_id'])] = row
         raw = row['cloud_soc']['provenance']['raw']
         store[(raw['index'], raw['id'])] = {'organization': row['organization'], '@timestamp': row['@timestamp']}
-        if identifier in ('WEB-SITE-404-001', 'WEB-SITE-WAF-001'):
+        if (identifier in ('WEB-SITE-404-001', 'WEB-SITE-WAF-001')
+                or row['cloud_soc']['detail']['adapter'] == 'web_access_site_v2'):
             from test_site_agents import web_hit
             from test_generic_waf import waf_hit
             source = (waf_hit() if identifier == 'WEB-SITE-WAF-001' else web_hit())['_source']

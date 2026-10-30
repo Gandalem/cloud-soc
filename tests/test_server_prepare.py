@@ -24,7 +24,8 @@ class ServerPreparationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="cloud-soc-preparation-test-")
         self.addCleanup(self.temp.cleanup)
-        self.state = Path(self.temp.name) / "server"
+        # Match prepare() canonicalization, including Windows RUNNER~1 temp aliases.
+        self.state = (Path(self.temp.name) / "server").resolve()
 
     def run_main(self, entries, error=None):
         args = argparse.Namespace(host="soc.example.test", agent_host=None, bind_ip="10.0.0.5", state=self.state)
@@ -144,6 +145,7 @@ class ServerPreparationTests(unittest.TestCase):
         output = io.StringIO()
         with patch.object(prepare.shutil, "which", return_value="openssl"), \
                 patch.object(prepare.subprocess, "run", side_effect=fake_openssl), \
+                patch.object(prepare, "prepare_enrollment_pki"), \
                 patch.object(prepare, "password_hash", return_value="SYNTHETIC_HASH"), \
                 patch.object(prepare.secrets, "token_urlsafe", return_value="SYNTHETIC_CREDENTIAL"), \
                 patch.object(prepare.os, "umask"), \
@@ -180,6 +182,7 @@ class ServerPreparationTests(unittest.TestCase):
 
         with patch.object(prepare.shutil, "which", return_value="openssl"), \
                 patch.object(prepare.subprocess, "run", side_effect=fake_openssl), \
+                patch.object(prepare, "prepare_enrollment_pki"), \
                 patch.object(prepare, "password_hash", return_value="SYNTHETIC_HASH"), \
                 patch.object(prepare.os, "umask"), patch.object(prepare.os, "chown", create=True), \
                 patch.object(Path, "chmod", autospec=True), redirect_stdout(io.StringIO()):
@@ -207,11 +210,13 @@ class ServerPreparationTests(unittest.TestCase):
                     Path(command[command.index(option) + 1]).write_text('synthetic certificate', encoding='ascii')
         with patch.object(prepare.shutil, 'which', return_value='openssl'), \
                 patch.object(prepare.subprocess, 'run', side_effect=fake_openssl), \
+                patch.object(prepare, 'prepare_enrollment_pki') as pki, \
                 patch.object(prepare, 'password_hash', return_value='SYNTHETIC_HASH'), \
                 patch.object(prepare.os, 'umask'), patch.object(prepare.os, 'chown', create=True), \
                 patch.object(Path, 'chmod', autospec=True), redirect_stdout(io.StringIO()):
             prepare.prepare('portal.example.test', '127.0.0.1', self.state, PASSWORD,
                             agent_host='receiver.example.test', access_path=request)
+            pki.assert_called_once_with(self.state.resolve(), 'https://portal.example.test')
         ext = (self.state / 'private/server.ext').read_text(encoding='ascii')
         self.assertIn('DNS:extra.example.test', ext)
         env = (self.state / 'compose.env').read_text(encoding='utf-8')
