@@ -14,7 +14,7 @@ from cloud_soc.privacy import display
 from cloud_soc.portal.log_access import POLICY_VERSION, PURPOSES
 from cloud_soc.portal.log_contract import SOURCE_FIELDS, document_reference, field
 from cloud_soc.portal.security_detail import DETAIL_FIELDS
-from cloud_soc.portal.log_query import LogQueryError, bounded_json, unavailable
+from cloud_soc.portal.log_query import LogQueryError, bounded_json, fetch_document, unavailable
 
 SOURCE_VIEW_FIELDS = tuple(dict.fromkeys(SOURCE_FIELDS + DETAIL_FIELDS))
 AUDIT_COLUMNS = "seq at actor role purpose reference_sha256 outcome policy_version".split()
@@ -133,7 +133,7 @@ class ProtectedSourceReader:
             self.reader.require_client()
             if self.reader.indices(reference["index"]) != [reference["index"]]:
                 raise NotFoundError("missing", {}, {})
-            hit = self.reader.client.get(index=reference["index"], id=reference["id"], source_includes=list(SOURCE_VIEW_FIELDS))
+            hit = fetch_document(self.reader.client, reference, SOURCE_VIEW_FIELDS)
             if hit.get("_index") != reference["index"] or hit.get("_id") != reference["id"]:
                 raise unavailable()
             if not principal.can_read_source(field(hit.get("_source"), "organization.id")):

@@ -43,6 +43,11 @@ def client():
     result.open_point_in_time.return_value = {"id": "initial-pit", "_shards": {"failed": 0}}
     result.search.return_value = response()
     result.get.return_value = deepcopy(FIXTURE)
+    def mget(*, index, docs):
+        hit = result.get(index=index, id=docs[0]['_id'], source_includes=docs[0]['_source'])
+        hit = getattr(hit, 'body', hit)
+        return {'docs': [{**hit, 'found': True}]}
+    result.mget.side_effect = mget
     return result
 
 
@@ -175,6 +180,22 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(result["row"]["reference"]["id"], FIXTURE["_id"])
         self.assertEqual(result["raw_access"], "restricted")
         self.assertNotIn("message", self.client.get.call_args.kwargs["source_includes"])
+
+    def test_detail_accepts_elasticsearch_response_wrapper(self):
+        from types import SimpleNamespace
+        self.client.get.return_value = SimpleNamespace(body=FIXTURE)
+        self.client.indices.resolve_index.return_value = SimpleNamespace(body={'indices': [{'name': FIXTURE['_index']}], 'aliases': [], 'data_streams': []})
+        result = json.loads(self.reader.detail([('index', FIXTURE['_index']), ('id', FIXTURE['_id'])]))
+        self.assertEqual(result['row']['reference'], {'index': FIXTURE['_index'], 'id': FIXTURE['_id']})
+
+    def test_detail_rejects_partial_mget_error_and_missing_document(self):
+        pairs = [('index', FIXTURE['_index']), ('id', FIXTURE['_id'])]
+        self.client.mget.side_effect = None
+        for document, status in (({'error': {'type': 'unavailable'}}, 503), ({'found': False}, 404)):
+            self.client.mget.return_value = {'docs': [document]}
+            with self.assertRaises(LogQueryError) as error:
+                self.reader.detail(pairs)
+            self.assertEqual(error.exception.status, status)
 
     def test_detail_bad_refs_missing_and_alias_substitution(self):
         with self.assertRaises(LogQueryError) as raised:

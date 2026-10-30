@@ -26,6 +26,17 @@ def classification(row, detail):
         code,label=fixed[kind];return result(code,label,'source_contract')
     if kind=='windows_event':
         channel=row.get('channel') or '';category=fields.get('category')
+        if detail.get('adapter') == 'windows_security_v1' and detail.get('status') in ('recognized', 'partial'):
+            labels={'4624':('authentication','Windows 로그인 성공'),
+                    '4625':('authentication','Windows 로그인 실패'),
+                    '4688':('process','Windows 프로세스 생성'),
+                    '4720':('account','Windows 계정 생성'),
+                    '4726':('account','Windows 계정 삭제'),
+                    '4732':('group','Windows 로컬 그룹 구성원 추가'),
+                    '4733':('group','Windows 로컬 그룹 구성원 제거')}
+            if row.get('event_code') in labels:
+                code,label=labels[row['event_code']]
+                return result(code,label,'validated_windows_event')
         if channel=='Security' and row.get('event_code') in {'1100','1102','4719'}:
             return result('audit_change','Windows 감사 중단·정책 변경','event_channel_and_code')
         if channel=='Security' and row.get('event_code') in {'4697','4698','4699','4700','4701','4702'}:
@@ -49,6 +60,14 @@ def classification(row, detail):
     if kind=='windows_file' and re.search(r'/System32/LogFiles/Firewall/pfirewall(?:_(?:domain|private|public))?\.log(?:\.[0-9]+)?$',path,re.I):
         return result('firewall','Windows 방화벽','source_path')
     if kind in ('linux_file','linux_journald'):
+        # Only classify explicitly structured action values; never inspect or expose raw messages.
+        action=row.get('action');outcome=row.get('outcome')
+        if action == 'ssh_login' and outcome in ('success', 'failure'):
+            return result('authentication','Linux SSH 로그인 '+('성공' if outcome == 'success' else '실패'),'source_action')
+        if action == 'sudo_command_logged':
+            return result('authentication','Linux sudo 명령 기록','source_action')
+        if action == 'sudo_authentication_failed':
+            return result('authentication','Linux sudo 인증 실패','source_action')
         if re.fullmatch(r'/var/log/(?:auth\.log|secure)(?:\.[0-9]+)?',path):return result('authentication','Linux 인증·권한','source_path')
         if re.fullmatch(r'/var/log/audit/audit\.log(?:\.[0-9]+)?',path):return result('security_audit','Linux 보안 감사','source_path')
         if re.fullmatch(r'/var/log/(?:ufw|fail2ban)\.log(?:\.[0-9]+)?',path):return result('firewall','Linux 접속 차단','source_path')

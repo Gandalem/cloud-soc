@@ -46,7 +46,12 @@
     const interpretation = label({recognized:'형식 확인',partial:'부분 해석 · 필드 누락',unsupported:'메타데이터만 표시 · 행위 해석 미지원'},interpreted.status,'미평가 · 서버 갱신 필요');
     const cloudName = row.cloud_provider === 'oci' ? 'OCI' : row.source_kind === 'aws_cloudtrail' ? 'AWS' : '클라우드';
     const origin = row.stream === 'cloud' ? [cloudName,row.cloud_account,row.cloud_region].filter(Boolean).join(' / ') : [row.service_name || fields.service_name,row.host_name || row.host_id,row.site_id ? `사이트 ${row.site_id}` : null].filter(Boolean).join(' / ');
-    const source = label(sources,row.source_kind,'미분류');
+    const osName = typeof row.os_name === 'string' ? row.os_name.trim() : '';
+    const hostLog = ['windows_event', 'windows_file', 'linux_file', 'linux_journald'].includes(row.source_kind);
+    const platform = !hostLog ? null : row.os === 'windows' && /^Windows Server(?:\s|$)/i.test(osName) ? 'Windows Server'
+      : row.os === 'windows' ? 'Windows' : row.os === 'linux' && /^Ubuntu(?:\s|$)/i.test(osName) ? 'Ubuntu'
+      : row.os === 'linux' ? 'Linux' : null;
+    const source = [platform, label(sources,row.source_kind,'미분류'), platform && row.event_code ? `이벤트 ID ${row.event_code}` : null].filter(Boolean).join(' · ');
     const from = row.source_ip || fields.source_ip, to = row.destination_ip || fields.destination_ip;
     const peer = from ? `${from}${to ? ` → ${to}` : ''}` : to ? `목적지 ${to}` : null;
     const primaryTime = timeBasis === 'event' ? row.event_at : row.received_at;

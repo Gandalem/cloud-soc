@@ -12,6 +12,16 @@ const result = { contract_version: 1, rows: [row], next_cursor: null, raw_access
   filters: { start: '2026-09-22T01:00:00Z', end: '2026-09-22T02:00:00Z', time_basis: 'ingested' } };
 const defaults = { period: '60', timeBasis: 'ingested', pageSize: '25', host: '', ip: '', os: '', collector: '' };
 
+test('OS labels require explicit platform metadata and retain event identifiers', () => {
+  const base = {...row, host_name:'host-a', os:'windows', event_code:'4625', log_type:{label:'Windows 로그인 실패'}};
+  assert.match(rowMarkup({...base, os_name:'Windows Server 2022'},0), /Windows Server/);
+  assert.match(rowMarkup(base,0), /Windows 이벤트/);
+  assert.doesNotMatch(rowMarkup(base,0), /Windows Server/);
+  assert.match(rowMarkup(base,0), /이벤트 ID 4625/);
+  assert.match(rowMarkup({...base, os:'linux', os_name:'Ubuntu 22.04', source_kind:'linux_file'},0), /Ubuntu/);
+  assert.doesNotMatch(rowMarkup({...base, os:'linux', os_name:'Ubuntu 22.04', source_kind:'generic_web_access'},0), /Ubuntu/);
+});
+
 test('generic sites retain their configured identity in exact queries and rows',()=>{
   const url=new URL(query({...defaults,site:'site-A'}),'http://localhost');
   assert.equal(url.searchParams.get('site'),'site-A');
