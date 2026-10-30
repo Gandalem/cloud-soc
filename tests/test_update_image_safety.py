@@ -85,6 +85,10 @@ def test_missing_download_budget_blocks_prepare_but_cached_images_need_no_budget
 
 @pytest.mark.parametrize('wrong_image', [False, True])
 def test_rollback_uses_observed_image_not_reused_tag_and_verifies_restoration(tmp_path, monkeypatch, wrong_image):
+    actual_wait = host.wait_for_recovery
+    # Keep the real image/state gate; HTTP/TLS has independent loopback acceptance.
+    monkeypatch.setattr(host, 'wait_for_recovery', lambda engine, project, pins: actual_wait(
+        engine, project, pins, probe=lambda *_: True))
     runtime = tmp_path / 'runtime'
     run = runtime / 'upgrades/fixture'
     run.mkdir(parents=True)
@@ -98,8 +102,9 @@ def test_rollback_uses_observed_image_not_reused_tag_and_verifies_restoration(tm
              'old_names': ['portal'], 'image_pins': {'portal': 'sha256:old'}, 'image_mode': 'site',
              'old_site': backup, 'old_contract': None, 'old_current': None}
     engine = Mock()
-    engine.json.side_effect = lambda args, **kw: [{'Id': 'sha256:new' if args[-1] == 'fixture:reused' else args[-1]}]
     actual = {'portal': {'Image': 'sha256:new' if wrong_image else 'sha256:old', 'State': {'Running': True}}}
+    engine.json.side_effect = lambda args, **kw: [dict(actual['portal'], Name='/cloud-soc-central-portal-1')] if args[0] == 'inspect' else [
+        {'Id': 'sha256:new' if args[-1] == 'fixture:reused' else args[-1]}]
     monkeypatch.setattr(host, 'containers', lambda *_: actual)
     if wrong_image:
         with pytest.raises(safety.DeploymentSafetyError, match='복구'):

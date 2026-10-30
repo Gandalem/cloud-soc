@@ -1,5 +1,6 @@
 """Reproduce the home/other-central split, real state adoption and permission failures."""
 import base64
+import hashlib
 from contextlib import closing, nullcontext
 from copy import deepcopy
 from datetime import timedelta
@@ -280,18 +281,25 @@ def test_future_worker_success_is_not_live_acceptance():
 
 
 @pytest.mark.parametrize('fault,with_alias', [(fault, False) for fault in
-    ('none','migration','activation','interrupt','receipt','stale','modified_site','disk','ownership')]
+    ('none','migration','activation','interrupt','receipt','stale','modified_site','disk','ownership','stale_compose_review','compose_before_stop','recovery_health_failure')]
     + [(fault, True) for fault in ('none', 'activation', 'interrupt', 'receipt')])
 def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_path,monkeypatch,fault,with_alias,ownership_calls):
     from cloud_soc.deployment import host
+    # Startup state and HTTP/TLS are exercised in test_recovery_health.py.
+    monkeypatch.setattr(host, 'wait_for_recovery', Mock())
+    if fault == 'recovery_health_failure':
+        host.wait_for_recovery.side_effect = host.image_safety.DeploymentSafetyError('Recovery readiness timed out')
     state=tmp_path/'server';old=seed(state,('normalizer','detector'))
     c,adopt=build_contract(POLICY,old,state,now=NOW)
     original={n:(Path(a['state_source'])).read_bytes() for n,a in adopt.items() if 'state_source' in a}
     (state/'compose.env').write_text('SOC_STATE_DIR=protected')
     (state/'secrets/elastic_password').write_text('PRIVATE_PASSWORD')
+    previous_base = tmp_path / 'protected-old.json'
+    previous_base.write_text('{"services":{}}')
     plan={'workspace':str(tmp_path),'state':str(state),'image':'fixture:verified','image_id':'sha256:verified',
         'project':'cloud-soc-central','policy':POLICY,'contract':c,'adoption':adopt,'resources':{'ok':True},
-        'fingerprint':'reviewed','observed':{},'protected_sha256':{},'previous_compose':['--project-name','cloud-soc-central','-f','protected-old.json','-f',str(state/'runtime/site.json')],
+        'fingerprint':'reviewed','observed':{},'protected_sha256':{},'previous_compose':['--project-name','cloud-soc-central','-f',str(previous_base),'-f',str(state/'runtime/site.json')],
+        'previous_compose_sha256':{str(previous_base):hashlib.sha256(previous_base.read_bytes()).hexdigest()},
         'infrastructure_images':{},'previous_image_mode':'site',
         'source':{},'source_sha256':'verified','site':{},'fresh':False,'new_workers':[n for n in WORKERS if n not in old],
         'compose_environment':{'SOC_STATE_DIR':str(state)}}
@@ -303,6 +311,7 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
         monkeypatch.setattr(access, 'certificate_names', lambda *_: None)
     current=deepcopy(plan)
     if fault=='stale':current['fingerprint']='different'
+    if fault=='stale_compose_review':current['previous_compose_sha256'][str(previous_base)]='0'*64
     if fault=='modified_site':plan['site']={'services':{'gateway':{'ports':['0.0.0.0:9999:9999']}}}
     if fault=='disk':current['resources']['ok']=False
     monkeypatch.setattr(host,'snapshot',lambda *_,**__:deepcopy(current))
@@ -313,6 +322,8 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
     actual_atomic=host.atomic_json
     def atomic(path,value,**kw):
         actual_atomic(path,value,**kw)
+        if fault=='compose_before_stop' and path.name=='pending.json':
+            previous_base.write_text('{"services":{"unexpected":{}}}')
         if fault=='receipt' and path.name=='current.json':raise RuntimeError('interrupted after receipt write')
     monkeypatch.setattr(host,'atomic_json',atomic)
     if fault == 'ownership':
@@ -334,9 +345,9 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
             raise AssertionError(args)
         def run(self,args,**kw):
             self.calls.append(args)
-            if 'up' in args and 'protected-old.json' not in args:
+            if 'up' in args and str(previous_base) not in args:
                 self.phase='new'
-                if fault=='activation':raise RuntimeError('isolated activation interruption')
+                if fault in ('activation', 'recovery_health_failure'):raise RuntimeError('isolated activation interruption')
                 if fault=='interrupt':raise KeyboardInterrupt()
             elif 'up' in args:
                 assert json.loads((runtime/'site.json').read_text())['services']['gateway']['environment']==json.loads(previous_site)['services']['gateway']['environment']
@@ -354,14 +365,24 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
         result=host.apply(engine,plan)
         assert result['runtime_ready'] and result['live_ingestion_acceptance']=='not_yet_verified'
         assert (runtime/'current.json').is_file()
+        journal = next((runtime/'upgrades').glob('*/recovery.json'))
+        assert json.loads(journal.read_text())['previous_compose_sha256'] == plan['previous_compose_sha256']
         if with_alias:
             site = json.loads((runtime / 'site.json').read_text())
             assert site['services']['gateway']['environment']['SOC_PORTAL_TLS_ORIGINS'] == 'https://extra.example.test'
     else:
         with pytest.raises((ValueError,RuntimeError,KeyboardInterrupt,PermissionError)):host.apply(engine,plan)
         assert not (runtime/'current.json').exists()
-        if fault in ('stale','modified_site','disk'):
+        if fault in ('stale','modified_site','disk','stale_compose_review'):
             assert not engine.calls
+        elif fault=='compose_before_stop':
+            assert engine.phase=='old' and (runtime/'pending.json').is_file()
+            assert not any('stop' in call or 'up' in call for call in engine.calls)
+            assert (runtime/'site.json').read_bytes()==previous_site
+        elif fault=='recovery_health_failure':
+            assert engine.phase=='old' and (runtime/'pending.json').is_file()
+            assert not list((runtime/'upgrades').glob('*/failed.json'))
+            assert not (runtime/'compose.active.json').exists()
         else:
             assert engine.phase=='old'
             assert json.loads((runtime/'site.json').read_text())['services']['gateway']['environment']==json.loads(previous_site)['services']['gateway']['environment']
@@ -371,7 +392,7 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
             assert list((runtime/'state/normalizer').glob('*.unactivated-*'))
     assert all(Path(adopt[n]['state_source']).read_bytes()==b for n,b in original.items())
     assert 'PRIVATE_PASSWORD' not in json.dumps(engine.calls)
-    if fault in ('stale','modified_site','disk'):
+    if fault in ('stale','modified_site','disk','stale_compose_review','compose_before_stop'):
         ownership_calls.chown.assert_not_called()
     else:
         ownership_calls.expect(*(runtime/'state'/name for name in WORKERS))
@@ -458,6 +479,8 @@ def test_manual_override_and_scaled_workers_cannot_duplicate_common_workers(vari
 @pytest.mark.parametrize('fresh',[False,True])
 def test_process_kill_journal_recovers_execution_without_restoring_any_database(tmp_path,monkeypatch,fresh,ownership_calls):
     from cloud_soc.deployment import host
+    # Startup state and HTTP/TLS are exercised in test_recovery_health.py.
+    monkeypatch.setattr(host, 'wait_for_recovery', Mock())
     state=tmp_path/'server';runtime=state/'runtime';run=runtime/'upgrades/interrupted';run.mkdir(parents=True)
     db=runtime/'operating.sqlite'
     with closing(sqlite3.connect(db)) as c:c.execute('create table progress(value)');c.execute('insert into progress values(42)');c.commit()
@@ -465,7 +488,9 @@ def test_process_kill_journal_recovers_execution_without_restoring_any_database(
     old=['--project-name','cloud-soc-central','-f',str(state/'old-compose.json'),'-f',str(runtime/'site.json')]
     (runtime/'site.json').write_text('{"services":{}}')
     saved_site=host.save_previous_site(runtime,run)
-    (run/'plan.json').write_text(json.dumps({'observed':{n:{'image':'sha256:old'} for n in ('portal','detector')}}))
+    base = state / 'old-compose.json';base.write_text('{"services":{}}')
+    (run/'plan.json').write_text(json.dumps({'observed':{n:{'image':'sha256:old'} for n in ('portal','detector')},
+        'previous_compose': old, 'protected_sha256': {str(base):hashlib.sha256(base.read_bytes()).hexdigest()}}))
     previous={'version':1,'prepared':True,'preserved':'checkpoint'}
     (runtime/'contract.json').write_text(json.dumps({'version':1,'prepared':False,'pinned_start':'unchanged'}))
     (runtime/'pending.json').write_text(json.dumps({'run':str(run)}))
@@ -504,6 +529,8 @@ def test_site_backup_restores_exact_bytes_and_rejects_a_changed_backup(tmp_path)
 
 def test_recovery_restores_site_before_starting_old_compose(tmp_path,monkeypatch):
     from cloud_soc.deployment import host
+    # Startup state and HTTP/TLS are exercised in test_recovery_health.py.
+    monkeypatch.setattr(host, 'wait_for_recovery', Mock())
     runtime=tmp_path/'runtime';run=runtime/'upgrades'/'attempt';run.mkdir(parents=True)
     site=runtime/'site.json';original=b'{"site":"old"}\n';site.write_bytes(original)
     saved=host.save_previous_site(runtime,run)
