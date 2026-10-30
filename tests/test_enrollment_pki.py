@@ -14,7 +14,11 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 import ipaddress
+import os
 import pytest
+
+if os.name != 'posix':
+    pytest.skip('Enrollment PKI manages Ubuntu ownership and file locks', allow_module_level=True)
 
 SERVER = Path(__file__).resolve().parents[1] / 'deploy/server'
 sys.path.insert(0, str(SERVER))

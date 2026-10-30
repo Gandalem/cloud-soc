@@ -3,7 +3,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app/src
 WORKDIR /app
 COPY requirements.txt constraints.txt /app/
 COPY deploy/server/requirements.txt /app/deploy/server/requirements.txt
-RUN pip install --no-cache-dir --upgrade pip==26.2.1 && pip install --no-cache-dir -c /app/constraints.txt -r /app/deploy/server/requirements.txt
+RUN pip install --no-cache-dir --timeout 30 --retries 3 --upgrade pip==26.2.1 && pip install --no-cache-dir --timeout 30 --retries 3 -c /app/constraints.txt -r /app/deploy/server/requirements.txt
 COPY src /app/src
 COPY rules /app/rules
 COPY prototype /app/prototype

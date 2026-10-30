@@ -61,7 +61,7 @@ python3() { forbidden python3 "$@"; }
 check_runtime_compatibility() { :; }
 openssl() { forbidden openssl "$@"; }
 mkdir -p "$ROOT/deploy/server" "$APT_ROOT/sources.list.d" "$APT_ROOT/keyrings"
-touch "$ROOT/deploy/server/server_cli.py" "$ROOT/deploy/server/prepare.py" "$ROOT/deploy/server/compose.yaml" "$ROOT/deploy/server/Dockerfile"
+touch "$ROOT/deploy/server/enrollment_pki.py" "$ROOT/deploy/server/repair-enrollment-tls.py" "$ROOT/deploy/server/server_cli.py" "$ROOT/deploy/server/prepare.py" "$ROOT/deploy/server/compose.yaml" "$ROOT/deploy/server/Dockerfile"
 `;
     return run(['-s'], prelude + '\n' + body + '\n');
   } finally {
@@ -205,7 +205,9 @@ main --dry-run
 
 test('existing state and incomplete checkouts fail closed', () => {
   fail(fixture('mkdir -p "$STATE"; check_fresh_state'), /이미 있습니다/);
-  fail(fixture('rm "$ROOT/deploy/server/prepare.py"; check_fresh_state'), /필수 파일이 없습니다/);
+  for (const name of ['prepare.py', 'enrollment_pki.py', 'repair-enrollment-tls.py']) {
+    fail(fixture(`rm "$ROOT/deploy/server/${name}"; check_fresh_state`), /필수 파일이 없습니다/);
+  }
   ok(fixture('check_fresh_state'));
 });
 
@@ -249,7 +251,8 @@ installed() { [ "$1" != curl ] && [ "$1" != openssl ]; }
 ${aptGetStub('printf \'%s\\n\' "$*"')}
 install_packages
 `));
-  assert.equal(result, 'update\ninstall -y --no-remove --no-upgrade --no-install-recommends curl openssl\n');
+  const limits = '-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o APT::Update::Error-Mode=any ';
+  assert.equal(result, limits + 'update\n' + limits + 'install -y --no-remove --no-upgrade --no-install-recommends curl openssl\n');
   ok(fixture('installed() { return 0; }; install_packages'));
 });
 
@@ -287,7 +290,8 @@ install_docker
 cat "$SOURCE_FILE"
 `));
   assert.match(output, /--proto =https --tlsv1.2/);
-  assert.match(output, /APT install -y --no-remove --no-upgrade/);
+  assert.match(output, /APT .*Acquire::Retries=3 .*Acquire::https::Timeout=30 .*install -y --no-remove --no-upgrade/);
+  assert.match(output, /--retry 3 --retry-delay 5 --retry-max-time 180/);
   assert.match(output, /docker-compose-plugin/);
   assert.match(output, /SYSTEMCTL enable --now docker/);
   assert.match(output, /CHECK STACK/);
