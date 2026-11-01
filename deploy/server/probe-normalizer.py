@@ -112,7 +112,8 @@ def main():
                         meta = json.loads(saved[0]);meta['pit']=None;meta['after']=None
                         copied.execute('UPDATE scan_progress SET body=? WHERE id=1',(json.dumps(meta),))
         target.chmod(0o600)
-        with Elasticsearch(args['--es-url'],api_key=Path(args['--api-key-file']).read_text().strip(),
+        from cloud_soc.aws.__main__ import protected_key
+        with Elasticsearch(args['--es-url'],api_key=protected_key(args['--api-key-file']),
                            ca_certs=args['--ca-file'], request_timeout=12, max_retries=0) as es:
             facade=ReadOnlyClient(es)
             result={'original_checkpoint_changed':False,'elasticsearch_document_writes':False,

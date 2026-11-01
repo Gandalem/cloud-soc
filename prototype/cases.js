@@ -20,7 +20,7 @@
     }window.CloudSOCLive.children(metrics,cards);}
     const body=document.createDocumentFragment(),back=new URLSearchParams(appliedBack);
     for(const row of data.rows){const tr=node('tr',''),td=node('td',''),link=node('a',row.title);tr.dataset.liveKey=row.id;link.href='workbench.html?'+new URLSearchParams({case:row.id,return:back.toString(),return_page:listPage});td.append(link);tr.append(td);
-      for(const value of [row.organization,priorities[row.priority],states[row.status],row.owner||'미배정',new Date(row.created_at).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})])tr.append(node('td',value));tr.dataset.priority=row.priority;tr.dataset.state=row.status;body.append(tr);}
+      for(const [i,value] of [row.organization,priorities[row.priority]||'미분류',states[row.status]||'미확인',row.owner||'미배정',new Date(row.created_at).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})].entries()){const cell=node('td','');if(i===1||i===2)cell.append(node('span',value,'workflow-badge '+(i===1?'priority-'+row.priority:'state-'+row.status)));else cell.textContent=value;tr.append(cell);}tr.dataset.priority=row.priority;tr.dataset.state=row.status;body.append(tr);}
     if(!data.rows.length)$('case-counts').textContent+=' · 해당 사건 없음';
     window.CloudSOCLive.children($('case-rows'),body.childNodes);$('case-page').textContent=page+' 페이지';$('case-prev').disabled=page<=1;$('case-next').disabled=!data.has_next;
   }
@@ -29,6 +29,7 @@
     apply:(data,{manual})=>{if(manual||!shown){shown=data;pending.clear();render(shown);}else if(JSON.stringify(data.rows)!==JSON.stringify(shown.rows)){const added=data.rows.filter(r=>!shown.rows.some(old=>old.id===r.id)).length;pending.offer(added,()=>{shown=data;render(shown);});}else render(data);$('case-error').hidden=true;},
     onError:error=>{$('case-error').hidden=false;$('case-error').textContent=error.message+' · 마지막 조회 내용 유지';}});
   function load(anchor='#case-queue'){applied=params().toString();pending.clear();const back=new URLSearchParams();for(const[k,v]of new FormData(form))back.set('case_'+k,v);back.set('case_page',String(page));appliedBack=back.toString();window.history.replaceState(null,'',listPage+'?'+back+anchor);return live.refresh(true);}
+  $('case-quick-views')?.addEventListener('click',event=>{const button=event.target.closest('[data-case-view]');if(!button)return;const fields=form.querySelectorAll('select');for(const field of fields){if(field.name==='status')field.value=button.dataset.caseView==='open'?'open':'';if(field.name==='owner')field.value=button.dataset.caseView==='unassigned'?'unassigned':'';}page=1;load();});
   form.addEventListener("submit",event=>{event.preventDefault();page=1;load();});
   $("case-prev").addEventListener("click",()=>{if(page>1){page--;load();}});
   $("case-next").addEventListener("click",()=>{page++;load();});

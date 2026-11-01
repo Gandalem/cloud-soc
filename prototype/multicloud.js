@@ -17,23 +17,25 @@ function drawTimeline(input){
  for(const i of [...new Set([0,Math.floor((buckets.length-1)/2),buckets.length-1])]){const t=document.createElementNS(ns,'text');t.setAttribute('x',46+i*plot/Math.max(1,buckets.length-1));t.setAttribute('y','191');t.setAttribute('text-anchor',i===0?'start':i===buckets.length-1?'end':'middle');t.textContent=new Date(buckets[i].key).toLocaleString([],{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});svg.append(t);}target.append(svg);
 }
 window.addEventListener('resize',()=>drawTimeline(timelineData));
-let busy = false;
+let busy = false, generation = 0;
 async function load() {
-  if (busy) return;
+  const version=++generation;
   busy = true; el('refresh').disabled = true; el('status').textContent = '로그를 불러오는 중입니다.';
   try {
     const params = new URLSearchParams({hours: el('hours').value});
     for (const key of ['provider', 'outcome']) if (el(key).value) params.set(key, el(key).value);
     const response = await fetch('/api/multicloud?' + params, {credentials: 'same-origin', headers: {'Accept': 'application/json'}});
+    if(version!==generation)return;
     if (response.status === 401) { window.location.assign('/login'); return; }
     const data = await response.json();
+    if(version!==generation)return;
     if (!response.ok) throw new Error(data.error || '로그를 조회하지 못했습니다.');
     el('cards').replaceChildren();
     for (const provider of Object.keys(names)) {
       const bucket = data.metrics.providers?.buckets?.find(v => v.key === provider);
-      const card = node('article', undefined, 'card');
+      const card = node('article', undefined, 'card');card.dataset.provider=provider;card.classList.toggle('selected',el('provider').value===provider);
       card.append(node('h2', names[provider]), node('strong', (bucket?.doc_count || 0).toLocaleString()), node('p', `실패 ${(bucket?.failures?.doc_count || 0).toLocaleString()}건`), node('small', `마지막 이벤트: ${date(bucket?.last_event?.value_as_string)}`));
-      el('cards').append(card);
+      const choose=node('button',names[provider]+'로 조회','cloud-provider-filter');choose.type='button';choose.addEventListener('click',()=>{el('provider').value=provider;load();});card.append(choose);el('cards').append(card);
     }
     drawTimeline(data.metrics.timeline?.buckets || []);
     el('actions').replaceChildren(...(data.metrics.actions?.buckets || []).map(b => node('span', `${b.key} · ${b.doc_count}건`, 'chip')));if(!el('actions').children.length)el('actions').append(node('p','조회 기간의 작업 기록이 없습니다.','empty'));
@@ -42,16 +44,22 @@ async function load() {
       const row = node('tr');
       const values = [date(e['@timestamp']), `${names[e.cloud.provider]} / ${e.cloud.account.id}`, e.organization.id, `${e.event.action} / ${e.event.dataset}`, labels[e.event.outcome] || '확인 불가', e.user?.id || '—', e.source?.ip || '—', e.resource?.id || '—'];
       values.forEach((v, i) => row.append(node('td', v, i === 4 ? e.event.outcome : undefined)));
-      el('events').append(row);
+      const cell=node('td'),button=node('button','상세 보기','cloud-event-button');button.type='button';
+      button.addEventListener('click',()=>{const fields=el('cloud-detail-fields');fields.replaceChildren();
+        ['발생 시각','클라우드 / 계정','조직','작업 / 서비스','결과','행위자','출발지 IP','리소스'].forEach((label,i)=>{const item=node('div');item.append(node('dt',label),node('dd',values[i]));fields.append(item);});
+        const item=node('div');item.append(node('dt','이벤트 ID'),node('dd',e.event.id||'미기록'));fields.append(item);el('cloud-detail').showModal();
+      });cell.append(button);row.append(cell);el('events').append(row);
     }
     el('count').textContent = `총 ${data.total.toLocaleString()}건`;
     el('status').textContent = data.total ? '현재 필터에 해당하는 감사 로그입니다.' : '현재 권한과 조회 조건에 해당하는 로그가 없습니다.';
     el('updated').textContent = `갱신 ${new Date().toLocaleTimeString()}`;
   } catch (err) {
+    if(version!==generation)return;
     el('status').textContent = err.message;
     el('updated').textContent = '갱신 실패 · 이전 표시 데이터는 최신 상태가 아닙니다.';
-  } finally { busy = false; el('refresh').disabled = false; }
+  } finally { if(version===generation){busy = false; el('refresh').disabled = false;} }
 }
+el('cloud-detail-close').addEventListener('click',()=>el('cloud-detail').close());
 for (const key of ['hours','provider','outcome']) el(key).addEventListener('change', load);
 el('refresh').addEventListener('click', load);
 setInterval(() => { if (!document.hidden) load(); }, 30000);

@@ -45,7 +45,11 @@ PROJECT = Path(__file__).resolve().parents[3]
 
 def settings_from_environment():
     def secret(name):
-        value = Path(os.environ[name]).read_text(encoding="utf-8").strip()
+        path=Path(os.environ[name])
+        if name=='SOC_PORTAL_READ_API_KEY_FILE':
+            from cloud_soc.aws.__main__ import protected_key
+            value=protected_key(path)
+        else:value=path.read_text(encoding="utf-8").strip()
         if not value:
             raise ValueError(f"Empty secret file: {name}")
         return value
@@ -120,6 +124,12 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                          windows_installer_sha256=settings.get('WINDOWS_INSTALLER_SHA256'),
                          windows_installer_allow_lab=settings.get('WINDOWS_INSTALLER_ALLOW_LAB', False))
     app.extensions["packages"] = store
+    # An operator-created private file explicitly opts this installation into sessions.
+    local_users = Path(settings["STATE_DIR"]) / "portal-users.json"
+    if not settings.get("USERS_FILE") and (local_users.exists() or local_users.is_symlink()):
+        if local_users.is_symlink():
+            raise ValueError("Session user configuration must not be a symlink")
+        settings["USERS_FILE"] = str(local_users)
     users = load_users(settings["USERS_FILE"]) if settings.get("USERS_FILE") else None
     sessions = Sessions(Path(settings["STATE_DIR"]) / "sessions.sqlite", users) if users else None
     app.extensions["sessions"] = sessions

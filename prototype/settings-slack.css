@@ -4,3 +4,38 @@
 .slack-panel p{line-height:1.7}.slack-toggle{display:flex;gap:10px;align-items:center}.slack-actions{display:flex;flex-wrap:wrap;gap:10px}.slack-actions button{padding:10px 16px;border:1px solid var(--border,#bdcadb);border-radius:8px;background:var(--card-bg,#fff);color:inherit;cursor:pointer;font:inherit}.slack-actions button:disabled{opacity:.5;cursor:default}#slack-save{background:#215ac7;color:#fff}#slack-result[data-error=true]{color:#b42318}[data-theme=dark] .slack-panel{background:#152333;border-color:#33475b}[data-theme=dark] .slack-panel input[type=password],[data-theme=dark] .slack-panel select,[data-theme=dark] .slack-actions button{background:#0d1824;border-color:#456078}[data-theme=dark] #slack-result[data-error=true]{color:#ffb4ab}
 .slack-unconfirmed-item{border-top:1px solid var(--border,#bdcadb);padding:12px 0}.slack-unconfirmed-item button{padding:12px;border:1px solid var(--border,#bdcadb);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font:inherit;min-height:44px}.slack-unconfirmed-item button:disabled{opacity:.5;cursor:default}
 @media(max-width:700px){.slack-panel{padding:16px}.slack-actions button{flex:1 1 140px}.slack-settings{margin-left:0;width:auto;max-width:100%;padding:calc(var(--header-height) + 18px) 12px 32px}}
+
+/* Bright settings surfaces, shared with the rule editor. No secret/API behavior changes. */
+:root .agents-page.settings-page {
+ --ui-bg:#f3f9fc;--ui-panel:#fff;--ui-soft:#eaf5fa;--ui-hover:#dff2f7;--ui-active:#d9eff8;
+ --ui-border:#c9e1e9;--ui-text:#24455c;--ui-muted:#546e80;--ui-link:#197ca4;
+ --card-bg:#fff;--input-bg:#fff;--border-color:#c9e1e9;--panel-bg:#eef8f7;
+ color-scheme:light;background:linear-gradient(145deg,#f8fcff,#edf8f7 70%,#f4f0fb);
+}
+.settings-page .slack-settings {max-width:1600px;min-width:0;}
+.settings-heading {padding:24px;border:1px solid #cce6ed;border-radius:14px;background:linear-gradient(110deg,#e0f1ff,#effbf9 65%,#f1ecfc);margin-bottom:24px;}
+.settings-heading h1 {margin:9px 0;font-size:26px;color:#24536c;}
+.settings-heading p {color:#546e80;font-size:13px;line-height:1.8;margin:0;}
+.settings-eyebrow {display:block;font-size:10px;font-weight:700;letter-spacing:.16em;color:#207c9f;}
+.settings-page .slack-panel {background:linear-gradient(155deg,#fff 60%,#f1faf8);border:1px solid #c9e1e9;box-shadow:0 5px 18px #285d8308;min-width:0;margin:0 0 24px;}
+.settings-page .slack-panel h2 {color:#2b6a7f;border-bottom:1px solid #d0e7e8;padding-bottom:14px;margin-bottom:18px;font-size:17px;}
+.settings-page .slack-panel p {font-size:12px;color:#546e80;}
+.settings-page .slack-panel label {font-size:12px;color:#34576b;}
+.settings-page .slack-panel :is(input,select,textarea) {border:1px solid #c3dfe7;border-radius:8px;background:#fff;color:#24455c;padding:10px;font:inherit;}
+.settings-page .slack-panel :is(input[type=checkbox],input[type=radio]) {padding:0;accent-color:#228b9c;}
+:root .settings-page .slack-actions button {background:#eef7fb;color:#2b617a;border-color:#c2dee7;min-height:40px;}
+:root .settings-page :is(#slack-save,#rule-save,#rule-new) {background:#217fa5;color:#fff;border:1px solid #217fa5;border-radius:8px;}
+:root .settings-page :is(#slack-delete,#rule-delete,#rule-stop) {background:#fff0f3;color:#a2394d;border-color:#e8c1cd;}
+.settings-page button:focus-visible,.settings-page a:focus-visible {outline:3px solid #337ba8;outline-offset:3px;}
+.settings-page :is(#slack-status,#slack-worker,#slack-last-test,#slack-deliveries) {padding:12px 14px;background:#e9f6f3;border:1px solid #c8e5dc;border-radius:8px;line-height:1.8;}
+.settings-page :is(#slack-last-test,#slack-deliveries):empty {display:none;}
+:root .settings-page #slack-result[data-error=true] {color:#a32e48;background:#fff0f2;padding:12px;border-radius:8px;}
+.settings-page .slack-unconfirmed-item {margin-top:12px;padding:16px;border:1px solid #e8dbac;border-radius:10px;background:#fff9e5;}
+.settings-page .slack-unconfirmed-item button {background:#fff;border-color:#dccb94;}
+.slack-page .slack-settings {display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:0 24px;align-items:start;}
+.slack-page .settings-heading {grid-column:1/-1;}
+.slack-page .slack-connection {grid-row:span 2;}
+.slack-page .slack-panel:nth-of-type(2) {background:linear-gradient(145deg,#fff,#eef7ff);border-color:#cbdfee;}
+.slack-page .slack-panel:nth-of-type(3) {background:linear-gradient(145deg,#fff,#f3edfb);border-color:#ded3ed;}
+@media(max-width:1100px){.slack-page .slack-settings {grid-template-columns:1fr;}.slack-page .slack-connection {grid-row:auto;}}
+@media(max-width:700px){.settings-heading {padding:18px;}.settings-page .slack-panel {padding:16px;}.settings-page .slack-settings {max-width:100%;}}

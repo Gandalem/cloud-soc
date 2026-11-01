@@ -15,6 +15,10 @@ OUT = Path('/output')
 
 def save(name, value, uid=0):
     path = OUT / name
+    if name=='writer-api-key':
+        from cloud_soc.secret_store import write_new
+        write_new(path,value,uid=uid)
+        return
     tmp = OUT / ('.' + name + '.tmp')
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:

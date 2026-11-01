@@ -12,7 +12,9 @@ from .normalize import utc
 
 
 def secret(name):
+    from cloud_soc.secret_store import read, required, SecretError
     value, filename = os.environ.get(name), os.environ.get(name + '_FILE')
+    if required() and value:raise SecretError('inline_secret_forbidden')
     if value and filename:
         raise ValueError('Choose one secret source')
     if filename:
@@ -20,7 +22,7 @@ def secret(name):
         path = Path(filename)
         if os.name != 'nt' and path.stat().st_mode & 0o077:
             raise ValueError('Secret files must be private')
-        value = path.read_text().strip()
+        value = read(path) if required() or path.read_bytes().lstrip().startswith(b'{') else path.read_text().strip()
     if not value:
         raise ValueError('Missing secret: ' + name)
     return value
@@ -41,6 +43,10 @@ class AWS:
         from botocore.config import Config
         session = boto3.Session(profile_name=scope.get('profile'), region_name=scope['region'])
         config = Config(retries={'total_max_attempts': 5, 'mode': 'adaptive'}, connect_timeout=5, read_timeout=30)
+        from cloud_soc.secret_store import required, SecretError
+        if required():
+            credentials=session.get_credentials()
+            if scope.get('profile') or credentials is None or credentials.method not in ('iam-role','container-role','assume-role-with-web-identity'):raise SecretError('aws_workload_identity_required')
         self.client = session.client('cloudtrail', config=config)
         self.sts = session.client('sts', config=config)
         if self.sts.get_caller_identity()['Account'] != str(scope['account']):

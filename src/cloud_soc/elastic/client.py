@@ -19,14 +19,16 @@ def create_elasticsearch_client() -> Elasticsearch:
     """
 
     def secret(name):
+        from cloud_soc.secret_store import read, required, SecretError
         inline, filename = os.getenv(name, ""), os.getenv(name + "_FILE", "")
+        if required() and inline:raise SecretError('inline_secret_forbidden')
         if inline and filename:
             raise ValueError("Choose one credential source")
         if filename:
             path = Path(filename)
             if os.name != "nt" and path.stat().st_mode & 0o077:
                 raise ValueError("Credential file must be private (chmod 600)")
-            inline = path.read_text(encoding="utf-8").strip()
+            inline = read(path) if required() or path.read_bytes().lstrip().startswith(b'{') else path.read_text(encoding='utf-8').strip()
             if not inline:
                 raise ValueError("Empty credential file")
         return inline

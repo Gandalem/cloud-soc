@@ -18,3 +18,16 @@ test('all cloud choices remain present and AWS reaches API filter',async()=>{
  await vm.runInContext('load()',context);
  assert.equal(new URL(urls.at(-1),'https://fixture').searchParams.get('provider'),'aws');
 });
+
+test('older cloud response cannot overwrite latest filter result',async()=>{
+ const {window}=parseHTML(fs.readFileSync(require('node:path').join(__dirname,'../multicloud.html'),'utf8'));
+ const pending=[];const context=vm.createContext({document:window.document,window,URLSearchParams,Date,console,setInterval:()=>0,fetch:()=>new Promise(resolve=>pending.push(resolve))});
+ vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../multicloud.js'),'utf8'),context);
+ const latest=vm.runInContext('load()',context);
+ const response=total=>({ok:true,status:200,json:async()=>({total,events:[],metrics:{}})});
+ pending[1](response(22));await latest;
+ assert.match(window.document.getElementById('count').textContent,/22/);
+ pending[0](response(11));await new Promise(r=>setImmediate(r));
+ assert.match(window.document.getElementById('count').textContent,/22/);
+ assert.equal(window.document.getElementById('refresh').disabled,false);
+});

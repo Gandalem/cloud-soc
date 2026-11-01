@@ -334,3 +334,80 @@
 .platform-grid.editing .builder-widget {display:flex;flex-direction:column;}
 .platform-grid.editing .builder-widget h2 {flex:none;}
 .platform-grid.editing .builder-widget-content {flex:1;min-height:0;height:auto;overflow:auto;}
+
+/* Bright workflow palette scoped to log exploration and the existing widget builder.
+   Layout coordinates, saved widget dimensions and interaction layers stay intact. */
+:root .agents-page:is(.logs-page,.builder-page) {
+ --ui-bg:#f3f9fc; --ui-panel:#fff; --ui-soft:#eaf5fa; --ui-hover:#dff2f7;
+ --ui-active:#d9eff8; --ui-border:#c9e1e9; --ui-text:#24455c; --ui-muted:#546e80; --ui-link:#197ca4;
+ --dash-bg:var(--ui-bg); --dash-panel:var(--ui-panel); --dash-text:var(--ui-text);
+ --dash-muted:var(--ui-muted); --dash-line:var(--ui-border); --dash-soft:var(--ui-soft); --dash-blue:var(--ui-link);
+ color-scheme:light; background:linear-gradient(145deg,#f8fcff,#edf8f7 70%,#f4f0fb);
+}
+.logs-page .page-heading,.builder-page .dashboard-heading {
+ padding:24px; border:1px solid #cce6ed; border-radius:14px;
+ background:linear-gradient(110deg,#e0f1ff,#effbf9 65%,#f1ecfc);
+ box-shadow:0 6px 22px #2b799708;
+}
+.logs-page .log-eyebrow,.builder-page .builder-eyebrow {color:#207c9f;}
+.logs-page .log-environment-card {border:1px solid #cfe3ef;box-shadow:0 5px 16px #326b8e08;background:linear-gradient(135deg,#eff7ff,#dcefff);}
+.logs-page .log-environment-card[data-environment="application"] {background:linear-gradient(135deg,#f8f4ff,#eae2fa);border-color:#ded4ef;}
+.logs-page .log-environment-card[data-environment="network"] {background:linear-gradient(135deg,#f0fcf8,#d6f2ed);border-color:#c0e6dd;}
+.logs-page .log-environment-card[data-environment="cloud"] {background:linear-gradient(135deg,#fffdf2,#fff0c5);border-color:#eadfae;}
+.logs-page .log-environment-icon {background:#ffffffa8;color:#325d79;border-color:#ffffff;}
+.logs-page .log-environment-card strong {color:#226e99;}
+.logs-page .log-environment-card[data-environment="application"] strong {color:#7553a9;}
+.logs-page .log-environment-card[data-environment="network"] strong {color:#217d76;}
+.logs-page .log-environment-card[data-environment="cloud"] strong {color:#806317;}
+.logs-page .log-workspace {border:1px solid #c9e1e9;border-radius:14px;background:#fff;box-shadow:0 6px 24px #277c8d08;}
+.logs-page .log-list-heading {background:linear-gradient(100deg,#2183ae,#37aaa9);color:#fff;align-items:center;}
+.logs-page .log-list-heading p,.logs-page #log-state-label {color:#efffff;}
+.logs-page .log-filters {padding-top:20px;background:#f4fbfc;}
+.logs-page .log-filters input,.logs-page .log-filters select {border:1px solid #c4dfe8;border-radius:7px;min-height:38px;}
+:root .logs-page .log-sheet th {background:#d8f0ee;color:#28636b;border-color:#b9ddd9;}
+:root .logs-page .log-query-summary {background:#edf6ff;color:#4d687e;}
+:root .logs-page .log-sheet tbody tr:nth-child(even) {background:#f2faf9;}
+:root .logs-page .log-sheet tbody tr:hover {background:#e8f2ff;}
+.logs-page .log-pagination {background:#f6fbfd;}
+:root .logs-page .log-detail-dialog {background:linear-gradient(160deg,#fff,#eefaf8);border-color:#b7dadf;}
+.logs-page .log-detail-heading {padding:18px;border-radius:10px;background:linear-gradient(110deg,#deefff,#d9f3ef);}
+.logs-page #log-detail-fields dt {background:#eaf5f8;}
+.logs-page .usage-details {border-radius:10px;margin-top:20px;}
+.logs-page button:focus-visible,.builder-page button:focus-visible {outline:3px solid #337ba8;outline-offset:3px;}
+.builder-page .dash-toolbar {background:linear-gradient(100deg,#eef7ff,#e9f8f4);border-color:#c7e1e8;border-radius:12px;}
+.builder-page .builder-panel {background:linear-gradient(160deg,#fff,#f1f8fc);border-color:#c7e0e8;box-shadow:0 5px 18px #246e8708;}
+.builder-page .builder-library {background:linear-gradient(160deg,#fff,#f5f0fc);border-color:#ddd3ed;}
+.builder-page .builder-panel-heading {border-bottom:1px solid #d5e6ed;margin-bottom:16px;padding-bottom:6px;}
+.builder-page .builder-panel-heading h2 {color:#286781;}
+.builder-page .builder-dashboard-choice.active {background:#dff2f6;border-color:#74b9c5;}
+.builder-page .builder-template {background:#eff9f6;border-color:#cce7dc;}
+.builder-page .builder-tabs button[aria-pressed="true"] {background:#238ca4;color:#fff;border-color:#238ca4;}
+.builder-page .dash-primary {background:#217fa5;border-color:#217fa5;color:#fff;}
+.builder-page .dash-widget {border-color:#c5deed;box-shadow:0 5px 18px #285d830b;background:linear-gradient(155deg,#fff 40%,#edf6ff);}
+.builder-page .builder-widget {--dash-blue:#277fad;--dash-soft:#deedf9;border-top:4px solid var(--dash-blue);}
+.builder-page .builder-widget.accent-teal {--dash-blue:#248f8a;--dash-soft:#d4efea;background:linear-gradient(155deg,#fff 40%,#e5f7f1);border-color:#b9dfd6;border-top-color:var(--dash-blue);}
+.builder-page .builder-widget.accent-purple {--dash-blue:#8664b9;--dash-soft:#eae1f8;background:linear-gradient(155deg,#fff 40%,#f1eafa);border-color:#dbcfeb;border-top-color:var(--dash-blue);}
+.builder-page .builder-widget.accent-amber {--dash-blue:#927018;--dash-soft:#fff0bd;background:linear-gradient(155deg,#fff 40%,#fff8dc);border-color:#e6dcae;border-top-color:var(--dash-blue);}
+.builder-page .builder-widget h2 {color:#2b5b73;padding-bottom:9px;border-bottom:1px solid var(--dash-line);}
+.builder-page .dash-kpi {background:#ffffff9c;border-radius:7px;padding:10px 12px;}
+.builder-page .dash-kpi strong {color:var(--dash-blue);}
+.builder-page .dash-chart .area {fill:var(--dash-soft);}
+.builder-page th {background:#dff2ef;color:#316873;}
+.builder-page tbody tr:nth-child(even) {background:#ffffff9c;}
+.builder-page .builder-editbar,.builder-page .builder-movebar {background:#eef8ff;border-color:#8fbdd6;}
+.builder-page dialog {background:linear-gradient(145deg,#fff,#eef9f7);color:#24455c;border:1px solid #b6d8e2;box-shadow:0 16px 60px #214c6840;}
+.builder-page dialog::backdrop {background:#1b4a665c;}
+.builder-page #dashboard-delete {color:#a2394d;border-color:#edc4cd;background:#fff2f4;}
+:root[data-theme="dark"] .agents-page:is(.logs-page,.builder-page) :is(#log-error,#dashboard-error,.status-error) {color:#a32c45;background:#fff0f2;}
+:root[data-theme="dark"] .agents-page:is(.logs-page,.builder-page) :is(.dash-severity.high,.dash-severity.critical) {background:#ffe8ee;color:#a32e48;}
+@media(max-width:700px) {
+ .logs-page .page-heading,.builder-page .dashboard-heading {padding:18px;align-items:flex-start;}
+ .logs-page .page-heading {gap:16px;flex-wrap:wrap;}
+ .builder-page .dashboard-heading h1 {font-size:24px;}
+ .builder-page .dash-toolbar label {font-size:12px;}
+}
+
+/* Vary the canvas surfaces without rewriting saved widget emphasis colors. */
+.builder-page .builder-widget.accent-blue[data-type="intake"] {background:linear-gradient(155deg,#fff 35%,#dff5ef);}
+.builder-page .builder-widget.accent-blue[data-type="severity"] {background:linear-gradient(155deg,#fff 35%,#eee5fa);}
+.builder-page .builder-widget.accent-blue[data-type="cases"] {background:linear-gradient(155deg,#fff 35%,#fff3cf);}

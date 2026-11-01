@@ -19,7 +19,8 @@ def protected_key(path):
         raise CollectionError("invalid_key_file")
     if os.name != "nt" and stat.S_IMODE(path.stat().st_mode) not in (0o400, 0o440, 0o600, 0o640):
         raise CollectionError("unsafe_key_file_permissions")
-    value = path.read_text(encoding="utf-8").strip()
+    from cloud_soc.secret_store import read, required
+    value = read(path,purpose='elasticsearch') if required() or path.read_bytes().lstrip().startswith(b'{') else path.read_text(encoding="utf-8").strip()
     if not value or any(c.isspace() for c in value):
         raise CollectionError("invalid_key_file")
     return value

@@ -170,7 +170,8 @@ def main():
     store.status()  # Create only the private, initially disabled schema; no key/URL is required.
     with singleton(store.directory):
         store.recover()
-        with Elasticsearch('https://elasticsearch:9200', api_key=Path('/run/keys/worker.key').read_text().strip(),
+        from cloud_soc.aws.__main__ import protected_key
+        with Elasticsearch('https://elasticsearch:9200', api_key=protected_key('/run/keys/worker.key'),
                            ca_certs='/run/certs/ca.crt', request_timeout=5, max_retries=0) as client:
             source = Source(client)
             while True:

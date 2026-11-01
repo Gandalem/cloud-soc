@@ -14,6 +14,12 @@ import tempfile
 from cloud_soc.deployment.contract import WORKERS, digest, stamp, validate_rules
 
 
+def read_worker_key(path):
+    from cloud_soc.secret_store import read, required
+    path=Path(path)
+    return read(path,purpose='elasticsearch') if required() or path.read_bytes().lstrip().startswith(b'{') else path.read_text().strip()
+
+
 def atomic_json(path, value, *, uid=None):
     path = Path(path)
     if path.is_symlink() or path.parent.is_symlink():
@@ -133,7 +139,7 @@ def notification_prerequisites(client, directory, *, key_client=None, notificati
     created = None
     if key.exists():
         private(key)
-        encoded = key.read_text().strip()
+        encoded = read_worker_key(key)
         found = client.security.get_api_key(id=key_id(encoded)).body['api_keys']
         if (len(found) != 1 or found[0]['invalidated']
                 or found[0].get('expiration', float('inf')) <= datetime.now(timezone.utc).timestamp()*1000):
@@ -145,11 +151,14 @@ def notification_prerequisites(client, directory, *, key_client=None, notificati
         created = result['id'];encoded = result['encoded']
     try:
         if not key.exists():
-            fd = os.open(key, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-            with os.fdopen(fd, 'w') as stream:
-                stream.write(encoded+'\n');stream.flush();os.fsync(stream.fileno())
-            if os.name == 'posix':
-                os.chown(key, 1000, 1000)
+            from cloud_soc.secret_store import required as encryption_required, write_new
+            if encryption_required():write_new(key,encoded,uid=1000)
+            else:
+                fd = os.open(key, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                with os.fdopen(fd, 'w') as stream:
+                    stream.write(encoded+'\n');stream.flush();os.fsync(stream.fileno())
+                if os.name == 'posix':
+                    os.chown(key, 1000, 1000)
         if key_client:
             with key_client(encoded) as scoped:
                 if not scoped.security.has_privileges(body={'cluster': [], 'index': READ_ROLE['indices']}).body['has_all_requested']:
@@ -220,7 +229,7 @@ def prerequisites(client, value, contract, directory, existing_keys, *, key_clie
                 raise ValueError('Unsafe API key file')
             normalizer = name.startswith('normalizer')
             kind = 'normalizer' if normalizer else 'detector'
-            encoded = p.read_text().strip() if p.exists() else existing_keys.get(name, cache.get(kind))
+            encoded = read_worker_key(p) if p.exists() else existing_keys.get(name, cache.get(kind))
             required = ROLE if normalizer else detector_role(early=True)
             created = None
             if encoded:
@@ -251,11 +260,14 @@ def prerequisites(client, value, contract, directory, existing_keys, *, key_clie
                 created = result['id'];encoded = result['encoded']
             try:
                 if not p.exists():
-                    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                    with os.fdopen(fd, 'w') as stream:
-                        stream.write(encoded + '\n');stream.flush();os.fsync(stream.fileno())
-                    if os.name == 'posix':
-                        os.chown(p, 1000, 1000)
+                    from cloud_soc.secret_store import required as encryption_required, write_new
+                    if encryption_required():write_new(p,encoded,uid=1000)
+                    else:
+                        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                        with os.fdopen(fd, 'w') as stream:
+                            stream.write(encoded + '\n');stream.flush();os.fsync(stream.fileno())
+                        if os.name == 'posix':
+                            os.chown(p, 1000, 1000)
                 if key_client:
                     with key_client(encoded) as scoped:
                         requested = {'cluster': [], 'index': required['indices']}

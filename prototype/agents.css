@@ -121,3 +121,74 @@ fieldset#site-fields { display:block; padding:16px; border:1px solid var(--borde
 #login-basic p { margin: 0 0 18px; line-height: 1.65; }
 #login-basic .button-link { display: block; text-align: center; padding: 10px 16px; }
 @media (max-width: 480px) { .login-page { padding: 16px; } .login-card { padding: 24px; } }
+
+/* Dedicated sign-in surface: no external assets, independent of portal dark preference. */
+:root .agents-page.login-page{background:radial-gradient(ellipse at 15% 20%,#c7eef3,transparent 55%),radial-gradient(ellipse at 88% 80%,#d9f4e7,transparent 50%),#f1f7fc;color:#244d68;color-scheme:light}
+:root .login-page .login-card{width:min(100%,470px);padding:40px;border:1px solid #c1dfe7;border-radius:16px;background:#ffffffed;box-shadow:0 20px 65px #387b9e18;border-top:5px solid #47b5b5}
+:root .login-page .login-brand{color:#2579a5;margin-bottom:30px;font-size:23px}.login-kicker{font-size:10px;letter-spacing:1.8px;color:#319ca3;margin:0 0 12px}
+:root .login-page .login-card h1{font-size:24px;letter-spacing:-.7px;margin:0 0 14px;color:#244d68}.login-intro{font-size:13px;line-height:1.9;color:#5c8196;margin:0 0 25px}
+:root .login-page .login-card label{color:#486f86;font-size:12px;gap:9px}:root .login-page .login-card input{background:#f4fbff;color:#244d68;border:1px solid #c5dee8;border-radius:7px;padding:12px;min-height:46px}
+:root .login-page .login-card input:focus{outline:2px solid #68c5c4;outline-offset:2px}:root .login-page .login-card button{background:linear-gradient(100deg,#287faa,#3ab6ae);color:#fff;border:0;border-radius:7px;min-height:47px;font-size:14px}
+:root .login-page #login-mode{color:#5d8195;font-size:12px}:root .login-page #login-error{color:#a73f60;font-size:12px;line-height:1.8}.login-footer{font-size:10px;color:#7a9baa;text-align:center;border-top:1px solid #dfedf2;margin:28px 0 0;padding-top:20px}
+@media(max-width:480px){:root .login-page .login-card{padding:28px 24px}:root .login-page .login-card h1{font-size:22px}}
+
+/* Agent operations: match the bright dashboard surfaces without changing key workflows. */
+:root .agents-page:is(.legacy-agent-page,.status-page) {
+ --ui-bg:#f3f9fc; --ui-panel:#fff; --ui-soft:#eaf5fa; --ui-hover:#dff2f7;
+ --ui-active:#d9eff8; --ui-border:#c9e1e9; --ui-text:#24455c; --ui-muted:#546e80; --ui-link:#197ca4;
+ color-scheme:light; background:linear-gradient(145deg,#f8fcff,#edf8f7 70%,#f4f0fb);
+}
+:is(.legacy-agent-page,.status-page) .page-heading {padding:24px;border:1px solid #cce6ed;border-radius:14px;background:linear-gradient(110deg,#e0f1ff,#effbf9 65%,#f1ecfc);gap:18px;flex-wrap:wrap;}
+.agent-eyebrow {display:block;font-size:10px;font-weight:700;letter-spacing:.16em;color:#207c9f;margin-bottom:10px;}
+:is(.legacy-agent-page,.status-page) .panel {border-radius:12px;border-color:#c8e0e9;box-shadow:0 5px 18px #285d8308;}
+.legacy-agent-page .server-strip {background:transparent;border:0;padding:0;gap:14px;box-shadow:none;}
+.legacy-agent-page .server-strip > div {padding:20px;border:1px solid #c7dfed;border-radius:12px;background:linear-gradient(135deg,#eff8ff,#dff0ff);}
+.legacy-agent-page .server-strip > div:nth-child(2) {background:linear-gradient(135deg,#effbf8,#d9f1eb);border-color:#bfe2d6;}
+.legacy-agent-page .server-strip > div:nth-child(3) {background:linear-gradient(135deg,#faf5ff,#ece3fa);border-color:#ddd1ef;}
+.legacy-agent-page .server-strip > div:nth-child(4) {background:linear-gradient(135deg,#fffdf1,#fff0c9);border-color:#e8dfb8;}
+:is(.legacy-agent-page,.status-page) .package-panel {overflow:hidden;background:#fff;}
+:is(.legacy-agent-page,.status-page) .package-toolbar {background:linear-gradient(100deg,#eaf6ff,#e6f6f1);padding:18px;border-bottom:1px solid #cee5e9;gap:10px;}
+:root :is(.legacy-agent-page,.status-page) .package-table th {background:#d8f0ee;color:#28636b;border-color:#b9ddd9;}
+:is(.legacy-agent-page,.status-page) .package-table tbody tr:nth-child(even) {background:#f1faf8;}
+:root :is(.legacy-agent-page,.status-page) .package-table tr:hover td {background:#eaf4ff;}
+:is(.legacy-agent-page,.status-page) .package-pagination {background:#f6fbfd;}
+:is(.legacy-agent-page,.status-page) :is(input,select) {border-radius:7px;}
+:is(.legacy-agent-page,.status-page) .primary-button {background:#217fa5;border-color:#217fa5;color:#fff;}
+:is(.legacy-agent-page,.status-page) button:focus-visible {outline:3px solid #337ba8;outline-offset:3px;}
+:root .legacy-agent-page .agent-dialog {border:1px solid #badce3;border-radius:14px;background:linear-gradient(145deg,#fff,#f0faf8);color:#24455c;}
+.legacy-agent-page .agent-dialog::backdrop {background:#1b4a665c;}
+.legacy-agent-page .agent-dialog header {background:linear-gradient(110deg,#dfefff,#daf3ee);border-color:#c6e3e8;}
+.legacy-agent-page .agent-dialog header h2 {color:#245d76;font-size:18px;}
+:root .legacy-agent-page .agent-dialog footer {background:#edf8f8;border-color:#c6e3e8;}
+.legacy-agent-page #history-dialog {width:min(980px,calc(100vw - 24px));}
+.legacy-agent-page .history-toolbar {padding:16px;background:#edf6ff;border:1px solid #cee3ee;border-radius:10px;align-items:end;}
+.legacy-agent-page .history-toolbar label {flex:1 1 160px;}
+.legacy-agent-page #history-content {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start;}
+.legacy-agent-page .history-row {padding:18px;border:1px solid #c6e2dc;border-radius:12px;background:linear-gradient(145deg,#fff,#eaf8f3);min-width:0;}
+.legacy-agent-page .history-row:nth-child(even) {background:linear-gradient(145deg,#fff,#f1ebfa);border-color:#dcd1ed;}
+.legacy-agent-page .history-heading strong {color:#2a6475;}
+.legacy-agent-page .history-row input {width:100%;box-sizing:border-box;}
+.legacy-agent-page #history-count {padding:12px 0;}
+.legacy-agent-page .history-row .key-actions {gap:7px;}
+.legacy-agent-page .history-row .key-actions button {white-space:normal;}
+:root .legacy-agent-page :is(.key-state.revoked,.key-state.expired,.key-state.unavailable) {background:#ffe9ed;color:#97364a;}
+:root .legacy-agent-page .key-state.active {background:#d8f1e6;color:#24654b;}
+:root .legacy-agent-page .key-confirm {background:#fff2ed;border-color:#e6b3a6;color:#783e32;border-radius:8px;}
+:root .legacy-agent-page #history-message {background:#fff5d9;color:#735b26;border-radius:8px;}
+:root .status-page .status-explainer {background:linear-gradient(110deg,#fff,#e9f7f6);}
+.status-page .activity-stats article {border-top:3px solid #4a9ac6;background:linear-gradient(135deg,#f1f8ff,#dfefff);}
+.status-page .activity-stats .recent-stat {border-color:#329e8e;background:linear-gradient(135deg,#f1fcf7,#d9f2eb);}
+.status-page .activity-stats .delayed-stat {border-color:#c3a040;background:linear-gradient(135deg,#fffdf3,#fff1c5);}
+.status-page .activity-stats .silent-stat {border-color:#a087cb;background:linear-gradient(135deg,#faf6ff,#ece3fa);}
+.status-page .activity-stats strong {color:#276f91;}
+.status-page .activity-badge {border-radius:6px;padding:5px 9px;}
+.status-page .activity-badge.silent,.status-page .activity-badge.unknown {background:#eee6f9;color:#71558f;}
+:root[data-theme="dark"] :is(.legacy-agent-page,.status-page) :is(.error-text,.status-error) {color:#a12e43;}
+@media(max-width:700px) {
+ :is(.legacy-agent-page,.status-page) .page-heading {padding:18px;}
+ .legacy-agent-page #history-content {grid-template-columns:1fr;}
+ .legacy-agent-page .server-strip {gap:10px;}
+ .legacy-agent-page .server-strip > div {padding:14px;}
+ .legacy-agent-page .history-toolbar {padding:12px;}
+ .legacy-agent-page .history-row {padding:14px;}
+}

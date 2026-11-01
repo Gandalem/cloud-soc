@@ -2,11 +2,10 @@
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>탐지 규칙 관리 | Cloud SOC</title><link rel="icon" href="assets/mark.svg" type="image/svg+xml">
 <script src="/theme.js"></script><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css">
-<link rel="stylesheet" href="shell.css"><link rel="stylesheet" href="settings-slack.css"><link rel="stylesheet" href="settings-rules.css"><link rel="stylesheet" href="/theme.css">
-<link rel="stylesheet" href="live-refresh.css"><script src="live-refresh.js" defer></script><script src="auth-client.js"></script><script src="shell.js" defer></script><script src="rule-editor.js" defer></script></head>
-<body class="agents-page" data-theme="light"><a class="skip-link" href="#main">본문으로 이동</a><div id="app-shell"></div>
-<main id="main" class="main-content slack-settings"><h1>탐지 규칙</h1>
-<p>로그와 조건을 선택해 경보를 설정하세요.</p><p id="rule-result" role="status" aria-live="polite"></p>
+<link rel="stylesheet" href="shell.css"><link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="live-refresh.css"><script src="live-refresh.js" defer></script><script src="auth-client.js"></script><script src="shell.js" defer></script><script src="rule-editor.js" defer></script><link rel="stylesheet" href="settings-slack.css"><link rel="stylesheet" href="settings-rules.css"></head>
+<body class="agents-page settings-page rules-page" data-theme="light"><a class="skip-link" href="#main">본문으로 이동</a><div id="app-shell"></div>
+<main id="main" class="main-content slack-settings"><header class="settings-heading"><span class="settings-eyebrow">DETECTION RULES</span><h1>탐지 규칙</h1><p>로그와 조건을 선택해 경보를 설정하세요.</p></header><p id="rule-result" role="status" aria-live="polite"></p>
 <section class="slack-panel"><div class="rule-heading"><h2>내 규칙</h2><button id="rule-new" type="button">새 규칙</button></div>
 <div class="rule-grid"><label>검색<input id="rule-search" type="search" placeholder="이름·사이트·조건 검색"></label>
 <label>조직<select id="rule-filter-org"><option value="">전체 조직</option></select></label>

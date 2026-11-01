@@ -40,9 +40,8 @@ def main(argv=None):
     with Elasticsearch(url,api_key=protected_key(args.admin_key_file),ca_certs=args.ca_file,request_timeout=15,max_retries=0) as client:
         issued=issue_key(client)
         try:
-            descriptor=os.open(output,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
-            with os.fdopen(descriptor,'w') as stream:
-                stream.write(issued['encoded']);stream.flush();os.fsync(stream.fileno())
+            from cloud_soc.secret_store import write_new
+            write_new(output,issued['encoded'])
         except Exception:
             client.security.invalidate_api_key(ids=[issued['id']])
             raise
