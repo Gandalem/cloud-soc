@@ -9,6 +9,7 @@ import re
 
 from cloud_soc.portal.log_contract import field
 from cloud_soc.portal.privacy import display, REDACTED
+from cloud_soc.aws.service_logs import SOURCE as AWS_LOG_SOURCE, ADAPTER as AWS_LOG_ADAPTER, READ_FIELDS as AWS_LOG_FIELDS, detail as aws_log_detail
 from cloud_soc.parsers.security_scenarios import (
     ADAPTER as SCENARIO_ADAPTER, SOURCE as SCENARIO_SOURCE,
     READ_FIELDS as SCENARIO_FIELDS, parse as parse_scenario,
@@ -48,6 +49,7 @@ DETAIL_FIELDS = (
     "source.port", "destination.port", "network.bytes", "network.packets",
     "event.start", "event.end", "dns.question.name", "dns.question.type",
     "tls.client.server_name", "tls.version", "flow.id",
+    *AWS_LOG_FIELDS,
     "event.id", "event.provider", "source.address", "aws.cloudtrail.schema",
     "aws.cloudtrail.identity_arn", "aws.cloudtrail.identity_type", "aws.cloudtrail.identity_account",
     "aws.cloudtrail.session_issuer_arn", "aws.cloudtrail.resources.arn", "aws.cloudtrail.resources_truncated",
@@ -248,6 +250,15 @@ def security_detail(source):
         result["limitations"] += ["management_events_not_object_access", "api_result_not_resource_effect"]
         if get("aws.cloudtrail.resources_truncated") is True:
             result["limitations"].append("resource_list_truncated")
+        return result
+    if get('labels.log_source') == AWS_LOG_SOURCE:
+        result['adapter'] = AWS_LOG_ADAPTER
+        try:
+            result.update(status='recognized', fields=aws_log_detail(source))
+        except ValueError:
+            result.update(status='invalid', reason='invalid_service_projection')
+        result['limitations'] += ['original_retained_only_in_aws_subject_to_retention',
+                                  'metadata_not_attack_confirmation', 'resource_binding_from_collector_config']
         return result
     channel, provider = get("winlog.channel"), get("winlog.provider_name")
     raw_code = get("winlog.event_id")

@@ -82,7 +82,7 @@ def parse_filters(pairs, *, now=None):
     if os_type not in (None, "windows", "linux", "cloud", "unknown"):
         raise ValueError("Unsupported operating system")
     collector = values.get("collector")
-    if collector not in (None, "filebeat", "packetbeat", "cloudtrail", "oci-audit", "web-collector"):
+    if collector not in (None, "filebeat", "packetbeat", "cloudtrail", "aws-cloudwatch", "oci-audit", "web-collector"):
         raise ValueError("Unsupported collector")
     host = values.get("host")
     if host is not None and (len(host) > 253 or host != host.strip()):
@@ -126,6 +126,8 @@ def operating_system(source):
     if field(source, "labels.log_source") == "aws_cloudtrail" and field(source, "cloud.provider") == "aws":
         return "cloud", "cloud.provider"
     if field(source, "labels.log_source") == "oci_audit" and field(source, "cloud.provider") == "oci":
+        return "cloud", "cloud.provider"
+    if field(source, "labels.log_source") == "aws_service_logs" and field(source, "cloud.provider") == "aws":
         return "cloud", "cloud.provider"
     # Network intake deliberately omits host.os.type. Use its explicit sensor tag.
     value = field(source, "host.os.type")
@@ -192,6 +194,8 @@ def project_hit(hit):
     supported = HOST_SOURCES if stream == "host" else {"oci_audit" if reference["index"].startswith("soc-cloud-oci-") else "aws_cloudtrail"} if stream == "cloud" else {"network_packetbeat"}
     kind = source_name if source_name in supported else "unknown"
     os_type, os_basis = operating_system(source)
+    if reference["index"].startswith("soc-cloud-aws-") and source_name == "aws_service_logs":
+        kind = "aws_service_logs"
     outcome = string("event.outcome")
     if outcome not in (None, "success", "failure", "unknown"):
         invalid.append("event.outcome")

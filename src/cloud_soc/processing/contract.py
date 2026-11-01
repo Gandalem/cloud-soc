@@ -16,6 +16,7 @@ from cloud_soc.web.scope import NORMALIZER_VERSION as SITE_VERSION, NORMALIZED_A
 from cloud_soc.web.modsecurity import VERSION as WAF_VERSION, ADAPTER as WAF_ADAPTER
 from cloud_soc.parsers.security_mall import ADAPTER as MALL_ADAPTER, VERSION as MALL_VERSION
 from cloud_soc.parsers.security_mall_edge import ADAPTER as EDGE_ADAPTER, VERSION as EDGE_VERSION
+from cloud_soc.aws.service_logs import ADAPTER as AWS_LOG_ADAPTER, VERSION as AWS_LOG_VERSION
 
 VERSION = "intake-v1"
 NORMALIZED = "soc-normalized-v1"
@@ -73,6 +74,41 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
                     event[endpoint]['port'] = values[endpoint + '_port']
         if values.get('transport'):
             event['network'] = {'transport': values['transport']}
+        record.update(status='normalized', reason='recognized', normalized={'index': NORMALIZED, 'id': identifier})
+        return identifier, record, event
+    if detail['adapter'] == AWS_LOG_ADAPTER:
+        identifier = hashlib.sha256(json.dumps([AWS_LOG_VERSION, reference], sort_keys=True).encode()).hexdigest()
+        record.update(version=AWS_LOG_VERSION, adapter=AWS_LOG_ADAPTER)
+        if detail['status'] != 'recognized' or not reference['index'].startswith('soc-cloud-aws-'):
+            record.update(reason='aws_service_projection_or_scope_invalid')
+            return identifier, record, None
+        values = detail['fields']
+        event = {'@timestamp': iso(occurred), 'organization': {'id': organization},
+                 'event': {'id': field(source, 'event.id'), 'kind': 'event', 'category': [values['category']],
+                           'dataset': field(source, 'event.dataset'), 'action': values['action'],
+                           'outcome': values['outcome'], 'ingested': iso(received)},
+                 'service': {'name': values['service_name']},
+                 'cloud': {'provider': 'aws', 'account': {'id': field(source, 'cloud.account.id')},
+                           'region': field(source, 'cloud.region'), 'service': {'name': values['service_name']}},
+                 'cloud_soc': {'normalized_at': processed_at, 'normalizer_version': AWS_LOG_VERSION,
+                               'parse_status': 'recognized', 'detail': detail,
+                               'provenance': {'schema_version': 1, 'raw': reference,
+                                              'time': {'basis': values['time_basis'], 'year_inferred': False}}}}
+        for endpoint in ('source', 'destination'):
+            if endpoint + '_ip' in values:
+                event[endpoint] = {'ip': values[endpoint + '_ip']}
+                if endpoint + '_port' in values:
+                    event[endpoint]['port'] = values[endpoint + '_port']
+        if 'http_status' in values:
+            event['http'] = {'request': {'method': values['http_method'], 'id': values['request_id']},
+                             'response': {'status_code': values['http_status']}}
+        if 'query_name' in values:
+            event['dns'] = {'question': {'name': values['query_name'], 'type': values['query_type']}, 'response_code': values['rcode']}
+        if 'transport' in values:
+            event['network'] = {'transport': values['transport']}
+            for counter in ('bytes', 'packets'):
+                if 'network_' + counter in values:
+                    event['network'][counter] = values['network_' + counter]
         record.update(status='normalized', reason='recognized', normalized={'index': NORMALIZED, 'id': identifier})
         return identifier, record, event
     if detail['adapter'] == EDGE_ADAPTER:

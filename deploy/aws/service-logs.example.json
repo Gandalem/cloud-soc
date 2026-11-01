@@ -1,0 +1,15 @@
+{
+  "account_id": "123456789012",
+  "organization": "school",
+  "lookback_hours": 48,
+  "overlap_minutes": 1560,
+  "sources": [
+    {"id": "resolver", "kind": "route53_resolver", "region": "ap-northeast-3", "log_group": "/cloud-soc/aws/route53-resolver", "resource_id": "vpc-0e4bb99234215e866"},
+    {"id": "securityhub", "kind": "securityhub", "region": "ap-northeast-3", "log_group": "/cloud-soc/aws/securityhub-findings", "resource_id": "securityhub-cspm"},
+    {"id": "rds-general", "kind": "rds_general", "region": "ap-northeast-3", "log_group": "/aws/rds/instance/cloud-soc-rds-mysql/general", "resource_id": "cloud-soc-rds-mysql"},
+    {"id": "rds-error", "kind": "rds_error", "region": "ap-northeast-3", "log_group": "/aws/rds/instance/cloud-soc-rds-mysql/error", "resource_id": "cloud-soc-rds-mysql"},
+    {"id": "cloudfront", "kind": "cloudfront", "region": "us-east-1", "log_group": "/cloud-soc/aws/cloudfront-access", "resource_id": "REPLACE_WITH_DISTRIBUTION_ID"},
+    {"id": "firewall-alert", "kind": "network_firewall_alert", "region": "ap-northeast-3", "log_group": "/cloud-soc/aws/network-firewall-alert", "resource_id": "cloud-soc-network-firewall"},
+    {"id": "firewall-flow", "kind": "network_firewall_flow", "region": "ap-northeast-3", "log_group": "/cloud-soc/aws/network-firewall-flow", "resource_id": "cloud-soc-network-firewall"}
+  ]
+}

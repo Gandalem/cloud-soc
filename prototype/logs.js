@@ -3,6 +3,7 @@
   "use strict";
   const sources = { generic_web_access:"웹 사이트 접근 기록", web_access_metadata:"AWS DVWA 웹 접근 기록", windows_event: "Windows 이벤트", windows_file: "Windows 파일", linux_file: "Linux 파일", linux_journald: "Linux 저널", network_packetbeat: "네트워크", aws_cloudtrail: "AWS 관리 이벤트", oci_audit: "OCI 감사 이벤트", unknown: "미분류" };
   sources.generic_modsecurity = 'ModSecurity WAF 메타데이터';
+  sources.aws_service_logs = 'AWS 서비스 로그';
   sources.security_scenario = '보안 시나리오 감사 기록';
   Object.assign(sources,{security_mall_audit:'쇼핑몰 보안 감사',security_mall_edge:'쇼핑몰 웹·WAF',agent_health:'수집 상태 보고',agent_collection_notice:'수집 입력 오류'});
   const osNames = { windows: "Windows", linux: "Linux", cloud: "해당 없음 (클라우드 API)", unknown: "미확인" };
@@ -16,6 +17,7 @@
     network: ['network_packetbeat'],
     cloud: ['aws_cloudtrail', 'oci_audit']
   };
+  environmentKinds.cloud.push('aws_service_logs');
   function renderEnvironments(rows) {
     let classified = 0;
     for (const [environment, kinds] of Object.entries(environmentKinds)) {
@@ -44,7 +46,7 @@
     const outcome = row.outcome && row.outcome !== 'unknown' ? row.outcome : fields.outcome || 'unknown';
     const actor = row.user || row.actor_id || fields.actor || (fields.account_id ? `가명 계정: ${fields.account_id}` : null) || (fields.target_user ? `대상 계정: ${fields.target_user}` : null);
     const interpretation = label({recognized:'형식 확인',partial:'부분 해석 · 필드 누락',unsupported:'메타데이터만 표시 · 행위 해석 미지원'},interpreted.status,'미평가 · 서버 갱신 필요');
-    const cloudName = row.cloud_provider === 'oci' ? 'OCI' : row.source_kind === 'aws_cloudtrail' ? 'AWS' : '클라우드';
+    const cloudName = row.cloud_provider === 'azure' ? 'Azure' : row.cloud_provider === 'naver' ? 'Naver Cloud' : row.cloud_provider === 'aws' ? 'AWS' : row.cloud_provider === 'oci' ? 'OCI' : row.source_kind === 'aws_cloudtrail' ? 'AWS' : '클라우드';
     const origin = row.stream === 'cloud' ? [cloudName,row.cloud_account,row.cloud_region].filter(Boolean).join(' / ') : [row.service_name || fields.service_name,row.host_name || row.host_id,row.site_id ? `사이트 ${row.site_id}` : null].filter(Boolean).join(' / ');
     const osName = typeof row.os_name === 'string' ? row.os_name.trim() : '';
     const hostLog = ['windows_event', 'windows_file', 'linux_file', 'linux_journald'].includes(row.source_kind);
@@ -124,6 +126,22 @@
     request_id_is_unverified_correlation_hint:'요청 ID만으로 다른 출처의 동일 요청을 확정하지 않습니다.'
   });
   Object.assign(securityTerms, {waf_rule_match: 'WAF 규칙 관측'});
+  Object.assign(securityTerms, {dns_query:'DNS 질의',security_finding:'보안 Finding',
+    mysql_general_log:'MySQL 일반 로그',mysql_error_log:'MySQL 오류 로그',
+    http_access:'HTTP 접근',firewall_alert:'방화벽 규칙 관측',firewall_flow:'방화벽 통신',
+    database:'데이터베이스',intrusion_detection:'보안 탐지',web:'웹'});
+  Object.assign(securityLabels, {kind:'AWS 로그 종류',resource_id:'설정 자원 ID',resource_ids:'Finding 대상 자원',
+    log_group:'CloudWatch 로그 그룹',log_stream:'CloudWatch 로그 스트림',original_sha256:'원문 SHA256',
+    time_basis:'발생 시각 근거',cloudwatch_at:'CloudWatch 이벤트 시각',cloudwatch_ingested_at:'CloudWatch 수신 시각',
+    query_name:'DNS 질의 이름',query_type:'DNS 질의 유형',rcode:'DNS 응답 코드',
+    finding_id:'Finding ID',finding_region:'Finding 리전',severity:'Finding 심각도',compliance:'준수 상태',
+    workflow:'Finding 업무 상태',record_state:'Finding 기록 상태',command:'MySQL 명령 종류',
+    statement_type:'SQL 문장 종류',error_level:'MySQL 로그 수준',error_code:'오류 코드',
+    result_type:'CloudFront 응답 분류',firewall_action:'방화벽 관측 동작',signature_id:'방화벽 규칙 ID',
+    signature_severity:'방화벽 규칙 수준'});
+  Object.assign(securityLimits, {original_retained_only_in_aws_subject_to_retention:'원문은 AWS 보존기간 내 조회할 수 있습니다. 중앙에는 위치와 해시를 보관합니다.',
+    metadata_not_attack_confirmation:'이 기록만으로 공격 여부를 확정하지 않습니다.',
+    resource_binding_from_collector_config:'설정 자원과 로그 대상의 연결을 AWS에서 확인해야 합니다.'});
   Object.assign(securityLabels, {service_name:'서비스',account_id:'가명 계정 ID',account_key_id:'가명 계정 키 버전',stream:'기록 종류',method:'HTTP 메서드',status_code:'HTTP 응답 코드',path:'보호된 경로 분류',duration_us:'처리 시간 (마이크로초)',engine_mode: 'ModSecurity 엔진 모드', interruption: '엔진 개입 관측', sqli_rule_ids: 'CRS SQLi 규칙 ID'});
   function securityEntries(value) {
     if (!value || value.version !== 1) return [["보안 이벤트 해석", "미제공 · 서버 버전 확인 필요"]];

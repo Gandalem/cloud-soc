@@ -1,0 +1,15 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {"Sid": "ReadOnlyApprovedOsakaGroups", "Effect": "Allow", "Action": "logs:FilterLogEvents", "Resource": [
+      "arn:aws:logs:ap-northeast-3:123456789012:log-group:/cloud-soc/aws/route53-resolver:*",
+      "arn:aws:logs:ap-northeast-3:123456789012:log-group:/cloud-soc/aws/securityhub-findings:*",
+      "arn:aws:logs:ap-northeast-3:123456789012:log-group:/aws/rds/instance/cloud-soc-rds-mysql/general:*",
+      "arn:aws:logs:ap-northeast-3:123456789012:log-group:/aws/rds/instance/cloud-soc-rds-mysql/error:*",
+      "arn:aws:logs:ap-northeast-3:123456789012:log-group:/cloud-soc/aws/network-firewall-alert:*",
+      "arn:aws:logs:ap-northeast-3:123456789012:log-group:/cloud-soc/aws/network-firewall-flow:*"
+    ]},
+    {"Sid": "ReadOnlyCloudFrontVirginiaGroup", "Effect": "Allow", "Action": "logs:FilterLogEvents", "Resource":
+      "arn:aws:logs:us-east-1:123456789012:log-group:/cloud-soc/aws/cloudfront-access:*"}
+  ]
+}

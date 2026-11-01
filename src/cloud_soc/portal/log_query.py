@@ -51,6 +51,7 @@ def project_list_hit(hit):
                 "generic_web_access": {"web_access_agent_v1"}, "generic_modsecurity": {"modsecurity_audit_v1"},
                 "network_packetbeat": {"packetbeat_metadata_v1"},
                 "aws_cloudtrail": {"aws_cloudtrail_metadata_v1"}, "oci_audit": {"oci_audit_metadata_v1"}}
+    adapters["aws_service_logs"] = {"aws_service_logs_v1"}
     if detail["adapter"] not in adapters.get(row["source_kind"], set()):
         detail = {"status": "unsupported", "adapter": None, "fields": {}}
     fields = detail["fields"]
@@ -79,6 +80,7 @@ OS_SCRIPT = FIELD_HELPER + """
 def s = params._source;
 if (value(s, 'labels.log_source') == 'aws_cloudtrail' && value(s, 'cloud.provider') == 'aws') { emit('cloud'); return; }
 if (value(s, 'labels.log_source') == 'oci_audit' && value(s, 'cloud.provider') == 'oci') { emit('cloud'); return; }
+if (value(s, 'labels.log_source') == 'aws_service_logs' && value(s, 'cloud.provider') == 'aws') { emit('cloud'); return; }
 def os = value(s, 'host.os.type');
 if (os == 'windows' || os == 'linux') { emit(os); return; }
 os = value(s, 'labels.sensor_platform');

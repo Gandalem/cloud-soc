@@ -25,7 +25,7 @@
 | 상시 분석·처리·장애 | [상주/AJAX](live_ajax_runtime.md) · [처리 운영](processing_operations.md) · [파이프라인](pipeline_reliability.md) |
 | 수집 범위·민감정보·통계 | [보안 정책](security_collection_policy.md) · [사이트](unified_site_agent.md) · [보호](collection_protection.md) · [계측](p2_collection_metrics.md) |
 | 백업·보관·유실 | [Portal 백업](portal_backup.md) · [저장량/복구](p2_capacity_backup.md) · [독립 백업](p2_backup_readiness.md) · [Windows 유실 감사](windows_log_loss_audit.md) |
-| 클라우드·Kibana | [AWS](aws_cloudtrail.md) · [OCI](oci_audit.md) · [클라우드 규칙](cloud_detection.md) · [Kibana](kibana_setup.md) |
+| 클라우드·Kibana | [AWS](aws_cloudtrail.md) · [AWS 5개 서비스](aws_five_service_logs.md) · [OCI](oci_audit.md) · [클라우드 규칙](cloud_detection.md) · [Kibana](kibana_setup.md) |
 
 ## 개발·검증·보관
 

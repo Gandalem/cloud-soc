@@ -5,6 +5,13 @@ import re
 def classification(row, detail):
     kind=row['source_kind'];fields=detail.get('fields',{})
     def result(code,label,basis):return {'code':code,'label':label,'basis':basis}
+    if kind == 'aws_service_logs':
+        names = {'route53_resolver': 'AWS Resolver DNS', 'securityhub': 'AWS Security Hub Finding',
+                 'rds_general': 'AWS RDS 일반 로그', 'rds_error': 'AWS RDS 오류 로그',
+                 'cloudfront': 'AWS CloudFront 접근', 'network_firewall_alert': 'AWS 방화벽 Alert',
+                 'network_firewall_flow': 'AWS 방화벽 Flow'}
+        service_kind = fields.get('kind')
+        return result(service_kind or 'cloud_service', names.get(service_kind, 'AWS 서비스 로그'), 'service_log_projection')
     if kind == 'security_scenario' and detail.get('status') == 'recognized':
         from cloud_soc.parsers.security_scenarios import SCENARIOS
         scenario = SCENARIOS.get(fields.get('scenario_kind'))

@@ -207,6 +207,24 @@ test('unsupported and partial security states never look fully parsed', () => {
   assert.match(rendered, /프로세스나 유출 파일을 알 수 없습니다/);
 });
 
+test('AWS service rows retain cloud identity and selected native details without original payload', () => {
+  const {securityEntries} = require('../logs.js');
+  const cloud = {...row,stream:'cloud',os:'cloud',source_kind:'aws_service_logs',collector:'aws-cloudwatch',
+    host_name:null,cloud_provider:'aws',cloud_account:'123456789012',cloud_region:'ap-northeast-3',
+    service_name:'route53resolver',action:'dns_query',interpretation:{status:'recognized',adapter:'aws_service_logs_v1',fields:{action:'dns_query',outcome:'success'}}};
+  const html = rowMarkup(cloud,0);
+  assert.match(html,/AWS 서비스 로그/);
+  assert.match(html,/AWS \/ 123456789012 \/ ap-northeast-3/);
+  assert.doesNotMatch(html,/fixture-host/);
+  assert.equal(new URL(query({...defaults,collector:'aws-cloudwatch'}),'https://example.test').searchParams.get('collector'),'aws-cloudwatch');
+  const details = JSON.stringify(securityEntries({version:1,status:'recognized',adapter:'aws_service_logs_v1',
+    fields:{kind:'route53_resolver',query_name:'example.com.',rcode:'NOERROR',log_group:'/fixture/resolver',
+      original_sha256:'a'.repeat(64),sql:'PRIVATE_SQL_CANARY'},
+    limitations:['original_retained_only_in_aws_subject_to_retention','metadata_not_attack_confirmation']}));
+  assert.match(details,/DNS 질의 이름/);assert.match(details,/원문 SHA256/);assert.match(details,/AWS 보존기간/);
+  assert.doesNotMatch(details,/PRIVATE_SQL_CANARY/);
+});
+
 test('AWS records display account/Region without pretending they are hosts', () => {
   const cloud = { ...row, stream: 'cloud', os: 'cloud', source_kind: 'aws_cloudtrail', collector: 'cloudtrail',
     host_name: null, cloud_account: '123456789012', cloud_region: 'us-east-1', actor_id: 'ROLE:fixture', user: null,

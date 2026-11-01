@@ -1,0 +1,77 @@
+# Offline candidates only. Outside rules/ and absent from every live profile.
+rules:
+  - id: AWS-RESOLVER-LAB-001
+    name: Repeated NXDOMAIN observations
+    enabled: false
+    type: threshold
+    severity: low
+    group_by: [organization.id, cloud.account.id, cloud.region, source.ip]
+    threshold: {count: 10}
+    time_window: {seconds: 300}
+    cooldown: {seconds: 300}
+    conditions:
+      - {field: event.dataset, operator: equals, value: aws.route53_resolver}
+      - {field: cloud_soc.detail.fields.rcode, operator: equals, value: NXDOMAIN}
+    alert:
+      title: DNS 이름 해석 실패 반복
+      message: NXDOMAIN 반복 관측입니다. 정상 오타·앱 설정·캐시 영향을 확인하세요. 공격 확정이 아닙니다.
+      category: network
+      tags: [aws, resolver, observation]
+  - id: AWS-SECURITYHUB-LAB-001
+    name: Active high severity unresolved imported finding
+    enabled: false
+    type: single
+    severity: high
+    conditions:
+      - {field: event.dataset, operator: equals, value: aws.securityhub}
+      - {field: cloud_soc.detail.fields.severity, operator: in, value: [HIGH, CRITICAL]}
+      - {field: cloud_soc.detail.fields.record_state, operator: equals, value: ACTIVE}
+      - {field: cloud_soc.detail.fields.workflow, operator: in, value: [NEW, NOTIFIED]}
+    alert:
+      title: Security Hub 고위험 Finding 관측
+      message: 미해결 고위험 Finding입니다. 제공자 판단이며 현재 침해나 로컬 규칙 탐지 확정은 아닙니다.
+      category: configuration
+      tags: [aws, securityhub, imported-finding]
+  - id: AWS-RDS-LAB-001
+    name: MySQL error level observation
+    enabled: false
+    type: single
+    severity: low
+    conditions:
+      - {field: event.dataset, operator: equals, value: aws.rds_error}
+      - {field: cloud_soc.detail.fields.error_level, operator: equals, value: ERROR}
+    alert:
+      title: RDS MySQL 오류 관측
+      message: 오류 수준 로그가 관측됐습니다. SQL 본문은 수집하지 않으며 공격 원인은 확인되지 않았습니다.
+      category: database
+      tags: [aws, rds, operational]
+  - id: AWS-CLOUDFRONT-LAB-001
+    name: Repeated CloudFront server errors
+    enabled: false
+    type: threshold
+    severity: low
+    group_by: [organization.id, cloud.account.id, cloud.region, cloud_soc.detail.fields.resource_id]
+    threshold: {count: 5}
+    time_window: {seconds: 300}
+    cooldown: {seconds: 300}
+    conditions:
+      - {field: event.dataset, operator: equals, value: aws.cloudfront}
+      - {field: http.response.status_code, operator: greater_than, value: 499}
+    alert:
+      title: CloudFront 서버 오류 반복
+      message: HTTP 5xx 반복 관측입니다. 원본 서버·배포 상태·정상 장애를 먼저 확인하세요.
+      category: web
+      tags: [aws, cloudfront, operational]
+  - id: AWS-FIREWALL-LAB-001
+    name: Network Firewall alert observation
+    enabled: false
+    type: single
+    severity: medium
+    conditions:
+      - {field: event.dataset, operator: equals, value: aws.network_firewall_alert}
+      - {field: cloud_soc.detail.fields.signature_id, operator: exists, value: true}
+    alert:
+      title: Network Firewall 규칙 관측
+      message: 규칙 일치가 관측됐습니다. allowed와 blocked를 구분하고 시험 규칙·오탐을 확인하세요.
+      category: network
+      tags: [aws, network-firewall, rule-observation]
