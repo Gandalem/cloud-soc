@@ -13,13 +13,14 @@
   <script src="cases.js" defer></script>
 <link rel="stylesheet" href="/theme.css">
 </head>
-<body class="agents-page" data-case-list-page="cases.html">
+<body class="agents-page workflow-page cases-page" data-case-list-page="cases.html">
   <a class="skip-link" href="#main">본문으로 이동</a>
   <div id="app-shell"></div>
   <main id="main" class="main-content agents-main">
-    <div class="page-heading"><div><h1>사건 조사</h1></div><a class="button-link" href="index.html#ops-alerts">경보 목록</a></div>
+    <div class="page-heading workflow-heading"><div><p class="workflow-kicker">INCIDENT RESPONSE</p><h1>사건 조사</h1><p>우선순위와 담당자를 기준으로 조사할 사건을 확인합니다.</p></div><a class="button-link" href="operations.html#ops-alerts">경보 목록</a></div>
+    <section id="case-metrics" class="workflow-metrics" aria-label="현재 필터의 사건 집계"></section>
     <section id="case-queue" class="panel case-panel" aria-labelledby="case-queue-title">
-      <h2 id="case-queue-title">사건 목록</h2>
+      <div class="workflow-section-heading"><h2 id="case-queue-title">사건 목록</h2><span>담당자 배정 · 조사 · 종결</span></div>
       <form id="case-filters" class="case-toolbar">
         <label>사건 상태<select name="status"><option value="open">미종결</option><option value="">전체</option><option value="new">신규</option><option value="triage">초기 분류</option><option value="investigating">조사 중</option><option value="escalated">상위 이관</option><option value="closed">종결</option></select></label>
         <label>담당자<select name="owner"><option value="">전체</option><option value="unassigned">미배정</option><option value="me">나</option></select></label>
@@ -30,7 +31,7 @@
       </form><p id="case-counts" role="status">조회 중</p><p id="case-error" role="alert" hidden></p>
       <div class="table-scroll" tabindex="0" aria-label="사건 업무 표"><table><thead><tr><th>사건</th><th>조직</th><th>우선순위</th><th>상태</th><th>담당자</th><th>생성 시각 (KST)</th></tr></thead><tbody id="case-rows"></tbody></table></div>
       <div class="case-toolbar"><button id="case-prev" type="button" disabled>이전</button><span id="case-page">1 페이지</span><button id="case-next" type="button" disabled>다음</button></div>
-      <p class="field-note">새 사건은 <a href="index.html#ops-alerts">경보 상세</a>에서 등록합니다. 기간 필터는 사건 생성 시각 기준입니다.</p>
+      <p class="field-note">새 사건은 <a href="operations.html#ops-alerts">경보 상세</a>에서 등록합니다. 기간 필터는 사건 생성 시각 기준입니다.</p>
     </section>
   </main><noscript>JavaScript를 켜야 조회할 수 있습니다.</noscript>
 </body></html>

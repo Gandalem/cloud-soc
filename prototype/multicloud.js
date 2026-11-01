@@ -4,6 +4,19 @@ const names = {aws: 'AWS', azure: 'Microsoft Azure', naver: 'Naver Cloud'};
 const labels = {success: '성공', failure: '실패', unknown: '확인 불가'};
 const date = value => value ? new Date(value).toLocaleString() : '수신 기록 없음';
 function node(tag, content, css) { const n = document.createElement(tag); if (content !== undefined) n.textContent = content; if (css) n.className = css; return n; }
+let timelineData=[];
+function drawTimeline(input){
+ timelineData=input;const target=el('timeline');target.replaceChildren();
+ if(!input.length||!input.some(b=>b.doc_count>0)){target.append(node('p','조회 기간의 활동 기록이 없습니다.','empty'));return;}
+ const step=Math.max(1,Math.ceil(input.length/24)),buckets=[];
+ for(let i=0;i<input.length;i+=step)buckets.push({key:input[i].key,count:input.slice(i,i+step).reduce((n,b)=>n+b.doc_count,0)});
+ const width=Math.max(320,target.clientWidth||600),plot=width-70,max=Math.max(1,...buckets.map(b=>b.count)),ns='http://www.w3.org/2000/svg';
+ const svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox',`0 0 ${width} 210`);svg.setAttribute('role','img');svg.setAttribute('aria-label','시간별 감사 이벤트 건수 · 브라우저 현지 시각');
+ for(let i=0;i<4;i++){const y=20+i*46,line=document.createElementNS(ns,'line'),text=document.createElementNS(ns,'text');for(const[k,v]of Object.entries({x1:46,x2:width-24,y1:y,y2:y}))line.setAttribute(k,v);text.setAttribute('x','36');text.setAttribute('y',y+4);text.setAttribute('text-anchor','end');text.textContent=Math.round(max*(1-i/3));svg.append(line,text);}
+ buckets.forEach((b,i)=>{const r=document.createElementNS(ns,'rect'),h=b.count/max*138;for(const[k,v]of Object.entries({x:46+i*plot/buckets.length,y:158-h,width:Math.max(.5,plot/buckets.length-4),height:h,rx:1}))r.setAttribute(k,v);const title=document.createElementNS(ns,'title');title.textContent=date(b.key)+' · '+b.count+'건';r.append(title);svg.append(r);});
+ for(const i of [...new Set([0,Math.floor((buckets.length-1)/2),buckets.length-1])]){const t=document.createElementNS(ns,'text');t.setAttribute('x',46+i*plot/Math.max(1,buckets.length-1));t.setAttribute('y','191');t.setAttribute('text-anchor',i===0?'start':i===buckets.length-1?'end':'middle');t.textContent=new Date(buckets[i].key).toLocaleString([],{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});svg.append(t);}target.append(svg);
+}
+window.addEventListener('resize',()=>drawTimeline(timelineData));
 let busy = false;
 async function load() {
   if (busy) return;
@@ -17,22 +30,13 @@ async function load() {
     if (!response.ok) throw new Error(data.error || '로그를 조회하지 못했습니다.');
     el('cards').replaceChildren();
     for (const provider of Object.keys(names)) {
-      const bucket = data.metrics.providers?.buckets.find(v => v.key === provider);
+      const bucket = data.metrics.providers?.buckets?.find(v => v.key === provider);
       const card = node('article', undefined, 'card');
-      card.append(node('h2', names[provider]), node('strong', (bucket?.doc_count || 0).toLocaleString()), node('p', `실패 ${(bucket?.failures.doc_count || 0).toLocaleString()}건`), node('small', `마지막 이벤트: ${date(bucket?.last_event.value_as_string)}`));
+      card.append(node('h2', names[provider]), node('strong', (bucket?.doc_count || 0).toLocaleString()), node('p', `실패 ${(bucket?.failures?.doc_count || 0).toLocaleString()}건`), node('small', `마지막 이벤트: ${date(bucket?.last_event?.value_as_string)}`));
       el('cards').append(card);
     }
-    el('timeline').replaceChildren();
-    const buckets = data.metrics.timeline?.buckets || [];
-    const max = Math.max(1, ...buckets.map(b => b.doc_count));
-    for (const b of buckets) {
-      const bar = node('div', undefined, 'bucket');
-      const meter = document.createElement('meter'); meter.min = 0; meter.max = max; meter.value = b.doc_count;
-      meter.title = `${date(b.key_as_string)} · ${b.doc_count}건`;
-      bar.append(node('small', new Date(b.key).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})), meter, node('span', b.doc_count));
-      el('timeline').append(bar);
-    }
-    el('actions').replaceChildren(...(data.metrics.actions?.buckets || []).map(b => node('span', `${b.key} · ${b.doc_count}건`, 'chip')));
+    drawTimeline(data.metrics.timeline?.buckets || []);
+    el('actions').replaceChildren(...(data.metrics.actions?.buckets || []).map(b => node('span', `${b.key} · ${b.doc_count}건`, 'chip')));if(!el('actions').children.length)el('actions').append(node('p','조회 기간의 작업 기록이 없습니다.','empty'));
     el('events').replaceChildren();
     for (const e of data.events) {
       const row = node('tr');

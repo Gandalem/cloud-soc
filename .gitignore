@@ -41,3 +41,6 @@ config/multicloud.json
 
 frontend/node_modules
 .venv-runtime/
+
+# Local dashboard preview captures (synthetic acceptance fixtures)
+/output/*.png

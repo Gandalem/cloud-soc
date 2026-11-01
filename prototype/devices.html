@@ -3,13 +3,14 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>장치 관리 | Cloud SOC</title><link rel="icon" href="assets/mark.svg" type="image/svg+xml">
-<script src="/theme.js"></script><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css"><link rel="stylesheet" href="shell.css"><link rel="stylesheet" href="/theme.css"><link rel="stylesheet" href="devices.css">
+<script src="/theme.js"></script><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="agents.css"><link rel="stylesheet" href="shell.css"><link rel="stylesheet" href="/theme.css"><link rel="stylesheet" href="cases.css"><link rel="stylesheet" href="devices.css">
 <script src="auth-client.js"></script><script src="shell.js" defer></script><script src="devices.js" defer></script></head>
-<body class="agents-page"><a class="skip-link" href="#main">본문으로 이동</a><div id="app-shell"></div>
+<body class="agents-page workflow-page devices-page"><a class="skip-link" href="#main">본문으로 이동</a><div id="app-shell"></div>
 <main id="main" class="main-content agents-main">
-<div class="page-heading"><div><h1>장치 관리</h1><p>장치의 등록 정보, 로그 수신 내역과 수집 키를 관리합니다.</p></div><button id="add-device" class="primary-button">+ 장치 추가</button></div>
+<div class="page-heading workflow-heading"><div><p class="workflow-kicker">DEVICE &amp; COLLECTOR MANAGEMENT</p><h1>장치 관리</h1><p>장치의 등록 정보, 로그 수신 내역과 수집 키를 관리합니다.</p></div><button id="add-device" class="primary-button">+ 장치 추가</button></div>
 <p id="page-message" role="status" aria-live="polite"></p>
-<section class="panel device-panel" aria-label="장치 목록">
+<section id="device-metrics" class="workflow-metrics" aria-label="장치 조회 집계"></section>
+<section class="panel device-panel" aria-label="장치 목록"><div class="workflow-section-heading"><h2>등록 장치</h2><a href="agent-status.html">실제 수집 현황 ↗</a></div>
 <div class="device-toolbar"><label>보기<select id="device-view"><option value="active">운영 중</option><option value="attention">조치 필요</option><option value="history">종료 이력</option><option value="all">전체</option></select></label><label>검색<input id="device-search" type="search" maxlength="100" placeholder="장치·조직·OS"></label><button id="device-refresh">새로고침</button></div>
 <div class="package-table-scroll"><table class="package-table"><caption class="sr-only">장치별 등록과 수신 상태</caption><thead><tr><th>장치</th><th>조직 / 운영체제</th><th>상태</th><th>최초 수신 확인</th><th>작업</th></tr></thead><tbody id="device-rows"></tbody></table></div>
 <div class="package-pagination"><button id="device-prev">이전</button><span id="device-count"></span><button id="device-next">다음</button></div>

@@ -8,15 +8,19 @@
   const saved = new URLSearchParams(window.location.search);
   for (const field of form.querySelectorAll("select")) if (saved.has("case_" + field.name) && Array.from(field.options).some(o => o.value === saved.get("case_" + field.name))) field.value = saved.get("case_" + field.name);
   if (/^[1-9][0-9]{0,4}$/.test(saved.get("case_page") || "")) page = Number(saved.get("case_page"));
-  function node(tag, text) {const n=document.createElement(tag);n.textContent=text;return n;}
+  function node(tag, text, css) {const n=document.createElement(tag);n.textContent=text;if(css)n.className=css;return n;}
   let applied=null,shown=null,appliedBack=null;
   const pending=window.CloudSOCLive.notice($('case-queue'),'새 사건');
   function params(){const p=new URLSearchParams();for(const [key,value]of new FormData(form))if(value)p.set(key,value);p.set('page',String(page));return p;}
   function render(data){
     const c=data.counts;$('case-counts').textContent='현재 필터: 전체 '+c.total+' · 미종결 '+c.open+' · 조사 중 '+c.investigating+' · 미배정 '+c.unassigned;
+    const metrics=$('case-metrics');
+    if(metrics){const cards=[];for(const [key,title]of [['total','전체 사건'],['open','미종결'],['investigating','조사 중'],['unassigned','미배정']]){
+      const card=node('article',''),value=Number.isSafeInteger(c[key])?c[key].toLocaleString('ko-KR'):'—';card.append(node('h2',title),node('strong',value),node('p','현재 적용한 필터 기준 · 건'));cards.push(card);
+    }window.CloudSOCLive.children(metrics,cards);}
     const body=document.createDocumentFragment(),back=new URLSearchParams(appliedBack);
     for(const row of data.rows){const tr=node('tr',''),td=node('td',''),link=node('a',row.title);tr.dataset.liveKey=row.id;link.href='workbench.html?'+new URLSearchParams({case:row.id,return:back.toString(),return_page:listPage});td.append(link);tr.append(td);
-      for(const value of [row.organization,priorities[row.priority],states[row.status],row.owner||'미배정',new Date(row.created_at).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})])tr.append(node('td',value));body.append(tr);}
+      for(const value of [row.organization,priorities[row.priority],states[row.status],row.owner||'미배정',new Date(row.created_at).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})])tr.append(node('td',value));tr.dataset.priority=row.priority;tr.dataset.state=row.status;body.append(tr);}
     if(!data.rows.length)$('case-counts').textContent+=' · 해당 사건 없음';
     window.CloudSOCLive.children($('case-rows'),body.childNodes);$('case-page').textContent=page+' 페이지';$('case-prev').disabled=page<=1;$('case-next').disabled=!data.has_next;
   }

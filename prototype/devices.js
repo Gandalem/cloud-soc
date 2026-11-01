@@ -47,6 +47,11 @@ if (typeof document !== 'undefined') (() => {
       const result=await api('/api/managed-devices?'+params);
       if(generation!==state.loads)return;
       state.enabled=result.enrollment_enabled;
+      const metrics=$('#device-metrics');
+      if(metrics){const shown=result.devices,number=n=>Number.isSafeInteger(n)?n.toLocaleString('ko-KR'):'—';
+        const values=[['조회 조건 일치',result.total,'현재 필터 전체 · 대'],['등록 확인됨',shown.filter(d=>d.state==='received').length,'현재 페이지 · 최근 수신 정상과 다름'],['설치·최초 수신 대기',shown.filter(d=>['requested','awaiting_receipt'].includes(d.state)).length,'현재 페이지 · 대'],['조치 필요',shown.filter(d=>['attention','registration_expired','revocation_pending'].includes(d.state)).length,'현재 페이지 · 대']];
+        metrics.innerHTML=values.map(([title,count,note])=>`<article><h2>${escape(title)}</h2><strong>${number(count)}</strong><p>${escape(note)}</p></article>`).join('');
+      }
       $('#add-device').disabled=!state.enabled;
       $('#page-message').textContent=state.enabled?'':'서버의 HTTPS 장치 등록 설정을 준비하세요. 기존 장치와 키는 고급 관리에서 조회할 수 있습니다.';
       $('#device-rows').innerHTML=result.devices.map(d=>`<tr><td>${escape(d.label)}</td><td>${escape(d.organization)} / ${escape(operatingSystems[d.os]||d.os)}</td><td>${stateMarkup(d.state)}</td><td>${escape(date(d.receipt_at))}</td><td><button data-device="${d.id}">장치 관리</button></td></tr>`).join('')||'<tr><td colspan="5">표시할 장치가 없습니다.</td></tr>';

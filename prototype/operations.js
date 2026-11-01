@@ -49,23 +49,58 @@
     }
     window.CloudSOCLive.children(target,[table]);
   }
+  function stages(pipeline) {
+    const target=$('ops-stages'); if(!target)return;
+    const stateLabels={success:'처리 성공',running:'처리 중',waiting:'입력 대기',failed:'처리 실패',stale:'보고 만료',not_started:'실행 기록 없음',unavailable:'조회 불가'};
+    const healthLabels={healthy:'지연 정상',delayed:'지연 있음',warning:'확인 필요',failed:'장애',stale:'보고 만료'};
+    const definitions=[['normalizer','일반 정규화',pipeline],['detector','기본 탐지',pipeline.detector],['priority_normalizer','우선 정규화',pipeline.priority_normalizer],['priority_detector','우선 탐지',pipeline.priority_detector],['additional_detector','추가 탐지',pipeline.additional_detector],['late_review','과거 로그 재평가',pipeline.late_review],['multicloud_normalizer','멀티클라우드 정규화',pipeline.multicloud_normalizer]];
+    const cards=[];
+    for(const [id,title,raw] of definitions){
+      const value=raw||{state:'not_started'},card=node('article',undefined,'ops-stage'),heading=node('div',undefined,'ops-stage-heading');
+      card.dataset.worker=id;
+      heading.append(node('h3',title),node('span',stateLabels[value.state]||'미확인','ops-status '+(Object.hasOwn(stateLabels,value.state)?value.state:'unavailable')));
+      card.append(heading);
+      const health=node('p',healthLabels[value.health]||'지연 상태 미확인','ops-health '+(Object.hasOwn(healthLabels,value.health)?value.health:'unknown'));
+      card.append(health);
+      const list=node('dl');
+      const fields=[['처리 위치',fmt(value.checkpoint)],['마지막 성공',fmt(value.last_success)],['처리 지연',Number.isSafeInteger(value.lag_seconds)&&value.lag_seconds>=0?value.lag_seconds.toLocaleString('ko-KR')+'초':'미확인'],['평가 제외 누적',Number.isSafeInteger(value.excluded_total)&&value.excluded_total>=0?value.excluded_total.toLocaleString('ko-KR')+'건':'미확인']];
+      for(const [label,text] of fields){const row=node('div');row.append(node('dt',label),node('dd',text));list.append(row);}
+      card.append(list);
+      if(value.error)card.append(node('p','오류 코드: '+String(value.error).slice(0,100),'ops-stage-error'));
+      if(!raw)card.append(node('p','미구성 또는 조회 범위 밖 · 실행 여부 미확인','ops-stage-footnote'));
+      cards.push(card);
+    }
+    window.CloudSOCLive.children(target,cards);
+  }
+  let chartSections = null;
   function chart(target, section) {
     target.replaceChildren();
     if (!section || section.state !== "ok") { target.append(node("p", labels[section?.state] || "미확인")); return; }
     if (!section.count) { target.append(node("p", "조회 구간의 기록이 없습니다.")); return; }
     const buckets = section.buckets, max = Math.max(1, ...buckets.map((item) => item.count));
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", "0 0 600 140"); svg.setAttribute("role", "img");
-    svg.setAttribute("aria-label", "기간별 문서 수. 총 " + section.count + "건");
-    buckets.forEach((item, i) => {
-      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-      const height = item.count / max * 130;
-      for (const [key, value] of Object.entries({x: i * 600 / buckets.length, y: 140 - height, width: Math.max(0.5, 600 / buckets.length - 1), height})) rect.setAttribute(key, String(value));
-      const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
-      title.textContent = fmt(item.time) + " · " + item.count + "건"; rect.append(title); svg.append(rect);
+    const width=Math.max(320,Math.min(1000,target.clientWidth||680)),plot=width-76;
+    const ns='http://www.w3.org/2000/svg';
+    const svg=document.createElementNS(ns,'svg');
+    svg.setAttribute('viewBox','0 0 '+width+' 220');svg.setAttribute('role','img');
+    svg.setAttribute('aria-label','기간별 문서 수. 총 '+section.count+'건. 세로축 건수, 가로축 시각 KST');
+    for(let i=0;i<4;i++){
+      const y=24+i*48,line=document.createElementNS(ns,'line'),text=document.createElementNS(ns,'text');
+      for(const [k,v]of Object.entries({x1:56,x2:width-20,y1:y,y2:y}))line.setAttribute(k,String(v));
+      text.setAttribute('x','46');text.setAttribute('y',String(y+4));text.setAttribute('text-anchor','end');text.textContent=Math.round(max*(1-i/3)).toLocaleString('ko-KR');svg.append(line,text);
+    }
+    buckets.forEach((item,i)=>{
+      const rect=document.createElementNS(ns,'rect'),height=item.count/max*144;
+      for(const [k,v] of Object.entries({x:56+i*plot/buckets.length,y:168-height,width:Math.max(.5,plot/buckets.length-2),height,rx:1}))rect.setAttribute(k,String(v));
+      const title=document.createElementNS(ns,'title');title.textContent=fmt(item.time)+' · '+item.count+'건';rect.append(title);svg.append(rect);
     });
-    const box = node("div", undefined, "ops-bars"); box.append(svg); target.append(box, node("p", fmt(buckets[0]?.time) + " ~ " + fmt(buckets.at(-1)?.time)));
+    for(const i of [...new Set([0,Math.floor((buckets.length-1)/2),buckets.length-1])]){
+      if(!buckets[i])continue;
+      const text=document.createElementNS(ns,'text');text.setAttribute('x',String(56+i*plot/Math.max(1,buckets.length-1)));text.setAttribute('y','202');text.setAttribute('text-anchor',i===0?'start':i===buckets.length-1?'end':'middle');
+      const stamp=new Date(buckets[i].time);text.textContent=stamp.toLocaleString('ko-KR',{timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});svg.append(text);
+    }
+    const box=node('div',undefined,'ops-bars');box.append(svg);target.append(box,node('p','단위: 건 · KST · '+fmt(buckets[0]?.time)+' ~ '+fmt(buckets.at(-1)?.time)));
   }
+
   function render(data) {
     if (!data || !data.sections || !Number.isFinite(Date.parse(data.start)) || !Number.isFinite(Date.parse(data.end))) throw new Error("관제 응답 형식을 확인하세요.");
     const sections = data.sections;
@@ -78,6 +113,7 @@
     if (!sections.pipeline || !Object.hasOwn(labels, sections.pipeline.state)) throw new Error("처리기 응답 형식을 확인하세요.");
     const pipeline = sections.pipeline, detector = pipeline.detector || {state: 'not_started'};
     runtimeRules(pipeline);
+    stages(pipeline);
     const limited = pipeline.coverage ? pipeline.coverage.state !== 'observed' :
       [pipeline, detector].some(stage => !['success', 'running', 'waiting'].includes(stage.state) || ['failed', 'stale', 'delayed', 'warning'].includes(stage.health));
     $("ops-range").textContent = fmt(data.start) + " ~ " + fmt(data.end) + " (KST)";
@@ -108,6 +144,7 @@
     if (pipeline.progress?.state === 'catching_up') $("ops-pipeline").textContent += ' · 현재 구간 ' + pipeline.progress.processed.toLocaleString('ko-KR') + '건 처리 중 · 구간 완료 전';
     $("ops-pipeline").setAttribute("role", "status");
     $("ops-pipeline").setAttribute("aria-live", "polite");
+    chartSections=sections;
     chart($("ops-intake-chart"), sections.intake); chart($("ops-alert-chart"), sections.alerts);
     const alerts = sections.alerts; const freshRows=document.createDocumentFragment();
     $("ops-alert-state").textContent = alerts.state === "ok" ? (alerts.count ? "총 " + alerts.count + "건 · 최신 50건까지 표시" :
@@ -238,6 +275,7 @@
       evidencePage(data);
     } catch (error) { if (version === detailGeneration) $("ops-detail-state").textContent = error.message; }
   }
+  window.addEventListener('resize',()=>{if(chartSections){chart($('ops-intake-chart'),chartSections.intake);chart($('ops-alert-chart'),chartSections.alerts);}});
   let shownAlerts=null;
   const pending=window.CloudSOCLive.notice($('ops-alert-rows').closest('section')||$('ops-alert-rows').parentElement,'새 경보');
   const live=window.CloudSOCLive.create({host:$('ops-filter').parentElement,interval:10000,

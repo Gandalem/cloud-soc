@@ -201,3 +201,15 @@ test('evidence pagination reaches global positions and reports normalized integr
  assert.equal(new URL(ui.calls[3].url,'https://test').searchParams.get('evidence'),'250');
  assert.match(allText(container.children[1]),/해시 일치.*원본 내용 해시는 미검증/);
 });
+
+test('stage cards distinguish processing success from lag and preserve absent worker uncertainty',async()=>{
+  const pipeline={state:'success',checkpoint:data.start,last_success:data.end,health:'healthy',lag_seconds:39,
+    detector:{state:'success',health:'delayed',lag_seconds:364584,checkpoint:data.start,last_success:data.end,excluded_total:0},
+    multicloud_normalizer:{state:'failed',error:'processing_failed',health:'failed'}};
+  const ui=browser([ok({...data,sections:{...data.sections,pipeline}})]);await settle();
+  const cards=ui.get('ops-stages').children;assert.equal(cards.length,7);
+  assert.match(allText(cards[1]),/처리 성공/);assert.match(allText(cards[1]),/지연 있음/);
+  assert.match(allText(cards[1]),/364,584초/);assert.match(allText(cards[1]),/0건/);
+  assert.match(allText(cards[2]),/실행 기록 없음/);assert.match(allText(cards[2]),/미구성 또는 조회 범위 밖/);
+  assert.match(allText(cards[6]),/처리 실패/);assert.match(allText(cards[6]),/processing_failed/);
+});
