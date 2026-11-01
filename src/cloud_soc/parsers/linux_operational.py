@@ -9,9 +9,11 @@ from cloud_soc.privacy import display, REDACTED
 
 VERSION = "linux-operational-v1"
 SUDO_SESSION_VERSION = "linux-sudo-session-v1"
+RFC3339_VERSION = "linux-rfc3339-v1"
 SUDO_SESSION = re.compile(r"^pam_unix\(sudo:session\): session opened for user (?P<target>[A-Za-z0-9_.@-]{1,128})\(uid=(?P<target_uid>\d{1,10})\) by (?P<actor>[A-Za-z0-9_.@-]{1,128})\(uid=(?P<actor_uid>\d{1,10})\)$")
 PREFIX = re.compile(r"^(?P<time>[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+\S+\s+(?P<app>[A-Za-z0-9_.@-]+)(?:\[(?P<pid>\d{1,10})\])?:\s*(?P<body>.*)$")
-SUDO = re.compile(r"^(?P<actor>[A-Za-z0-9_.@-]{1,128})\s*:\s*TTY=[^;\n]{1,128}\s*;\s*PWD=[^;\n]{1,1024}\s*;\s*USER=(?P<target>[A-Za-z0-9_.@-]{1,128})\s*;\s*(?:GROUP=[^;\n]{1,128}\s*;\s*)?(?:TSID=[^;\n]{1,128}\s*;\s*)?COMMAND=.+$")
+RFC3339_PREFIX = re.compile(r"^(?P<time>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d))\s+\S+\s+(?P<app>[A-Za-z0-9_.@-]+)(?:\[(?P<pid>\d{1,10})\])?:\s*(?P<body>.*)$")
+SUDO = re.compile(r"^(?P<actor>[A-Za-z0-9_.@-]{1,128})\s*:\s*TTY=[^;\n]{1,128}\s*;\s*(?:PWD=[^;\n]{1,1024}|CWD=\[REDACTED\])\s*;\s*USER=(?P<target>[A-Za-z0-9_.@-]{1,128})\s*;\s*(?:GROUP=[^;\n]{1,128}\s*;\s*)?(?:TSID=[^;\n]{1,128}\s*;\s*)?COMMAND=.+$")
 SERVICE = re.compile(r"^(Starting|Started|Stopping|Stopped|Failed to start)\s+.{1,1024}$")
 ACCESS = re.compile(r'^(?P<ip>\S{1,253})\s+\S+\s+\S+\s+\[(?P<time>\d{2}/[A-Za-z]{3}/\d{4}:\d{2}:\d{2}:\d{2} [+-]\d{4})\]\s+"(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH) [^"\r\n]{1,2048} HTTP/\d(?:\.\d)?"\s+(?P<status>[1-5]\d{2})\s+(?:\d+|-)(?:(?:\s+"[^"\r\n]{0,2048}"\s+"[^"\r\n]{0,2048}")|(?P<extra>\s+[A-Za-z0-9_.-]{1,128}\s+[A-Za-z0-9_.-]{1,128}))?$')
 OBSERVED = {"gnome-shell": ("process", "desktop_log_observed"),
@@ -56,8 +58,10 @@ def parse_linux_operational(source):
                     "source_ip": address, "http_method": access["method"], "http_status": code},
                 "missing": ["source_ip"] if address is None else [], "limitations": limitations}
     prefix = PREFIX.fullmatch(message)
-    if prefix:
-        app, body = prefix["app"], prefix["body"]
+    native = RFC3339_PREFIX.fullmatch(message) if not prefix else None
+    selected = prefix or native
+    if selected:
+        app, body = selected["app"], selected["body"]
     elif field(source, "labels.log_source") == "linux_journald":
         programs = [field(source, key) for key in ("log.syslog.appname", "process.name", "journald.syslog.identifier")]
         if any(value is not None and not isinstance(value, str) for value in programs):
@@ -133,6 +137,11 @@ def parse_linux_operational(source):
         category, action = OBSERVED[app]
         values.update(category=category, action=action, daemon=app)
     else:
+        if native and path in {"/var/log/syslog", "/var/log/auth.log", "/var/log/kern.log"}:
+            return {"adapter": "linux_unclassified_v1", "status": "partial",
+                    "fields": {"category": None, "action": "host_log_observed", "outcome": "unknown"},
+                    "missing": ["source_action"], "rfc3339_time": native["time"],
+                    "limitations": ["metadata_only", "message_body_excluded", "not_a_detection"]}
         return None
     result = {"adapter": "linux_operational_v1", "status": "recognized", "fields": values,
               "missing": [], "limitations": ["message_body_and_arguments_excluded", "not_a_detection"]}
@@ -141,4 +150,6 @@ def parse_linux_operational(source):
         result['limitations'].append('sudo_session_not_command_execution_or_ssh_session_link')
     if prefix:
         result["time_text"] = prefix["time"]
+    elif native:
+        result["rfc3339_time"] = native["time"]
     return result

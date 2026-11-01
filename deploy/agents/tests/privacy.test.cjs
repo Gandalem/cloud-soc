@@ -59,6 +59,30 @@ test('privacy removes duplicate raw, arguments and structured credentials', () =
   assert.equal(event.source.labels.privacy_policy, 'v3');
 });
 
+test('complete native sudo file records retain only identity and time before queueing', () => {
+  for (const prefix of ['Nov  1 14:00:00 fixture sudo[12]: ', '2026-11-01T14:00:00.123456+00:00 fixture sudo: ']) {
+    const event=run({labels:{log_source:'linux_file'},log:{file:{path:'/var/log/auth.log'}},
+      message:prefix+'fixture : TTY=PRIVATE_TTY ; PWD=/PRIVATE_DIRECTORY ; USER=root ; COMMAND=/PRIVATE_BINARY --password PRIVATE_ARGUMENT'});
+    assert.equal(event.cancelled,false);
+    assert.equal(event.source.labels.sudo_privacy,'selected-metadata-v1');
+    assert.equal(event.source.message,prefix+'fixture : TTY=[REDACTED] ; CWD=[REDACTED] ; USER=root ; COMMAND=[REDACTED]');
+    assert.ok(!JSON.stringify(event.source).includes('PRIVATE_'));
+  }
+});
+
+test('sudo selection cannot exempt arbitrary files, programs or incomplete command strings', () => {
+  const body='2026-11-01T14:00:00Z fixture sudo[12]: fixture : TTY=pts/0 ; PWD=/PRIVATE_CANARY ; USER=root ; COMMAND=/bin/true';
+  for (const change of [s=>s.log.file.path='/var/log/app.log',s=>s.labels.log_source='windows_file',
+                       s=>s.message=s.message.replace('sudo[12]','other[12]'),s=>s.message=s.message.replace('COMMAND=','OTHER=')]) {
+    const sample={labels:{log_source:'linux_file'},log:{file:{path:'/var/log/auth.log'}},message:body};
+    change(sample);
+    const event=run(sample);
+    assert.equal(event.source.message,'[REDACTED]');
+    assert.equal(event.source.labels.sudo_privacy,undefined);
+    assert.ok(!JSON.stringify(event.source).includes('PRIVATE_CANARY'));
+  }
+});
+
 test('generic discovery and journal cannot bypass optional protected web collection', () => {
   const access='192.0.2.1 - PRIVATE_CANARY [14/Oct/2026:09:00:00 +0900] "GET /?unknown=PRIVATE_CANARY HTTP/1.1" 200 22';
   for(const kind of ['linux_file','linux_journald','windows_file']) {

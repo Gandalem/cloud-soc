@@ -8,7 +8,7 @@ from cloud_soc.portal.log_contract import document_reference, field
 from cloud_soc.portal.security_detail import security_detail, address, text
 from cloud_soc.privacy import REDACTED
 from cloud_soc.parsers.linux_security import parse_linux_ssh, parse_linux_ssh_source, SSH_INVALID_USER_VERSION
-from cloud_soc.parsers.linux_operational import parse_linux_operational, VERSION as LINUX_OPERATIONAL_VERSION, SUDO_SESSION_VERSION
+from cloud_soc.parsers.linux_operational import parse_linux_operational, VERSION as LINUX_OPERATIONAL_VERSION, SUDO_SESSION_VERSION, RFC3339_VERSION
 from cloud_soc.normalizers.ecs import parse_syslog_timestamp
 from cloud_soc.normalizers.time_context import raw_time_context, parse_utc_offset
 from cloud_soc.web.metadata import VERSION as WEB_VERSION
@@ -202,6 +202,14 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
         if operational:
             time_text = operational.pop("time_text", None)
             access_time = operational.pop("access_time", None)
+            native_time = operational.pop("rfc3339_time", None)
+            if native_time:
+                occurred = parse_time(native_time)
+                if occurred is None:
+                    record["reason"] = "linux_time_invalid"
+                    return identifier, record, None
+                time_metadata = {"basis": "rfc3339_timestamp", "year_inferred": False,
+                                 "source_event_time_known": True}
             if access_time:
                 try:
                     # Month abbreviations are parsed independently of the host locale.
@@ -230,7 +238,9 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
                        else LINUX_OPERATIONAL_VERSION)
             if detail['adapter'] == 'linux_sudo_session_v1':
                 version = SUDO_SESSION_VERSION
-            if detail["adapter"] == "linux_unclassified_v1":
+            if native_time:
+                version = RFC3339_VERSION
+            elif detail["adapter"] == "linux_unclassified_v1":
                 time_metadata = {"basis": "collector_timestamp", "source_event_time_known": False}
             identifier = hashlib.sha256(json.dumps([version, reference], sort_keys=True).encode()).hexdigest()
             record["version"] = version

@@ -31,6 +31,23 @@ function process(event) {
             typeof source.message === 'string' && /^type=(EXECVE|PROCTITLE|USER_CMD)\s/.test(source.message)) {
             event.Cancel(); return event;
         }
+        // Native sudo command lines contain PWD= (working directory), which
+        // intentionally trips the general secret detector. Retain only the
+        // actor/target/time from a complete known-file record before that scan;
+        // never publish its directory, terminal, executable or arguments.
+        var sudoPath = source.log && source.log.file && source.log.file.path;
+        if (source.labels && source.labels.log_source === 'linux_file' &&
+            (sudoPath === '/var/log/auth.log' || sudoPath === '/var/log/syslog') &&
+            typeof source.message === 'string' && source.message.length <= 8192) {
+            // Otto uses RE2, whose counted repetitions stop at 1000. The
+            // enclosing 8192-byte limit bounds the two discarded values.
+            var sudoLine = /^((?:[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2}))\s+\S+\s+sudo(?:\[\d{1,10}\])?:\s*)([A-Za-z0-9_.@-]{1,128})\s*:\s*TTY=[^;\r\n]{1,128}\s*;\s*PWD=[^;\r\n]+\s*;\s*USER=([A-Za-z0-9_.@-]{1,128})\s*;\s*(?:GROUP=[^;\r\n]{1,128}\s*;\s*)?(?:TSID=[^;\r\n]{1,128}\s*;\s*)?COMMAND=[^\r\n]+$/.exec(source.message);
+            if (sudoLine) {
+                event.Put('message', sudoLine[1] + sudoLine[2] + ' : TTY=[REDACTED] ; CWD=[REDACTED] ; USER=' + sudoLine[3] + ' ; COMMAND=[REDACTED]');
+                event.Put('labels.sudo_privacy', 'selected-metadata-v1');
+                source = event.Get();
+            }
+        }
         // Rendered Windows messages duplicate CommandLine, TaskContent and
         // ScriptBlockText under an unstructured name. Keep structured metadata.
         if (source.winlog && typeof source.winlog === 'object' && source.message !== undefined) {

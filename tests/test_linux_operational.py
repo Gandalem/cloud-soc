@@ -19,6 +19,50 @@ def hit(message, app="sudo", kind="linux_journald"):
 
 
 class LinuxOperationalTests(unittest.TestCase):
+    def test_selected_sudo_message_preserves_action_without_terminal_or_command(self):
+        sample = hit('2026-11-01T14:00:00Z fixture sudo[12]: fixture : TTY=[REDACTED] ; CWD=[REDACTED] ; USER=root ; COMMAND=[REDACTED]', kind='linux_file')
+        sample['_source']['log'] = {'file': {'path': '/var/log/auth.log'}}
+        event = normalize(sample, NOW)[2]
+        self.assertEqual(event['event']['action'], 'sudo_command_logged')
+        self.assertEqual(event['user']['name'], 'fixture')
+        self.assertEqual(event['@timestamp'], '2026-11-01T14:00:00Z')
+        self.assertNotIn('COMMAND', json.dumps(event))
+
+    def test_rfc3339_sudo_uses_explicit_offset_without_timezone_guess_or_arguments(self):
+        message = '2026-11-01T23:01:02.123456+09:00 fixture sudo[12]: fixture : TTY=pts/0 ; PWD=/PRIVATE_CANARY ; USER=root ; COMMAND=/usr/bin/logger PRIVATE_CANARY'
+        sample = hit(message, kind='linux_file')
+        sample['_source']['log'] = {'file': {'path': '/var/log/auth.log'}}
+        original = copy.deepcopy(sample)
+        key, record, event = normalize(sample, NOW)
+        self.assertEqual(sample, original)
+        self.assertEqual(record['version'], 'linux-rfc3339-v1')
+        self.assertEqual(event['@timestamp'], '2026-11-01T14:01:02.123456Z')
+        self.assertEqual(event['event']['action'], 'sudo_command_logged')
+        self.assertEqual(event['event']['outcome'], 'unknown')
+        self.assertEqual(event['user']['name'], 'fixture')
+        self.assertNotIn('PRIVATE_CANARY', json.dumps(event))
+        self.assertEqual(event['cloud_soc']['provenance']['time']['basis'], 'rfc3339_timestamp')
+        self.assertEqual(key, normalize(sample, '2026-11-02T00:00:00Z')[0])
+
+    def test_rfc3339_unknown_syslog_program_keeps_native_time_without_body_or_action_guess(self):
+        sample = hit('2026-11-01T14:01:02Z fixture trial-log: PRIVATE_CANARY', kind='linux_file')
+        sample['_source']['log'] = {'file': {'path': '/var/log/syslog'}}
+        _, record, event = normalize(sample, NOW)
+        self.assertEqual(record['adapter'], 'linux_unclassified_v1')
+        self.assertEqual(record['version'], 'linux-rfc3339-v1')
+        self.assertEqual(event['@timestamp'], '2026-11-01T14:01:02Z')
+        self.assertEqual(event['event']['category'], [])
+        self.assertTrue(event['cloud_soc']['provenance']['time']['source_event_time_known'])
+        self.assertNotIn('PRIVATE_CANARY', json.dumps(event))
+
+    def test_rfc3339_invalid_calendar_and_naive_time_do_not_become_known_native_time(self):
+        sample = hit('2026-02-30T14:01:02Z fixture sudo[1]: fixture : TTY=pts/0 ; PWD=/tmp ; USER=root ; COMMAND=/bin/true', kind='linux_file')
+        sample['_source']['log'] = {'file': {'path': '/var/log/auth.log'}}
+        self.assertEqual(normalize(sample, NOW)[1]['reason'], 'linux_time_invalid')
+        sample['_source']['message'] = sample['_source']['message'].replace('2026-02-30T14:01:02Z', '2026-11-01T14:01:02')
+        event = normalize(sample, NOW)[2]
+        self.assertFalse(event['cloud_soc']['provenance']['time']['source_event_time_known'])
+
     def test_pam_sudo_session_actor_is_not_replaced_by_target_root(self):
         sample = hit('pam_unix(sudo:session): session opened for user root(uid=0) by fixture(uid=1000)')
         original = copy.deepcopy(sample)
