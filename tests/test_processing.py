@@ -122,6 +122,34 @@ class ProcessingTests(unittest.TestCase):
             self.assertEqual(second["checkpoint"], "2026-09-22T01:10:00Z")
             self.assertEqual(second["range"]["start"], START)
 
+    def test_safe_diagnostics_distinguish_bulk_permissions_mapping_and_scan(self):
+        from cloud_soc.processing.errors import error_code
+        for status, kind, expected in [(403, 'security_exception', 'authorization_denied'),
+                                       (400, 'mapper_parsing_exception', 'normalization_mapping_rejected')]:
+            client = Mock(); client.options.return_value = client
+            client.bulk.return_value = {'items': [{'create': {'status': status,
+                'error': {'type': kind, 'reason': 'PRIVATE_CANARY'}}}] * 2}
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'checkpoint.sqlite'
+                with self.assertRaises(RuntimeError) as caught:
+                    run_once(client, path, START, now=NOW, scanner=lambda *_: [fixture()])
+                self.assertEqual(error_code(caught.exception), expected)
+                self.assertNotIn('PRIVATE_CANARY', str(caught.exception))
+                saved = client.index.call_args.kwargs['document']
+                self.assertEqual(saved['error'], expected)
+                self.assertEqual(saved['failure_stage'], 'bulk_write')
+                self.assertEqual(saved['checkpoint'], START)
+                with closing(sqlite3.connect(path)) as db:
+                    self.assertIsNone(db.execute('SELECT checkpoint FROM state').fetchone())
+        client = Mock(); client.options.return_value = client
+        with tempfile.TemporaryDirectory() as directory:
+            def fail(*_):
+                raise RuntimeError('partial_search')
+            with self.assertRaises(RuntimeError) as caught:
+                run_once(client, Path(directory)/'checkpoint.sqlite', START, now=NOW, scanner=fail)
+            self.assertEqual(error_code(caught.exception), 'partial_search')
+            self.assertEqual(client.index.call_args.kwargs['document']['failure_stage'], 'input_scan')
+
     def test_bulk_failure_retains_checkpoint_and_replay_uses_create(self):
         client = Mock(); client.options.return_value = client
         client.bulk.return_value = {"items": [{"create": {"status": 201}},

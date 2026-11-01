@@ -34,7 +34,7 @@ test('same navigation labels, groups and order on every page', () => {
 });
 
 test('root, case details and key history resolve to correct active item without echoing URL', () => {
-  assert.equal(current('/', ''), 'index.html');
+  assert.equal(current('/', ''), 'soc.html');
   assert.equal(current('/multicloud', ''), 'multicloud');
   assert.match(markup('/multicloud',''), /href="multicloud" aria-current="page"/);
   assert.equal(current('/workbench.html', ''), 'cases.html');
@@ -54,7 +54,7 @@ test('one collapsible mobile navigation retains complete links and keyboard affo
 });
 
 test('customer navigation has no duplicate operations or developer diagnostics',()=>{
- assert.deepEqual(groups[0].items.map(v=>v[0]),['index.html','dashboard.html','logs.html','multicloud','cases.html']);
+ assert.deepEqual(groups[0].items.map(v=>v[0]),['soc.html','dashboard.html','logs.html','multicloud','cases.html']);
  assert.equal(groups[1].title,'에이전트');
  const html=markup('/logs.html','');
  assert.doesNotMatch(html,/operations.html|collection-health.html|detection-history.html|reprocessing-history.html/);
@@ -69,7 +69,7 @@ test('global customer state cannot show observed coverage when upstream fails or
 });
 
 test('theme button follows current workspace name and no dashboard selector remains',()=>{
- assert.match(markup('/index.html',''),/workspace-label">홈 대시보드<\/span><button[^>]+id="portal-theme-toggle"/);
+ assert.match(markup('/index.html',''),/workspace-label">종합상황판<\/span><button[^>]+id="portal-theme-toggle"/);
  for(const page of ['index.html','dashboard.html'])assert.doesNotMatch(fs.readFileSync(path.join(__dirname,'..',page),'utf8'),/id="dashboard-theme"/);
 });
 

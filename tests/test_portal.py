@@ -101,7 +101,7 @@ class PortalTests(unittest.TestCase):
         self.assertEqual(self.request("GET", "/api/operations?bad=1").status_code, 400)
         self.assertEqual(self.request("GET", "/api/alerts/detail?id=fixture").status_code, 503)
         root = self.request("GET", "/")
-        self.assertIn(b"dashboard.js", root.data)
+        self.assertIn(b"/soc/app.js", root.data)
         self.assertIn(b"operations.js", self.request('GET', '/operations.html').data)
         self.assertNotIn(b"demo-data.js", root.data)
         root.close()
@@ -123,8 +123,12 @@ class PortalTests(unittest.TestCase):
         for page in ('index', 'logs', 'cases', 'workbench', 'agents', 'agent-status', 'collection-health'):
             with self.request('GET', '/' + page + '.html') as response:
                 self.assertEqual(response.status_code, 200)
-                self.assertIn(b'src="shell.js" defer', response.data)
-                self.assertIn(b'id="app-shell"', response.data)
+                if page == 'index':
+                    self.assertIn(b'/soc/app.js', response.data)
+                    self.assertIn(b'id="root"', response.data)
+                else:
+                    self.assertIn(b'src="shell.js" defer', response.data)
+                    self.assertIn(b'id="app-shell"', response.data)
 
     def test_health_unconfigured_is_not_empty_success(self):
         response = self.request('GET', '/api/agents/health')

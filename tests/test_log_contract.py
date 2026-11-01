@@ -230,7 +230,7 @@ class ReferenceTests(unittest.TestCase):
 
     def test_index_scopes_match_existing_reader_without_expanding_permissions(self):
         from cloud_soc.portal.agent_status import INDICES as MONITOR_INDICES
-        self.assertEqual(INDICES, (*MONITOR_INDICES.split(','), 'soc-cloud-aws-*', 'soc-cloud-oci-*'))
+        self.assertEqual(INDICES, (*MONITOR_INDICES.split(','), 'soc-cloud-aws-*', 'soc-cloud-oci-*', 'soc-multicloud-*'))
         for name, pattern in [('index-template.json', INDICES[0]), ('network-index-template.json', INDICES[1])]:
             template = json.loads((ROOT / 'deploy/agents' / name).read_text(encoding='utf-8'))
             self.assertEqual(template['index_patterns'], [pattern])

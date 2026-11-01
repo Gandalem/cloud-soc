@@ -82,6 +82,13 @@ class SourceAccessTests(unittest.TestCase):
   self.assertEqual(self.es.get.call_args.kwargs['source_includes'],list(SOURCE_VIEW_FIELDS))
   self.assertEqual(self.audit()[0][:3],('investigate','investigation','granted'));self.assertEqual(len(self.audit()[0][3]),64)
   self.assertEqual(r.headers['Cache-Control'],'no-store');self.assertNotIn('token',self.http.get('/api/logs/access',headers=auth('investigate')).get_data(as_text=True))
+ def test_source_accepts_elasticsearch_response_wrapper(self):
+  from types import SimpleNamespace
+  self.es.get.return_value=SimpleNamespace(body=deepcopy(FIXTURE))
+  response=self.post()
+  self.assertEqual(response.status_code,200)
+  self.assertEqual(response.json['reference'],{'index':FIXTURE['_index'],'id':FIXTURE['_id']})
+  self.assertEqual(self.audit()[-1][2],'granted')
  def test_failed_audit_never_releases_a_source(self):
   with self.app.extensions['source_audit'].connect() as db:db.execute('DROP TABLE source_access')
   r=self.post();self.assertEqual(r.status_code,503);self.assertEqual(r.json['code'],'source_audit_unavailable');self.assertNotIn('source',r.json)

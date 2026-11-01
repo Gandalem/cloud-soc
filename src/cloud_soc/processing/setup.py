@@ -1,11 +1,11 @@
 """Explicit administrative preparation; the worker cannot create indices or keys."""
 
-from cloud_soc.portal.log_contract import INDICES
 from cloud_soc.processing.contract import NORMALIZED, RECORDS, STATUS
+from cloud_soc.processing.worker import DEFAULT_SOURCE_INDICES
 from cloud_soc.detection.telemetry import RUNS, EXCLUSIONS
 
 ROLE = {"cluster": [], "indices": [
-    {"names": list(INDICES), "privileges": ["read", "view_index_metadata"]},
+    {"names": list(DEFAULT_SOURCE_INDICES), "privileges": ["read", "view_index_metadata"]},
     {"names": [NORMALIZED, RECORDS], "privileges": ["create_doc"]},
     {"names": [STATUS], "privileges": ["index"]},
 ]}

@@ -554,11 +554,11 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             log_assets = {"live-refresh.js", "live-refresh.css", "logs.html", "logs.js", "logs.css", "source-view.js", "auth-client.js", "styles.css", "agents.css", "shell.js", "shell.css", "assets/mark.svg"}
             if sessions:
                 # Session RBAC permits case writes only for analysts; all case data is tenant-scoped.
-                log_routes |= {"index", "case_list", "case_link", "case_detail", "case_create", "case_update", "dashboard_get", "dashboard_save", "dashboards_get", "dashboards_write"}
+                log_routes |= {"index", "soc_overview", "case_list", "case_link", "case_detail", "case_create", "case_update", "dashboard_get", "dashboard_save", "dashboards_get", "dashboards_write"}
                 log_assets |= {"assets/world-countries-110m.json"}
-                log_assets |= {"index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-insights.js", "dashboard-insight-metrics.js", "dashboard-insights.css", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "workbench.html", "investigation.js", "mall-alerts.js"}
+                log_assets |= {"soc.html", "soc/app.js", "soc/app.css", "index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-insights.js", "dashboard-insight-metrics.js", "dashboard-insights.css", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "workbench.html", "investigation.js", "mall-alerts.js"}
                 if principal.organizations:
-                    log_routes |= {"operations_summary", "operations_status", "alert_detail", "alert_site_context", "notice_list", "notice_detail", "insight_data"}
+                    log_routes |= {"operations_summary", "operations_status", "alert_detail", "alert_site_context", "notice_list", "notice_detail", "insight_data", "soc_overview"}
             if request.endpoint not in log_routes and not (request.endpoint == "static_file" and (request.view_args or {}).get("filename") in log_assets):
                 abort(403)
 
@@ -633,9 +633,9 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     def auth_me():
         navigation = ["logs.html", "multicloud"]
         if g.log_principal.role == "admin":
-            navigation += ["index.html", "dashboard.html", "cases.html", "devices.html", "agents.html", "agents.html#keys", "agent-status.html", "settings-slack.html", "settings-rules.html"]
+            navigation += ["soc.html", "index.html", "dashboard.html", "cases.html", "devices.html", "agents.html", "agents.html#keys", "agent-status.html", "settings-slack.html", "settings-rules.html"]
         elif sessions:
-            navigation += ["index.html", "dashboard.html", "cases.html"]
+            navigation += ["soc.html", "index.html", "dashboard.html", "cases.html"]
         return jsonify(user=g.principal, role=g.role, csrf=g.csrf,
                        mode="session" if sessions else "basic", navigation=navigation)
 
@@ -866,6 +866,24 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         credential=request.headers.get('Authorization','')
         if not credential.startswith('Bearer '):raise InsightError('device_authentication_failed',401)
         return jsonify(insights.heartbeat(credential.removeprefix('Bearer '),request.get_json()))
+
+    @app.get('/api/overview')
+    def soc_overview():
+        from dataclasses import replace
+        from cloud_soc.portal.overview import case_overview
+        from cloud_soc.portal.operations import display_summary
+        pairs = list(request.args.items(multi=True))
+        case_data = case_overview(cases, g.principal, pairs)
+        principal = g.log_principal
+        org = request.args.get('organization')
+        if org:
+            if principal.organizations is not None and org not in principal.organizations:
+                abort(403)
+            principal = replace(principal, organizations=(org,))
+        summary = operations_for(principal).summary([('start', case_data['start']), ('end', case_data['end'])])
+        if isinstance(summary, (str, bytes)):
+            summary = json.loads(summary)
+        return jsonify(operations=display_summary(summary), cases=case_data)
 
     @app.get("/api/operations")
     def operations_summary():
@@ -1187,7 +1205,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
 
     @app.get("/")
     def index():
-        return send_from_directory(PROJECT / "prototype", "index.html")
+        return send_from_directory(PROJECT / "prototype", "soc.html")
 
     @app.get("/<path:filename>")
     def static_file(filename):
@@ -1198,7 +1216,9 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                    "detection-history.html", "detection-history.js",
                    "agent-status.html", "agent-status.js", "agent-status.css",
                    "collection-health.html", "collection-health.js",
-                   "index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-insights.js", "dashboard-insight-metrics.js", "dashboard-insights.css", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "mall-alerts.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css", "source-view.js"}
+                   "soc.html", "soc/app.js", "soc/app.css", "index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-insights.js", "dashboard-insight-metrics.js", "dashboard-insights.css", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "investigation.js", "mall-alerts.js", "app.js", "demo-data.js", "workbench.html", "logs.html", "logs.js", "logs-data.js", "logs.css", "source-view.js"}
+        if filename == "index.html":
+            filename = "soc.html"
         if filename not in allowed:
             abort(404)
         return send_from_directory(PROJECT / "prototype", filename)

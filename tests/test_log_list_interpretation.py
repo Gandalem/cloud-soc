@@ -58,6 +58,32 @@ class ListInterpretationTests(unittest.TestCase):
         self.assertIsNone(row["user"])
         self.assertEqual(project_hit(event)["parse_status"], "not_evaluated")
 
+    def test_windows_specific_labels_require_verified_provider_and_code(self):
+        for code, expected in ((4625, 'Windows 로그인 실패'), (4688, 'Windows 프로세스 생성'),
+                               (4720, 'Windows 계정 생성')):
+            event = hit(code)
+            original = deepcopy(event)
+            row = project_list_hit(event)
+            self.assertEqual(row['log_type']['label'], expected)
+            self.assertEqual(event, original)
+            event['_source']['winlog']['provider_name'] = 'Other'
+            self.assertNotEqual(project_list_hit(event)['log_type']['label'], expected)
+            event['_source']['winlog']['provider_name'] = 'Microsoft-Windows-Security-Auditing'
+            event['_source']['event']['code'] = '9999'
+            self.assertNotEqual(project_list_hit(event)['log_type']['label'], expected)
+
+    def test_linux_labels_use_only_explicit_structured_fields(self):
+        event = {'_index': 'soc-host-raw-test', '_id': 'linux', '_source': {
+            'labels': {'log_source': 'linux_file'}, 'log': {'file': {'path': '/var/log/auth.log'}},
+            'event': {'action': 'ssh_login', 'outcome': 'failure'}}}
+        original = deepcopy(event)
+        self.assertEqual(project_list_hit(event)['log_type']['label'], 'Linux SSH 로그인 실패')
+        self.assertEqual(event, original)
+        del event['_source']['event']['outcome']
+        self.assertEqual(project_list_hit(event)['log_type']['label'], 'Linux 인증·권한')
+        event['_source']['event']['action'] = 'sudo_command_logged'
+        self.assertEqual(project_list_hit(event)['log_type']['label'], 'Linux sudo 명령 기록')
+
     def test_partial_wrong_provider_conflict_and_unknown_source(self):
         event = hit()
         del event["_source"]["winlog"]["event_data"]["LogonType"]

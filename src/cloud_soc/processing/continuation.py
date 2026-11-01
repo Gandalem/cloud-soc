@@ -4,7 +4,7 @@ import json
 
 from elasticsearch import NotFoundError
 
-from cloud_soc.portal.log_contract import document_reference
+from cloud_soc.processing.contract import raw_identity
 
 
 def prepare(db, client, checkpoint, start, end, *, resolve, batches, checked):
@@ -30,7 +30,7 @@ def prepare(db, client, checkpoint, start, end, *, resolve, batches, checked):
 
 
 def seen_id(hit):
-    reference = document_reference(hit.get('_index'), hit.get('_id'))
+    reference = raw_identity(hit)
     return hashlib.sha256(json.dumps(reference, sort_keys=True).encode()).hexdigest()
 
 

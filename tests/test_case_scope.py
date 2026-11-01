@@ -38,6 +38,15 @@ def workflow(tmp_path):
     monitor.indices.resolve_index.side_effect = lambda **kw: {"indices": [{"name": name} for name in sorted(
         {index for index, _ in docs if any(fnmatchcase(index, pattern) for pattern in kw["name"].split(","))})]}
     monitor.get.side_effect = lambda **kw: {"_source": deepcopy(docs[(kw["index"], kw["id"])])}
+    def mget(*, index, docs):
+        rows=[]
+        for reference in docs:
+            key=(index,reference['_id'])
+            rows.append({'_index':index,'_id':reference['_id'],'found':key in documents,
+                         **({'_source':deepcopy(documents[key])} if key in documents else {})})
+        return {'docs':rows}
+    documents=docs
+    monitor.mget.side_effect=mget
     monitor.field_caps.side_effect = lambda **kw: {"fields": {kw["fields"][0]: {"date": {}}}}
 
     def search(**kw):

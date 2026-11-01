@@ -38,3 +38,6 @@ prototype/tests/node_modules/
 *.env
 config/multicloud.json
 .venv-multicloud/
+
+frontend/node_modules
+.venv-runtime/

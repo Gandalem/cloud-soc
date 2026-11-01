@@ -49,7 +49,7 @@ def test_session_preserves_organization_scope_and_blocks_global_history(session_
     assert http.get("/api/cases").json["counts"]["total"] == 0
     assert http.get("/api/operations").status_code == 200
     assert http.get('/api/operations/status').json['coverage']['state'] == 'unknown'
-    assert set(http.get('/api/auth/me').json['navigation']) == {'index.html', 'dashboard.html', 'logs.html', 'multicloud', 'cases.html'}
+    assert set(http.get('/api/auth/me').json['navigation']) == {'soc.html', 'index.html', 'dashboard.html', 'logs.html', 'multicloud', 'cases.html'}
     for path in ("/api/detection/history", "/api/reprocessing/history", "/api/keys"):
         assert http.get(path, headers={"X-Role": "admin", "X-Organization": "foreign"}).status_code == 403
     foreign = deepcopy(FIXTURE)

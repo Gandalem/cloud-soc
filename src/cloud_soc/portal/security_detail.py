@@ -35,6 +35,7 @@ WINDOWS_FIELDS = (
     "DestinationIp", "DestinationPort", "Protocol",
 )
 DETAIL_FIELDS = (
+    "soc.schema_version", "soc.collector_id", "resource.id",
     *SCENARIO_FIELDS,
     'waf.schema', 'waf.engine_mode', 'waf.interruption', 'waf.rules', 'http.request.id',
     *EDGE_FIELDS,
@@ -128,6 +129,9 @@ def security_detail(source):
     if not isinstance(source, dict):
         return result
     get = lambda path: field(source, path)
+    if get("soc.schema_version") is not None:
+        from cloud_soc.multicloud.adapter import detail
+        return detail(source)
     if get('labels.log_source') == SCENARIO_SOURCE:
         result['adapter'] = SCENARIO_ADAPTER
         try:

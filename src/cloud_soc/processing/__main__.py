@@ -8,6 +8,7 @@ from elasticsearch import Elasticsearch
 from cloud_soc.aws.__main__ import endpoint, protected_key
 from cloud_soc.portal.agent_status import parse_time
 from cloud_soc.processing.worker import run_once
+from cloud_soc.processing.errors import error_code
 
 
 def page_limit(value):
@@ -75,8 +76,8 @@ def main(argv=None):
                                       ssh_v2_start=args.linux_ssh_v2_start, web_site_v2_start=args.web_site_v2_start, window_minutes=args.window_minutes,
                                       status_id='normalizer-priority' if args.priority else 'normalizer')
                     print("normalization_" + result["state"] + " checkpoint=" + result["checkpoint"], flush=True)
-                except Exception:
-                    print("normalization_failed; checkpoint retained; inspect permissions and service status", flush=True)
+                except Exception as failure:
+                    print("normalization_failed code=" + error_code(failure) + "; checkpoint retained", flush=True)
                     if args.once:
                         return 1
                 if args.once:

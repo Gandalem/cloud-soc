@@ -13,8 +13,11 @@ from cloud_soc.portal.security_detail import DETAIL_FIELDS
 from cloud_soc.processing.contract import normalize, NORMALIZED, RECORDS, STATUS
 from cloud_soc.elastic.index_scope import index_batches
 from cloud_soc.processing import continuation
+from cloud_soc.processing.errors import WorkerFailure, error_code
 from cloud_soc.web.scope import NORMALIZER_VERSION as SITE_VERSION, LEGACY_VERSION
 from cloud_soc.portal.log_contract import field
+
+DEFAULT_SOURCE_INDICES = tuple(p for p in INDICES if p != "soc-multicloud-*")
 
 READ_FIELDS = list(SOURCE_FIELDS + DETAIL_FIELDS) + ["message", "event.timezone", "event.created",
     "log.syslog.appname", "process.name", "journald.syslog.identifier", "journald.process.name", "journald.pid"]
@@ -109,7 +112,16 @@ def create_batch(client, documents):
             continue
         if status == 409 and result.get("error", {}).get("type") == "version_conflict_engine_exception":
             continue
-        raise RuntimeError("normalization_bulk_failed")
+        reason = {
+            401: 'authentication_failed_or_key_expired',
+            403: 'authorization_denied',
+            429: 'elasticsearch_overloaded',
+            503: 'elasticsearch_unavailable',
+        }.get(status, 'normalization_bulk_failed')
+        kind = result.get('error', {}).get('type') if isinstance(result.get('error'), dict) else None
+        if status == 400 and kind in {'mapper_parsing_exception', 'document_parsing_exception', 'strict_dynamic_mapping_exception'}:
+            reason = 'normalization_mapping_rejected'
+        raise WorkerFailure('normalization_bulk_failed', reason)
 
 
 def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_pages=1000, ssh_v2_start=None, web_site_v2_start=None,
@@ -120,17 +132,20 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
     initial = parse_time(initial_start)
     if (initial is None or initial > now or type(max_pages) is not int or not 1 <= max_pages <= 10000
             or type(window_minutes) is not int or not 1 <= window_minutes <= 60
-            or status_id not in ('normalizer', 'normalizer-priority')
+            or status_id not in ('normalizer', 'normalizer-priority', 'normalizer-multicloud')
             or type(receipt_lag_seconds) is not int or not 0 <= receipt_lag_seconds <= 300
             or type(overlap_seconds) is not int or not 60 <= overlap_seconds <= 86400):
         raise ValueError("A past aware initial start is required")
+    multicloud_scope = isinstance(source_indices,(list,tuple)) and list(source_indices)==['soc-multicloud-*']
+    if (status_id=='normalizer-multicloud') != multicloud_scope:
+        raise ValueError('Multicloud source requires its independent worker status')
     ssh_start = parse_time(ssh_v2_start) if ssh_v2_start is not None else None
     if ssh_v2_start is not None and (ssh_start is None or not initial <= ssh_start <= now):
         raise ValueError("An aware SSH adapter start within the configured receipt range is required")
     web_start = parse_time(web_site_v2_start) if web_site_v2_start is not None else None
     if web_site_v2_start is not None and (web_start is None or not initial <= web_start <= now):
         raise ValueError('An aware site adapter start within the receipt range is required')
-    if source_indices is not None:
+    if source_indices is not None and list(source_indices) != ["soc-multicloud-*"]:
         if (not isinstance(source_indices, (list, tuple)) or not source_indices
                 or any(not isinstance(n, str) or not re.fullmatch(r'[a-z0-9][a-z0-9_.-]{0,254}', n)
                        or document_reference(n, 'scope') is None for n in source_indices)):
@@ -186,12 +201,16 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
                   "checkpoint": iso(checkpoint), "last_success": row[1] if row else None,
                   "range": {"start": iso(start), "end": iso(end)}, "counts": counts, "error": None}
         meta = None
+        stage = 'status_write'
         try:
             client.index(index=status_index, id=status_id, document=status)
             if end > checkpoint:
+                stage = 'input_scan'
                 def consume(hits, counters):
+                    nonlocal stage
                     batch = []
                     for hit in hits:
+                        stage = 'normalize_document'
                         received = parse_time(field(hit.get('_source'), 'event.ingested'))
                         web_version = SITE_VERSION if web_start is not None and received is not None and received >= web_start else LEGACY_VERSION
                         identifier, record, event = normalize(hit, iso(now), ssh_v2_start=ssh_start, web_version=web_version)
@@ -201,15 +220,20 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
                         batch.append((records_index, identifier, record))
                         counters[record["status"]] += 1
                         if len(batch) >= 200:
+                            stage = 'bulk_write'
                             create_batch(client, batch)
+                            stage = 'input_scan'
                             batch.clear()
+                        stage = 'input_scan'
+                    stage = 'bulk_write'
                     create_batch(client, batch)
+                    stage = 'input_scan'
 
                 if scanner is not None:
                     consume(scanner(client, iso(start), iso(end)), counts)
                 else:
                     meta = continuation.prepare(db, client, iso(checkpoint), iso(start), iso(end),
-                        resolve=lambda c: resolve(c, source_indices if source_indices is not None else INDICES),
+                        resolve=lambda c: resolve(c, source_indices if source_indices is not None else DEFAULT_SOURCE_INDICES),
                         batches=index_batches, checked=checked)
                     status["range"] = {"start": meta["start"], "end": meta["end"]}
                     counts = meta["counts"]
@@ -226,6 +250,7 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
                         return status
                     end = parse_time(meta["end"])
                 checkpoint = end
+            stage = 'checkpoint_commit'
             completed = end > (parse_time(row[0]) if row else initial)
             status.update(state="success" if completed else "waiting", checkpoint=iso(checkpoint),
                           last_success=iso(now) if completed else (row[1] if row else None))
@@ -235,17 +260,18 @@ def run_once(client, state_path, initial_start, *, now=None, scanner=None, max_p
                 continuation.clear(db)
             db.commit()
             return status
-        except Exception:
+        except Exception as failure:
+            reason = error_code(failure)
             db.rollback()
             if meta and meta.get("pit"):
                 try:
                     client.close_point_in_time(id=meta["pit"])
                 except Exception:
                     pass
-            status.update(state="failed", error="processing_failed", checkpoint=row[0] if row else iso(initial),
+            status.update(state="failed", error=reason, failure_stage=stage, checkpoint=row[0] if row else iso(initial),
                           last_success=row[1] if row else None)
             try:
                 client.index(index=status_index, id=status_id, document=status)
             except Exception:
                 pass
-            raise RuntimeError("processing_failed; checkpoint retained") from None
+            raise WorkerFailure(reason + "; stage=" + stage + "; checkpoint retained", reason) from None

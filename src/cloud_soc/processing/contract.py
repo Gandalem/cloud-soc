@@ -23,10 +23,31 @@ RECORDS = "soc-processing-v1"
 STATUS = "soc-pipeline-status"
 
 
+def raw_identity(hit):
+    """Internal opaque identity only; never display/persist an unvalidated ID."""
+    index, identifier = hit.get('_index'), hit.get('_id')
+    document_reference(index, 'identity-check')  # Keep exact intake-index allowlist.
+    if not isinstance(identifier, str) or not identifier or len(identifier.encode('utf-8')) > 512:
+        raise ValueError('Invalid raw reference')
+    return {'index': index, 'id': identifier}
+
+
 def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSION):
     if web_version not in (SITE_VERSION, LEGACY_VERSION):
         raise ValueError('Unsupported generic web normalizer version')
-    reference = document_reference(hit.get("_index"), hit.get("_id"))
+    try:
+        reference = document_reference(hit.get("_index"), hit.get("_id"))
+    except ValueError:
+        identity = raw_identity(hit)
+        identifier = hashlib.sha256(json.dumps([VERSION, identity], sort_keys=True).encode()).hexdigest()
+        source = hit.get('_source')
+        received = parse_time(field(source, 'event.ingested'))
+        record = {'@timestamp': processed_at, 'version': VERSION, 'status': 'invalid',
+                  'reason': 'raw_reference_rejected',
+                  'raw': {'index': identity['index'], 'reference_state': 'rejected',
+                          'id_sha256': hashlib.sha256(identity['id'].encode()).hexdigest()},
+                  'event': {'ingested': iso(received) if received else None}}
+        return identifier, record, None
     if reference is None:
         raise ValueError("Invalid raw reference")
     identifier = hashlib.sha256(json.dumps([VERSION, reference], sort_keys=True).encode()).hexdigest()
@@ -41,7 +62,35 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
               "event": {"ingested": iso(received) if received else None}}
     if not received or not occurred or not organization or organization == REDACTED or organization != raw_organization:
         return identifier, record, None
+    if reference['index'].startswith('soc-multicloud-'):
+        from cloud_soc.multicloud.adapter import detail as multicloud_detail, VERSION as MC_VERSION
+        detail = multicloud_detail(source)
+        identifier = hashlib.sha256(json.dumps([MC_VERSION, reference], sort_keys=True).encode()).hexdigest()
+        record.update(version=MC_VERSION, adapter='multicloud_audit_v1')
+        if detail['status']=='invalid' or field(source,'event.id')!=reference['id']:
+            record.update(reason='multicloud_metadata_invalid')
+            return identifier, record, None
+        values=detail['fields']
+        event={'@timestamp':iso(occurred),'organization':{'id':organization},
+               'event':{'kind':'event','id':values['event_id'],'dataset':field(source,'event.dataset'),
+                        'category':[values['category']],'action':values['action'],'outcome':values['outcome'],
+                        'ingested':iso(received)},
+               'cloud':{'provider':field(source,'cloud.provider'),'account':{'id':values['cloud_account']}},
+               'cloud_soc':{'normalized_at':processed_at,'normalizer_version':MC_VERSION,
+                 'parse_status':detail['status'],'detail':detail,
+                 'provenance':{'schema_version':1,'raw':reference,
+                    'time':{'basis':'provider_event_time','receipt_basis':'collector_clock','year_inferred':False}}}}
+        if values.get('provider'):event['event']['provider']=values['provider']
+        if values.get('cloud_region'):event['cloud']['region']=values['cloud_region']
+        if values.get('actor'):event['user']={'id':values['actor']}
+        if values.get('source_ip'):event['source']={'ip':values['source_ip']}
+        if values.get('resource_id'):event['resource']={'id':values['resource_id']}
+        record.update(status='normalized',reason=detail['status'],normalized={'index':NORMALIZED,'id':identifier})
+        return identifier,record,event
     detail = security_detail(source)
+    if detail['adapter']=='multicloud_audit_v1':
+        record.update(reason='source_scope_mismatch')
+        return identifier,record,None
     if detail['adapter'] == 'security_scenarios_v1':
         version = 'security-scenarios-v1'
         identifier = hashlib.sha256(json.dumps([version, reference], sort_keys=True).encode()).hexdigest()

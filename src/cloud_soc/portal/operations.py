@@ -7,7 +7,7 @@ from urllib.parse import quote
 from elasticsearch import NotFoundError
 from cloud_soc.portal.agent_status import iso, parse_time
 from cloud_soc.portal.log_contract import INDICES, SOURCE_FIELDS, field, parse_filters, document_reference, project_hit
-from cloud_soc.portal.log_query import LogQueryError, bounded_json
+from cloud_soc.portal.log_query import LogQueryError, bounded_json, fetch_document
 from cloud_soc.portal.security_detail import DETAIL_FIELDS, security_detail, text, address
 from cloud_soc.processing.contract import NORMALIZED, RECORDS, STATUS
 from cloud_soc.processing.worker import checked
@@ -32,6 +32,7 @@ def exact_indices(client, patterns):
         response = client.indices.resolve_index(name=",".join(patterns), expand_wildcards="open")
     except NotFoundError:
         return []
+    response = getattr(response, 'body', response)
     if response.get("aliases") or response.get("data_streams"):
         raise ValueError("Aliases are not accepted")
     names = [row["name"] for row in response.get("indices", [])]
@@ -199,8 +200,10 @@ class Operations:
         if not exact_indices(self.client, [index]):
             return None
         try:
-            options = {"source_includes": fields} if fields is not None else {}
-            source = self.client.get(index=index, id=identifier(doc_id), **options)["_source"]
+            doc_id = identifier(doc_id)
+            hit = (fetch_document(self.client, {'index': index, 'id': doc_id}, fields)
+                   if fields is not None else self.client.get(index=index, id=doc_id))
+            source = hit["_source"]
             return source if self.visible(source) else None
         except NotFoundError:
             return None
@@ -324,6 +327,24 @@ class Operations:
         return result
 
     def pipeline(self):
+        result = self._base_pipeline()
+        if self.organizations is not None:
+            return result
+        try:
+            adapter = self.worker_status('normalizer-multicloud')
+        except Exception:
+            adapter = {'state':'unavailable'}
+        result['multicloud_normalizer'] = adapter
+        state,health = adapter.get('state'),adapter.get('health')
+        finding = ({'state':'blocked','reason':'multicloud_normalizer_failed'} if state=='failed' else
+                   {'state':'unknown','reason':'multicloud_normalizer_stale'} if state=='stale' else
+                   {'state':'delayed','reason':'multicloud_normalizer_delayed'} if health=='delayed' else None)
+        priority={'observed':0,'warning':1,'catching_up':2,'delayed':3,'not_started':4,'unknown':5,'blocked':6}
+        if finding and priority[finding['state']]>priority.get(result.get('coverage',{}).get('state'),-1):
+            result['coverage']=finding
+        return result
+
+    def _base_pipeline(self):
         if self.processing_scope and self.managed_config is not None:
             return self.scoped_pipeline()
         if self.mall_scope:

@@ -46,6 +46,27 @@ class ContinuationTests(unittest.TestCase):
         with closing(sqlite3.connect(self.path)) as db:
             return db.execute('SELECT checkpoint FROM state').fetchall()
 
+    def test_rejected_document_id_is_recorded_without_poisoning_receipt_window(self):
+        page=self.page(0,3)
+        page['hits']['hits'][1]['_id']='token=REFERENCE_SECRET_CANARY'
+        self.client.search.side_effect=[page,{'hits':{'hits':[]}}]
+        result=run_once(self.client,self.path,START,now=NOW,max_pages=2)
+        self.assertEqual(result['state'],'success')
+        self.assertEqual(result['counts'],{'normalized':2,'invalid':1,'unsupported':0})
+        self.assertEqual(self.checkpoint()[0][0],'2026-09-22T01:05:00Z')
+        records=[v for (index,_),v in self.stored.items() if index=='soc-processing-v1']
+        rejected=[r for r in records if r['reason']=='raw_reference_rejected']
+        self.assertEqual(len(rejected),1)
+        self.assertNotIn('id',rejected[0]['raw'])
+        self.assertEqual(len(rejected[0]['raw']['id_sha256']),64)
+        self.assertNotIn('REFERENCE_SECRET_CANARY',json.dumps(list(self.stored.values())))
+        self.assertNotIn(b'REFERENCE_SECRET_CANARY',self.path.read_bytes())
+        # Replaying the overlap creates no additional immutable documents.
+        before=deepcopy(self.stored)
+        self.client.search.side_effect=[page,{'hits':{'hits':[]}}]
+        run_once(self.client,self.path,START,now=NOW,max_pages=2)
+        self.assertEqual(self.stored,before)
+
     def test_budget_is_not_a_permanent_window_limit_and_resume_survives_restart(self):
         self.client.search.side_effect = [self.page()]
         first = run_once(self.client, self.path, START, now=NOW, max_pages=1)

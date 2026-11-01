@@ -22,12 +22,29 @@ PIT_TTL = "90s"
 CURSOR_SECONDS = 600
 
 
+def fetch_document(client, reference, fields):
+    # Put the exact allowlist in the POST body; a long GET URL exceeds ES's HTTP line limit.
+    response = client.mget(index=reference['index'], docs=[{'_id': reference['id'], '_source': list(fields)}])
+    response = getattr(response, 'body', response)
+    documents = response.get('docs') if isinstance(response, dict) else None
+    if not isinstance(documents, list) or len(documents) != 1 or not isinstance(documents[0], dict):
+        raise unavailable()
+    hit = documents[0]
+    if 'error' in hit:
+        raise unavailable()
+    if hit.get('found') is False:
+        raise NotFoundError('missing', {}, {})
+    if hit.get('found') is not True or hit.get('_index') != reference['index'] or hit.get('_id') != reference['id']:
+        raise unavailable()
+    return hit
+
+
 def project_list_hit(hit):
     """Expose the existing allowlisted interpretation without rewriting raw metadata."""
     row = project_hit(hit)
     detail = security_detail(hit.get("_source")) if row["source_kind"] != "unknown" else {
         "status": "unsupported", "adapter": None, "fields": {}}
-    adapters = {"windows_event": {"windows_security_v1", "sysmon_v1"},
+    adapters = {"multicloud_audit": {"multicloud_audit_v1"}, "windows_event": {"windows_security_v1", "sysmon_v1"},
                 "security_scenario": {"security_scenarios_v1"},
                 "security_mall_audit": {"security_mall_audit_v1"}, "security_mall_edge": {"security_mall_edge_v1"},
                 "web_access_metadata": {"web_access_metadata_v1"},
@@ -60,6 +77,7 @@ def value(def s, String path) {
 """
 OS_SCRIPT = FIELD_HELPER + """
 def s = params._source;
+if (value(s, 'soc.schema_version') == 1 && ['aws','azure','naver'].contains(value(s, 'cloud.provider'))) { emit('cloud'); return; }
 if (value(s, 'labels.log_source') == 'aws_cloudtrail' && value(s, 'cloud.provider') == 'aws') { emit('cloud'); return; }
 if (value(s, 'labels.log_source') == 'oci_audit' && value(s, 'cloud.provider') == 'oci') { emit('cloud'); return; }
 def os = value(s, 'host.os.type');
@@ -261,6 +279,7 @@ class LogReader:
             return []
         resolved = self.client.indices.resolve_index(name=name, expand_wildcards="open",
                                                      allow_no_indices=True, ignore_unavailable=True)
+        resolved = getattr(resolved, 'body', resolved)
         names = [entry["name"] for entry in resolved["indices"]]
         for index in names:
             document_reference(index, "validation")
@@ -422,8 +441,7 @@ class LogReader:
         try:
             if self.indices(reference["index"]) != [reference["index"]]:
                 raise LogQueryError("log_not_found", 404, "문서를 찾을 수 없습니다. 삭제되었거나 보존 기간이 지났을 수 있습니다.")
-            hit = self.client.get(index=reference["index"], id=reference["id"],
-                                  source_includes=list(SOURCE_FIELDS) + list(DETAIL_FIELDS))
+            hit = fetch_document(self.client, reference, list(SOURCE_FIELDS) + list(DETAIL_FIELDS))
             if hit["_index"] != reference["index"] or hit["_id"] != reference["id"]:
                 raise unavailable()
             if self.organizations is not None and project_list_hit(hit)["organization"] not in self.organizations:

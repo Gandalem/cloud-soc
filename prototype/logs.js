@@ -1,7 +1,7 @@
 /* Read-only live intake metadata. No fixture fallback or browser persistence. */
 (() => {
   "use strict";
-  const sources = { generic_web_access:"웹 사이트 접근 기록", web_access_metadata:"AWS DVWA 웹 접근 기록", windows_event: "Windows 이벤트", windows_file: "Windows 파일", linux_file: "Linux 파일", linux_journald: "Linux 저널", network_packetbeat: "네트워크", aws_cloudtrail: "AWS 관리 이벤트", oci_audit: "OCI 감사 이벤트", unknown: "미분류" };
+  const sources = { multicloud_audit:"멀티클라우드 감사", generic_web_access:"웹 사이트 접근 기록", web_access_metadata:"AWS DVWA 웹 접근 기록", windows_event: "Windows 이벤트", windows_file: "Windows 파일", linux_file: "Linux 파일", linux_journald: "Linux 저널", network_packetbeat: "네트워크", aws_cloudtrail: "AWS 관리 이벤트", oci_audit: "OCI 감사 이벤트", unknown: "미분류" };
   sources.generic_modsecurity = 'ModSecurity WAF 메타데이터';
   sources.security_scenario = '보안 시나리오 감사 기록';
   Object.assign(sources,{security_mall_audit:'쇼핑몰 보안 감사',security_mall_edge:'쇼핑몰 웹·WAF',agent_health:'수집 상태 보고',agent_collection_notice:'수집 입력 오류'});
@@ -14,7 +14,7 @@
     server: ['windows_event', 'windows_file', 'linux_file', 'linux_journald'],
     application: ['generic_web_access', 'web_access_metadata', 'generic_modsecurity', 'security_mall_audit', 'security_mall_edge'],
     network: ['network_packetbeat'],
-    cloud: ['aws_cloudtrail', 'oci_audit']
+    cloud: ['aws_cloudtrail', 'oci_audit', 'multicloud_audit']
   };
   function renderEnvironments(rows) {
     let classified = 0;
@@ -44,9 +44,14 @@
     const outcome = row.outcome && row.outcome !== 'unknown' ? row.outcome : fields.outcome || 'unknown';
     const actor = row.user || row.actor_id || fields.actor || (fields.account_id ? `가명 계정: ${fields.account_id}` : null) || (fields.target_user ? `대상 계정: ${fields.target_user}` : null);
     const interpretation = label({recognized:'형식 확인',partial:'부분 해석 · 필드 누락',unsupported:'메타데이터만 표시 · 행위 해석 미지원'},interpreted.status,'미평가 · 서버 갱신 필요');
-    const cloudName = row.cloud_provider === 'oci' ? 'OCI' : row.source_kind === 'aws_cloudtrail' ? 'AWS' : '클라우드';
+    const cloudName = row.cloud_provider === 'azure' ? 'Azure' : row.cloud_provider === 'naver' ? 'Naver Cloud' : row.cloud_provider === 'aws' ? 'AWS' : row.cloud_provider === 'oci' ? 'OCI' : row.source_kind === 'aws_cloudtrail' ? 'AWS' : '클라우드';
     const origin = row.stream === 'cloud' ? [cloudName,row.cloud_account,row.cloud_region].filter(Boolean).join(' / ') : [row.service_name || fields.service_name,row.host_name || row.host_id,row.site_id ? `사이트 ${row.site_id}` : null].filter(Boolean).join(' / ');
-    const source = label(sources,row.source_kind,'미분류');
+    const osName = typeof row.os_name === 'string' ? row.os_name.trim() : '';
+    const hostLog = ['windows_event', 'windows_file', 'linux_file', 'linux_journald'].includes(row.source_kind);
+    const platform = !hostLog ? null : row.os === 'windows' && /^Windows Server(?:\s|$)/i.test(osName) ? 'Windows Server'
+      : row.os === 'windows' ? 'Windows' : row.os === 'linux' && /^Ubuntu(?:\s|$)/i.test(osName) ? 'Ubuntu'
+      : row.os === 'linux' ? 'Linux' : null;
+    const source = [platform, label(sources,row.source_kind,'미분류'), platform && row.event_code ? `이벤트 ID ${row.event_code}` : null].filter(Boolean).join(' · ');
     const from = row.source_ip || fields.source_ip, to = row.destination_ip || fields.destination_ip;
     const peer = from ? `${from}${to ? ` → ${to}` : ''}` : to ? `목적지 ${to}` : null;
     const primaryTime = timeBasis === 'event' ? row.event_at : row.received_at;

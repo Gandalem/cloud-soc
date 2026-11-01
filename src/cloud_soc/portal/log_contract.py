@@ -10,7 +10,7 @@ from cloud_soc.portal.agent_status import iso, parse_time
 from cloud_soc.web.scope import valid_site_id
 
 CONTRACT_VERSION = 1
-INDICES = ("soc-host-raw-*", "soc-network-*", "soc-cloud-aws-*", "soc-cloud-oci-*")
+INDICES = ("soc-host-raw-*", "soc-network-*", "soc-cloud-aws-*", "soc-cloud-oci-*", "soc-multicloud-*")
 DEFAULT_PAGE_SIZE = 25
 PAGE_SIZES = (10, 25, 50)
 MAX_WINDOW = timedelta(days=30)
@@ -106,7 +106,7 @@ def parse_filters(pairs, *, now=None):
 def document_reference(index, identifier):
     """Validate intake-shaped references; the caller must also reject ES aliases."""
     if (not isinstance(index, str) or len(index.encode("utf-8")) > 255
-            or not re.fullmatch(r"soc-(?:host-raw|network|cloud-aws|cloud-oci)-[a-z0-9][a-z0-9_.-]*", index)):
+            or not re.fullmatch(r"soc-(?:host-raw|network|cloud-aws|cloud-oci|multicloud)-[a-z0-9][a-z0-9_.-]*", index)):
         raise ValueError("Invalid intake index reference")
     if (not isinstance(identifier, str) or not identifier or len(identifier.encode("utf-8")) > 512
             or any(ord(c) < 32 for c in identifier) or sensitive(identifier)):
@@ -123,6 +123,8 @@ def field(source, path):
 
 
 def operating_system(source):
+    if field(source, "soc.schema_version") == 1 and field(source, "cloud.provider") in ("aws", "azure", "naver"):
+        return "cloud", "cloud.provider"
     if field(source, "labels.log_source") == "aws_cloudtrail" and field(source, "cloud.provider") == "aws":
         return "cloud", "cloud.provider"
     if field(source, "labels.log_source") == "oci_audit" and field(source, "cloud.provider") == "oci":
@@ -188,9 +190,11 @@ def project_hit(hit):
         return result if many else (result[0] if result else None)
 
     source_name = string("labels.log_source")
-    stream = "host" if reference["index"].startswith("soc-host-raw-") else "cloud" if reference["index"].startswith(("soc-cloud-aws-", "soc-cloud-oci-")) else "network"
+    stream = "host" if reference["index"].startswith("soc-host-raw-") else "cloud" if reference["index"].startswith(("soc-cloud-aws-", "soc-cloud-oci-", "soc-multicloud-")) else "network"
     supported = HOST_SOURCES if stream == "host" else {"oci_audit" if reference["index"].startswith("soc-cloud-oci-") else "aws_cloudtrail"} if stream == "cloud" else {"network_packetbeat"}
     kind = source_name if source_name in supported else "unknown"
+    if reference["index"].startswith("soc-multicloud-"):
+        kind = "multicloud_audit"
     os_type, os_basis = operating_system(source)
     outcome = string("event.outcome")
     if outcome not in (None, "success", "failure", "unknown"):

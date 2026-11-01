@@ -1,0 +1,21 @@
+# Opt-in sidecar. Required paths/image/network must be explicitly supplied.
+services:
+  multicloud-normalizer:
+    image: ${SOC_ADAPTER_IMAGE:?Set reviewed central image}
+    command: [python, -m, cloud_soc.multicloud.processing, --run, --start, '${SOC_ADAPTER_START:?Set immutable receipt floor}', --state, /data/multicloud-checkpoint.sqlite, --es-url, 'https://elasticsearch:9200', --ca-file, /run/certs/ca.crt, --api-key-file, /run/keys/worker.key]
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 192m
+    volumes:
+      - ${SOC_ADAPTER_STATE:?Dedicated adapter state directory}:/data
+      - ${SOC_ADAPTER_CA:?Existing CA path}:/run/certs/ca.crt:ro
+      - ${SOC_ADAPTER_KEY:?Dedicated key file}:/run/keys/worker.key:ro
+    networks: [central]
+networks:
+  central:
+    external: true
+    name: ${SOC_ADAPTER_NETWORK:?Existing central Docker network}
