@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -171,11 +172,13 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(changed["template"]["settings"]["index.final_pipeline"], PIPELINE_ID)
             self.assertEqual(changed["template"]["mappings"]["properties"]["event"]["properties"]["ingested"]["type"], "date")
         client = Mock()
+        client.security.get_role.return_value = SimpleNamespace(body={})
+        client.security.get_user.return_value = SimpleNamespace(body={})
         configure_reader(client, "synthetic-password")
-        role = client.security.put_role.call_args.kwargs
+        role = client.security.put_role.call_args.kwargs["body"]
         self.assertEqual(role["cluster"], [])
         self.assertEqual(role["indices"], [{"names": INDICES.split(",") + ["soc-agent-health-*", "soc-cloud-aws-*", "soc-cloud-oci-*",
-            "soc-normalized-v1", "soc-processing-v1", "soc-normalized-history-v1", "soc-processing-history-v1", "soc-pipeline-status", "soc-detection-runs-v1", "soc-detection-exclusions-v1", "soc-alert-notices-v1", "security-alerts", "normalized-events", "raw-logs-*"],
+            "soc-multicloud-*", "soc-normalized-v1", "soc-processing-v1", "soc-normalized-history-v1", "soc-processing-history-v1", "soc-pipeline-status", "soc-detection-runs-v1", "soc-detection-exclusions-v1", "soc-alert-notices-v1", "security-alerts", "normalized-events", "raw-logs-*"],
             "privileges": ["read", "view_index_metadata"]}])
         self.assertEqual(client.security.put_user.call_args.kwargs["roles"], ["cloud_soc_agent_monitor"])
 

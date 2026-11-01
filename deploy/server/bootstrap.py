@@ -26,7 +26,7 @@ def main():
                                  indices=[{"names": ["soc-host-raw-*", "soc-network-*", "soc-agent-health-*"], "privileges": ["auto_configure", "create_doc"]}])
         client.security.put_user(username="cloud_soc_issuer", password=secret("issuer_password"), roles=["cloud_soc_issuer"])
         client.security.put_role(name="cloud_soc_reader", cluster=["monitor"], indices=[{
-            "names": ["soc-host-raw-*", "soc-network-*", "soc-cloud-aws-*", "soc-cloud-oci-*", "raw-logs-*", "normalized-events", "security-alerts"],
+            "names": ["soc-host-raw-*", "soc-network-*", "soc-cloud-aws-*", "soc-cloud-oci-*", "soc-multicloud-*", "raw-logs-*", "normalized-events", "security-alerts"],
             "privileges": ["read", "view_index_metadata"],
         }])
         client.security.put_user(username="cloud_soc_analyst", password=secret("analyst_password"), roles=["cloud_soc_reader", "kibana_admin"])
@@ -34,6 +34,8 @@ def main():
             template = json.loads((Path("/app/deploy/agents") / filename).read_text(encoding="utf-8"))
             template["template"]["settings"]["number_of_replicas"] = 0
             client.indices.put_index_template(name=name, body=configure_template(template))
+        from cloud_soc.multicloud.storage import install as install_multicloud
+        install_multicloud(client)
         configure_reader(client, monitor_password)
         prepare_processing(client)
         cloud_template = json.loads(Path("/app/deploy/aws/index-template.json").read_text(encoding="utf-8"))

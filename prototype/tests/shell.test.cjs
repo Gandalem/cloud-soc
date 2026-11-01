@@ -20,7 +20,7 @@ test('every live page loads one shared shell and no duplicate header or sidebar'
 
 test('same navigation labels, groups and order on every page', () => {
   const expected = groups.flatMap(group => group.items);
-  assert.equal(expected.length, 10);
+  assert.equal(expected.length, 11);
   assert.ok(expected.some(([href,label])=>href==='devices.html'&&label==='장치 관리'));
   assert.deepEqual(groups[2].items.map(([href])=>href), ['settings-slack.html','settings-rules.html']);
   for (const page of pages) {
@@ -35,6 +35,8 @@ test('same navigation labels, groups and order on every page', () => {
 
 test('root, case details and key history resolve to correct active item without echoing URL', () => {
   assert.equal(current('/', ''), 'index.html');
+  assert.equal(current('/multicloud', ''), 'multicloud');
+  assert.match(markup('/multicloud',''), /href="multicloud" aria-current="page"/);
   assert.equal(current('/workbench.html', ''), 'cases.html');
   assert.equal(current('/agents.html', '#keys'), 'agents.html#keys');
   assert.match(markup('/agents.html','#keys'), /href="agents.html#keys" aria-current="page"/);
@@ -52,7 +54,7 @@ test('one collapsible mobile navigation retains complete links and keyboard affo
 });
 
 test('customer navigation has no duplicate operations or developer diagnostics',()=>{
- assert.deepEqual(groups[0].items.map(v=>v[0]),['index.html','dashboard.html','logs.html','cases.html']);
+ assert.deepEqual(groups[0].items.map(v=>v[0]),['index.html','dashboard.html','logs.html','multicloud','cases.html']);
  assert.equal(groups[1].title,'에이전트');
  const html=markup('/logs.html','');
  assert.doesNotMatch(html,/operations.html|collection-health.html|detection-history.html|reprocessing-history.html/);

@@ -3,7 +3,7 @@
   "use strict";
   const groups = [
     { title: "보안 관제", items: [
-      ["index.html", "홈 대시보드"], ["dashboard.html", "내 대시보드"], ["logs.html", "통합 로그"],
+      ["index.html", "홈 대시보드"], ["dashboard.html", "내 대시보드"], ["logs.html", "통합 로그"], ["multicloud", "멀티 클라우드"],
       ["cases.html", "사건 조사"]
     ] },
     { title: "에이전트", items: [

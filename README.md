@@ -182,3 +182,9 @@ sudo sh deploy/server/uninstall-ubuntu.sh --purge-data --remove-images --apply
 Security Mall·ModSecurity WAF는 일반 SOC 설치에 포함되지 않습니다. 현재 범위와 과거 계약/검증 압축본은 [선택 실습·참고](docs/optional_integrations.md)를 따릅니다. 별도 실험 성공을 새 중앙 서버의 상주 작동으로 해석하지 않습니다.
 
 [로컬 개발](docs/local_development.md) · [중앙 서버 상세](deploy/server/README.md) · [전체 문서 색인](docs/README.md) · [작업 상태·남은 인수](docs/work_tracker.md)
+
+## 멀티 클라우드 감사 로그 확장
+
+AWS CloudTrail · Azure Activity Log(Event Hubs) · Naver Cloud Activity Tracer를 ECS 공통 필드로 저장하고 기존 인증 포털의 `/multicloud`에서 조회하는 구현은 [구성 및 연결 안내](docs/multicloud_architecture.md)를 참고하세요. 초기 작성 후 후속 요청으로 코드 검증과 이미지 빌드를 수행했습니다. 운영 적용 상태는 통합 적용 안내와 작업 기록을 참고하세요.
+
+멀티 클라우드의 JEONGRIM-SEO 권한 마이그레이션·독립 collector 배포 관리는 [통합 적용 안내](docs/multicloud_integration.md)를 참고하세요.

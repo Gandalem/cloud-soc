@@ -188,6 +188,19 @@ def prerequisites(client, value, contract, directory, existing_keys, *, key_clie
     if not backup.exists():
         roles = client.security.get_role(name='cloud_soc_agent_monitor,cloud_soc_normalizer').body
         atomic_json(backup, {'roles': roles})
+    # Feature receipts do not change worker identities, runtime policy version,
+    # source floors, existing key material, or the base migration history.
+    from cloud_soc.multicloud.storage import install as install_multicloud
+    ledger.setdefault('features', {})['multicloud-v1'] = {'state': 'applying'}
+    atomic_json(ledger_path, ledger)
+    try:
+        install_multicloud(client)
+    except Exception as error:
+        ledger['features']['multicloud-v1'] = {'state': 'failed', 'error_type': type(error).__name__}
+        atomic_json(ledger_path, ledger)
+        raise
+    ledger['features']['multicloud-v1'] = {'state': 'applied', 'index_template': 'soc-multicloud-v1'}
+    atomic_json(ledger_path, ledger)
     step = value['migrations'][0]
     ledger['migrations'][step] = {'state': 'applying', 'policy_sha256': digest(value)}
     atomic_json(ledger_path, ledger)

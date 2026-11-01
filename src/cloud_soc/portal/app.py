@@ -111,6 +111,8 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         host = f"[{address}]" if address.version == 6 else str(address)
         origins[host] = f"https://{host}"
     app = Flask(__name__, static_folder=None)
+    from cloud_soc.portal.multicloud import blueprint as multicloud_blueprint
+    app.register_blueprint(multicloud_blueprint)
     app.config.update(MAX_CONTENT_LENGTH=8192, TRUSTED_HOSTS=[urlsplit(origin).hostname for origin in origins.values()])
     store = PackageStore(Path(settings["STATE_DIR"]), Path(settings["AGENT_SOURCE"]), settings["CA_BYTES"], settings["ENDPOINT"],
                          portal_url=settings["PUBLIC_URL"] if settings["PUBLIC_URL"].startswith("https://") else None,
@@ -523,7 +525,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         if sessions:
             identity = sessions.get(request.cookies.get(COOKIE))
             if not identity:
-                if request.method in ("GET", "HEAD") and (request.path == "/" or request.path.endswith(".html")):
+                if request.method in ("GET", "HEAD") and (request.path in ("/", "/multicloud") or request.path.endswith(".html")):
                     if alert_navigation and request.path == '/workbench.html':
                         return redirect('/login?alert=' + alert_id)
                     return redirect("/login")
@@ -548,7 +550,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             g.principal, g.role, g.csrf = principal.username, principal.role, None
         g.log_principal = principal
         if principal.role != "admin":
-            log_routes = {"logs", "log_updates", "log_detail", "log_access", "log_source", "auth_me", "logout", "auth_asset"}
+            log_routes = {"multicloud.page", "multicloud.asset", "multicloud.summary", "logs", "log_updates", "log_detail", "log_access", "log_source", "auth_me", "logout", "auth_asset"}
             log_assets = {"live-refresh.js", "live-refresh.css", "logs.html", "logs.js", "logs.css", "source-view.js", "auth-client.js", "styles.css", "agents.css", "shell.js", "shell.css", "assets/mark.svg"}
             if sessions:
                 # Session RBAC permits case writes only for analysts; all case data is tenant-scoped.
@@ -629,7 +631,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
 
     @app.get("/api/auth/me")
     def auth_me():
-        navigation = ["logs.html"]
+        navigation = ["logs.html", "multicloud"]
         if g.log_principal.role == "admin":
             navigation += ["index.html", "dashboard.html", "cases.html", "devices.html", "agents.html", "agents.html#keys", "agent-status.html", "settings-slack.html", "settings-rules.html"]
         elif sessions:

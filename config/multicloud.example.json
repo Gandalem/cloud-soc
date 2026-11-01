@@ -1,0 +1,7 @@
+{
+  "sources": [
+    {"id":"aws-audit-oregon","provider":"aws","organization":"team-a","account":"123456789012","region":"us-west-2","start":"2026-11-01T00:00:00Z"},
+    {"id":"azure-audit","provider":"azure","organization":"team-a","account":"00000000-0000-0000-0000-000000000000","start":"2026-11-01T00:00:00Z","eventhub":"security-audit","consumer_group":"cloud-soc","checkpoint_container":"cloud-soc-checkpoints","eventhub_connection_env":"SOC_AZURE_EVENTHUB_CONNECTION","storage_connection_env":"SOC_AZURE_STORAGE_CONNECTION"},
+    {"id":"naver-audit","provider":"naver","organization":"team-a","account":"1234567","start":"2026-11-01T00:00:00Z","access_key_env":"SOC_NAVER_ACCESS_KEY","secret_key_env":"SOC_NAVER_SECRET_KEY"}
+  ]
+}

@@ -165,6 +165,16 @@ class FakeSecurity:
 class FakeSetup:
     def __init__(self):
         self.maps={};self.security=FakeSecurity();self.indices=Mock()
+        self.templates = {}
+        def get_template(name):
+            if name not in self.templates:
+                from elasticsearch import NotFoundError
+                raise NotFoundError('template absent', meta=SimpleNamespace(status=404), body={})
+            return {'index_templates': [{'name': name, 'index_template': deepcopy(self.templates[name])}]}
+        def put_template(name, **definition):
+            self.templates[name] = deepcopy(definition)
+        self.indices.get_index_template.side_effect = get_template
+        self.indices.put_index_template.side_effect = put_template
         self.indices.exists.side_effect=lambda index:index in self.maps
         self.indices.create.side_effect=lambda index,mappings,**kw:self.maps.setdefault(index,deepcopy(mappings))
         self.indices.get_mapping.side_effect=lambda index:{index:{'mappings':deepcopy(self.maps[index])}}

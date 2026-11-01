@@ -11,6 +11,7 @@ dynamic = ["dependencies"]
 
 [project.optional-dependencies]
 geo = ["maxminddb==3.2.0"]
+multicloud = ["boto3==1.43.99", "botocore==1.43.99", "azure-eventhub>=5.12,<6", "azure-eventhub-checkpointstoreblob>=1.1,<2", "portalocker>=2.10,<4"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}

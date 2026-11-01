@@ -1,0 +1,6 @@
+-r requirements.txt
+boto3==1.43.99
+botocore==1.43.99
+azure-eventhub>=5.12,<6
+azure-eventhub-checkpointstoreblob>=1.1,<2
+portalocker>=2.10,<4

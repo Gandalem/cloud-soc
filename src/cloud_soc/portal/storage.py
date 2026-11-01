@@ -4,8 +4,8 @@ import re
 
 from cloud_soc.portal.agent_status import iso, parse_time
 
-INDICES = 'soc-host-raw-*,soc-network-*,soc-agent-health-*,soc-cloud-aws-*,soc-cloud-oci-*'
-NAME = re.compile(r'soc-(?:host-raw|network|agent-health|cloud-aws|cloud-oci)-[a-z0-9][a-z0-9_.-]*\Z')
+INDICES = 'soc-host-raw-*,soc-network-*,soc-agent-health-*,soc-cloud-aws-*,soc-cloud-oci-*,soc-multicloud-*'
+NAME = re.compile(r'soc-(?:host-raw|network|agent-health|cloud-aws|cloud-oci|multicloud)-[a-z0-9][a-z0-9_.-]*\Z')
 
 
 def lifecycle_proposal(days):

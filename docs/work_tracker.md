@@ -1,3 +1,11 @@
+# 멀티 클라우드 검증·운영 적용 요청 — 2026-11-01
+
+- [ ] MULTICLOUD-VERIFY-DEPLOY-20261101-01 진행 중: 최신 사용자 지시가 이전 검사 제외를 대체한다. 테스트·소스 검수·린트·구문검사·빌드·실행과 기존 로컬 중앙/AWS/Naver 보존형 배포를 진행한다. Azure 권한 부족 보류. 원격 push·main 변경·재부팅·키 교체/체크포인트 초기화는 수행하지 않는다. 각 결과를 구분한다.
+
+# 멀티 클라우드 JEONGRIM-SEO 통합 — 2026-11-01
+
+- [ ] MULTICLOUD-INTEGRATE-20261101-01 진행 중: 최신 사용자 요청으로 JEONGRIM-SEO c87e9ca 기준에 채팅 작성 소스와 AWS/Naver 연결 도구를 통합한다. reader/template/설정 마이그레이션과 독립 collector 배포 계약을 보완한다. 기존 운영 데이터·키·체크포인트 보존. 이전 테스트 제외 요청을 유지해 테스트/검수/린트/구문검사/빌드/서비스 실행을 수행하지 않는다. 운영 배포와 원격 push는 이번 소스 통합과 구분한다.
+
 # 새 CI·운영 배포 검증 — 2026-10-30
 
 - [ ] RECOVERY-CI-DEPLOY-20261030-01 진행 중: 사용자가 복구 CONFIG/BACKUP/HEALTH 보완 이후 새 CI와 운영 배포 검증을 요청했다. 기존 제외는 이번 통합 후보 게시·Ubuntu/Windows Actions 및 현재 중앙 서버의 상태 확인·보존형 배포 계획/검증 범위에서 대체한다. main/JEONGRIM-SEO 직접 병합·재부팅·CA/키 재발급·데이터/체크포인트 되감기는 하지 않는다. 실제 대상·소유/실행 기록·백업/이미지 보존을 확인한 검토 가능한 계획을 선행하고, CI와 운영 적용/실수신 결과를 구분해 기록한다.
@@ -409,3 +417,29 @@
 - [ ] P6-04
 - [ ] P7-01
 - [ ] P7-02
+
+## MULTICLOUD-INTEGRATE-20261101-01 코드 작성 기록
+
+- 채팅 수집/포털 소스와 connect.py/configure_es.py/connect_naver.py를 c87e9ca 기준 소스에 통합했다. reader_role/additive 사용자 보존, fresh bootstrap/기존 v2 feature migration, template preflight, release source manifest/Docker COPY를 함께 연결했다.
+- 독립 collector 관리 명령 prepare/adopt/start/stop/recreate/status/backup-plan 및 지문 receipt를 추가했다. 운영 state/키/체크포인트는 그대로 사용하며 기존 중앙 worker identity·policy 버전은 변경하지 않았다. Oregon source mismatch·계정/경로 고정·capacity allowlist·poll waiting/processed 구분도 보완했다.
+- 테스트/검수/린트/구문검사/빌드/실행·클라우드/운영 배포는 하지 않았다. 코드 작성 상태이며 인수 완료로 체크하지 않는다. 제한 reader API 키 갱신, 기존 통합 로그·탐지 adapter 연결, Azure 리소스/수신, 실제 백업·복구는 별도 잔여 범위다. 상세는 docs/multicloud_integration.md.
+
+- 로컬 반영 결과(2026-11-01): 쓰기 권한 승인 후 /home/yoonji/cloud-soc-jeongrim-merge의 JEONGRIM-SEO(c87e9ca)에 소스39파일을 반영했다. 적용 직전 Git branch/HEAD/기존 수정 유무만 확인해 다른 수정 덮어쓰기를 방지했다. 기존39대상 파일의 사본을 별도 ZIP으로 보존했다. 커밋·push·테스트·서비스 변경은 수행하지 않았다.
+
+## MULTICLOUD-VERIFY-DEPLOY-20261101-01 중간 결과
+
+- 최신 사용자 요청으로 검증을 수행했다. Ruff 통과, Python AST165파일 통과(이후 변경도 재검사), dependency check 통과, Bandit 중고위험0, pip-audit 알려진 취약점0. 중앙/collector 이미지 빌드 성공 후 지연 로그 보완을 포함한 최종 소스로 재빌드한다.
+- 최초 전체 Python:2673통과/13실패/36제외/45환경오류/406subtests. 제품과 테스트의 새기능 기대값을 수정했고 직접 영향171통과/14subtests, Node/소유권 환경 분리 재검사65통과/1제외, 새 multicloud18건 통과. 전체 재실행은 하지 않고 영향/실패 범위만 재검사했다.
+- UI185 중 최초2개 메뉴 기대값 실패는 shell범위8건 재검사로 수정 확인했다. 서버 Node 검사 환경의 pwsh·실행가능tmpfs·쓰기범위를 갖춘 뒤 설치기41통과. 나머지 서버범위는35통과/23설치기환경실패/1제외였으며 해당23개는41재검사에 포함된다.
+- Naver 사용자24시간 지연 조건에 대비한 독립late cursor와 실패미전진/기존watermark보존 테스트를 추가했다. 기존 운영은 읽기조회상 AWS1357건/Naver0건이며 이전 이미지가 계속 실행 중이다. NoNewPrivs는 해제하지 않았다. 일반 터미널에서 NoNewPrivs0 및sudo성공은 사용자 출력으로 확인했다. 보존형 배포 스크립트를 준비했으며 운영 적용은 아직 미실행이다.
+
+- 최종 이미지: 중앙sha256:d6ec90ea00fcc62526117a42cc534fb5544b15cd879d7542e7fb4bc7c78afb9e, collector sha256:a2b6a824faeda7b0b4449829dad5aa57eba5153afbe726678ad9713ce6f2f396. 중앙 이미지370개 source파일과 현재 소스 지문이 일치했다. 최종collector CLI --help 실행 성공. Compose 설정 검사와 JS구문검사 통과. 마지막 collector/CloudTrail회귀34통과/6subtests. 실제 배포는 NoNewPrivs0인 사용자 일반 터미널의 deploy-local.sh 실행을 기다린다. 자동으로 sudo 제한을 해제/우회하지 않았다.
+
+## 운영 적용 사용자 결과 — 2026-11-01
+
+- 사용자가 중앙 서버와 멀티 클라우드 수집기 갱신까지 성공했다고 보고했다. 배포 성공은 사용자 제공 결과이며, 이번 메시지에서 실제 이미지ID/컨테이너 상태를 독립 조회하지 않았다.
+- 신규 이미지의 AWS 연속 수신과 Naver 지연 로그 실제 저장/조회는 별도 확인 항목이다. Naver24시간 공개 지연 조건은 사용자 제공 운영 조건으로 유지한다. Azure는 권한 부족 보류, 원격 commit/push는 별도다.
+
+## JEONGRIM-SEO 소스 게시 요청 — 2026-11-01
+
+- 사용자가 통합 코드의 JEONGRIM-SEO 커밋·push를 명시적으로 요청했다. 원격 tip과 로컬 기준이 동일함을 확인했다. 멀티 클라우드 소스·연결/배포 도구·문서·테스트만 게시하며 실제 config/multicloud.json, *.env, state, 자격 증명·DB는 제외한다. 운영 적용 성공은 사용자 보고이며 새 이미지 실제 수신 인수와 구분한다. 게시 자체는 운영 서비스 변경이 아니다. 기존 workflow 설정상 push 시 Actions가 자동 실행될 수 있으며 그 결과는 별도로 확인해야 한다.

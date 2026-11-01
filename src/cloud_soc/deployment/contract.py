@@ -15,7 +15,7 @@ VALUES = {'--start', '--state', '--es-url', '--ca-file', '--api-key-file', '--in
           '--window-minutes', '--max-pages', '--max-documents', '--max-active-events',
           '--lateness-seconds', '--linux-ssh-v2-start', '--rules', '--additional-rules', '--status-id'}
 FLAGS = {'--run', '--priority', '--early-auth', '--accept-legacy-exclusion', '--retrospective'}
-SOURCE_PREFIXES = ('src/', 'rules/', 'prototype/', 'deploy/agents/', 'deploy/aws/', 'deploy/oci/', 'deploy/server/')
+SOURCE_PREFIXES = ('src/', 'rules/', 'prototype/', 'deploy/agents/', 'deploy/aws/', 'deploy/oci/', 'deploy/server/', 'deploy/multicloud/')
 
 
 def digest(value):
@@ -49,6 +49,8 @@ def source_files(workspace):
     root = Path(workspace).resolve()
     names = [p for prefix in SOURCE_PREFIXES for p in (root / prefix).rglob('*') if p.is_file()]
     names += [root / name for name in ('requirements.txt', 'constraints.txt')]
+    if (root / 'requirements-multicloud.txt').is_file():
+        names.append(root / 'requirements-multicloud.txt')
     result = {}
     for path in names:
         if any(part in ('__pycache__', 'tests') for part in path.relative_to(root).parts) or path.suffix == '.pyc':

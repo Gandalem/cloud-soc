@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>멀티 클라우드 보안 로그 · Cloud SOC</title><link rel="stylesheet" href="/multicloud/multicloud.css"><script defer src="/multicloud/multicloud.js"></script></head>
+<body><header><a href="/">Cloud SOC</a><span>통합 보안 관제</span><a href="/logs.html">기존 로그 탐색</a></header><main>
+<p class="eyebrow">CLOUD AUDIT OPERATIONS</p><h1>멀티 클라우드 보안 로그</h1><p>계정 활동을 동일한 필드로 조회하고 작업 결과와 변경 이력을 확인합니다.</p>
+<section class="filters" aria-label="로그 필터"><label>조회 기간<select id="hours"><option value="1">최근 1시간</option><option value="6">최근 6시간</option><option value="24" selected>최근 24시간</option><option value="168">최근 7일</option></select></label><label>클라우드<select id="provider"><option value="">전체 클라우드</option value="aws">AWS</option><option value="azure">Microsoft Azure</option><option value="naver">Naver Cloud</option></select></label><label>작업 결과<select id="outcome"><option value="">모든 결과</option><option value="failure">실패</option><option value="success">성공</option><option value="unknown">확인 불가</option></select></label><button id="refresh" type="button">새로고침</button><span id="updated"></span></section>
+<p id="status" role="status" aria-live="polite"></p><section id="cards" class="cards" aria-label="클라우드별 수집 현황"></section>
+<section class="panel"><h2>시간별 활동</h2><div id="timeline" class="timeline" aria-label="시간별 이벤트 수"></div></section>
+<section class="panel"><h2>주요 작업</h2><div id="actions" class="actions"></div></section>
+<section class="panel"><h2>정규화 로그 <span id="count"></span></h2><p>최근 이벤트 최대 100건 · 표시 시각은 브라우저의 현지 시각입니다.</p><div class="scroll"><table><thead><tr><th>발생 시각</th><th>클라우드 / 계정</th><th>조직</th><th>작업 / 서비스</th><th>결과</th><th>행위자</th><th>출발지 IP</th><th>리소스</th></tr></thead><tbody id="events"></tbody></table></div></section></main></body></html>

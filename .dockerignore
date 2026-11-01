@@ -6,3 +6,8 @@ state
 *.log
 .codex
 .agents
+
+*.env
+**/*.env
+config/multicloud.json
+.venv-multicloud

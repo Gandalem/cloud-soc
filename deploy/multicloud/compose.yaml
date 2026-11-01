@@ -1,0 +1,44 @@
+# Run from the repository root using --env-file with absolute secret/config paths.
+x-collector: &collector
+  build:
+    context: ../..
+    dockerfile: deploy/multicloud/Dockerfile
+  restart: unless-stopped
+  user: '10001:10001'
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: [/tmp]
+  environment: &environment
+    ELASTICSEARCH_URL: ${ELASTICSEARCH_URL:?HTTPS Elasticsearch origin required}
+    ELASTICSEARCH_CA_FILE: /run/secrets/es-ca.pem
+    ELASTICSEARCH_API_KEY_FILE: /run/secrets/es-api-key
+  volumes:
+    - ${SOC_MULTICLOUD_CONFIG:?absolute config path required}:/app/config.json:ro
+    - ${SOC_MULTICLOUD_CA:?absolute CA path required}:/run/secrets/es-ca.pem:ro
+    - ${SOC_MULTICLOUD_WRITER_KEY:?absolute writer API key path required}:/run/secrets/es-api-key:ro
+    - collector-state:/state
+services:
+  aws:
+    <<: *collector
+    profiles: [aws]
+    command: [collect, --config, /app/config.json, --source, "${SOC_AWS_SOURCE_ID:-aws-audit-oregon}", --state-dir, /state]
+    # Uses the host's attached instance role. Explicit env credentials may also be supplied.
+  azure:
+    <<: *collector
+    profiles: [azure]
+    command: [collect, --config, /app/config.json, --source, "${SOC_AZURE_SOURCE_ID:-azure-audit}", --state-dir, /state]
+    environment:
+      <<: *environment
+      SOC_AZURE_EVENTHUB_CONNECTION: ${SOC_AZURE_EVENTHUB_CONNECTION:-}
+      SOC_AZURE_STORAGE_CONNECTION: ${SOC_AZURE_STORAGE_CONNECTION:-}
+  naver:
+    <<: *collector
+    profiles: [naver]
+    command: [collect, --config, /app/config.json, --source, "${SOC_NAVER_SOURCE_ID:-naver-audit}", --state-dir, /state]
+    environment:
+      <<: *environment
+      SOC_NAVER_ACCESS_KEY: ${SOC_NAVER_ACCESS_KEY:-}
+      SOC_NAVER_SECRET_KEY: ${SOC_NAVER_SECRET_KEY:-}
+volumes:
+  collector-state:

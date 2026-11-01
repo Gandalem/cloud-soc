@@ -62,6 +62,8 @@ def inspect(client, value, contract, keys, states, notification_key=None):
             mappings[name] = found[name]['mappings']
             if name not in ('soc-alert-notices-v1', 'security-alerts') and mappings[name].get('_meta', {}).get('contract') != name:
                 raise ValueError('Existing mapping requires explicit migration')
+    from cloud_soc.multicloud.storage import inspect_template
+    result['multicloud_template'] = inspect_template(client)
     result['security_sha256'] = digest(security)
     result['mapping_sha256'] = digest(mappings)
     result['required_workers'] = list(WORKERS)

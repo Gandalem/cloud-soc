@@ -3,8 +3,8 @@ from datetime import datetime, timedelta, timezone
 import re
 import time
 
-INDEX_PATTERNS = "soc-host-raw-*,soc-network-*,soc-agent-health-*,soc-cloud-aws-*,soc-cloud-oci-*"
-INDEX_NAME = re.compile(r"soc-(?:host-raw|network|agent-health|cloud-aws|cloud-oci)-[a-z0-9][a-z0-9_.-]{0,180}\Z")
+INDEX_PATTERNS = "soc-host-raw-*,soc-network-*,soc-agent-health-*,soc-cloud-aws-*,soc-cloud-oci-*,soc-multicloud-*"
+INDEX_NAME = re.compile(r"soc-(?:host-raw|network|agent-health|cloud-aws|cloud-oci|multicloud)-[a-z0-9][a-z0-9_.-]{0,180}\Z")
 MAX_INDICES = 500
 MAX_SECONDS = 60
 

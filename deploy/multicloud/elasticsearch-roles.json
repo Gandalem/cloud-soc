@@ -1,0 +1,14 @@
+{
+  "collector_writer": {
+    "cluster": [],
+    "indices": [{"names": ["soc-multicloud-*"], "privileges": ["create_doc", "auto_configure"]}]
+  },
+  "portal_reader_addition": {
+    "cluster": [],
+    "indices": [{"names": ["soc-multicloud-*"], "privileges": ["read", "view_index_metadata"]}]
+  },
+  "setup_only": {
+    "cluster": ["manage_index_templates"],
+    "indices": []
+  }
+}

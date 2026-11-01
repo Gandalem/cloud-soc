@@ -76,11 +76,28 @@ def configure_template(template):
 def reader_role():
     return {'cluster': [], 'indices': [{
         "names": INDICES.split(",") + ["soc-agent-health-*", "soc-cloud-aws-*", "soc-cloud-oci-*",
-                  "soc-normalized-v1", "soc-processing-v1", "soc-normalized-history-v1", "soc-processing-history-v1", "soc-pipeline-status", "soc-detection-runs-v1", "soc-detection-exclusions-v1", "soc-alert-notices-v1", "security-alerts", "normalized-events", "raw-logs-*"],
+                  "soc-multicloud-*", "soc-normalized-v1", "soc-processing-v1", "soc-normalized-history-v1", "soc-processing-history-v1", "soc-pipeline-status", "soc-detection-runs-v1", "soc-detection-exclusions-v1", "soc-alert-notices-v1", "security-alerts", "normalized-events", "raw-logs-*"],
         "privileges": ["read", "view_index_metadata"],
     }]}
 
 
 def configure_reader(client, password):
-    client.security.put_role(name="cloud_soc_agent_monitor", **reader_role())
-    client.security.put_user(username="cloud_soc_agent_monitor", password=password, roles=["cloud_soc_agent_monitor"])
+    from cloud_soc.deployment.migrations import additive_grants
+    from elasticsearch import NotFoundError
+    try:
+        old = client.security.get_role(name="cloud_soc_agent_monitor").body.get("cloud_soc_agent_monitor", {})
+    except NotFoundError:
+        old = {}
+    client.security.put_role(name="cloud_soc_agent_monitor", body=additive_grants(old, reader_role()))
+    try:
+        users = client.security.get_user(username="cloud_soc_agent_monitor").body
+    except NotFoundError:
+        users = {}
+    if "cloud_soc_agent_monitor" not in users:
+        client.security.put_user(username="cloud_soc_agent_monitor", password=password, roles=["cloud_soc_agent_monitor"])
+    else:
+        user = users["cloud_soc_agent_monitor"]
+        if "cloud_soc_agent_monitor" not in user["roles"]:
+            client.security.put_user(username="cloud_soc_agent_monitor", roles=[*user["roles"], "cloud_soc_agent_monitor"],
+                full_name=user.get("full_name"), email=user.get("email"),
+                metadata=user.get("metadata", {}), enabled=user["enabled"])
