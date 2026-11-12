@@ -119,7 +119,7 @@ def defaults(name, floor, rules):
         if name.endswith('priority'):
             values['--priority'] = True
     else:
-        values.update({'--lateness-seconds': '900', '--max-documents': '20000'})
+        values.update({'--lateness-seconds': '60', '--max-documents': '20000'})
         if name == 'detector':
             values['--early-auth'] = True
         elif name == 'detector-priority':
