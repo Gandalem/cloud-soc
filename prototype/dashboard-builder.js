@@ -239,14 +239,14 @@
         if(key.startsWith('operations:')&&results[key]?.body?.sections?.alerts?.rows){
           const previous=results[key].body.sections.alerts.rows,newRows=value.body.sections.alerts.rows;
           added+=newRows.filter(r=>!previous.some(old=>old.id===r.id)).length;
-          staged[key]=copy(value);
+          staged[key]=copy(newRows);
           if(!manual)value.body.sections.alerts.rows=previous;
         }
       }
       // Save the complete new rows separately before retaining the displayed list.
       error('');results={...results,...fresh};
       if(manual){pending.clear();render();}
-      else{drawData();if(added)pending.offer(added,()=>{for(const [key,value]of Object.entries(staged))results[key]=value;drawData();});}
+      else{drawData();if(added)pending.offer(added,()=>{for(const [key,rows]of Object.entries(staged)){if(results[key]?.body?.sections?.alerts?.state==='ok')results[key].body.sections.alerts.rows=rows;}drawData();});}
       if(merged.failed.length){$('dashboard-updated').textContent='일부 자료 갱신 실패';throw new Error('일부 자료 갱신 실패 · 해당 위젯의 마지막 조회 내용은 유지됩니다.');}
       $('dashboard-updated').textContent=W.time(new Date().toISOString())+' · 조회 완료';
     },onError:e=>error(e.message)});

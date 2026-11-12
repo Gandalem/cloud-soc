@@ -2,6 +2,7 @@
 (() => {
   "use strict";
   const sources = { multicloud_audit:"멀티클라우드 감사", generic_web_access:"웹 사이트 접근 기록", web_access_metadata:"AWS DVWA 웹 접근 기록", windows_event: "Windows 이벤트", windows_file: "Windows 파일", linux_file: "Linux 파일", linux_journald: "Linux 저널", network_packetbeat: "네트워크", aws_cloudtrail: "AWS 관리 이벤트", oci_audit: "OCI 감사 이벤트", unknown: "미분류" };
+  Object.assign(sources,{aws_cloudwatch:'AWS CloudWatch',aws_vpc_flowlogs:'AWS VPC Flow Logs',aws_waf:'AWS WAF 로그'});
   sources.generic_modsecurity = 'ModSecurity WAF 메타데이터';
   sources.security_scenario = '보안 시나리오 감사 기록';
   Object.assign(sources,{security_mall_audit:'쇼핑몰 보안 감사',security_mall_edge:'쇼핑몰 웹·WAF',agent_health:'수집 상태 보고',agent_collection_notice:'수집 입력 오류'});
@@ -14,7 +15,7 @@
     server: ['windows_event', 'windows_file', 'linux_file', 'linux_journald'],
     application: ['generic_web_access', 'web_access_metadata', 'generic_modsecurity', 'security_mall_audit', 'security_mall_edge'],
     network: ['network_packetbeat'],
-    cloud: ['aws_cloudtrail', 'oci_audit', 'multicloud_audit']
+    cloud: ['aws_cloudtrail', 'aws_cloudwatch', 'aws_vpc_flowlogs', 'aws_waf', 'oci_audit', 'multicloud_audit']
   };
   function renderEnvironments(rows) {
     let classified = 0;

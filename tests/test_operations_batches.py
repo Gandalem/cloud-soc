@@ -153,3 +153,18 @@ class OperationsBatchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_intake_counts_prior_occurrences_as_a_subset_under_same_scope():
+    client = client_for(["soc-host-raw-one", "soc-host-raw-two"])
+    batches = [response(8), response(4)]
+    for batch, earlier in zip(batches, [5, 1]):
+        batch["aggregations"]["before_window"] = {"doc_count": earlier}
+    client.search.side_effect = batches
+    with patch("cloud_soc.portal.operations.INDEX_PATH_BUDGET", 20):
+        result = Operations(client, organizations=("polytech",)).series(
+            PATTERN, "event.ingested", START, END, "5m", intake=True)
+    assert (result["count"], result["before_window_count"]) == (12, 6)
+    for call in client.search.call_args_list:
+        assert {"terms": {"organization.id": ["polytech"]}} in call.kwargs["query"]["bool"]["filter"]
+        assert call.kwargs["aggs"]["before_window"] == {"filter": {"range": {"@timestamp": {"lt": START}}}}

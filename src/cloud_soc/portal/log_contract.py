@@ -20,7 +20,9 @@ MAX_DETAIL_BYTES = 64 * 1024
 MAX_CURSOR_LENGTH = 8192
 TIME_FIELDS = {"ingested": "event.ingested", "event": "@timestamp"}
 HOST_SOURCES = {"security_scenario", "windows_event", "windows_file", "linux_file", "linux_journald", "web_access_metadata", "generic_web_access", "generic_modsecurity", "security_mall_audit", "security_mall_edge", "agent_health", "agent_collection_notice"}
+CLOUDWATCH_SOURCES = ("aws_cloudtrail", "aws_vpc_flowlogs", "aws_waf")
 SOURCE_FIELDS = (
+    "input.type", "log_source",
     "@timestamp", "event.ingested", "organization.id", "agent.id", "agent.type", "labels.privacy_policy", "host.id", "service.id", "service.name",
     "host.name", "host.ip", "host.os.type", "host.os.name", "labels.log_source",
     "labels.sensor_platform", "winlog.channel", "log.file.path", "event.dataset",
@@ -195,7 +197,14 @@ def project_hit(hit):
     kind = source_name if source_name in supported else "unknown"
     if reference["index"].startswith("soc-multicloud-"):
         kind = "multicloud_audit"
-    os_type, os_basis = operating_system(source)
+    cloudwatch = stream == "host" and field(source, "input.type") == "aws-cloudwatch"
+    if cloudwatch:
+        # These inputs carry their source as a root field. Classify the
+        # source without treating the shipper's cloud identity as the event's.
+        source_name = string("log_source")
+        kind = source_name if source_name in CLOUDWATCH_SOURCES else "aws_cloudwatch"
+        stream = "cloud"
+    os_type, os_basis = ("cloud", "input.type") if cloudwatch else operating_system(source)
     outcome = string("event.outcome")
     if outcome not in (None, "success", "failure", "unknown"):
         invalid.append("event.outcome")
@@ -236,8 +245,10 @@ def project_hit(hit):
         "destination_ip": addresses("destination.ip"),
         "transport": string("network.transport"), "protocol": string("network.protocol"),
         "flow_final": final, "parse_status": "not_evaluated",
-        "cloud_provider": string("cloud.provider"), "cloud_account": string("cloud.account.id"), "cloud_region": string("cloud.region"),
-        "cloud_service": string("cloud.service.name"), "actor_id": actor_id,
+        "cloud_provider": "aws" if cloudwatch else string("cloud.provider"),
+        "cloud_account": None if cloudwatch else string("cloud.account.id"),
+        "cloud_region": None if cloudwatch else string("cloud.region"),
+        "cloud_service": None if cloudwatch else string("cloud.service.name"), "actor_id": actor_id,
         "journal_unit": string("systemd.unit"), "journal_transport": string("systemd.transport"),
         "journal_identifier": string("journald.syslog.identifier") or string("process.name"),
         "collection_policy": string("labels.collection_policy"), "collection_status": string("labels.collection_status"),

@@ -208,7 +208,7 @@ class Operations:
         except NotFoundError:
             return None
 
-    def series(self, patterns, time_field, start, end, interval, *, records=False, alerts=False, cloud_only=False):
+    def series(self, patterns, time_field, start, end, interval, *, records=False, alerts=False, cloud_only=False, intake=False):
         # Processing records have no tenant field; never disclose global totals to scoped users.
         if records and self.organizations is not None:
             return {"state": "unavailable"}
@@ -226,7 +226,9 @@ class Operations:
                     "min_doc_count": 0, "extended_bounds": {"min": start, "max": iso(parse_time(end))}}}}
         if records:
             aggs["status"] = {"terms": {"field": "status", "size": 10}}
-        count, buckets, statuses, rows = 0, {}, {}, []
+        if intake:
+            aggs["before_window"] = {"filter": {"range": {"@timestamp": {"lt": start}}}}
+        count, buckets, statuses, rows, before_window = 0, {}, {}, [], 0
         for batch in batches:
             if monotonic() >= deadline:
                 raise RuntimeError("Query budget exhausted")
@@ -263,6 +265,11 @@ class Operations:
             if len(buckets) > 1000:
                 raise ValueError("Too many buckets")
             count = exact_count(count + batch_count)
+            if intake:
+                prior = exact_count(result["aggregations"]["before_window"]["doc_count"])
+                if prior > batch_count:
+                    raise ValueError("Prior events exceed intake count")
+                before_window = exact_count(before_window + prior)
             status = result["aggregations"].get("status", {})
             if records and (status.get("sum_other_doc_count", 0) or status.get("doc_count_error_upper_bound", 0)
                     or sum(exact_count(b["doc_count"]) for b in status.get("buckets", [])) != batch_count):
@@ -275,6 +282,7 @@ class Operations:
                     raise ValueError("Organization scope mismatch")
                 rows = [self.row(hit) for hit in result["hits"]["hits"]]
         return {"state": "ok", "count": count,
+                **({"before_window_count": before_window} if intake else {}),
                 "buckets": [{"time": iso(stamp), "count": buckets[stamp]} for stamp in sorted(buckets)],
                 "rows": rows, "statuses": [{"key": key, "doc_count": statuses[key]} for key in sorted(statuses)]}
 
@@ -471,7 +479,7 @@ class Operations:
         interval = "5m" if (parse_time(filters.end) - parse_time(filters.start)).total_seconds() <= 86400 else "1h"
         result = {"start": filters.start, "end": filters.end, "incident_work": "separate_case_api", "sections": {}}
         for key, operation in {
-            "intake": lambda: self.series(scope_indices(self.mall_scope, 'raw') if self.mall_scope else INDICES, "event.ingested", filters.start, filters.end, interval),
+            "intake": lambda: self.series(scope_indices(self.mall_scope, 'raw') if self.mall_scope else INDICES, "event.ingested", filters.start, filters.end, interval, intake=True),
             "processing": lambda: {"state": "unavailable"} if self.mall_scope and not self.processing_scope else self.series([self.processing_scope['records'] if self.processing_scope else RECORDS], "event.ingested", filters.start, filters.end, interval, records=True),
             "alerts": lambda: self.series([self.alert_index], "@timestamp", filters.start, filters.end, interval, alerts=True),
             "quality": lambda: {"state": "unavailable"} if self.mall_scope else self.series(["soc-agent-health-*"], "event.ingested", filters.start, filters.end, interval),

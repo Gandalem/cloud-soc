@@ -17,6 +17,12 @@ def classification(row, detail):
     if kind=='security_mall_edge' and detail.get('status')=='recognized':
         return result('waf' if fields.get('stream')=='waf' else 'web_access',
                       '쇼핑몰 WAF 탐지' if fields.get('stream')=='waf' else '쇼핑몰 웹 접근','validated_edge_stream')
+    if row.get('os_basis') == 'input.type':
+        labels = {'aws_cloudtrail': ('cloud_audit', 'AWS CloudTrail'),
+                  'aws_vpc_flowlogs': ('network', 'AWS VPC Flow Logs'),
+                  'aws_waf': ('waf', 'AWS WAF 로그')}
+        code, label = labels.get(kind, ('cloud_log', 'AWS CloudWatch 로그'))
+        return result(code, label, 'cloudwatch_source_metadata')
     fixed={'generic_modsecurity':('waf','웹 WAF 탐지'),
            'generic_web_access':('web_access','웹 접근'), 'web_access_metadata':('web_access','웹 접근'),
            'network_packetbeat':('network','네트워크 통신'), 'aws_cloudtrail':('cloud_audit','AWS 관리 감사'),

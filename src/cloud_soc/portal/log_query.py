@@ -77,6 +77,7 @@ def value(def s, String path) {
 """
 OS_SCRIPT = FIELD_HELPER + """
 def s = params._source;
+if (doc['_index'].value.startsWith('soc-host-raw-') && value(s, 'input.type') == 'aws-cloudwatch') { emit('cloud'); return; }
 if (value(s, 'soc.schema_version') == 1 && ['aws','azure','naver'].contains(value(s, 'cloud.provider'))) { emit('cloud'); return; }
 if (value(s, 'labels.log_source') == 'aws_cloudtrail' && value(s, 'cloud.provider') == 'aws') { emit('cloud'); return; }
 if (value(s, 'labels.log_source') == 'oci_audit' && value(s, 'cloud.provider') == 'oci') { emit('cloud'); return; }

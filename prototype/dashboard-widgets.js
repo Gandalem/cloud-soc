@@ -94,6 +94,7 @@
     if(!number(part.count)||!Array.isArray(part.buckets)||part.buckets.length>1000||part.buckets.some(b=>!number(b.count)||!Number.isFinite(Date.parse(b.time)))){failure(box);return;}
     const rows=part.buckets;if(!rows.length){empty(box,'조회 기간에 집계 구간이 없습니다.');return;}
     const max=Math.max(1,...rows.map(r=>r.count));box.append(node('p','기간 합계 '+part.count.toLocaleString('ko-KR')+'건 · '+rows.length+'개 구간','dash-chart-total'));
+    if(number(part.before_window_count))box.append(node('p','조회 시작 전 발생한 로그 '+part.before_window_count.toLocaleString('ko-KR')+'건 포함','builder-scope'));
     const chart=svg('svg',{viewBox:'0 0 600 160',role:'img','aria-label':'시간별 문서 수 '+part.count+'건',class:'dash-chart'});
     if(chartType==='heatmap'){
       rows.forEach((r,i)=>{const c=svg('rect',{x:(i%24)*25,y:Math.floor(i/24)*12,width:22,height:9,rx:2,opacity:0.12+r.count/max*0.88,class:'heat-cell'});c.append(svg('title'));c.firstChild.textContent=time(r.time)+' · '+r.count+'건';chart.append(c);});
@@ -136,7 +137,7 @@
     const data=result.body,s=data.sections||{},config=w.config,limit=config.limit;
     const periodLabel=(config.period||extras.period)===60?'최근 1시간':(config.period||extras.period)===10080?'최근 7일':'최근 24시간';
     box.append(node('p',['cases','agents'].includes(meta.source)?'현재 상태 · 조회 기간과 별도':w.type==='pipeline'?'현재 상태':periodLabel+' · KST','dash-subtitle'));
-    if(meta.renderer==='overview'){const g=node('div',undefined,'dash-overview');kpi(g,'저장된 경보',s.alerts?.state==='ok'?s.alerts.count:null,'선택 기간 전체');kpi(g,'수신 로그',s.intake?.state==='ok'?s.intake.count:null,'선택 기간 전체');kpi(g,'미종결 사건',extras.cases?.body?.counts?.total,'현재 전체 집계');box.append(g);return;}
+    if(meta.renderer==='overview'){const g=node('div',undefined,'dash-overview');kpi(g,'저장된 경보',s.alerts?.state==='ok'?s.alerts.count:null,'선택 기간 전체');kpi(g,'수신 로그',s.intake?.state==='ok'?s.intake.count:null,number(s.intake?.before_window_count)?'조회 시작 전 발생 '+s.intake.before_window_count.toLocaleString('ko-KR')+'건 포함':'서버 수신 시각 기준');kpi(g,'미종결 사건',extras.cases?.body?.counts?.total,'현재 전체 집계');box.append(g);return;}
     if(meta.renderer==='kpi'){if(w.type==='case-count')kpi(box,config.title,data.counts?.total,'현재 미종결 사건 전체');else{const part=s[w.type==='security-mall-count'?'security_mall':w.type==='alert-count'?'alerts':'intake'];if(section(box,part))kpi(box,config.title,part.count,'선택 기간 전체 집계');}return;}
     if(meta.renderer==='series'){series(box,s[w.type==='intake'?'intake':w.type==='processing'?'processing':'alerts'],config.chart);return;}
     if(meta.renderer==='status'){const state=s.pipeline?.coverage?.state||'unknown';box.append(node('p',({observed:'최근 분석 보고 확인',blocked:'분석 중단',delayed:'분석 지연',catching_up:'대기 로그 처리 중',warning:'일부 위험 평가 미완료',not_started:'분석 미실행'}[state]||'상태 미확인'),'dash-status'));table(box,['서비스','상태','마지막 성공'],['normalizer','detector'].map(k=>{const row=k==='normalizer'?s.pipeline:s.pipeline?.detector;return [k==='normalizer'?'정규화':'탐지',row?.state||'미확인',time(row?.last_success)];}));return;}

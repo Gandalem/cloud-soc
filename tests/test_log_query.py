@@ -277,3 +277,30 @@ class APITests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_cloudwatch_envelope_classifies_source_without_claiming_payload_analysis():
+    from cloud_soc.portal.log_query import project_list_hit
+
+    source = {
+        "input": {"type": "aws-cloudwatch"},
+        "log_source": "aws_cloudtrail",
+        "host": {"os": {"type": "linux"}},
+        "cloud": {"provider": "aws", "account": {"id": "shipper"}},
+        "agent": {"type": "filebeat"},
+        "message": "[REDACTED]",
+    }
+    hit = {"_index": "soc-host-raw-linux-9.5.2-2026.11.12", "_id": "cw-1", "_source": source}
+    row = project_list_hit(hit)
+    assert (row["stream"], row["os"], row["source_kind"]) == ("cloud", "cloud", "aws_cloudtrail")
+    assert row["log_type"]["basis"] == "cloudwatch_source_metadata"
+    assert row["parse_status"] == "unsupported"
+    assert row["cloud_account"] is None
+    assert "message" not in SOURCE_FIELDS and "message" not in row
+
+    for value in ("aws_vpc_flowlogs", "aws_waf", "unregistered"):
+        source["log_source"] = value
+        row = project_list_hit(hit)
+        assert row["source_kind"] == (value if value != "unregistered" else "aws_cloudwatch")
+    source["input"]["type"] = "filestream"
+    assert project_list_hit(hit)["source_kind"] == "unknown"
