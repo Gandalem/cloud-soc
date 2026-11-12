@@ -211,6 +211,15 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
         detail = {'adapter': ssh_adapter, 'status': 'recognized', 'fields': modern_ssh,
                   'missing': [], 'limitations': ['metadata_only', 'authentication_failure_not_attack_confirmation']}
     if detail["status"] == "unsupported":
+        from cloud_soc.parsers.unsupported_metadata import selected_host_audit, VERSION as HOST_AUDIT_VERSION
+        observation = selected_host_audit(source)
+        if observation is not None:
+            detail = observation
+            record["version"] = HOST_AUDIT_VERSION
+            identifier = hashlib.sha256(json.dumps([HOST_AUDIT_VERSION, reference], sort_keys=True).encode()).hexdigest()
+            time_metadata = {"basis": "source_timestamp", "year_inferred": False,
+                             "audit_payload_excluded": True}
+    if detail["status"] == "unsupported":
         operational = parse_linux_operational(source)
         if operational:
             time_text = operational.pop("time_text", None)
@@ -263,15 +272,6 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
             parsed["protocol"] = "ssh"
             detail = {"adapter": "linux_ssh_v1", "status": "recognized", "fields": parsed,
                       "missing": [], "limitations": ["syslog_year_inferred"]}
-    if detail["status"] == "unsupported":
-        from cloud_soc.parsers.unsupported_metadata import selected_host_audit, VERSION as HOST_AUDIT_VERSION
-        observation = selected_host_audit(source)
-        if observation is not None:
-            detail = observation
-            record["version"] = HOST_AUDIT_VERSION
-            identifier = hashlib.sha256(json.dumps([HOST_AUDIT_VERSION, reference], sort_keys=True).encode()).hexdigest()
-            time_metadata = {"basis": "source_timestamp", "year_inferred": False,
-                             "audit_payload_excluded": True}
     if detail["status"] == "unsupported":
         record.update(status="unsupported", reason="adapter_not_supported")
         return identifier, record, None
