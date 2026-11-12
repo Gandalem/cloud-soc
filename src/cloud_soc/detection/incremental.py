@@ -30,11 +30,13 @@ def utc(value):
 
 
 def run_incremental(client, *, state_path, start, now=None, max_documents=20000, max_active_events=20000,
-                    lateness_seconds=900, scanner=None, source_id='local', accept_legacy_exclusion=False, include_cloud=False, include_sequence=False, include_attacks=False, include_patterns=False, early_auth=False,
+                    lateness_seconds=60, scanner=None, source_id='local', accept_legacy_exclusion=False, include_cloud=False, include_sequence=False, include_attacks=False, include_patterns=False, early_auth=False,
                     isolated_all=False, rule_ids=None, additional_rule_ids=None, status_id=None):
     """Late events beyond the finalized frontier are counted, never silently replayed.
 
-    A 15-minute normalization receipt overlap handles bounded refresh/write delays.
+    A 15-minute normalization receipt overlap remains independent of the
+    60-second event-time finalization allowance. Older late input is reviewed
+    by the independent retrospective worker.
     Rule/source identity is pinned; changing it requires a new explicit state file.
     """
     now, start = utc(now or datetime.now(timezone.utc)), utc(start)
