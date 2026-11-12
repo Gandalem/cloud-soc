@@ -23,7 +23,7 @@ def main(argv=None):
     parser.add_argument("--max-active-events", type=int, default=20000, help="Explicit incremental pending/window state capacity")
     parser.add_argument("--state", default="state/detection/runtime.sqlite")
     parser.add_argument("--start", help="Required explicit UTC normalization start on first run; keep unchanged on restart")
-    parser.add_argument("--lateness-seconds", type=int, default=900)
+    parser.add_argument("--lateness-seconds", type=int, default=60)
     parser.add_argument("--snapshot", action="store_true", help="Explicit legacy offline/replay mode")
     parser.add_argument("--accept-legacy-exclusion", action="store_true", help="Explicitly exclude old documents missing normalized_at; original documents remain unchanged")
     parser.add_argument("--include-cloud", action="store_true", help="Opt in to the reviewed AWS/OCI cloud rule profile")
