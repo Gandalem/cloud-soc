@@ -211,6 +211,15 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
         detail = {'adapter': ssh_adapter, 'status': 'recognized', 'fields': modern_ssh,
                   'missing': [], 'limitations': ['metadata_only', 'authentication_failure_not_attack_confirmation']}
     if detail["status"] == "unsupported":
+        from cloud_soc.parsers.unsupported_metadata import selected_host_audit, VERSION as HOST_AUDIT_VERSION
+        observation = selected_host_audit(source)
+        if observation is not None:
+            detail = observation
+            record["version"] = HOST_AUDIT_VERSION
+            identifier = hashlib.sha256(json.dumps([HOST_AUDIT_VERSION, reference], sort_keys=True).encode()).hexdigest()
+            time_metadata = {"basis": "source_timestamp", "year_inferred": False,
+                             "audit_payload_excluded": True}
+    if detail["status"] == "unsupported":
         operational = parse_linux_operational(source)
         if operational:
             time_text = operational.pop("time_text", None)
@@ -267,7 +276,7 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
         record.update(status="unsupported", reason="adapter_not_supported")
         return identifier, record, None
     expected = {MALL_ADAPTER: "soc-host-raw-", "web_access_agent_v1":"soc-host-raw-", "web_access_metadata_v1":"soc-host-raw-web-", "windows_security_v1": "soc-host-raw-", "sysmon_v1": "soc-host-raw-", "linux_ssh_v1": "soc-host-raw-", "linux_ssh_v2": "soc-host-raw-", "linux_ssh_invalid_user_v1": "soc-host-raw-",
-                "linux_operational_v1": "soc-host-raw-", "linux_sudo_session_v1": "soc-host-raw-", "linux_unclassified_v1": "soc-host-raw-", "packetbeat_metadata_v1": "soc-network-", "aws_cloudtrail_metadata_v1": "soc-cloud-aws-", "oci_audit_metadata_v1": "soc-cloud-oci-"}
+                "linux_operational_v1": "soc-host-raw-", "linux_sudo_session_v1": "soc-host-raw-", "linux_unclassified_v1": "soc-host-raw-", "linux_audit_metadata_v1": "soc-host-raw-", "windows_observation_v1": "soc-host-raw-", "packetbeat_metadata_v1": "soc-network-", "aws_cloudtrail_metadata_v1": "soc-cloud-aws-", "oci_audit_metadata_v1": "soc-cloud-oci-"}
     expected[SITE_ADAPTER] = 'soc-host-raw-'
     expected[WAF_ADAPTER] = 'soc-host-raw-'
     if not reference["index"].startswith(expected[detail["adapter"]]):
