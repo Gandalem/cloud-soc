@@ -33,7 +33,7 @@ def context(client, rule, job, *, limit):
 
 
 def run_retrospective(client, *, state_path, start, now=None, source_id='local',
-                      lateness_seconds=900, max_documents=20000, max_context_documents=10000,
+                      lateness_seconds=60, max_documents=20000, max_context_documents=10000,
                       max_context_windows=20, scanner=None, context_scanner=None, **selection):
     """Receipt discovery commits only with durable pending review jobs.
 
