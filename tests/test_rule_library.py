@@ -1,5 +1,7 @@
 """Consolidated authoring/lifecycle contract checks using disposable local state."""
 from copy import deepcopy
+import csv
+import io
 import json
 import sqlite3
 
@@ -9,6 +11,7 @@ from cloud_soc.detection.authoring import (AuthoringError, compile_rule, csv_tem
     normalize, parse_import)
 from cloud_soc.portal.log_access import LogPrincipal
 from cloud_soc.portal.rule_library import RuleLibrary
+from cloud_soc.portal.rule_csv import COLUMNS, RuleCsv, decode
 from cloud_soc.portal.rule_management import RuleError
 from test_integration_security import make_session_portal, login
 
@@ -177,6 +180,10 @@ def test_api_admin_csrf_and_import_contract(tmp_path):
     response = http.post('/api/settings/rule-library', json=body, headers=headers)
     assert response.status_code == 201 and response.json['summary']
     assert http.get('/api/settings/rule-library/template.csv').status_code == 200
+    csv_content = http.get('/api/settings/rule-library/current.csv').get_data(as_text=True)
+    assert decode(csv_content)
+    assert http.post('/api/settings/rule-library/csv/preview', json={'content': csv_content}).status_code == 403
+    assert http.post('/api/settings/rule-library/csv/preview', json={'content': csv_content}, headers=headers).status_code == 200
     assert http.get('/api/settings/rule-library/export').json['schema_version'] == 1
     assert http.get('/api/settings/rule-library?organization=foreign').status_code == 400
     other, other_headers = login(app, 'investigate')
@@ -221,3 +228,48 @@ def test_import_api_accepts_bounded_file_above_legacy_8k(tmp_path):
     assert http.get('/rule-editor.js').status_code == 200
     viewer, _ = login(app, 'view')
     assert viewer.get('/rule-editor.js').status_code == 403
+
+
+def test_csv_round_trip_approval_and_stale_edit(library):
+    editor = RuleCsv(library)
+    row = action(library, create(library), 'approve')
+    row = action(library, row, 'apply', effective_from='2026-01-01T00:00:00Z')
+    current = decode(editor.export(ADMIN, row['id']))[0]
+    builtin = decode(editor.export(ADMIN, 'NET-PORT-001'))[0]
+    unchanged = editor.upload({'content': csv_rows(current, builtin)}, ADMIN, preview=True)
+    assert all(item['valid'] and not item['changes'] for item in unchanged['items'])
+    for source in (current, builtin):
+        definition = json.loads(source['definition_json'])
+        definition['name'] += ' 개정'
+        source['definition_json'] = json.dumps(definition)
+    edited = csv_rows(current, builtin)
+    preview = editor.upload({'content': edited}, ADMIN, preview=True)
+    assert [[c['field'] for c in item['changes']] for item in preview['items']] == [['name'], ['name']]
+    assert library.detail(row['id'], ADMIN)['status'] == 'approved'
+    assert editor.upload({'content': edited, 'selected_rows': [1, 2]}, ADMIN, preview=False) == {'saved': 2}
+    draft = library.detail(row['id'], ADMIN)
+    assert draft['status'] == 'draft' and draft['requested_version'] == row['requested_version']
+    assert editor.upload({'content': edited}, ADMIN, preview=True)['items'][0]['code'] == 'rule_changed'
+    approved = action(library, draft, 'approve')
+    applied = action(library, approved, 'apply', effective_from='2026-01-01T00:00:00Z')
+    assert applied['requested_version'] != row['requested_version']
+
+    proposal = editor.proposals(ADMIN)[0]
+    token = {'content_hash': proposal['content_hash']}
+    with pytest.raises(RuleError, match='approval_required'):
+        editor.transition(proposal['id'], 'apply', token, ADMIN)
+    editor.transition(proposal['id'], 'approve', token, ADMIN)
+    assert editor.transition(proposal['id'], 'apply', token, ADMIN)['status'] == 'pending_deployment'
+    release = editor.release(proposal['id'], ADMIN)
+    assert release['rule']['name'].endswith(' 개정')
+    assert release['base_hash'] == builtin['base_hash'] and release['rule']['id'] == 'NET-PORT-001'
+    assert editor.proposals(OTHER) == []
+    assert editor.upload({'content': edited}, OTHER, preview=True)['items'][1]['code'] == 'rule_missing'
+
+
+def csv_rows(*rows):
+    stream = io.StringIO(newline='')
+    writer = csv.DictWriter(stream, fieldnames=COLUMNS)
+    writer.writeheader()
+    writer.writerows(rows)
+    return stream.getvalue()

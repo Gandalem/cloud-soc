@@ -131,7 +131,7 @@ class RuleLibrary:
             item['observed_version'] = releases.get((r['id'], r['observed']), {}).get('version')
             projected.append(item)
         return {'rules': projected,
-                'organizations': orgs, 'capabilities': capabilities(),
+                'organizations': orgs, 'capabilities': capabilities(), 'global_admin': principal.organizations is None,
                 'builtin': builtins}
 
     @staticmethod
@@ -163,6 +163,9 @@ class RuleLibrary:
                                   (identifier, result['observed'])).fetchone()
             result['requested_version'] = release['version'] if release else None
             result['observed_version'] = observed['version'] if observed else None
+            requested = db.execute('SELECT definition FROM managed_versions WHERE rule_id=? AND version=?',
+                                   (identifier, release['version'])).fetchone() if release else None
+            result['requested_definition'] = json.loads(requested['definition']) if requested else None
             result['effective_from'] = release['effective_from'] if release else None
             result['history'] = [dict(r) for r in db.execute(
                 'SELECT actor,action,at,version,content_hash FROM managed_audit WHERE rule_id=? ORDER BY seq', (identifier,))]
@@ -210,6 +213,13 @@ class RuleLibrary:
                 body.get('content_hash') == row['content_hash'], 'rule_changed', 409)
         require(digest(json.loads(row['definition'])) == row['content_hash'], 'rule_integrity_failed', 409)
 
+    def save_edit(self, db, row, definition, principal):
+        require(row['version'] < 10000, 'rule_history_capacity', 429)
+        require(definition['key'] == row['rule_key'], 'rule_key_immutable', 409)
+        db.execute("UPDATE managed_rules SET version=?,status='draft',definition=?,content_hash=? WHERE id=?",
+                   (row['version'] + 1, encoded(definition), digest(definition), row['id']))
+        self.audit(db, self.row(db, row['id'], principal), principal.username, 'edit')
+
     def action(self, identifier, action, body, principal):
         self.scope(principal)
         require(action in ('edit', 'approve', 'apply', 'stop', 'delete'), 'action_invalid')
@@ -223,10 +233,7 @@ class RuleLibrary:
             require(row['status'] not in ('deleted', 'delete_pending'), 'rule_deleted', 409)
             version, status, definition, content_hash = row['version'], row['status'], row['definition'], row['content_hash']
             if action == 'edit':
-                d = self.checked(body.get('definition'), row['organization'])
-                require(d['key'] == row['rule_key'], 'rule_key_immutable', 409)
-                version += 1
-                status, definition, content_hash = 'draft', encoded(d), digest(d)
+                self.save_edit(db, row, self.checked(body.get('definition'), row['organization']), principal)
             elif action == 'approve':
                 require(status == 'draft', 'draft_required', 409)
                 d = self.checked(json.loads(definition), row['organization'])
@@ -257,10 +264,9 @@ class RuleLibrary:
                 db.execute('UPDATE managed_rules SET generation=?,desired=? WHERE id=?', (generation, desired, identifier))
             # Increment action version for concurrency even if the definition is unchanged.
             if action != 'edit':
-                version += 1
-            db.execute('UPDATE managed_rules SET version=?,status=?,definition=?,content_hash=? WHERE id=?',
-                       (version, status, definition, content_hash, identifier))
-            self.audit(db, self.row(db, identifier, principal), principal.username, action)
+                db.execute('UPDATE managed_rules SET version=?,status=?,definition=?,content_hash=? WHERE id=?',
+                           (version + 1, status, definition, content_hash, identifier))
+                self.audit(db, self.row(db, identifier, principal), principal.username, action)
         return self.detail(identifier, principal)
 
     def import_rules(self, body, principal, *, preview=False):

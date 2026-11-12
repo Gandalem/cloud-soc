@@ -50,6 +50,13 @@
     $('rule-source').value=d.source;sourceChange(d.conditions,d.group_by);$('rule-kind').value=d.kind;kindChange();}
   function state(row){return row.status==='delete_pending'?'삭제 반영 대기':row.active?'사용 중':(statuses[row.runtime_state]||'연결 확인 필요')+' · '+statuses[row.status];}
   function show(row){selected=row;$('rule-detail').hidden=false;$('rule-detail-name').textContent=row.definition.name;$('rule-detail-summary').textContent=row.summary;$('rule-detail-state').textContent=row.organization+' · '+state(row)+(row.requested_version?' · 적용 요청 v'+row.requested_version:'')+(row.observed_version?' · 워커 보고 v'+row.observed_version:'');
+    const requested=row.requested_definition;
+    const changes=requested?Object.keys(row.definition)
+      .filter(field=>JSON.stringify(requested[field])!==JSON.stringify(row.definition[field]))
+      .map(field=>({field,before:requested[field],after:row.definition[field]})):[];
+    $('rule-requested-diff').hidden=!changes.length;
+    $('rule-requested-diff-body').replaceChildren(changesView(changes));
+    $('rule-detail-csv').href=base+'/current/'+encodeURIComponent(row.id)+'.csv';
     const deleted=['deleted','delete_pending'].includes(row.status);for(const id of ['rule-edit','rule-delete'])$(id).disabled=deleted;$('rule-approve').disabled=row.status!=='draft';$('rule-apply').disabled=row.status!=='approved';$('rule-stop').disabled=deleted||row.desired!=='running';
     $('rule-history').replaceChildren(...row.history.map(h=>node('p',new Date(h.at).toLocaleString()+' · '+h.actor+' · '+({created:'생성',edit:'수정',approve:'승인',apply:'적용 요청',stop:'사용 중지',delete:'삭제 요청'}[h.action]||h.action)+' · v'+h.version)));
     const reasons={late_input_reprocessing_required:'늦게 도착한 입력',future_event_time:'미래 시각 입력',required_fields_missing:'필수 필드 누락',group_values_invalid:'집계 기준 값 오류',event_time_invalid:'이벤트 시각 오류',analysis_context_changed:'기존 경보의 분석 문맥 변경'};
@@ -67,6 +74,7 @@
     options('rule-template',Object.keys(c.templates).map(k=>[k,names[k]]));options('rule-source',Object.entries(c.sources).map(([k,v])=>[k,v.label]));fill(clone(c.templates.ssh_failures));render();$('rule-save').disabled=!data.organizations.length;
     $('rule-builtin-list').replaceChildren(...data.builtin.map(r=>{const card=node('article');card.className='rule-card';const detail=node('details');detail.append(node('summary',r.name+' · '+r.key),node('p',`최근 ${r.window_seconds}초 / 기준 ${r.count}회`));
       for(const x of r.conditions)detail.append(node('p',(c.fields[x.field]?.label||({'cloud_soc.detail.adapter':'로그 형식','cloud_soc.detail.fields.sqli':'SQLi 의심','waf.engine_mode':'WAF 모드','organization.id':'조직'}[x.field])||x.field)+' '+(c.operators[x.operator]||x.operator)+' '+JSON.stringify(x.value)));
+      const csv=node('a','이 규칙 CSV');csv.href=base+'/current/'+encodeURIComponent(r.key)+'.csv';csv.download='';if(data.global_admin)detail.append(csv);
       card.append(detail);if(r.definition){const button=node('button','복제해서 작성');button.type='button';button.addEventListener('click',()=>{fill(copy(r.definition));$('rule-editor').scrollIntoView({behavior:'smooth'});});card.append(button);}return card;}));
     const now=new Date();$('rule-start').value=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,19);}
   $('rule-create').addEventListener('submit',event=>{event.preventDefault();run(async()=>{const d=definition(),row=editing?await api('/'+editing.id+'/edit',{version:editing.version,content_hash:editing.content_hash,definition:d}):await api('',{organization:$('rule-organization').value,definition:d});fill(row.definition,row);show(row);await refresh();$('rule-result').textContent='규칙을 저장했습니다.';});});
@@ -84,5 +92,89 @@
     const format=file.name.toLowerCase().endsWith('.json')?'json':file.name.toLowerCase().endsWith('.csv')?'csv':null;if(!format)throw new Error('CSV 또는 JSON 파일을 선택하세요.');importBody={organization:$('rule-import-org').value,format,content:await file.text(),request_id:crypto.randomUUID()};
     const result=await api('/import/preview',importBody);$('rule-import-list').replaceChildren(...result.items.map(item=>{const row=node('label'),check=node('input');check.type='checkbox';check.value=item.row;check.checked=item.valid;check.disabled=!item.valid;check.addEventListener('change',()=>{$('rule-import-create').disabled=!$('rule-import-list').querySelector('input:checked');});row.append(check,node('span',item.valid?`${item.row}. ${item.key} · ${item.summary}`:`${item.row}. ${errors[item.code]||'입력 조건 또는 중복 ID를 확인하세요.'}`));return row;}));$('rule-import-create').disabled=!result.items.some(i=>i.valid);$('rule-result').textContent='등록할 항목을 선택하세요.';}));
   $('rule-import-create').addEventListener('click',()=>run(async()=>{if(!importBody)return;const selected_rows=[...$('rule-import-list').querySelectorAll('input:checked')].map(n=>Number(n.value));const result=await api('/import/create',{...importBody,selected_rows});$('rule-result').textContent=result.created.length+'개 규칙을 등록했습니다.';clearImport();await refresh();}));
-  run(async()=>{await start();await live.start();});
+  let csvContent=null;
+  function clearCsv(){
+    csvContent=null;
+    $('rule-csv-changes').replaceChildren();
+    $('rule-csv-save').disabled=true;
+  }
+  function changesView(changes){
+    const list=node('dl');
+    for(const change of changes){
+      const before=node('dd'),after=node('dd');
+      before.append(node('pre','기존 '+JSON.stringify(change.before,null,2)));
+      after.append(node('pre','변경 '+JSON.stringify(change.after,null,2)));
+      list.append(node('dt',change.field),before,after);
+    }
+    return list;
+  }
+  async function loadProposals(){
+    const result=await api('/csv/proposals');
+    $('rule-csv-proposals').hidden=!result.proposals.length;
+    $('rule-csv-proposal-list').replaceChildren(...result.proposals.map(proposal=>{
+      const card=node('article');card.className='rule-card';
+      const label={draft:'초안',approved:'승인됨',pending_deployment:'배포 대기'};
+      card.append(node('h4',proposal.rule_key+' · '+(proposal.changes?label[proposal.status]:'기준 버전 변경')));
+      if(!proposal.changes)return card;
+      const details=node('details');
+      details.append(node('summary','변경점'),changesView(proposal.changes));
+      card.append(details);
+      if(proposal.status==='pending_deployment'){
+        const link=node('a','승인된 배포 요청 JSON 다운로드');
+        link.href=base+'/csv/proposals/'+encodeURIComponent(proposal.id)+'/release.json';
+        link.download='';
+        card.append(link);
+      }else{
+        const action=proposal.status==='draft'?'approve':'apply';
+        const button=node('button',action==='approve'?'승인':'배포 요청');
+        button.type='button';
+        button.addEventListener('click',()=>run(async()=>{
+          await api('/csv/proposals/'+encodeURIComponent(proposal.id)+'/'+action,{content_hash:proposal.content_hash});
+          await loadProposals();
+          $('rule-result').textContent=action==='approve'?'변경을 승인했습니다.':'배포 요청을 저장했습니다.';
+        }));
+        card.append(button);
+      }
+      return card;
+    }));
+  }
+  $('rule-csv-file').addEventListener('change',clearCsv);
+  $('rule-csv-preview').addEventListener('click',()=>run(async()=>{
+    clearCsv();
+    const file=$('rule-csv-file').files[0];
+    if(!file||!file.name.toLowerCase().endsWith('.csv'))throw new Error('편집한 CSV 파일을 선택하세요.');
+    if(file.size>262144)throw new Error('파일은 256KiB 이하여야 합니다.');
+    const content=await file.text(), result=await api('/csv/preview',{content});
+    if($('rule-csv-file').files[0]!==file)return;
+    csvContent=content;
+    const update=()=>{$('rule-csv-save').disabled=!$('rule-csv-changes').querySelector('input:checked');};
+    for(const item of result.items){
+      const row=node('article');row.className='rule-card';
+      row.append(node('h3',item.rule_id+(item.organization?' · '+item.organization:'')));
+      if(!item.valid){
+        row.append(node('p',errors[item.code]||'규칙 정의나 기준 버전을 확인하세요.'));
+      }else if(!item.changes.length){
+        row.append(node('p','변경 없음'));
+      }else{
+        const label=node('label'),check=node('input');
+        check.type='checkbox';check.value=item.row;check.addEventListener('change',update);
+        label.append(check,node('span','이 변경 선택'));
+        const details=node('details');details.open=true;
+        details.append(node('summary','변경점'),changesView(item.changes));
+        row.append(label,details);
+      }
+      $('rule-csv-changes').append(row);
+    }
+    update();
+  }));
+  $('rule-csv-save').addEventListener('click',()=>run(async()=>{
+    if(csvContent===null)return;
+    const selected_rows=[...$('rule-csv-changes').querySelectorAll('input:checked')].map(input=>Number(input.value));
+    const result=await api('/csv/save',{content:csvContent,selected_rows});
+    clearCsv();
+    await refresh();
+    await loadProposals();
+    $('rule-result').textContent=result.saved+'개 변경을 초안으로 저장했습니다.';
+  }));
+  run(async()=>{await start();await live.start();await loadProposals();});
 })();

@@ -35,6 +35,7 @@ from cloud_soc.portal.mall_scope import read_scope, validate_scope
 from cloud_soc.portal.mall_investigation import MallInvestigation
 from cloud_soc.portal.rule_management import RuleDraftStore, RuleError
 from cloud_soc.portal.rule_library import RuleLibrary
+from cloud_soc.portal.rule_csv import RuleCsv
 from cloud_soc.portal.insight_state import InsightStore, InsightError
 from cloud_soc.portal.dashboard_insights import InsightReader, evidence_flow
 from cloud_soc.portal.agent_status import parse_time as datetime_from_iso
@@ -316,6 +317,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     app.extensions['rule_drafts'] = rule_drafts
     rule_library = RuleLibrary(cases.path, rule_organizations)
     app.extensions['rule_library'] = rule_library
+    rule_csv = RuleCsv(rule_library)
 
     @app.errorhandler(RuleError)
     def rule_error(error):
@@ -329,7 +331,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         rule_request()
         # Preserve the small default on every other API. JSON file content can
         # expand sixfold through escaping, while the decoded file stays <=256KiB.
-        request.max_content_length = 2 * 1024 * 1024 if request.endpoint == 'rule_library_import' else 65536
+        request.max_content_length = 2 * 1024 * 1024 if request.endpoint in ('rule_library_import', 'rule_csv_upload') else 65536
         try:
             return jsonify(operation()), status
         except sqlite3.Error:
@@ -371,6 +373,37 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         response = app.response_class('\ufeff' + csv_template(), mimetype='text/csv')
         response.headers['Content-Disposition'] = 'attachment; filename="rules-template.csv"'
         return response
+
+    @app.get('/api/settings/rule-library/current.csv')
+    @app.get('/api/settings/rule-library/current/<identifier>.csv')
+    def rule_csv_export(identifier=None):
+        rule_request()
+        response = app.response_class('\ufeff' + rule_csv.export(g.log_principal, identifier), mimetype='text/csv')
+        response.headers['Content-Disposition'] = 'attachment; filename="current-rules.csv"'
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+
+    @app.post('/api/settings/rule-library/csv/<mode>')
+    def rule_csv_upload(mode):
+        if mode not in ('preview', 'save'):
+            abort(404)
+        return library_response(lambda: rule_csv.upload(request.get_json(), g.log_principal, preview=mode == 'preview'))
+
+    @app.get('/api/settings/rule-library/csv/proposals')
+    def rule_csv_proposals():
+        return library_response(lambda: {'proposals': rule_csv.proposals(g.log_principal)})
+
+    @app.post('/api/settings/rule-library/csv/proposals/<identifier>/<action>')
+    def rule_csv_transition(identifier, action):
+        return library_response(lambda: rule_csv.transition(identifier, action, request.get_json(), g.log_principal))
+
+    @app.get('/api/settings/rule-library/csv/proposals/<identifier>/release.json')
+    def rule_csv_release(identifier):
+        response, status = library_response(lambda: rule_csv.release(identifier, g.log_principal))
+        if status == 200:
+            response.headers['Content-Disposition'] = 'attachment; filename="builtin-rule-release.json"'
+            response.headers['Cache-Control'] = 'no-store'
+        return response, status
 
     @app.get('/api/settings/rules')
     def rule_management_list():
