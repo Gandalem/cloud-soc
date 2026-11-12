@@ -98,7 +98,7 @@ def source_observed(event, identifier):
     if identifier == 'WIN-AUTH-001':
         return adapter == 'windows_security_v1'
     if identifier == 'NET-PORT-001':
-        return adapter == 'packetbeat_metadata_v1'
+        return adapter == 'packetbeat_metadata_v1' and get_field_value(event, 'event.dataset') == 'flow'
     if identifier == 'WEB-404-001':
         return adapter in ('web_access_metadata_v1', 'web_access_agent_v1') or (
             adapter == 'linux_operational_v1' and get_field_value(event, 'event.action') == 'http_access')

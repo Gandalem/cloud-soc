@@ -80,6 +80,7 @@ rules:
     conditions:
       - {field: cloud_soc.detail.adapter, operator: equals, value: packetbeat_metadata_v1}
       - {field: event.category, operator: contains, value: network}
+      - {field: event.dataset, operator: equals, value: flow}
       - {field: cloud_soc.detail.fields.flow_final, operator: equals, value: true}
       - {field: network.transport, operator: in, value: [tcp, udp]}
     group_by: [organization.id, source.ip, destination.ip]

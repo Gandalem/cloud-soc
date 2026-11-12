@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from cloud_soc.detection.engine import detect_rule, event_fingerprint
 from cloud_soc.detection.patterns import evaluate_pattern
+from cloud_soc.detection.profiles import source_observed
 from cloud_soc.detection.rule_loader import load_rules, validate_rule
 from cloud_soc.detection.worker import approved_rules
 from cloud_soc.processing.contract import normalize, NORMALIZED
@@ -47,6 +48,7 @@ def web(i,status=404):
 def flow(i,port=None,final=True):
     r=fixture();r['_index']='soc-network-test';r['_id']=str(i);s=r['_source'];s.pop('winlog')
     s['@timestamp']=(BASE+timedelta(seconds=i)).isoformat()
+    s['event']['dataset']='flow'
     s.update(agent={'type':'packetbeat'},labels={'log_source':'network_packetbeat'},
         source={'ip':'192.0.2.1','port':40000},destination={'ip':'198.51.100.1','port':port or 1000+i},
         network={'transport':'tcp'},flow={'id':f'flow-{i}','final':final})
@@ -135,6 +137,19 @@ def test_ports_distinct_final_flow_and_host_scopes():
     found=detect_rule([flow(i) for i in range(15)],rule)[0]
     assert found['assessment']['distinct_count']==15
     assert 'no_nmap_or_syn_tool_attribution' in found['assessment']['limitations']
+
+
+def test_port_rule_excludes_dns_but_reports_incomplete_flow():
+    rule = RULES['NET-PORT-001']
+    event = flow(0)
+    assert source_observed(event, rule['id'])
+    event['cloud_soc']['detail']['fields']['flow_final'] = None
+    assert evaluate_pattern(event, rule) == ('unknown', ['cloud_soc.detail.fields.flow_final'])
+
+    event['event']['dataset'] = 'dns'
+    event['network']['transport'] = 'udp'
+    assert not source_observed(event, rule['id'])
+    assert evaluate_pattern(event, rule) == ('not_matched', [])
 
 
 def test_console_principal_and_event_id_not_inferred_and_success_excluded():
