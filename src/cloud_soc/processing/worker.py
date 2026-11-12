@@ -20,7 +20,8 @@ from cloud_soc.portal.log_contract import field
 DEFAULT_SOURCE_INDICES = tuple(p for p in INDICES if p != "soc-multicloud-*")
 
 READ_FIELDS = list(SOURCE_FIELDS + DETAIL_FIELDS) + ["message", "event.timezone", "event.created",
-    "log.syslog.appname", "process.name", "journald.syslog.identifier", "journald.process.name", "journald.pid"]
+    "log.syslog.appname", "process.name", "journald.syslog.identifier", "journald.process.name", "journald.pid",
+    "journald.custom.audit_type_name", "journald.custom.audit_field_unit", "winlog.event_data.SubjectUserName"]
 
 
 def checked(response):
