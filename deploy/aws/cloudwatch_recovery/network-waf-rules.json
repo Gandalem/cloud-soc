@@ -1,0 +1,84 @@
+{
+  "rules": [
+    {
+      "id": "AWS-VPC-MGMT-ACCEPT-001",
+      "type": "single",
+      "enabled": true,
+      "name": "VPC flow allowed from public IP to a management port",
+      "severity": "high",
+      "conditions": [
+        {
+          "field": "event.dataset",
+          "operator": "equals",
+          "value": "aws.vpc_flow"
+        },
+        {
+          "field": "event.action",
+          "operator": "equals",
+          "value": "accept"
+        },
+        {
+          "field": "network.transport",
+          "operator": "equals",
+          "value": "tcp"
+        },
+        {
+          "field": "destination.port",
+          "operator": "in",
+          "value": [
+            22,
+            3389
+          ]
+        },
+        {
+          "field": "cloud_soc.detail.fields.public_to_private",
+          "operator": "equals",
+          "value": true
+        }
+      ],
+      "alert": {
+        "title": "VPC 관리 포트 허용 흐름",
+        "message": "공인 출발지에서 사설 목적지의 SSH 또는 RDP로 허용된 TCP 흐름이 관측됐습니다. 승인 여부와 연결 상태를 확인하세요.",
+        "category": "network",
+        "tags": [
+          "aws",
+          "vpc-flow"
+        ]
+      }
+    },
+    {
+      "id": "AWS-WAF-INJECTION-BLOCK-001",
+      "type": "single",
+      "enabled": true,
+      "name": "AWS WAF blocked an identified SQL injection or XSS request",
+      "severity": "medium",
+      "conditions": [
+        {
+          "field": "event.dataset",
+          "operator": "equals",
+          "value": "aws.waf"
+        },
+        {
+          "field": "event.action",
+          "operator": "equals",
+          "value": "block"
+        },
+        {
+          "field": "cloud_soc.detail.fields.injection_signal",
+          "operator": "equals",
+          "value": true
+        }
+      ],
+      "alert": {
+        "title": "AWS WAF 인젝션 요청 차단",
+        "message": "WAF가 SQL 삽입 또는 XSS로 식별한 요청을 차단했습니다. 실제 공격 성공 여부는 애플리케이션 기록과 함께 확인하세요.",
+        "category": "waf",
+        "tags": [
+          "aws",
+          "waf",
+          "injection"
+        ]
+      }
+    }
+  ]
+}

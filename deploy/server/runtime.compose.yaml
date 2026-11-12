@@ -12,6 +12,18 @@ x-worker: &worker
   cap_drop: [ALL]
   environment: {SOC_LOG_FORMAT: json}
 services:
+  suricata-bridge:
+    <<: *worker
+    command: [python, -m, cloud_soc.detection.suricata_bridge]
+    mem_limit: 128m
+    environment:
+      SOC_LOG_FORMAT: json
+    volumes:
+      - ${SOC_STATE_DIR}/runtime/contract.json:/run/runtime/contract.json:ro
+      - ${SOC_STATE_DIR}/runtime/state/suricata-bridge:/bridge
+      - ${SOC_STATE_DIR}/portal:/cases
+      - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+      - ${SOC_STATE_DIR}/runtime/keys/detector.key:/run/keys/worker.key:ro
   slack-notifier:
     <<: *worker
     command: [python, -m, cloud_soc.notifications.worker]
@@ -60,6 +72,15 @@ services:
       - ${SOC_STATE_DIR}/runtime/state/detector-priority:/data
       - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
       - ${SOC_STATE_DIR}/runtime/keys/detector-priority.key:/run/keys/worker.key:ro
+  detector-aws:
+    <<: *worker
+    command: [python, -m, cloud_soc.deployment.worker, --service, detector-aws]
+    mem_limit: 256m
+    volumes:
+      - ${SOC_STATE_DIR}/runtime/contract.json:/run/runtime/contract.json:ro
+      - ${SOC_STATE_DIR}/runtime/state/detector-aws:/data
+      - ${SOC_STATE_DIR}/tls/ca.crt:/run/certs/ca.crt:ro
+      - ${SOC_STATE_DIR}/runtime/keys/detector-additional.key:/run/keys/worker.key:ro
   detector-additional:
     <<: *worker
     command: [python, -m, cloud_soc.deployment.worker, --service, detector-additional]

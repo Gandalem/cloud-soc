@@ -1,0 +1,30 @@
+services:
+  evaluation:
+    image: ${SOC_CW_RUNTIME_IMAGE:?Set the reviewed central runtime image}
+    command: [python, -B, "/app/deploy/aws/cloudwatch_recovery/${SOC_CW_ENTRYPOINT:?Set worker.py or network_waf.py}", "${SOC_CW_KIND:-cloudtrail}"]
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    mem_limit: 512m
+    cpus: 0.75
+    environment:
+      SOC_CW_LOG_GROUP: ${SOC_CW_LOG_GROUP:?Set the exact CloudWatch log group}
+      SOC_CW_REGION: ${SOC_CW_REGION:?Set the source region}
+      SOC_CW_ACCOUNT_ID: ${SOC_CW_ACCOUNT_ID:?Set the source account}
+      SOC_CW_ORGANIZATION: ${SOC_CW_ORGANIZATION:?Set the SOC organization}
+      SOC_CW_HISTORY_START: ${SOC_CW_HISTORY_START:?Set the source history start}
+    volumes:
+      - ${SOC_CW_STATE_DIR:?Set a dedicated state directory}:/data
+      - ${SOC_CW_ES_KEY_FILE:?Set the scoped Elasticsearch key file}:/run/worker.key:ro
+      - ${SOC_CW_ES_CA_FILE:?Set the central Elasticsearch CA}:/run/ca.crt:ro
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    networks: [central]
+networks:
+  central:
+    external: true
+    name: ${SOC_CW_ES_NETWORK:-cloud-soc-central_default}

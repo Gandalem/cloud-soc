@@ -5,13 +5,20 @@ import os
 from pathlib import Path
 import sys
 
-from cloud_soc.deployment.contract import WORKERS, command, digest, options, policy, validate_rules
+from cloud_soc.deployment.contract import AWS_RULE_IDS, WORKERS, command, defaults, digest, options, policy, stamp, validate_rules
 
 
 def argv(value, name, release_policy):
-    if name not in WORKERS or value.get('policy_sha256') != digest(release_policy) or not value.get('prepared'):
+    if name not in (*WORKERS, 'detector-aws') or value.get('policy_sha256') != digest(release_policy) or not value.get('prepared'):
         raise ValueError('Runtime migration not prepared for this release')
     validate_rules(release_policy)
+    if name == 'detector-aws':
+        if tuple(value.get('aws_rules', ())) != AWS_RULE_IDS:
+            raise ValueError('AWS rule inventory differs from the release')
+        floor = stamp(value['aws_detection_start']).isoformat()
+        config = defaults('detector-additional', floor, AWS_RULE_IDS)
+        config['--status-id'] = name
+        return command('cloud_soc.detection', config)
     row = value['workers'][name]
     expected = 'cloud_soc.processing' if name.startswith('normalizer') else 'cloud_soc.detection'
     if row['module'] != expected:
@@ -30,7 +37,7 @@ def argv(value, name, release_policy):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--service', choices=WORKERS, required=True)
+    parser.add_argument('--service', choices=(*WORKERS, 'detector-aws'), required=True)
     parser.add_argument('--contract', type=Path, default=Path('/run/runtime/contract.json'))
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[3]

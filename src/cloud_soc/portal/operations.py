@@ -414,6 +414,10 @@ class Operations:
                     extra = analysis_coverage(result["priority_normalizer"], additional)
                     if priority[extra["state"]] > priority[current["state"]]:
                         result["realtime_coverage"] = {**extra, "reason": "additional_" + extra["reason"]}
+            try:
+                workers['detector-aws'] = self.worker_status('detector-aws')
+            except Exception:
+                workers['detector-aws'] = {'state': 'unavailable'}
             result['rules'] = rule_inventory(workers)
         return result
 

@@ -390,7 +390,7 @@ def public_environment(obj):
         'SOC_ELASTIC_ENDPOINT', 'SOC_AGENT_ENDPOINT', 'SOC_ADMIN_ALLOWED_CIDRS', 'SOC_USERS_FILE',
         'SOC_LOG_ACCESS_POLICY_FILE', 'SOC_LOG_FORMAT', 'SOC_INTERNAL_ES_URL', 'SOC_CA_FILE',
         'SOC_STATE_DIR', 'SOC_ADMIN_USER', 'SOC_ADMIN_HASH_FILE', 'SOC_ISSUER_PASSWORD_FILE', 'SOC_MONITOR_PASSWORD_FILE'}
-    allowed |= {'SOC_PORTAL_ORIGINS', 'SOC_PORTAL_TLS_ORIGINS'}
+    allowed |= {'SOC_PORTAL_ORIGINS', 'SOC_PORTAL_TLS_ORIGINS', 'SOC_ARCHIVE_STATE_DIR', 'SOC_ARCHIVE_PREFIX'}
     return {k: v for item in obj['Config'].get('Env', []) for k, _, v in [item.partition('=')] if k in allowed}
 
 
@@ -403,6 +403,11 @@ def site_overlay(rendered, objects):
             continue
         old = rendered['services'][name]
         row = {k: deepcopy(old[k]) for k in ('volumes', 'ports') if k in old}
+        if name == 'portal':
+            from cloud_soc.deployment.compose_review import SCHOOL_COMMAND
+            if old.get('command') == SCHOOL_COMMAND:
+                row['command'] = deepcopy(SCHOOL_COMMAND)
+                row['pull_policy'] = 'never'
         if name == 'elasticsearch':
             allowed = ('path.repo', 'cluster.name', 'node.name')
             row['environment'] = {k: v for k, v in old.get('environment', {}).items() if k in allowed}
@@ -528,6 +533,16 @@ def snapshot(engine, workspace, state, image, project='cloud-soc-central', *, co
                 if path.resolve() != (state / 'runtime/contract.json').resolve():
                     fingerprints[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
     source = source_files(workspace)
+    # A common image may retain the school entry point only with identical reviewed
+    # school module bytes. Never infer this from an image tag or a copied filename.
+    from cloud_soc.deployment.compose_review import SCHOOL_COMMAND
+    if original.get('services', {}).get('portal', {}).get('command') == SCHOOL_COMMAND:
+        name = 'src/cloud_soc/portal/school_archive.py'
+        script = "import hashlib,pathlib;print(hashlib.sha256(pathlib.Path('/app/src/cloud_soc/portal/school_archive.py').read_bytes()).hexdigest())"
+        observed_hash = engine.run(['run', '--rm', '--network', 'none', '--read-only',
+            '--entrypoint', 'python', objects['portal']['Image'], '-c', script]).strip()
+        if observed_hash != source.get(name):
+            raise ValueError('School portal source differs from the running image; preserve it and review before upgrade')
     candidate = engine.json(['image', 'inspect', image])[0]['Id']
     # Verify actual image bytes; labels and checkout SHA alone are insufficient.
     script = "import hashlib,json,pathlib,sys;from cloud_soc.deployment.contract import policy,validate_rules;root=pathlib.Path('/app');m=json.load(sys.stdin);assert all((root/p).is_file() and hashlib.sha256((root/p).read_bytes()).hexdigest()==h for p,h in m.items());validate_rules(policy(root));print('verified')"

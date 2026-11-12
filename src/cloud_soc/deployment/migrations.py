@@ -280,11 +280,35 @@ def prerequisites(client, value, contract, directory, existing_keys, *, key_clie
             cache[kind] = encoded
         ledger['migrations'][step]['state'] = 'applied'
         ledger['migrations'][value['migrations'][1]] = {'state': 'applied', 'policy_sha256': digest(value)}
-        if value['version'] == 2:
+        if value['version'] >= 2:
             step = value['migrations'][2]
             ledger['migrations'][step] = {'state': 'applying', 'policy_sha256': digest(value)}
             atomic_json(ledger_path, ledger)
             notification_prerequisites(client, directory, key_client=key_client, notification_directory=notification_directory)
+            ledger['migrations'][step]['state'] = 'applied'
+        if value['version'] >= 3:
+            step = value['migrations'][3]
+            ledger['migrations'][step] = {'state': 'applying', 'policy_sha256': digest(value)}
+            atomic_json(ledger_path, ledger)
+            folder = directory / 'state' / 'suricata-bridge'
+            if folder.is_symlink():
+                raise ValueError('Unsafe Suricata bridge state')
+            created = not folder.exists()
+            folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+            if os.name == 'posix' and created:
+                os.chown(folder, 1000, 1000)
+            ledger['migrations'][step]['state'] = 'applied'
+        if value['version'] >= 4:
+            step = value['migrations'][4]
+            ledger['migrations'][step] = {'state': 'applying', 'policy_sha256': digest(value)}
+            atomic_json(ledger_path, ledger)
+            folder = directory / 'state' / 'detector-aws'
+            if folder.is_symlink():
+                raise ValueError('Unsafe AWS detector state')
+            created = not folder.exists()
+            folder.mkdir(mode=0o700, exist_ok=True)
+            if os.name == 'posix' and created:
+                os.chown(folder, 1000, 1000)
             ledger['migrations'][step]['state'] = 'applied'
         ledger['version'] = value['version']
         atomic_json(ledger_path, ledger)

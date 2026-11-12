@@ -87,6 +87,12 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
         if values.get('resource_id'):event['resource']={'id':values['resource_id']}
         record.update(status='normalized',reason=detail['status'],normalized={'index':NORMALIZED,'id':identifier})
         return identifier,record,event
+    # Dedicated, scope-checked IDS adapter; do not classify a host as a honeypot.
+    if (reference['index'].startswith('soc-host-raw-')
+            and field(source, 'labels.log_source') == 'linux_file'
+            and field(source, 'log.file.path') == '/var/log/suricata/eve.json'):
+        from cloud_soc.parsers.suricata import normalize_suricata
+        return normalize_suricata(source, reference, processed_at, received, organization)
     detail = security_detail(source)
     if detail['adapter']=='multicloud_audit_v1':
         record.update(reason='source_scope_mismatch')
@@ -213,6 +219,13 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
     if detail["status"] == "unsupported":
         operational = parse_linux_operational(source)
         if operational:
+            explicit_time = operational.pop('occurred_at', None)
+            if explicit_time:
+                occurred = parse_time(explicit_time)
+                if occurred is None:
+                    record['reason'] = 'linux_time_invalid'
+                    return identifier, record, None
+                time_metadata = {'basis': 'rfc3339_timestamp', 'year_inferred': False}
             time_text = operational.pop("time_text", None)
             access_time = operational.pop("access_time", None)
             if access_time:

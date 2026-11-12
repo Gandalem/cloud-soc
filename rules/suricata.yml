@@ -1,0 +1,85 @@
+# Dedicated Suricata bridge only; not added to existing detector profiles.
+rules:
+  - id: IDS-SURICATA-HIGH-001
+    name: Suricata high-priority sensor alert
+    type: single
+    enabled: true
+    severity: high
+    conditions:
+      - {field: cloud_soc.detail.adapter, operator: equals, value: suricata_eve_v1}
+      - {field: event.dataset, operator: equals, value: suricata.eve}
+      - {field: event.kind, operator: equals, value: alert}
+      - {field: suricata.eve.alert.severity, operator: equals, value: 1}
+      - {field: rule.id, operator: not_equals, value: '2100498'}
+    group_by: [organization.id, host.id, source.ip, destination.ip, rule.id]
+    required_fields: [organization.id, host.id, source.ip, destination.ip, rule.id]
+    threshold: {count: 1}
+    time_window: {seconds: 1}
+    cooldown: {seconds: 0}
+    alert:
+      title: Suricata 센서 경보 관측 · 높은 우선순위
+      message: 센서 심각도 1의 IDS 경보입니다. 원본 서명과 통신을 조사하세요. 침해 성공은 확정하지 않습니다.
+      category: intrusion_detection
+      tags: [suricata, sensor-alert]
+  - id: IDS-SURICATA-MEDIUM-001
+    name: Suricata medium-priority sensor alert
+    type: single
+    enabled: true
+    severity: medium
+    conditions:
+      - {field: cloud_soc.detail.adapter, operator: equals, value: suricata_eve_v1}
+      - {field: event.dataset, operator: equals, value: suricata.eve}
+      - {field: event.kind, operator: equals, value: alert}
+      - {field: suricata.eve.alert.severity, operator: equals, value: 2}
+      - {field: rule.id, operator: not_equals, value: '2100498'}
+    group_by: [organization.id, host.id, source.ip, destination.ip, rule.id]
+    required_fields: [organization.id, host.id, source.ip, destination.ip, rule.id]
+    threshold: {count: 1}
+    time_window: {seconds: 1}
+    cooldown: {seconds: 0}
+    alert:
+      title: Suricata 센서 경보 관측 · 중간 우선순위
+      message: 센서 심각도 2의 IDS 경보입니다. 정상 관리 활동과 테스트 트래픽을 포함할 수 있습니다. 공격 성공을 뜻하지 않습니다.
+      category: intrusion_detection
+      tags: [suricata, sensor-alert]
+  - id: IDS-SURICATA-LOW-001
+    name: Suricata low-priority sensor alert
+    type: single
+    enabled: true
+    severity: low
+    conditions:
+      - {field: cloud_soc.detail.adapter, operator: equals, value: suricata_eve_v1}
+      - {field: event.dataset, operator: equals, value: suricata.eve}
+      - {field: event.kind, operator: equals, value: alert}
+      - {field: suricata.eve.alert.severity, operator: equals, value: 3}
+      - {field: rule.id, operator: not_equals, value: '2100498'}
+    group_by: [organization.id, host.id, source.ip, destination.ip, rule.id]
+    required_fields: [organization.id, host.id, source.ip, destination.ip, rule.id]
+    threshold: {count: 1}
+    time_window: {seconds: 1}
+    cooldown: {seconds: 0}
+    alert:
+      title: Suricata 센서 경보 관측 · 낮은 우선순위
+      message: 센서 심각도 3의 정보성 IDS 경보입니다. 통신과 서명 근거를 확인하세요. 침해를 확정하지 않습니다.
+      category: intrusion_detection
+      tags: [suricata, sensor-alert]
+  - id: IDS-SURICATA-TEST-001
+    name: Suricata test signature observation
+    type: single
+    enabled: true
+    severity: low
+    conditions:
+      - {field: cloud_soc.detail.adapter, operator: equals, value: suricata_eve_v1}
+      - {field: event.dataset, operator: equals, value: suricata.eve}
+      - {field: event.kind, operator: equals, value: alert}
+      - {field: rule.id, operator: equals, value: '2100498'}
+    group_by: [organization.id, host.id, source.ip, destination.ip, rule.id]
+    required_fields: [organization.id, host.id, source.ip, destination.ip, rule.id]
+    threshold: {count: 1}
+    time_window: {seconds: 1}
+    cooldown: {seconds: 0}
+    alert:
+      title: '[연동 테스트] Suricata 테스트 서명 관측'
+      message: SID 2100498의 문자열 일치를 관측했습니다. 연동 시험에 사용되는 서명이며 실제 root 권한 획득이나 침해 성공의 증거가 아닙니다.
+      category: intrusion_detection
+      tags: [suricata, integration-test, not-attack-confirmation]

@@ -256,6 +256,12 @@
       if (data.contract_version !== 1 || data.raw_access !== "restricted" || data.row?.reference?.id !== row.reference.id || data.row?.reference?.index !== row.reference.index) throw new Error("상세 응답의 문서 참조가 일치하지 않습니다.");
       const observed = Object.entries(detailLabels).filter(([key])=>data.row[key]!=null && data.row[key]!=='' && (!Array.isArray(data.row[key]) || data.row[key].length));
       const entries = [['로그 종류',data.row.log_type?.label || '종류 미확인'],['인덱스',data.row.reference.index],['문서 ID',data.row.reference.id],...securityEntries(data.security),...observed.map(([key,name])=>[name,key.endsWith('_at') ? time(data.row[key]) : key==='os' ? label(osNames,data.row[key]) : data.row[key]]),...(data.row.outcome && data.row.outcome!=='unknown' ? [['원본 표준 필드 결과',label(outcomes,data.row.outcome)]] : []),['목록 해석 상태',label({recognized:'형식 확인',partial:'부분 해석 · 필드 누락',unsupported:'메타데이터만 표시 · 행위 해석 미지원'},data.row.parse_status,'미평가')],...(data.row.quality?.invalid_fields?.length ? [['형식 오류 필드',data.row.quality.invalid_fields]] : []),...(data.row.quality?.truncated_fields?.length ? [['표시 제한 필드',data.row.quality.truncated_fields]] : [])];
+      const recovery=data.cloudtrail_recovery||data.cloudwatch_recovery;
+      if(recovery?.normalization==='completed'){
+        entries.push([data.cloudtrail_recovery?'CloudTrail 정규화':'CloudWatch 정규화','완료']);
+        entries.push(['AWS 위험 평가',label({evaluated:'완료',not_evaluable:'평가 불가',not_applicable:'평가 대상 없음',routed_live:'실시간 AWS 탐지로 전달'},recovery.assessment)]);
+        if(recovery.matched_rules?.length)entries.push(['일치한 AWS 규칙',recovery.matched_rules]);
+      }
       for (const [name, value] of entries) {
         const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = name;
         dd.textContent = Array.isArray(value) ? value.join(", ") || "없음" : value == null ? "미관측" : String(value);
@@ -287,5 +293,11 @@
   $("#log-detail-dialog").addEventListener("cancel", () => { detailGeneration++; detailPending?.abort(); window.cloudSocSource?.close(); });
   window.addEventListener("pagehide", () => { generation++; pending?.abort(); clearDetail(); pages = []; page = -1; clearRows(); });
   window.addEventListener("pageshow", event => { if (event.persisted) refresh(); });
+  if (window.portalDataset === 'school') {
+    $('#log-period').value = 'custom';
+    $('#log-start').value = '2026-10-27T00:00:00';
+    $('#log-end').value = '2026-11-10T00:00:00';
+    updatePeriod();
+  }
   refresh();
 })();

@@ -2,6 +2,7 @@
 import json
 import re
 from ipaddress import ip_address
+from datetime import datetime, timezone
 from pathlib import PurePosixPath
 
 from cloud_soc.portal.log_contract import field
@@ -11,6 +12,7 @@ VERSION = "linux-operational-v1"
 SUDO_SESSION_VERSION = "linux-sudo-session-v1"
 SUDO_SESSION = re.compile(r"^pam_unix\(sudo:session\): session opened for user (?P<target>[A-Za-z0-9_.@-]{1,128})\(uid=(?P<target_uid>\d{1,10})\) by (?P<actor>[A-Za-z0-9_.@-]{1,128})\(uid=(?P<actor_uid>\d{1,10})\)$")
 PREFIX = re.compile(r"^(?P<time>[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+\S+\s+(?P<app>[A-Za-z0-9_.@-]+)(?:\[(?P<pid>\d{1,10})\])?:\s*(?P<body>.*)$")
+ISO_PREFIX = re.compile(r"^(?P<time>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2}))\s+\S+\s+(?P<app>[A-Za-z0-9_.@-]+)(?:\[(?P<pid>\d{1,10})\])?:\s*(?P<body>.*)$")
 SUDO = re.compile(r"^(?P<actor>[A-Za-z0-9_.@-]{1,128})\s*:\s*TTY=[^;\n]{1,128}\s*;\s*PWD=[^;\n]{1,1024}\s*;\s*USER=(?P<target>[A-Za-z0-9_.@-]{1,128})\s*;\s*(?:GROUP=[^;\n]{1,128}\s*;\s*)?(?:TSID=[^;\n]{1,128}\s*;\s*)?COMMAND=.+$")
 SERVICE = re.compile(r"^(Starting|Started|Stopping|Stopped|Failed to start)\s+.{1,1024}$")
 ACCESS = re.compile(r'^(?P<ip>\S{1,253})\s+\S+\s+\S+\s+\[(?P<time>\d{2}/[A-Za-z]{3}/\d{4}:\d{2}:\d{2}:\d{2} [+-]\d{4})\]\s+"(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH) [^"\r\n]{1,2048} HTTP/\d(?:\.\d)?"\s+(?P<status>[1-5]\d{2})\s+(?:\d+|-)(?:(?:\s+"[^"\r\n]{0,2048}"\s+"[^"\r\n]{0,2048}")|(?P<extra>\s+[A-Za-z0-9_.-]{1,128}\s+[A-Za-z0-9_.-]{1,128}))?$')
@@ -56,7 +58,14 @@ def parse_linux_operational(source):
                     "source_ip": address, "http_method": access["method"], "http_status": code},
                 "missing": ["source_ip"] if address is None else [], "limitations": limitations}
     prefix = PREFIX.fullmatch(message)
-    if prefix:
+    iso_prefix = ISO_PREFIX.fullmatch(message) if kind in {'linux_file', 'linux_auth'} else None
+    if iso_prefix:
+        try:
+            occurred = datetime.fromisoformat(iso_prefix['time'].replace('Z', '+00:00')).astimezone(timezone.utc)
+        except (ValueError, OverflowError):
+            return None
+        app, body = iso_prefix['app'], iso_prefix['body']
+    elif prefix:
         app, body = prefix["app"], prefix["body"]
     elif field(source, "labels.log_source") == "linux_journald":
         programs = [field(source, key) for key in ("log.syslog.appname", "process.name", "journald.syslog.identifier")]
@@ -139,6 +148,8 @@ def parse_linux_operational(source):
     if sudo_session:
         result['adapter'] = 'linux_sudo_session_v1'
         result['limitations'].append('sudo_session_not_command_execution_or_ssh_session_link')
+    if iso_prefix:
+        result['occurred_at'] = occurred.isoformat().replace('+00:00', 'Z')
     if prefix:
         result["time_text"] = prefix["time"]
     return result

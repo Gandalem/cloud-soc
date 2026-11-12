@@ -1,9 +1,11 @@
 {
-  "version": 2,
+  "version": 4,
   "migrations": [
     "001-permissions-and-indices",
     "002-independent-workers",
-    "003-slack-notifications"
+    "003-slack-notifications",
+    "004-suricata-alert-case-bridge",
+    "005-aws-detection"
   ],
   "workers": [
     "normalizer",
@@ -22,7 +24,7 @@
     "WEB-404-001": "250a60ecd0ecab188130c1b4a44665fa12e99a05f2a622ab4f9795261a57d7b0",
     "NET-PORT-001": "4d0dcbe2807a0c8eccc5d1205c2bdfb5ce147e82d9286f16f745a22296215682"
   },
-  "validation_reference": "docs/work_tracker.md:2026-10-14 16:10 KST",
+  "validation_reference": "docs/work_tracker.md:SURICATA-ALERT-CASE-SLACK-20261109-01",
   "resources": {
     "min_cpus": 2,
     "min_memory_bytes": 7516192768,
@@ -41,10 +43,30 @@
       "detector-priority": 192,
       "detector-additional": 256,
       "detector-retrospective": 256,
-      "slack-notifier": 64
+      "slack-notifier": 64,
+      "suricata-bridge": 128,
+      "detector-aws": 256
     }
   },
   "auxiliary_workers": [
-    "slack-notifier"
-  ]
+    "slack-notifier",
+    "suricata-bridge",
+    "detector-aws"
+  ],
+  "suricata_bridge": {
+    "version": 1,
+    "rules": {
+      "IDS-SURICATA-HIGH-001": "ead1a3c39154b5439626b42b44cbdcc54903f1a88c29e67ed52320dac9828668",
+      "IDS-SURICATA-MEDIUM-001": "71b3b5043b54c76e4e0754c50c9b6b2eb65cc4eef423f62d98a166d5c9df891e",
+      "IDS-SURICATA-LOW-001": "6f7d25dddac48a89d43d76f2b47ca6627ba7514da76ee39bb9dda415fdd9d0b8",
+      "IDS-SURICATA-TEST-001": "18bd1f44c4f45257afd9a38bcffff2fea2658278e791b6aaa8dc04924f53c456"
+    },
+    "start": "baseline_new_documents_only"
+  },
+  "aws_rules": {
+    "AWS-IAM-001": "8852d0d26fa0bac1314f972abee27705ea91ce879a196d9a012761ffebe29f63",
+    "AWS-AUDIT-001": "e82f4b56b1487f2e2a0ff8291654c2f90d4193db7d1bb79816cd7966a305c18e",
+    "AWS-NETWORK-001": "dc5de482b04b01f10871d97b847df41cc8e49439bc75dd2db9d4d208e77e4eed"
+  },
+  "aws_activation_at": "2026-11-12T07:36:30+00:00"
 }

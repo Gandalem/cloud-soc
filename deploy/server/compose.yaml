@@ -92,10 +92,15 @@ services:
     extends: {file: runtime.compose.yaml, service: detector}
   detector-priority:
     extends: {file: runtime.compose.yaml, service: detector-priority}
+  detector-aws:
+    extends: {file: runtime.compose.yaml, service: detector-aws}
   detector-additional:
     extends: {file: runtime.compose.yaml, service: detector-additional}
   detector-retrospective:
     extends: {file: runtime.compose.yaml, service: detector-retrospective}
+
+  suricata-bridge:
+    extends: {file: runtime.compose.yaml, service: suricata-bridge}
 
   slack-notifier:
     extends: {file: runtime.compose.yaml, service: slack-notifier}

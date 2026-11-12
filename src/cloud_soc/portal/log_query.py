@@ -447,9 +447,35 @@ class LogReader:
                 raise unavailable()
             if self.organizations is not None and project_list_hit(hit)["organization"] not in self.organizations:
                 raise LogQueryError("log_not_found", 404, "문서를 찾을 수 없습니다. 삭제되었거나 보존 기간이 지났을 수 있습니다.")
-            return bounded_json({"contract_version": CONTRACT_VERSION, "row": project_list_hit(hit),
-                                 "security": security_detail(hit.get("_source")),
-                                 "raw_access": "restricted"}, MAX_DETAIL_BYTES)
+            row = project_list_hit(hit)
+            result = {"contract_version": CONTRACT_VERSION, "row": row,
+                      "security": security_detail(hit.get("_source")), "raw_access": "restricted"}
+            recovery_versions = {
+                "aws_cloudtrail": "cloudwatch-cloudtrail-recovery-v1",
+                "aws_vpc_flowlogs": "cloudwatch-vpc-recovery-v1",
+                "aws_waf": "cloudwatch-waf-recovery-v1",
+            }
+            version = recovery_versions.get(row["source_kind"])
+            if version and row["os_basis"] == "input.type":
+                from hashlib import sha256
+                identifier = sha256(json.dumps(["intake-v1", reference], sort_keys=True).encode()).hexdigest()
+                try:
+                    record = fetch_document(self.client, {"index": "soc-processing-v1", "id": identifier},
+                                            ["raw", "status", "recovery"])["_source"]
+                except NotFoundError:
+                    record = {}
+                if record.get("raw") == reference and record.get("status") == "normalized":
+                    recovery = record.get("recovery", {})
+                    assessment = recovery.get("assessment")
+                    if (recovery.get("version") == version
+                            and assessment in {"evaluated", "not_evaluable", "not_applicable", "routed_live"}):
+                        key = "cloudtrail_recovery" if row["source_kind"] == "aws_cloudtrail" else "cloudwatch_recovery"
+                        result[key] = {"normalization": "completed", "assessment": assessment}
+                        matched = recovery.get("matched_rules")
+                        if isinstance(matched, list):
+                            allowed = {"AWS-VPC-MGMT-ACCEPT-001", "AWS-WAF-INJECTION-BLOCK-001"}
+                            result[key]["matched_rules"] = [rule for rule in matched if isinstance(rule, str) and rule in allowed]
+            return bounded_json(result, MAX_DETAIL_BYTES)
         except NotFoundError:
             raise LogQueryError("log_not_found", 404, "문서를 찾을 수 없습니다. 삭제되었거나 보존 기간이 지났을 수 있습니다.") from None
         except Exception as error:

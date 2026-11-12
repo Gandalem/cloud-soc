@@ -126,13 +126,14 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                          windows_installer_allow_lab=settings.get('WINDOWS_INSTALLER_ALLOW_LAB', False))
     app.extensions["packages"] = store
     # An operator-created private file explicitly opts this installation into sessions.
-    local_users = Path(settings["STATE_DIR"]) / "portal-users.json"
+    auth_state = Path(settings.get("AUTH_STATE_DIR", settings["STATE_DIR"]))
+    local_users = auth_state / "portal-users.json"
     if not settings.get("USERS_FILE") and (local_users.exists() or local_users.is_symlink()):
         if local_users.is_symlink():
             raise ValueError("Session user configuration must not be a symlink")
         settings["USERS_FILE"] = str(local_users)
     users = load_users(settings["USERS_FILE"]) if settings.get("USERS_FILE") else None
-    sessions = Sessions(Path(settings["STATE_DIR"]) / "sessions.sqlite", users) if users else None
+    sessions = Sessions(auth_state / "sessions.sqlite", users) if users else None
     app.extensions["sessions"] = sessions
     if issuer is None:
         issuer = Elasticsearch(settings["ES_URL"], basic_auth=("cloud_soc_issuer", settings["ES_PASSWORD"]),
@@ -151,7 +152,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     devices = Devices(store, enrollments)
     app.extensions['managed_devices'] = devices
     access_policy = LogAccessPolicy(settings["ADMIN_USER"], settings["ADMIN_HASH"], settings.get("LOG_ACCESS_POLICY"))
-    basic_guard = BasicAuthGuard(Path(settings["STATE_DIR"]) / "basic-auth.sqlite", access_policy) if sessions is None else None
+    basic_guard = BasicAuthGuard(auth_state / "basic-auth.sqlite", access_policy) if sessions is None else None
     app.extensions["basic_auth"] = basic_guard
     if users:
         for username, policy_user in access_policy.users.items():
@@ -955,7 +956,8 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         value = json.loads(Path(path).read_text())
         return jsonify(state='configured' if value.get('prepared') else 'migration_incomplete',
                        version=value['version'], policy_sha256=value['policy_sha256'],
-                       required_workers=list(ALL_WORKERS), pipeline_workers=list(WORKERS), verified_rules=value['verified_rules'])
+                       required_workers=list(ALL_WORKERS), pipeline_workers=[*WORKERS, 'detector-aws'],
+                       verified_rules=[*value['verified_rules'], *value.get('aws_rules', [])])
 
     @app.get("/api/alerts/detail")
     def alert_detail():

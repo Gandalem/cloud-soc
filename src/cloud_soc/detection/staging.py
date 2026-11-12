@@ -6,6 +6,7 @@ from elasticsearch import NotFoundError
 from cloud_soc.elastic.pagination import IncompleteSearchError
 from cloud_soc.processing.contract import NORMALIZED
 from cloud_soc.processing import receipt
+from cloud_soc.portal.log_contract import field
 
 MAX_STAGED = 1_000_000
 
@@ -49,7 +50,7 @@ def checked(response):
     return response
 
 
-def read_window(client, db, meta, *, budget, seen, scanner=None):
+def read_window(client, db, meta, *, budget, seen, scanner=None, dataset=None):
     if meta.get('receipt_query_version') != 2:
         # Old cursors used narrower date buckets. Replay the same fixed window
         # once so records earlier in shard order are not missed after upgrade.
@@ -61,7 +62,12 @@ def read_window(client, db, meta, *, budget, seen, scanner=None):
         meta.update(pit=None, after=None, complete=False, receipt_query_version=2)
     if meta['complete']:
         return True
-    query = receipt.query('cloud_soc.normalized_at', meta['lower'], meta['end'])
+    receipt_query = receipt.query('cloud_soc.normalized_at', meta['lower'], meta['end'])
+    filters = [receipt_query]
+    if dataset:
+        filters.append({'term': {'event.dataset': dataset}})
+    query = {'bool': {'filter': filters, 'must_not': [
+        {'terms': {'cloud_soc.recovery_mode': ['cloudwatch_history', 'cloudwatch_source_worker']}}]}}
     total = db.execute('SELECT count(*) FROM input_hits').fetchone()[0]
     added = 0
 
@@ -75,7 +81,12 @@ def read_window(client, db, meta, *, budget, seen, scanner=None):
 
     if scanner is not None:
         # Test/replay adapters provide a complete snapshot; production uses PIT.
-        for hit in scanner(client, index=NORMALIZED, page_size=500, max_documents=None, query=query):
+        for hit in scanner(client, index=NORMALIZED, page_size=500, max_documents=None, query=receipt_query):
+            source = hit['_source']
+            if field(source, 'cloud_soc.recovery_mode') in ('cloudwatch_history', 'cloudwatch_source_worker'):
+                continue
+            if dataset and field(source, 'event.dataset') != dataset:
+                continue
             store(hit)
             if added >= budget:
                 remember(db, meta)

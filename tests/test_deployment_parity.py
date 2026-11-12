@@ -106,7 +106,7 @@ def test_unknown_legacy_command_and_unverified_rules_cannot_be_adopted(tmp_path)
 
 
 def test_checked_in_policy_matches_the_builtin_rule_revisions():
-    assert set(validate_rules(POLICY)) == set(POLICY['verified_rules'])
+    assert set(validate_rules(POLICY)) == set(POLICY['verified_rules']) | set(POLICY['aws_rules'])
 
 
 def test_reviewed_plan_survives_sorted_json_roundtrip_without_rule_scope_changes(tmp_path):
@@ -117,19 +117,36 @@ def test_reviewed_plan_survives_sorted_json_roundtrip_without_rule_scope_changes
 
 
 def test_version_one_to_two_preserves_every_pipeline_option_and_prepared_state(tmp_path):
-    existing,_=build_contract(POLICY,{},tmp_path,now=NOW)
+    v2 = dict(POLICY, version=2, auxiliary_workers=['slack-notifier'])
+    existing,_=build_contract(v2,{},tmp_path,now=NOW)
     existing.update(version=1,policy_sha256='cfe8183e7e8defe239ac6fc99c3cdb248963ac3df0eb7f6ccaa0ebbe2bf5b989',prepared=True)
     existing.pop('auxiliary_workers')
     before=deepcopy(existing)
-    upgraded,adoption=build_contract(POLICY,{},tmp_path,now=NOW+timedelta(days=10),existing=existing)
+    upgraded,adoption=build_contract(v2,{},tmp_path,now=NOW+timedelta(days=10),existing=existing)
     assert upgraded['workers']==before['workers'] and upgraded['created_at']==before['created_at']
     assert upgraded['prepared'] and upgraded['version']==2 and upgraded['migrated_from']==1 and not adoption
     assert existing==before
 
 
+def test_aws_activation_pins_start_and_preserves_version_three_worker_identity(tmp_path):
+    existing, _ = build_contract(POLICY, {}, tmp_path, now=NOW)
+    existing.update(version=3, policy_sha256='98391d7bb0dd14ebc1b84c4b21c76022ed2a9bfd3aac0aedbb1f2413f86a1c1e',
+                    auxiliary_workers=['slack-notifier', 'suricata-bridge'], prepared=True)
+    existing.pop('aws_rules')
+    existing.pop('aws_detection_start')
+    planned, adoption = build_contract(POLICY, {}, tmp_path, now=NOW, existing=existing)
+    repeated, _ = build_contract(POLICY, {}, tmp_path, now=NOW + timedelta(minutes=3), existing=existing)
+    assert planned == repeated and not adoption
+    assert planned['workers'] == existing['workers']
+    command = argv(planned, 'detector-aws', POLICY)
+    assert command[command.index('--start') + 1] == POLICY['aws_activation_at']
+    assert set(command[command.index('--additional-rules') + 1].split(',')) == set(POLICY['aws_rules'])
+    assert command[command.index('--status-id') + 1] == 'detector-aws'
+
+
 def test_resources_include_all_workers_backup_space_and_kibana_headroom():
     hardware={'cpus':4,'memory_bytes':8277540864,'free_bytes':4*1024**3,'map_count':1048576,
-              'available_memory_bytes':3700000000,'managed_working_set_bytes':3900000000}
+              'available_memory_bytes':4100000000,'managed_working_set_bytes':3900000000}
     assert resource_check(POLICY,hardware,fresh=False,database_bytes=140693504)['ok']
     for field,value in [('cpus',1),('memory_bytes',6*1024**3),('free_bytes',1024**3),('map_count',65530)]:
         assert not resource_check(POLICY,{**hardware,field:value},fresh=False)['ok']
@@ -200,7 +217,7 @@ def test_new_and_upgrade_migrations_prepare_same_scopes_without_changing_existin
     saved={p.name:p.read_bytes() for p in (tmp_path/'keys').iterdir()}
     events=len(client.security.events)
     second=prerequisites(client,POLICY,c,tmp_path,{})
-    assert first==second and second['version']==2
+    assert first==second and second['version']==POLICY['version']
     assert saved=={p.name:p.read_bytes() for p in (tmp_path/'keys').iterdir()}
     assert len(client.security.events)==events
     assert 'soc-alert-notices-v1' in client.maps
@@ -208,8 +225,9 @@ def test_new_and_upgrade_migrations_prepare_same_scopes_without_changing_existin
         assert sum(e[0]=='key_create' for e in client.security.events)==1  # New read-only notifier key only.
         assert all((tmp_path/'keys'/(n+'.key')).read_text().strip()==v for n,v in keys.items())
     assert all(json.loads((tmp_path/'migrations.json').read_text())['migrations'][n]['state']=='applied' for n in POLICY['migrations'])
-    ownership_calls.expect(*(tmp_path/'keys'/(name+'.key') for name in ALL_WORKERS))
-    assert ownership_calls.chown.call_count == len(ALL_WORKERS)  # Reuse never rotates/re-owns keys.
+    ownership_calls.expect(*(tmp_path/'keys'/(name+'.key') for name in (*WORKERS, 'slack-notifier')))
+    ownership_calls.expect(tmp_path/'state'/'suricata-bridge', tmp_path/'state'/'detector-aws')
+    assert ownership_calls.chown.call_count == len(WORKERS) + 3  # Seven keys and two state directories.
 
 
 def test_migration_write_interruption_records_failure_and_resumes_without_reset(tmp_path,ownership_calls):
@@ -223,12 +241,12 @@ def test_migration_write_interruption_records_failure_and_resumes_without_reset(
     client.security.fail=False
     prerequisites(client,POLICY,c,tmp_path,{'normalizer':encoded})
     assert (tmp_path/'keys/normalizer.key').read_text().strip()==encoded
-    ownership_calls.expect(*(tmp_path/'keys'/(name+'.key') for name in ALL_WORKERS))
+    ownership_calls.expect(*(tmp_path/'keys'/(name+'.key') for name in (*WORKERS, 'slack-notifier')))
 
 
 def test_future_ledger_and_expired_keys_are_never_reissued(tmp_path):
     client=FakeSetup();c,_=build_contract(POLICY,{},tmp_path,now=NOW)
-    (tmp_path/'migrations.json').write_text(json.dumps({'version':3,'migrations':{}}))
+    (tmp_path/'migrations.json').write_text(json.dumps({'version':POLICY['version']+1,'migrations':{}}))
     with pytest.raises(ValueError,match='Future'):prerequisites(client,POLICY,c,tmp_path,{})
     assert not client.security.events
 
@@ -575,6 +593,8 @@ def test_site_snapshot_repository_and_compose_numeric_strings_are_supported():
     rendered['services']['kibana']['environment']={'NODE_OPTIONS':'--max-old-space-size=1024'}
     rendered['services']['bootstrap']={'profiles':['initialization']}
     rendered['services']['slack-notifier']['command']=['python','-m','cloud_soc.notifications.worker']
+    rendered['services']['suricata-bridge']['command']=['python','-m','cloud_soc.detection.suricata_bridge']
+    rendered['services']['detector-aws']['command']=['python','-m','cloud_soc.deployment.worker','--service','detector-aws']
     assert validate_rendered(POLICY,rendered,'verified:tag')['resource_limits_match_policy']
 
 

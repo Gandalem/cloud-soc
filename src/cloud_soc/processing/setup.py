@@ -37,7 +37,7 @@ def prepare(client, *, update_role=True):
                      "cloud": {"properties": {"provider": KEYWORD, "region": KEYWORD, "account": {"properties": {"id": KEYWORD}}}},
                      "network": {"properties": {"protocol": KEYWORD, "transport": KEYWORD}},
                      "process": {"properties": {"pid": {"type": "long"}, "executable": KEYWORD}},
-                     "cloud_soc": {"properties": {"normalized_at": DATE, "normalizer_version": KEYWORD, "parse_status": KEYWORD,
+                     "cloud_soc": {"properties": {"normalized_at": DATE, "recovery_mode": KEYWORD, "normalizer_version": KEYWORD, "parse_status": KEYWORD,
                                                     "detail": {"type": "object", "enabled": False},
                                                     "provenance": {"type": "object", "enabled": False}}}},
         RECORDS: {"@timestamp": DATE, "event": {"properties": {"ingested": DATE}},
@@ -63,7 +63,7 @@ def prepare(client, *, update_role=True):
             if name == NORMALIZED:
                 client.indices.put_mapping(index=name, properties={
                     **{k: properties[k] for k in ('service', 'http', 'waf')},
-                    "cloud_soc": {"properties": {"normalized_at": DATE}}})
+                    "cloud_soc": {"properties": {"normalized_at": DATE, "recovery_mode": KEYWORD}}})
             if name == STATUS:
                 client.indices.put_mapping(index=name, properties={k: properties[k] for k in ('health', 'lag_seconds', 'late_total', 'legacy_excluded', 'excluded_total', 'history_pending', 'counts', 'runtime')})
             if name in (RUNS, EXCLUSIONS):

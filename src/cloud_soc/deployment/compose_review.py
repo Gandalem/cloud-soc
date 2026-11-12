@@ -16,6 +16,44 @@ from cloud_soc.deployment.contract import SERVICES, digest
 from cloud_soc.deployment.migrations import atomic_json
 
 
+SCHOOL_COMMAND = ['gunicorn', '--bind', '0.0.0.0:8000', '--workers', '1', '--threads', '4',
+                  '--timeout', '60', '--access-logfile', '-', '--access-logformat', '%(m)s %(s)s %(L)s',
+                  'cloud_soc.portal.school_archive:create_app()']
+YAML_OVERLAY_PARSER = r"""
+import json, sys, yaml
+class Unique(yaml.SafeLoader): pass
+def mapping(loader, node, deep=False):
+    loader.flatten_mapping(node)
+    result = {}
+    for k, v in node.value:
+        key = loader.construct_object(k, deep=deep)
+        if not isinstance(key, str) or key in result: raise ValueError('duplicate_or_nonstring_key')
+        result[key] = loader.construct_object(v, deep=deep)
+    return result
+Unique.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, mapping)
+print(json.dumps(yaml.load(sys.stdin.read(), Loader=Unique), allow_nan=False))
+"""
+
+
+def overlay_object(path, engine=None, parser_image=None):
+    data = regular(path).read_text()
+    if len(data.encode()) > 131072:
+        raise ComposeReviewError('추가 설정의 크기 제한을 초과했습니다')
+    try:
+        return json.loads(data)
+    except json.JSONDecodeError:
+        if engine is None or not isinstance(parser_image, str) or not re.fullmatch(r'sha256:[0-9a-f]{64}', parser_image):
+            raise ComposeReviewError('YAML 검토에는 실제 실행 이미지의 오프라인 해석기가 필요합니다') from None
+        # Parse only; no operational files, credentials, network, or host mounts.
+        try:
+            result = engine.run(['run', '--rm', '--network', 'none', '--read-only', '-i',
+                '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--entrypoint', 'python',
+                parser_image, '-c', YAML_OVERLAY_PARSER], input=data)
+            return json.loads(result)
+        except Exception:
+            raise ComposeReviewError('추가 YAML 설정 해석 실패. 원문과 비밀값은 출력하지 않습니다') from None
+
+
 class ComposeReviewError(ValueError):
     """Messages contain only fixed diagnostics and public service identities."""
 
@@ -56,7 +94,7 @@ def command(state, files, directory, project):
             *[v for path in files for v in ('-f', path)]]
 
 
-def baseline(state, files, directory, project):
+def baseline(state, files, directory, project, *, engine=None, parser_image=None):
     """Do not reconstruct arbitrary CLI arguments from container labels."""
     receipt = regular(state / 'runtime/compose.active.json', protected=True)
     value = json.loads(receipt.read_text())
@@ -77,18 +115,36 @@ def baseline(state, files, directory, project):
     from cloud_soc.deployment.host import checked_path
     for name in original:
         checked_path(regular(name), state.parent.parent, file=True)
-    # Narrowly accept the observed site overrides. No command/mount/port changes.
+    # Narrowly accept the observed school portal and read-only snapshot overrides.
     from cloud_soc.deployment.host import public_environment
     allowed = set(public_environment({'Config': {'Env': [k + '=x' for k in (
         'SOC_PUBLIC_URL', 'SOC_PUBLIC_HOST', 'SOC_PORTAL_LAN_ORIGIN', 'SOC_AGENT_ENDPOINT',
-        'SOC_ADMIN_ALLOWED_CIDRS', 'SOC_ENROLLMENT_ENABLED')]}}))
+        'SOC_ADMIN_ALLOWED_CIDRS', 'SOC_ENROLLMENT_ENABLED', 'SOC_ARCHIVE_STATE_DIR', 'SOC_ARCHIVE_PREFIX')]}}))
     for name in files[2:]:
-        obj = json.loads(regular(name).read_text())
+        obj = overlay_object(name, engine, parser_image)
         if not isinstance(obj, dict) or set(obj) != {'services'} or not isinstance(obj['services'], dict):
-            raise ComposeReviewError('추가 설정은 Portal/gateway 서비스 설정만 인수할 수 있습니다')
+            raise ComposeReviewError('추가 설정은 명시된 서비스 설정만 인수할 수 있습니다')
         for service, row in obj['services'].items():
-            if service not in ('portal', 'gateway') or not isinstance(row, dict) or set(row) - {'environment', 'image'}:
+            if service == 'elasticsearch':
+                expected_snapshot = {
+                    'environment': {'path.repo': '/mnt/soc-snapshots'},
+                    'volumes': ['/home/ubuntu/cloud-soc-transfer/staging-school-20261109/es-snapshots:/mnt/soc-snapshots:ro'],
+                }
+                if row != expected_snapshot:
+                    raise ComposeReviewError('명시된 읽기 전용 학교 스냅샷 연결 외의 ES 변경은 인수하지 않습니다')
+                continue
+            if service not in ('portal', 'gateway') or not isinstance(row, dict) or set(row) - {'environment', 'image', 'command', 'volumes', 'pull_policy'}:
                 raise ComposeReviewError('추가 설정에 범위를 벗어난 서비스 변경이 있습니다')
+            special = set(row).intersection({'command', 'volumes', 'pull_policy'})
+            if special:
+                if (service != 'portal' or row.get('command') != SCHOOL_COMMAND
+                        or row.get('pull_policy') != 'never'
+                        or row.get('volumes') != [str(state / 'school-archive') + ':/archive-data']):
+                    raise ComposeReviewError('명시된 학교 기록 포털 외의 실행·연결 변경은 인수하지 않습니다')
+                archive = row.get('environment', {})
+                if (archive.get('SOC_ARCHIVE_STATE_DIR') != '/archive-data'
+                        or not re.fullmatch(r'school-import-[0-9]{8}-', archive.get('SOC_ARCHIVE_PREFIX', ''))):
+                    raise ComposeReviewError('학교 기록 경로와 인덱스 범위를 확인해야 합니다')
             if 'image' in row and (service != 'portal' or not isinstance(row['image'], str)):
                 raise ComposeReviewError('Portal 외 이미지 변경은 자동 인수하지 않습니다')
             env = row.get('environment', {})
@@ -98,7 +154,8 @@ def baseline(state, files, directory, project):
 
 
 def observed(objects, files, directory, project):
-    if set(objects) != set(SERVICES):
+    expected = set(SERVICES)
+    if set(objects) not in (expected, expected - {'detector-aws'}, expected - {'detector-aws', 'suricata-bridge'}):
         raise ComposeReviewError('필수 서비스 전체가 확인되어야 기존 구성을 인수할 수 있습니다')
     result = {}
     for name, obj in objects.items():
@@ -107,15 +164,17 @@ def observed(objects, files, directory, project):
         if (meta.get('com.docker.compose.project') != project
                 or meta.get('com.docker.compose.service') != name
                 or meta.get('com.docker.compose.project.working_dir') != directory
-                or own != files[:len(own)] or len(own) < 2
+                or len(own) < 2 or own[:2] != files[:2] or len(own) != len(set(own))
+                or any(p not in files[2:] for p in own[2:])
+                or [files.index(p) for p in own[2:]] != sorted(files.index(p) for p in own[2:])
                 or not obj.get('State', {}).get('Running')):
             raise ComposeReviewError('실행 중인 서비스의 구성 출처가 일치하지 않습니다: ' + name)
         config_hash = meta.get('com.docker.compose.config-hash', '')
         if not re.fullmatch(r'[0-9a-f]{64}', config_hash):
             raise ComposeReviewError('실행 중인 서비스의 구성 지문이 없습니다: ' + name)
         result[name] = {'id': obj['Id'], 'image': obj['Image'], 'config_files': own, 'config_hash': config_hash}
-    if result['portal']['config_files'] != files:
-        raise ComposeReviewError('명시한 전체 설정이 현재 Portal의 설정과 일치하지 않습니다')
+    if {p for row in result.values() for p in row['config_files']} != set(files):
+        raise ComposeReviewError('명시한 추가 설정이 실제 서비스 출처에 모두 있어야 합니다')
     return result
 
 
@@ -218,6 +277,9 @@ def preserved_site(original, desired, objects, *, alias_request=None, workspace=
                 expected_volume = template_mount(volume, workspace)
             if volumes.get(volume['target']) != expected_volume:
                 raise ComposeReviewError('기존 서비스 연결 파일이 새 계획에서 달라집니다: ' + name)
+        if name == 'portal' and old.get('command') == SCHOOL_COMMAND:
+            if new.get('command') != SCHOOL_COMMAND or new.get('pull_policy') != 'never':
+                raise ComposeReviewError('학교 기록 포털의 실행 방식이 새 계획에서 달라집니다')
         if name in ('portal', 'gateway'):
             expected = public_environment(objects[name])
             expected.update(approved.get(name, {}))
@@ -237,7 +299,7 @@ def create(engine, state, files, objects, project='cloud-soc-central'):
     directory = labels(objects.get('portal', {'Config': {}})).get('com.docker.compose.project.working_dir')
     if not directory or directory != str(Path(files[0]).parent):
         raise ComposeReviewError('기존 첫 Compose 파일의 기준 디렉터리를 확인해야 합니다')
-    receipt = baseline(state, files, directory, project)
+    receipt = baseline(state, files, directory, project, engine=engine, parser_image=objects.get('portal', {}).get('Image'))
     inventory = observed(objects, files, directory, project)
     inputs = {p: checksum(p) for p in [*files, str(state / 'compose.env'), str(receipt)]}
     args = command(state, files, directory, project)
@@ -280,7 +342,7 @@ def load(engine, state, path, objects, project):
     review = json.loads(path.read_text())
     if review.get('version') != 1 or review.get('state') != str(state) or review.get('project') != project:
         raise ComposeReviewError('현재 서버의 구성 검토 기록이 아닙니다')
-    baseline(state, review['files'], review['directory'], project)
+    baseline(state, review['files'], review['directory'], project, engine=engine, parser_image=objects.get('portal', {}).get('Image'))
     if any(checksum(p) != h for p, h in review['inputs'].items()):
         raise ComposeReviewError('검토 후 원본 설정이 변경됐습니다. 다시 검토하세요')
     if observed(objects, review['files'], review['directory'], project) != review['inventory']:

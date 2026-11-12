@@ -46,12 +46,18 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                            or early_auth or rule_ids is not None
                            or any((include_cloud, include_sequence, include_attacks, include_patterns, isolated_all))):
         raise ValueError('Scenario status requires only the separate nine-scenario worker')
+    aws_owner = status_id == 'detector-aws'
+    if aws_owner:
+        from cloud_soc.deployment.contract import AWS_RULE_IDS
+        if (tuple(additional_rule_ids or ()) != AWS_RULE_IDS or early_auth or rule_ids is not None
+                or any((include_cloud, include_sequence, include_attacks, include_patterns, isolated_all))):
+            raise ValueError('AWS status requires the dedicated AWS rules')
     mall_owner = status_id == 'detector-mall-login'
     if mall_owner and (additional_rule_ids != ['WEB-AUTH-01'] or early_auth
                        or any((include_cloud, include_sequence, include_attacks, include_patterns, isolated_all))
                        or rule_ids is not None):
         raise ValueError('Mall status requires only the separate WEB-AUTH-01 worker')
-    if (status_id not in (None, expected_status, 'detector-priority', 'detector-mall-login', 'detector-security-scenarios')
+    if (status_id not in (None, expected_status, 'detector-priority', 'detector-mall-login', 'detector-security-scenarios', 'detector-aws')
             or status_id == 'detector-priority' and (additional_rule_ids is not None or early_auth)):
         raise ValueError('Invalid status ownership')
     status_id = status_id or expected_status
@@ -152,7 +158,8 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                     raise ValueError('legacy_missing_normalization_time_requires_explicit_exclusion')
                 state['legacy_excluded'] = legacy['count']
             ensure_provenance_mapping(client, ALERTS)
-            if not staging.read_window(client, db, scan_state, budget=max_documents, seen=state['seen'], scanner=scanner):
+            if not staging.read_window(client, db, scan_state, budget=max_documents, seen=state['seen'], scanner=scanner,
+                                       dataset='aws.cloudtrail' if aws_owner else None):
                 counts['input_pending'] = db.execute('SELECT count(*) FROM input_hits').fetchone()[0]
                 publish('running', 'input_scan_pending')
                 db.commit()
