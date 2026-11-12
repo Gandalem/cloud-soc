@@ -1,6 +1,6 @@
 """Optional AUTH-001 notices: independent receipt scan, durable intent, immutable revisions.
 
-Final alerts and their 900-second frontier remain owned by incremental.py.
+Final alerts and their configurable frontier remain owned by incremental.py.
 This sidecar never advances that checkpoint or writes an original/normalized event.
 """
 from contextlib import closing
