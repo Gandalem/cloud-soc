@@ -105,6 +105,10 @@ def test_unknown_legacy_command_and_unverified_rules_cannot_be_adopted(tmp_path)
     with pytest.raises(ValueError,match='revision'):validate_rules(changed)
 
 
+def test_checked_in_policy_matches_the_builtin_rule_revisions():
+    assert set(validate_rules(POLICY)) == set(POLICY['verified_rules'])
+
+
 def test_reviewed_plan_survives_sorted_json_roundtrip_without_rule_scope_changes(tmp_path):
     contract,_=build_contract(POLICY,{},tmp_path,now=NOW)
     decoded=json.loads(json.dumps({'policy':POLICY,'contract':contract},sort_keys=True))

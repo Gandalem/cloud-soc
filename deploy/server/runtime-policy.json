@@ -20,7 +20,7 @@
     "ATTACK-01": "d826039a1ee29ee3b3db900911cf55bf41af17f99287fca1ebb004b032a745f6",
     "WIN-AUTH-001": "116fa1bee4e799daff144d4b0b3f620cbe5732604e07de04475b29bce4eedce1",
     "WEB-404-001": "250a60ecd0ecab188130c1b4a44665fa12e99a05f2a622ab4f9795261a57d7b0",
-    "NET-PORT-001": "62b534f4cb405c4f4fe313b425be4cc8068bd79bcb994fa31fcaa3c4964e49b4"
+    "NET-PORT-001": "4d0dcbe2807a0c8eccc5d1205c2bdfb5ce147e82d9286f16f745a22296215682"
   },
   "validation_reference": "docs/work_tracker.md:2026-10-14 16:10 KST",
   "resources": {
