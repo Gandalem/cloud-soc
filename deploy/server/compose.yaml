@@ -92,6 +92,8 @@ services:
     extends: {file: runtime.compose.yaml, service: detector}
   detector-priority:
     extends: {file: runtime.compose.yaml, service: detector-priority}
+  detector-catalog:
+    extends: {file: runtime.compose.yaml, service: detector-catalog}
   detector-aws:
     extends: {file: runtime.compose.yaml, service: detector-aws}
   detector-additional:

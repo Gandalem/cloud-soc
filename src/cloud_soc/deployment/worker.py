@@ -5,13 +5,21 @@ import os
 from pathlib import Path
 import sys
 
-from cloud_soc.deployment.contract import AWS_RULE_IDS, WORKERS, command, defaults, digest, options, policy, stamp, validate_rules
+from cloud_soc.deployment.contract import AWS_RULE_IDS, CATALOG_WORKER, WORKERS, command, defaults, digest, options, policy, stamp, validate_rules
 
 
 def argv(value, name, release_policy):
-    if name not in (*WORKERS, 'detector-aws') or value.get('policy_sha256') != digest(release_policy) or not value.get('prepared'):
+    if name not in (*WORKERS, 'detector-aws', CATALOG_WORKER) or value.get('policy_sha256') != digest(release_policy) or not value.get('prepared'):
         raise ValueError('Runtime migration not prepared for this release')
     validate_rules(release_policy)
+    if name == CATALOG_WORKER:
+        selected = sorted(release_policy['catalog_rules'])
+        if value.get('catalog_rules') != selected:
+            raise ValueError('Catalog worker rule inventory differs from release')
+        floor = stamp(value['catalog_detection_start']).isoformat()
+        config = defaults('detector-additional', floor, selected)
+        config['--status-id'] = name
+        return command('cloud_soc.detection', config)
     if name == 'detector-aws':
         if tuple(value.get('aws_rules', ())) != AWS_RULE_IDS:
             raise ValueError('AWS rule inventory differs from the release')
@@ -37,7 +45,7 @@ def argv(value, name, release_policy):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--service', choices=(*WORKERS, 'detector-aws'), required=True)
+    parser.add_argument('--service', choices=(*WORKERS, 'detector-aws', CATALOG_WORKER), required=True)
     parser.add_argument('--contract', type=Path, default=Path('/run/runtime/contract.json'))
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[3]

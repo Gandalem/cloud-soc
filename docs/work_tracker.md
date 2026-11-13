@@ -1,3 +1,6 @@
+# DETECTION-CATALOG-ACTIVATION-20261113
+
+- [x] 기본 규칙 34개 운영 활성화(2026-11-13). AWS-CONSOLE-001 활성화와 별도 detector-catalog 워커에 24개 규칙을 적용했다. 표준 배포 정책 v5에서 기존 상태와 Portal 저장 행 830개를 보존했다. 18:46 KST 운영 워커가 보고한 규칙 버전을 대조해 34개 전부 확인했다. AWS 콘솔 원본 이벤트를 사용한 종단 간 검증은 남았다. 관련 테스트 333개 통과, 1개 건너뜀.
 # AWS-CLOUDWATCH-EVALUATION-20261112-01
 
 - [x] AWS 탐지와 CloudWatch 재처리 소스 통합(2026-11-12). 별도 AWS 탐지 워커와 CloudTrail·VPC Flow Logs·AWS WAF 평가 경로, 통합 로그 상태 표시를 반영했다. 기존 CSV 규칙 편집 및 승인 경로를 보존했다.

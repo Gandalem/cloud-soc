@@ -956,8 +956,8 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         value = json.loads(Path(path).read_text())
         return jsonify(state='configured' if value.get('prepared') else 'migration_incomplete',
                        version=value['version'], policy_sha256=value['policy_sha256'],
-                       required_workers=list(ALL_WORKERS), pipeline_workers=[*WORKERS, 'detector-aws'],
-                       verified_rules=[*value['verified_rules'], *value.get('aws_rules', [])])
+                       required_workers=list(ALL_WORKERS), pipeline_workers=[*WORKERS, 'detector-aws', 'detector-catalog'],
+                       verified_rules=[*value['verified_rules'], *value.get('aws_rules', []), *value.get('catalog_rules', [])])
 
     @app.get("/api/alerts/detail")
     def alert_detail():

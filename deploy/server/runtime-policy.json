@@ -1,11 +1,12 @@
 {
-  "version": 4,
+  "version": 5,
   "migrations": [
     "001-permissions-and-indices",
     "002-independent-workers",
     "003-slack-notifications",
     "004-suricata-alert-case-bridge",
-    "005-aws-detection"
+    "005-aws-detection",
+    "006-catalog-detection"
   ],
   "workers": [
     "normalizer",
@@ -45,13 +46,15 @@
       "detector-retrospective": 256,
       "slack-notifier": 64,
       "suricata-bridge": 128,
-      "detector-aws": 256
+      "detector-aws": 256,
+      "detector-catalog": 768
     }
   },
   "auxiliary_workers": [
     "slack-notifier",
     "suricata-bridge",
-    "detector-aws"
+    "detector-aws",
+    "detector-catalog"
   ],
   "suricata_bridge": {
     "version": 1,
@@ -68,5 +71,32 @@
     "AWS-AUDIT-001": "e82f4b56b1487f2e2a0ff8291654c2f90d4193db7d1bb79816cd7966a305c18e",
     "AWS-NETWORK-001": "dc5de482b04b01f10871d97b847df41cc8e49439bc75dd2db9d4d208e77e4eed"
   },
-  "aws_activation_at": "2026-11-12T07:36:30+00:00"
+  "aws_activation_at": "2026-11-12T07:36:30+00:00",
+  "catalog_activation_at": "2026-11-13T09:43:03+00:00",
+  "catalog_rules": {
+    "ATTACK-02": "a4c4b6fa1fc709a8cae3ca8222cc6dec2526db5e99df36435a5b42d4a57dbc5b",
+    "ATTACK-03": "a3a31c39bc54253b9ea9d1216e35811fc5940396ded07e06b560cf6458fe09ed",
+    "OCI-IAM-001": "292000447643ad04ebdbbae1ea37c6097b1abc00b05fe3565e4eb51875653e96",
+    "AWS-CONSOLE-001": "9b878b1f825b0d2e7e222bc6d3a1a5e005ac36c32ad78fc413add93ad6e9c0c9",
+    "WEB-ACCESS-01": "d5b6fec1b3ec5e274ede09514bb5f5957c2eae3f84e1f7be3a5495f840e3720e",
+    "WEB-AUTH-01": "0e39e395b352415822d7e9e121525bef67cf919598a02d9fcf186ba9fe843000",
+    "WEB-WAF-01": "4e120b14e062a02b3a96cd2fcb91fe187050506df5c63f3f9746ff57c954bca9",
+    "WEB-SITE-404-001": "f5e4589a9876e0dd2e50bb9d3d161c18f0bfb106816047deb238d583cfa8ba31",
+    "WEB-SITE-WAF-001": "519d961493c85009c6a61128a9c263520d26c0b034a457f37aeb0eafb346a75a",
+    "UNIFIED-WEB-HOST-001": "9d4115cc994d07f155b35667a21da795f4780aa0213ed87ae5a06d8805927286",
+    "UNIFIED-HOST-NET-001": "707e88875fbb095ecd679df1d145053462db67d12d20778dddfa25be79ee20cf",
+    "UNIFIED-THREE-SOURCE-001": "fff5a6e1ef4ec447baf9322bf133f6b0c7cdb7cf61111a262f8eacfcd8bba341",
+    "UNIFIED-SERVER-MIN3-001": "8c0978a25f50494939100159c403315810216d65b696b969b5b64641a87c9d22",
+    "UNIFIED-APP-MIN3-001": "8b8e9c5c440cef0b162be4f7ecbd23460597acb97fbc20eff193d41b784cf9f3",
+    "UNIFIED-NET-MIN3-001": "3c4dbab0288ebce58d8dd5a68eb6f64edbe7255d4587edfd327abf5a47959eb9",
+    "SCENARIO-SERVER-FILE-001": "70c136afe1e5879b7936838cf0b20eb40db79586ff512885f6bf9935e1ddd580",
+    "SCENARIO-SERVER-PERSIST-001": "199f666987a0aab46431bb244cd98f66428714504d54d620135234574952a1f6",
+    "SCENARIO-SERVER-DEFENSE-001": "3bc310739eca91ade25c4624be7dd84e20c6ea0fb03807b6c0551276e8accb7b",
+    "SCENARIO-APP-ROLE-001": "306309226ebd5017fc007f60520975f8ac016582ec8697a083ca8fd45c07f9ef",
+    "SCENARIO-APP-EXPORT-001": "419042466d0b02aa6473560c4339407a24a9817b9f64a0a741b66451acdc8b7f",
+    "SCENARIO-APP-UPLOAD-001": "d68e690596cfa8a026729446553b96a713a01f42e1a281a0478222850fd96a06",
+    "SCENARIO-NET-DNS-001": "08b4e61154bcbafdab895274454afaf6a0e96bc2b91cc4fc43cf9ece30c9a039",
+    "SCENARIO-NET-FIREWALL-001": "e00159ecbd69b0a78b7453951c06ce53b7a4a724c1ece1e08fc002af19edb4c1",
+    "SCENARIO-NET-IDS-001": "bf492b30217957a13d63fbc930f5135778d666635e1a1b0bf8f0bd08c3068209"
+  }
 }

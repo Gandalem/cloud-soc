@@ -18,7 +18,8 @@ def test_profile_requires_explicit_enabled_ids_without_auth():
     rules = approved_rules(additional_rule_ids=['AUTH-SEQ-001','ATTACK-01'])
     assert [r['id'] for r in rules] == ['AUTH-SEQ-001','ATTACK-01']
     assert [r['id'] for r in approved_rules()] == ['AUTH-001']
-    for options in ({'additional_rule_ids':['AUTH-001']}, {'additional_rule_ids':['AWS-CONSOLE-001']},
+    assert [r['id'] for r in approved_rules(additional_rule_ids=['AWS-CONSOLE-001'])] == ['AWS-CONSOLE-001']
+    for options in ({'additional_rule_ids':['AUTH-001']},
                     {'additional_rule_ids':['AUTH-SEQ-001'],'include_cloud':True},
                     {'additional_rule_ids':['AUTH-SEQ-001'],'rule_ids':['AUTH-001']}):
         with pytest.raises(ValueError):

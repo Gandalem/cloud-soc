@@ -8,7 +8,9 @@ from pathlib import Path, PurePosixPath
 WORKERS = ('normalizer', 'normalizer-priority', 'detector', 'detector-priority',
            'detector-additional', 'detector-retrospective')
 AUXILIARY_V3 = ('slack-notifier', 'suricata-bridge')
-AUXILIARY = (*AUXILIARY_V3, 'detector-aws')
+AUXILIARY_V4 = (*AUXILIARY_V3, 'detector-aws')
+CATALOG_WORKER = 'detector-catalog'
+AUXILIARY = (*AUXILIARY_V4, CATALOG_WORKER)
 AWS_RULE_IDS = ('AWS-IAM-001', 'AWS-AUDIT-001', 'AWS-NETWORK-001')
 ALL_WORKERS = (*WORKERS, *AUXILIARY)
 APP_SERVICES = ('portal', 'enrollment-cleanup', *ALL_WORKERS)
@@ -33,7 +35,7 @@ def stamp(value):
 
 def policy(workspace):
     value = json.loads((Path(workspace) / 'deploy/server/runtime-policy.json').read_text(encoding='utf-8'))
-    if (value['version'] != 4 or value['workers'] != list(WORKERS)
+    if (value['version'] != 5 or value['workers'] != list(WORKERS)
             or value.get('auxiliary_workers') != list(AUXILIARY)
             or set(value.get('aws_rules', {})) != set(AWS_RULE_IDS)
             or set(value['verified_rules']) & set(AWS_RULE_IDS)):
@@ -44,7 +46,11 @@ def policy(workspace):
 def validate_rules(value):
     from cloud_soc.detection.worker import approved_rules
     from cloud_soc.detection.engine import rule_revision
-    expected = {**value['verified_rules'], **value.get('aws_rules', {})}
+    from cloud_soc.detection.profiles import RULE_IDS
+    groups = (value['verified_rules'], value.get('aws_rules', {}), value.get('catalog_rules', {}))
+    expected = {identifier: revision for group in groups for identifier, revision in group.items()}
+    if value['version'] == 5 and (set(expected) != set(RULE_IDS) or len(expected) != sum(map(len, groups))):
+        raise ValueError('Every catalog rule must have exactly one owning profile')
     actual = {r['id']: rule_revision(r) for r in approved_rules(rule_ids=list(expected))}
     if actual != expected:
         raise ValueError('Rule revision has no release validation; live activation refused')
@@ -143,6 +149,18 @@ def build_contract(value, containers, state, *, now=None, existing=None, initial
     """Adopt inspected state identities; new workers get a pinned recent floor once."""
     now = now or datetime.now(timezone.utc)
     floor = (now - timedelta(seconds=60)).isoformat()
+    if existing and existing.get('version') == 4 and value['version'] == 5:
+        if (existing.get('policy_sha256') != 'b09ac1ba2fb0ea9af9b83b5abe771dc777de9d8df992b77ab32449abc9d06849'
+                or existing.get('auxiliary_workers') != list(AUXILIARY_V4)
+                or set(existing.get('workers', {})) != set(WORKERS)
+                or set(existing.get('verified_rules', [])) != set(value['verified_rules'])
+                or tuple(existing.get('aws_rules', [])) != AWS_RULE_IDS):
+            raise ValueError('Unrecognized predecessor for catalog activation')
+        result = deepcopy(existing)
+        result.update(version=5, policy_sha256=digest(value), auxiliary_workers=list(AUXILIARY),
+                      catalog_rules=sorted(value['catalog_rules']),
+                      catalog_detection_start=stamp(value['catalog_activation_at']).isoformat(), migrated_from=4)
+        return result, {}
     if existing and existing.get('version') == 3 and value['version'] == 4:
         if (existing.get('policy_sha256') != '98391d7bb0dd14ebc1b84c4b21c76022ed2a9bfd3aac0aedbb1f2413f86a1c1e'
                 or existing.get('auxiliary_workers') != list(AUXILIARY_V3)
@@ -150,7 +168,7 @@ def build_contract(value, containers, state, *, now=None, existing=None, initial
                 or set(existing.get('verified_rules', [])) != set(value['verified_rules'])):
             raise ValueError('Unrecognized predecessor for AWS detector migration')
         result = deepcopy(existing)
-        result.update(version=4, policy_sha256=digest(value), auxiliary_workers=list(AUXILIARY),
+        result.update(version=4, policy_sha256=digest(value), auxiliary_workers=list(AUXILIARY_V4),
                       aws_rules=list(AWS_RULE_IDS),
                       aws_detection_start=stamp(value['aws_activation_at']).isoformat(), migrated_from=3)
         return result, {}
@@ -223,8 +241,10 @@ def build_contract(value, containers, state, *, now=None, existing=None, initial
             if name == 'normalizer-priority' and '--linux-ssh-v2-start' not in opts:
                 opts['--linux-ssh-v2-start'] = opts['--start']
         result['workers'][name] = {'module': module, 'options': opts, 'state_file': PurePosixPath(opts['--state']).name}
-    if value['version'] == 4:
+    if value['version'] >= 4:
         result.update(aws_rules=list(AWS_RULE_IDS), aws_detection_start=floor)
+    if value['version'] >= 5:
+        result.update(catalog_rules=sorted(value['catalog_rules']), catalog_detection_start=floor)
     return result, adoption
 
 
@@ -260,6 +280,8 @@ def validate_rendered(value, rendered, image):
             raise ValueError('Per-server worker command override refused')
     if services['slack-notifier'].get('command') != ['python', '-m', 'cloud_soc.notifications.worker']:
         raise ValueError('Notification worker override refused')
+    if services[CATALOG_WORKER].get('command') != ['python', '-m', 'cloud_soc.deployment.worker', '--service', CATALOG_WORKER]:
+        raise ValueError('Catalog detector override refused')
     if services['detector-aws'].get('command') != ['python', '-m', 'cloud_soc.deployment.worker', '--service', 'detector-aws']:
         raise ValueError('AWS detector override refused')
     if services['suricata-bridge'].get('command') != ['python', '-m', 'cloud_soc.detection.suricata_bridge']:

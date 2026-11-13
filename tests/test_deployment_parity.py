@@ -106,7 +106,7 @@ def test_unknown_legacy_command_and_unverified_rules_cannot_be_adopted(tmp_path)
 
 
 def test_checked_in_policy_matches_the_builtin_rule_revisions():
-    assert set(validate_rules(POLICY)) == set(POLICY['verified_rules']) | set(POLICY['aws_rules'])
+    assert set(validate_rules(POLICY)) == set(POLICY['verified_rules']) | set(POLICY['aws_rules']) | set(POLICY['catalog_rules'])
 
 
 def test_reviewed_plan_survives_sorted_json_roundtrip_without_rule_scope_changes(tmp_path):
@@ -128,25 +128,29 @@ def test_version_one_to_two_preserves_every_pipeline_option_and_prepared_state(t
     assert existing==before
 
 
-def test_aws_activation_pins_start_and_preserves_version_three_worker_identity(tmp_path):
+def test_catalog_activation_pins_start_and_preserves_version_four_workers(tmp_path):
+    from cloud_soc.detection.profiles import RULE_IDS
     existing, _ = build_contract(POLICY, {}, tmp_path, now=NOW)
-    existing.update(version=3, policy_sha256='98391d7bb0dd14ebc1b84c4b21c76022ed2a9bfd3aac0aedbb1f2413f86a1c1e',
-                    auxiliary_workers=['slack-notifier', 'suricata-bridge'], prepared=True)
-    existing.pop('aws_rules')
-    existing.pop('aws_detection_start')
+    existing.update(version=4, policy_sha256='b09ac1ba2fb0ea9af9b83b5abe771dc777de9d8df992b77ab32449abc9d06849',
+                    auxiliary_workers=['slack-notifier', 'suricata-bridge', 'detector-aws'], prepared=True)
+    existing.pop('catalog_rules')
+    existing.pop('catalog_detection_start')
     planned, adoption = build_contract(POLICY, {}, tmp_path, now=NOW, existing=existing)
     repeated, _ = build_contract(POLICY, {}, tmp_path, now=NOW + timedelta(minutes=3), existing=existing)
     assert planned == repeated and not adoption
     assert planned['workers'] == existing['workers']
-    command = argv(planned, 'detector-aws', POLICY)
-    assert command[command.index('--start') + 1] == POLICY['aws_activation_at']
-    assert set(command[command.index('--additional-rules') + 1].split(',')) == set(POLICY['aws_rules'])
-    assert command[command.index('--status-id') + 1] == 'detector-aws'
+    assert argv(planned, 'detector-aws', POLICY)[-1] == 'detector-aws'
+    assert planned['aws_detection_start'] == existing['aws_detection_start']
+    cmd = argv(planned, 'detector-catalog', POLICY)
+    assert cmd[cmd.index('--start') + 1] == POLICY['catalog_activation_at']
+    selected = set(cmd[cmd.index('--additional-rules') + 1].split(','))
+    assert len(selected) == 24 and 'AWS-CONSOLE-001' in selected
+    assert selected | set(existing['verified_rules']) | set(existing['aws_rules']) == set(RULE_IDS)
 
 
 def test_resources_include_all_workers_backup_space_and_kibana_headroom():
-    hardware={'cpus':4,'memory_bytes':8277540864,'free_bytes':4*1024**3,'map_count':1048576,
-              'available_memory_bytes':4100000000,'managed_working_set_bytes':3900000000}
+    hardware={'cpus':4,'memory_bytes':10*1024**3,'free_bytes':4*1024**3,'map_count':1048576,
+              'available_memory_bytes':5300000000,'managed_working_set_bytes':3900000000}
     assert resource_check(POLICY,hardware,fresh=False,database_bytes=140693504)['ok']
     for field,value in [('cpus',1),('memory_bytes',6*1024**3),('free_bytes',1024**3),('map_count',65530)]:
         assert not resource_check(POLICY,{**hardware,field:value},fresh=False)['ok']
@@ -226,8 +230,8 @@ def test_new_and_upgrade_migrations_prepare_same_scopes_without_changing_existin
         assert all((tmp_path/'keys'/(n+'.key')).read_text().strip()==v for n,v in keys.items())
     assert all(json.loads((tmp_path/'migrations.json').read_text())['migrations'][n]['state']=='applied' for n in POLICY['migrations'])
     ownership_calls.expect(*(tmp_path/'keys'/(name+'.key') for name in (*WORKERS, 'slack-notifier')))
-    ownership_calls.expect(tmp_path/'state'/'suricata-bridge', tmp_path/'state'/'detector-aws')
-    assert ownership_calls.chown.call_count == len(WORKERS) + 3  # Seven keys and two state directories.
+    ownership_calls.expect(tmp_path/'state'/'suricata-bridge', tmp_path/'state'/'detector-aws', tmp_path/'state'/'detector-catalog')
+    assert ownership_calls.chown.call_count == len(WORKERS) + 4  # Seven keys and three state directories.
 
 
 def test_migration_write_interruption_records_failure_and_resumes_without_reset(tmp_path,ownership_calls):
@@ -595,6 +599,7 @@ def test_site_snapshot_repository_and_compose_numeric_strings_are_supported():
     rendered['services']['slack-notifier']['command']=['python','-m','cloud_soc.notifications.worker']
     rendered['services']['suricata-bridge']['command']=['python','-m','cloud_soc.detection.suricata_bridge']
     rendered['services']['detector-aws']['command']=['python','-m','cloud_soc.deployment.worker','--service','detector-aws']
+    rendered['services']['detector-catalog']['command']=['python','-m','cloud_soc.deployment.worker','--service','detector-catalog']
     assert validate_rendered(POLICY,rendered,'verified:tag')['resource_limits_match_policy']
 
 

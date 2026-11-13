@@ -46,6 +46,13 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                            or early_auth or rule_ids is not None
                            or any((include_cloud, include_sequence, include_attacks, include_patterns, isolated_all))):
         raise ValueError('Scenario status requires only the separate nine-scenario worker')
+    if status_id == 'detector-catalog':
+        from cloud_soc.deployment.contract import policy
+        from cloud_soc.detection.rule_loader import PROJECT_ROOT
+        if (list(additional_rule_ids or ()) != sorted(policy(PROJECT_ROOT)['catalog_rules'])
+                or early_auth or rule_ids is not None
+                or any((include_cloud, include_sequence, include_attacks, include_patterns, isolated_all))):
+            raise ValueError('Catalog status requires the dedicated catalog rules')
     aws_owner = status_id == 'detector-aws'
     if aws_owner:
         from cloud_soc.deployment.contract import AWS_RULE_IDS
@@ -57,7 +64,7 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
                        or any((include_cloud, include_sequence, include_attacks, include_patterns, isolated_all))
                        or rule_ids is not None):
         raise ValueError('Mall status requires only the separate WEB-AUTH-01 worker')
-    if (status_id not in (None, expected_status, 'detector-priority', 'detector-mall-login', 'detector-security-scenarios', 'detector-aws')
+    if (status_id not in (None, expected_status, 'detector-priority', 'detector-mall-login', 'detector-security-scenarios', 'detector-aws', 'detector-catalog')
             or status_id == 'detector-priority' and (additional_rule_ids is not None or early_auth)):
         raise ValueError('Invalid status ownership')
     status_id = status_id or expected_status

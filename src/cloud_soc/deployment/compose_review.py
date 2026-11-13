@@ -155,7 +155,9 @@ def baseline(state, files, directory, project, *, engine=None, parser_image=None
 
 def observed(objects, files, directory, project):
     expected = set(SERVICES)
-    if set(objects) not in (expected, expected - {'detector-aws'}, expected - {'detector-aws', 'suricata-bridge'}):
+    if set(objects) not in (expected, expected - {'detector-catalog'},
+                             expected - {'detector-catalog', 'detector-aws'},
+                             expected - {'detector-catalog', 'detector-aws', 'suricata-bridge'}):
         raise ComposeReviewError('필수 서비스 전체가 확인되어야 기존 구성을 인수할 수 있습니다')
     result = {}
     for name, obj in objects.items():

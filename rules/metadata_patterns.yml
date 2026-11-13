@@ -100,7 +100,7 @@ rules:
   - id: AWS-CONSOLE-001
     name: Repeated identified AWS console login failures
     type: cardinality
-    enabled: false
+    enabled: true
     severity: high
     conditions:
       - {field: event.dataset, operator: equals, value: aws.cloudtrail}
@@ -115,9 +115,9 @@ rules:
     cooldown: {seconds: 600}
     required_fields: [organization.id, cloud.account.id, user.id, cloud_soc.detail.fields.identity_arn, event.action, cloud_soc.detail.fields.event_id]
     dedup_fields: [organization.id, cloud.account.id, cloud_soc.detail.fields.event_id]
-    limitations: [live_aws_console_gate_pending, anonymous_identity_not_inferred_from_username_or_ip, password_mfa_lockout_can_match]
+    limitations: [anonymous_identity_not_inferred_from_username_or_ip, password_mfa_lockout_can_match]
     alert:
       title: AWS 콘솔 로그인 공격 의심
       message: 같은 조직·AWS 계정·명시 principal ID·ARN에서 10분 내 고유 ConsoleLogin 실패 5건 이상이 관측되었습니다. 익명 사용자를 이름/IP만으로 연결하지 않습니다. 정상 비밀번호·MFA·잠금 문제와 승인된 활동을 조사하세요.
       category: authentication
-      tags: [experimental, aws, authentication]
+      tags: [aws, authentication]

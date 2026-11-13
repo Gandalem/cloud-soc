@@ -418,6 +418,10 @@ class Operations:
                 workers['detector-aws'] = self.worker_status('detector-aws')
             except Exception:
                 workers['detector-aws'] = {'state': 'unavailable'}
+            try:
+                workers['detector-catalog'] = self.worker_status('detector-catalog')
+            except Exception:
+                workers['detector-catalog'] = {'state': 'unavailable'}
             result['rules'] = rule_inventory(workers)
         return result
 

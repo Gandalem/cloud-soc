@@ -310,6 +310,18 @@ def prerequisites(client, value, contract, directory, existing_keys, *, key_clie
             if os.name == 'posix' and created:
                 os.chown(folder, 1000, 1000)
             ledger['migrations'][step]['state'] = 'applied'
+        if value['version'] >= 5:
+            step = value['migrations'][5]
+            ledger['migrations'][step] = {'state': 'applying', 'policy_sha256': digest(value)}
+            atomic_json(ledger_path, ledger)
+            folder = directory / 'state' / 'detector-catalog'
+            if folder.is_symlink():
+                raise ValueError('Unsafe catalog detector state')
+            created = not folder.exists()
+            folder.mkdir(mode=0o700, exist_ok=True)
+            if os.name == 'posix' and created:
+                os.chown(folder, 1000, 1000)
+            ledger['migrations'][step]['state'] = 'applied'
         ledger['version'] = value['version']
         atomic_json(ledger_path, ledger)
         return {'version': value['version'], 'migrations': list(value['migrations']), 'worker_keys': len(WORKERS), 'existing_keys_replaced': False}
