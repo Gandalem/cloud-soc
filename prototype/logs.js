@@ -9,6 +9,7 @@
   const osNames = { windows: "Windows", linux: "Linux", cloud: "해당 없음 (클라우드 API)", unknown: "미확인" };
   const outcomes = { success: "성공", failure: "실패", unknown: "미확인" };
   const label = (map, value, fallback = "미확인") => Object.hasOwn(map, value) ? map[value] : fallback;
+  const suricataStates = {normalized:'정규화 완료',invalid:'정규화 실패',unrecorded:'처리 기록 없음',unavailable:'처리 결과 조회 불가'};
   const escape = value => String(value ?? "미관측").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const time = value => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(new Date(value)) : "미관측";
   const environmentKinds = {
@@ -58,11 +59,14 @@
     const primaryTime = timeBasis === 'event' ? row.event_at : row.received_at;
     const fallbackTime = timeBasis === 'event' ? row.received_at : row.event_at;
     const timeLabel = primaryTime ? (timeBasis === 'event' ? '로그 시각' : '수신 시각') : fallbackTime ? (timeBasis === 'event' ? '수신 시각 · 로그 시각 없음' : '로그 시각 · 수신 시각 없음') : '시각 미관측';
-    const hint = fields.engine_mode ? label({DetectionOnly:'탐지 전용 · 차단 안함',On:'WAF 활성',Off:'WAF 비활성'},fields.engine_mode) : isAccess ? 'HTTP 응답 기준' : interpretation;
-    const summary = outcome !== 'unknown' ? `${actionText} / ${label(outcomes,outcome,'결과 정보 없음')}` : actionText;
+    const hint = row.suricata ? label(suricataStates,row.suricata.status)
+      : fields.engine_mode ? label({DetectionOnly:'탐지 전용 · 차단 안함',On:'WAF 활성',Off:'WAF 비활성'},fields.engine_mode)
+      : isAccess ? 'HTTP 응답 기준' : interpretation;
+    const summary = row.suricata ? row.suricata.event_type || '이벤트 유형 미확인'
+      : outcome !== 'unknown' ? `${actionText} / ${label(outcomes,outcome,'결과 정보 없음')}` : actionText;
     const lines = (main,sub) => `<span class="log-cell-main" title="${escape(main)}">${escape(main)}</span>${sub ? `<small class="log-cell-sub" title="${escape(sub)}">${escape(sub)}</small>` : ''}`;
     const reference = `${row.reference.index} / ${row.reference.id}`;
-    return `<tr><td class="log-kind">${lines(row.log_type?.label || '종류 미확인',supported ? null : interpretation)}</td><td>${lines(primaryTime || fallbackTime ? time(primaryTime || fallbackTime) : '시각 미관측',timeLabel)}</td><td>${lines(origin || source,origin ? source : row.channel || row.file_path || row.dataset)}</td><td>${lines(peer || actor || '기록 없음',peer ? actor : null)}</td><td>${lines(summary,hint)}</td><td class="log-open-cell"><button type="button" class="log-row-open" data-row="${index}" title="${escape(reference)}" aria-label="${escape(row.log_type?.label || '로그')} 상세 보기">상세</button></td></tr>`;
+    return `<tr><td class="log-kind">${lines(row.log_type?.label || '종류 미확인',supported || row.suricata ? null : interpretation)}</td><td>${lines(primaryTime || fallbackTime ? time(primaryTime || fallbackTime) : '시각 미관측',timeLabel)}</td><td>${lines(origin || source,origin ? source : row.channel || row.file_path || row.dataset)}</td><td>${lines(peer || actor || '기록 없음',peer ? actor : null)}</td><td>${lines(summary,hint)}</td><td class="log-open-cell"><button type="button" class="log-row-open" data-row="${index}" title="${escape(reference)}" aria-label="${escape(row.log_type?.label || '로그')} 상세 보기">상세</button></td></tr>`;
   }
   function query(values, now = Date.now()) {
     let start, end;
@@ -126,7 +130,11 @@
   });
   Object.assign(securityTerms, {waf_rule_match: 'WAF 규칙 관측'});
   Object.assign(securityLabels, {service_name:'서비스',account_id:'가명 계정 ID',account_key_id:'가명 계정 키 버전',stream:'기록 종류',method:'HTTP 메서드',status_code:'HTTP 응답 코드',path:'보호된 경로 분류',duration_us:'처리 시간 (마이크로초)',engine_mode: 'ModSecurity 엔진 모드', interruption: '엔진 개입 관측', sqli_rule_ids: 'CRS SQLi 규칙 ID'});
-  function securityEntries(value) {
+  function securityEntries(value, suricata) {
+    if (suricata) {
+      return [['Suricata 이벤트 유형',suricata.event_type || '미확인'],
+        ['정규화 처리 상태',label(suricataStates,suricata.status)]];
+    }
     if (!value || value.version !== 1) return [["보안 이벤트 해석", "미제공 · 서버 버전 확인 필요"]];
     const entries = [['보안 이벤트 해석',label({recognized:'형식 확인',partial:'부분 해석 · 필드 누락',unsupported:'미지원 형식 또는 근거 부족'},value.status)],['해석기',value.adapter || '없음']];
     if (['aws_cloudtrail_metadata_v1','oci_audit_metadata_v1'].includes(value.adapter)) entries.push(['감사 범위',value.adapter==='aws_cloudtrail_metadata_v1' ? '관리 이벤트만 수집 · 데이터 이벤트는 미수집' : 'OCI Audit 범위 · 객체 접근/Identity Domains 감사는 별도']);
@@ -255,7 +263,8 @@
       if (ticket !== detailGeneration) return;
       if (data.contract_version !== 1 || data.raw_access !== "restricted" || data.row?.reference?.id !== row.reference.id || data.row?.reference?.index !== row.reference.index) throw new Error("상세 응답의 문서 참조가 일치하지 않습니다.");
       const observed = Object.entries(detailLabels).filter(([key])=>data.row[key]!=null && data.row[key]!=='' && (!Array.isArray(data.row[key]) || data.row[key].length));
-      const entries = [['로그 종류',data.row.log_type?.label || '종류 미확인'],['인덱스',data.row.reference.index],['문서 ID',data.row.reference.id],...securityEntries(data.security),...observed.map(([key,name])=>[name,key.endsWith('_at') ? time(data.row[key]) : key==='os' ? label(osNames,data.row[key]) : data.row[key]]),...(data.row.outcome && data.row.outcome!=='unknown' ? [['원본 표준 필드 결과',label(outcomes,data.row.outcome)]] : []),['목록 해석 상태',label({recognized:'형식 확인',partial:'부분 해석 · 필드 누락',unsupported:'메타데이터만 표시 · 행위 해석 미지원'},data.row.parse_status,'미평가')],...(data.row.quality?.invalid_fields?.length ? [['형식 오류 필드',data.row.quality.invalid_fields]] : []),...(data.row.quality?.truncated_fields?.length ? [['표시 제한 필드',data.row.quality.truncated_fields]] : [])];
+      const listStatus = data.row.suricata ? [] : [['목록 해석 상태',label({recognized:'형식 확인',partial:'부분 해석 · 필드 누락',unsupported:'메타데이터만 표시 · 행위 해석 미지원'},data.row.parse_status,'미평가')]];
+      const entries = [['로그 종류',data.row.log_type?.label || '종류 미확인'],['인덱스',data.row.reference.index],['문서 ID',data.row.reference.id],...securityEntries(data.security,data.row.suricata),...observed.map(([key,name])=>[name,key.endsWith('_at') ? time(data.row[key]) : key==='os' ? label(osNames,data.row[key]) : data.row[key]]),...(data.row.outcome && data.row.outcome!=='unknown' ? [['원본 표준 필드 결과',label(outcomes,data.row.outcome)]] : []),...listStatus,...(data.row.quality?.invalid_fields?.length ? [['형식 오류 필드',data.row.quality.invalid_fields]] : []),...(data.row.quality?.truncated_fields?.length ? [['표시 제한 필드',data.row.quality.truncated_fields]] : [])];
       const recovery=data.cloudtrail_recovery||data.cloudwatch_recovery;
       if(recovery?.normalization==='completed'){
         entries.push([data.cloudtrail_recovery?'CloudTrail 정규화':'CloudWatch 정규화','완료']);

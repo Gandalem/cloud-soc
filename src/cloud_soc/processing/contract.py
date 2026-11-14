@@ -16,6 +16,7 @@ from cloud_soc.web.scope import NORMALIZER_VERSION as SITE_VERSION, NORMALIZED_A
 from cloud_soc.web.modsecurity import VERSION as WAF_VERSION, ADAPTER as WAF_ADAPTER
 from cloud_soc.parsers.security_mall import ADAPTER as MALL_ADAPTER, VERSION as MALL_VERSION
 from cloud_soc.parsers.security_mall_edge import ADAPTER as EDGE_ADAPTER, VERSION as EDGE_VERSION
+from cloud_soc.parsers.suricata import EVE_PATH, normalize_suricata
 
 VERSION = "intake-v1"
 NORMALIZED = "soc-normalized-v1"
@@ -90,8 +91,7 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
     # Dedicated, scope-checked IDS adapter; do not classify a host as a honeypot.
     if (reference['index'].startswith('soc-host-raw-')
             and field(source, 'labels.log_source') == 'linux_file'
-            and field(source, 'log.file.path') == '/var/log/suricata/eve.json'):
-        from cloud_soc.parsers.suricata import normalize_suricata
+            and field(source, 'log.file.path') == EVE_PATH):
         return normalize_suricata(source, reference, processed_at, received, organization)
     detail = security_detail(source)
     if detail['adapter']=='multicloud_audit_v1':

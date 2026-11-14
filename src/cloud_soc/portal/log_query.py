@@ -9,13 +9,15 @@ import secrets
 import threading
 
 
-from elasticsearch import NotFoundError
+from elasticsearch import ApiError, NotFoundError, TransportError
+from cloud_soc.parsers.suricata import ADAPTER as SURICATA_ADAPTER, EVE_PATH, EVENT_TYPE, processing_id
+from cloud_soc.processing.contract import NORMALIZED, RECORDS
 from cloud_soc.portal.security_detail import DETAIL_FIELDS, security_detail
 from cloud_soc.portal.log_types import classification
 
 from cloud_soc.portal.log_contract import (
     CONTRACT_VERSION, INDICES, MAX_CURSOR_LENGTH, MAX_DETAIL_BYTES, MAX_RESPONSE_BYTES,
-    SEARCH_TIMEOUT, SOURCE_FIELDS, document_reference, parse_filters, project_hit,
+    SEARCH_TIMEOUT, SOURCE_FIELDS, document_reference, field, parse_filters, project_hit,
 )
 
 PIT_TTL = "90s"
@@ -63,6 +65,74 @@ def project_list_hit(hit):
     row["parse_status"] = detail["status"]
     row['log_type']=classification(row,detail)
     return row
+
+
+def suricata_documents(client, index, ids, fields):
+    """Return only exact matches, and distinguish missing documents from lookup errors."""
+    try:
+        response = client.mget(index=index, docs=[{'_id': identifier, '_source': fields} for identifier in ids])
+    except (ApiError, TransportError):
+        return {}
+    body = getattr(response, 'body', response)
+    documents = body.get('docs') if isinstance(body, dict) else None
+    if not isinstance(documents, list) or len(documents) != len(ids):
+        return {}
+    matched = {}
+    for identifier, doc in zip(ids, documents, strict=True):
+        if not isinstance(doc, dict) or doc.get('_index') != index or doc.get('_id') != identifier or 'error' in doc:
+            continue
+        if doc.get('found') is False:
+            matched[identifier] = None
+        elif doc.get('found') is True and isinstance(doc.get('_source'), dict):
+            matched[identifier] = doc['_source']
+    return matched
+
+
+def enrich_suricata(client, hits, rows):
+    candidates = {}
+    for hit, row in zip(hits, rows, strict=True):
+        source = hit['_source']
+        if (row['reference']['index'].startswith('soc-host-raw-')
+                and field(source, 'labels.log_source') == 'linux_file'
+                and field(source, 'log.file.path') == EVE_PATH):
+            row['suricata'] = {'status': 'unavailable', 'event_type': None}
+            row['log_type'] = {'code': 'suricata_eve', 'label': 'Suricata EVE', 'basis': 'source_path'}
+            candidates[processing_id(row['reference'])] = (row, field(source, 'organization.id'))
+    if not candidates:
+        return
+
+    records = suricata_documents(client, RECORDS, list(candidates), [
+        'raw.index', 'raw.id', 'status', 'adapter', 'normalized.index', 'normalized.id',
+    ])
+    ready = []
+    for identifier, record in records.items():
+        row, _ = candidates[identifier]
+        if record is None:
+            row['suricata']['status'] = 'unrecorded'
+        elif record.get('raw') == row['reference'] and record.get('adapter') == SURICATA_ADAPTER:
+            if record.get('status') == 'invalid':
+                row['suricata']['status'] = 'invalid'
+            elif record.get('status') == 'normalized' and record.get('normalized') == {'index': NORMALIZED, 'id': identifier}:
+                ready.append(identifier)
+    if not ready:
+        return
+
+    events = suricata_documents(client, NORMALIZED, ready, [
+        'organization.id', 'event.dataset', 'event.action', 'cloud_soc.provenance.raw.index',
+        'cloud_soc.provenance.raw.id', 'cloud_soc.detail.adapter',
+    ])
+    for identifier, event in events.items():
+        row, organization = candidates[identifier]
+        kind = field(event, 'event.action')
+        if (isinstance(organization, str) and organization
+                and field(event, 'organization.id') == organization
+                and field(event, 'cloud_soc.provenance.raw') == row['reference']
+                and field(event, 'cloud_soc.detail.adapter') == SURICATA_ADAPTER
+                and field(event, 'event.dataset') == 'suricata.eve'
+                and isinstance(kind, str) and EVENT_TYPE.fullmatch(kind)):
+            row['suricata'] = {'status': 'normalized', 'event_type': kind}
+            row['parse_status'] = 'recognized'
+            row['interpretation'] = {'status': 'recognized', 'adapter': SURICATA_ADAPTER, 'fields': {'action': kind}}
 
 # Source-based runtime fields avoid keyword/text mapping differences without
 # changing stored mappings. These scripts are fixed, never provided by callers.
@@ -408,6 +478,7 @@ class LogReader:
                 raise unavailable()
             if filters.site is not None and any(row['site_id'] != filters.site for row in rows):
                 raise unavailable()
+            enrich_suricata(self.client, hits[:filters.page_size], rows)
             token = None
             if len(hits) > filters.page_size and not preview:
                 token = self.encode({**state, "pit": pit, "after": hits[filters.page_size - 1]["sort"]})
@@ -445,11 +516,16 @@ class LogReader:
             hit = fetch_document(self.client, reference, list(SOURCE_FIELDS) + list(DETAIL_FIELDS))
             if hit["_index"] != reference["index"] or hit["_id"] != reference["id"]:
                 raise unavailable()
-            if self.organizations is not None and project_list_hit(hit)["organization"] not in self.organizations:
-                raise LogQueryError("log_not_found", 404, "문서를 찾을 수 없습니다. 삭제되었거나 보존 기간이 지났을 수 있습니다.")
             row = project_list_hit(hit)
+            if self.organizations is not None and row["organization"] not in self.organizations:
+                raise LogQueryError("log_not_found", 404, "문서를 찾을 수 없습니다. 삭제되었거나 보존 기간이 지났을 수 있습니다.")
+            enrich_suricata(self.client, [hit], [row])
+            if 'suricata' in row:
+                security = {'version': 1, **row['interpretation'], 'limitations': ['not_a_detection']}
+            else:
+                security = security_detail(hit.get("_source"))
             result = {"contract_version": CONTRACT_VERSION, "row": row,
-                      "security": security_detail(hit.get("_source")), "raw_access": "restricted"}
+                      "security": security, "raw_access": "restricted"}
             recovery_versions = {
                 "aws_cloudtrail": "cloudwatch-cloudtrail-recovery-v1",
                 "aws_vpc_flowlogs": "cloudwatch-vpc-recovery-v1",

@@ -18,6 +18,7 @@ from cloud_soc.portal.app import create_app
 from cloud_soc.portal.log_contract import SOURCE_FIELDS, parse_filters
 from cloud_soc.portal.log_query import LogReader, LogQueryError, bounded_json
 from cloud_soc.portal.security_detail import DETAIL_FIELDS
+from cloud_soc.processing.contract import NORMALIZED, RECORDS, normalize
 
 FIXTURE = json.loads((ROOT / "tests/fixtures/log_intake.json").read_text(encoding="utf-8"))["hits"][0]
 
@@ -180,6 +181,61 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(result["row"]["reference"]["id"], FIXTURE["_id"])
         self.assertEqual(result["raw_access"], "restricted")
         self.assertNotIn("message", self.client.get.call_args.kwargs["source_includes"])
+
+    def test_suricata_list_and_detail_join_existing_results_and_keep_raw_restricted(self):
+        raw_hits = hits(5)
+        stored = {RECORDS: {}, NORMALIZED: {}}
+        stamp = '2026-11-14T03:36:33Z'
+        for hit, kind in zip(raw_hits, ('alert', 'stats', None, 'unprocessed', 'flow'), strict=True):
+            hit['_index'] = 'soc-host-raw-linux-9.5.2-2026.11.14'
+            source = hit['_source']
+            source.pop('message', None)
+            source.update(labels={'log_source': 'linux_file'}, log={'file': {'path': '/var/log/suricata/eve.json'}},
+                          organization={'id': 'KOPO'}, host={'id': 'fixture-host'},
+                          event={'ingested': stamp}, **{'@timestamp': stamp})
+            if kind is not None:
+                source['message'] = json.dumps({
+                    'timestamp': stamp, 'event_type': kind, 'src_ip': '192.0.2.1',
+                    'dest_ip': '198.51.100.1', 'alert': {'signature_id': 1001, 'signature': 'private-signature'},
+                })
+            if kind != 'unprocessed':
+                identifier, record, event = normalize(hit, stamp)
+                stored[RECORDS][identifier] = record
+                if event:
+                    stored[NORMALIZED][identifier] = event
+                    if kind == 'flow':
+                        event['organization']['id'] = 'another-organization'
+        self.client.search.return_value = response(raw_hits)
+        self.client.indices.resolve_index.return_value = {'indices': [{'name': raw_hits[0]['_index']}]}
+
+        def mget(*, index, docs):
+            documents = []
+            for query in docs:
+                self.assertNotIn('message', query['_source'])
+                identifier = query['_id']
+                if index == raw_hits[0]['_index']:
+                    source = next(hit['_source'] for hit in raw_hits if hit['_id'] == identifier)
+                else:
+                    source = stored[index].get(identifier)
+                documents.append({'_index': index, '_id': identifier, 'found': source is not None, '_source': source})
+            return {'docs': documents}
+
+        self.client.mget.side_effect = mget
+        result = json.loads(self.reader.page([]))
+        self.assertEqual([row['suricata'] for row in result['rows']], [
+            {'status': 'normalized', 'event_type': 'alert'},
+            {'status': 'normalized', 'event_type': 'stats'},
+            {'status': 'invalid', 'event_type': None},
+            {'status': 'unrecorded', 'event_type': None},
+            {'status': 'unavailable', 'event_type': None},
+        ])
+        self.assertEqual(self.client.mget.call_count, 2)
+        self.assertNotIn('private-signature', json.dumps(result))
+        for row in result['rows']:
+            detail = json.loads(self.reader.detail(row['reference'].items()))
+            self.assertEqual(detail['row']['suricata'], row['suricata'])
+            self.assertEqual(detail['raw_access'], 'restricted')
+            self.assertNotIn('private-signature', json.dumps(detail))
 
     def test_detail_accepts_elasticsearch_response_wrapper(self):
         from types import SimpleNamespace

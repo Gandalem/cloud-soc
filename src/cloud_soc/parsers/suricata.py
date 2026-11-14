@@ -7,6 +7,12 @@ from ipaddress import ip_address
 
 VERSION = 'suricata-eve-v1'
 ADAPTER = 'suricata_eve_v1'
+EVE_PATH = '/var/log/suricata/eve.json'
+EVENT_TYPE = re.compile(r'[a-z][a-z0-9_]{0,63}')
+
+
+def processing_id(reference):
+    return hashlib.sha256(json.dumps([VERSION, reference], sort_keys=True).encode()).hexdigest()
 
 
 def parse_suricata(message):
@@ -24,7 +30,7 @@ def parse_suricata(message):
     if not isinstance(value, dict):
         raise ValueError('invalid_eve')
     kind = value.get('event_type')
-    if not isinstance(kind, str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,63}', kind):
+    if not isinstance(kind, str) or not EVENT_TYPE.fullmatch(kind):
         raise ValueError('invalid_type')
     stamp = value.get('timestamp')
     if not isinstance(stamp, str) or len(stamp) > 64:
@@ -71,7 +77,7 @@ def normalize_suricata(source, reference, processed_at, received, organization):
     from cloud_soc.portal.log_contract import field
     from cloud_soc.portal.security_detail import text
     from cloud_soc.privacy import REDACTED
-    identifier = hashlib.sha256(json.dumps([VERSION, reference], sort_keys=True).encode()).hexdigest()
+    identifier = processing_id(reference)
     record = {'@timestamp': processed_at, 'version': VERSION, 'adapter': ADAPTER,
               'status': 'invalid', 'reason': 'suricata_metadata_invalid', 'raw': reference,
               'event': {'ingested': iso(received)}}
