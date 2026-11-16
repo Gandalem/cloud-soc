@@ -25,6 +25,27 @@ function run(source, fail = false) {
   context.process(event);
   return event;
 }
+test('audit projection keeps selected evidence and removes native bodies', () => {
+  const message = JSON.stringify({
+    apiVersion:'audit.k8s.io/v1', kind:'Event', auditID:'45a7ed4f-1374-4db1-b794-66bc1b3d17e8',
+    stage:'ResponseComplete', verb:'get', stageTimestamp:'2026-11-14T03:36:33Z', responseStatus:{code:403},
+    objectRef:{resource:'pods',name:'PRIVATE_CANARY'}, requestObject:{token:'PRIVATE_CANARY'},
+    annotations:{'authorization.k8s.io/decision':'forbid'},
+  });
+  const eks = run({labels:{log_source:'eks_audit'},message}).source;
+  assert.equal(eks.eks_audit.status,403);
+  assert.equal(eks.eks_audit.decision,'forbid');
+  assert.equal(eks.message,undefined);
+  assert.doesNotMatch(JSON.stringify(eks),/PRIVATE_CANARY/);
+  const syscall = run({labels:{log_source:'linux_auditd'},
+    message:'type=SYSCALL msg=audit(1794627393.5:17): arch=c000003e syscall=2 success=no a0=PRIVATE_CANARY'}).source;
+  assert.equal(syscall.linux_audit_record.success,'no');
+  assert.equal(syscall.linux_audit_record.syscall,2);
+  assert.doesNotMatch(JSON.stringify(syscall),/PRIVATE_CANARY/);
+  const bad = run({labels:{log_source:'eks_audit'},message:'[REDACTED]',eks_audit:{schema:1,id:'spoof'}}).source;
+  assert.equal(bad.message,undefined);
+  assert.equal(bad.eks_audit,undefined);
+});
 test('generic file, journal and Docker mirrors cannot ship ModSecurity audit payloads',()=>{
   const audit=JSON.stringify({transaction:{producer:{modsecurity:'fixture'},request:{uri:'/private-customer-path'},messages:[]}});
   for(const message of [audit,JSON.stringify({log:audit})]) {

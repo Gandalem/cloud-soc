@@ -18,7 +18,7 @@ from cloud_soc.portal.app import create_app
 from cloud_soc.portal.log_contract import SOURCE_FIELDS, parse_filters
 from cloud_soc.portal.log_query import LogReader, LogQueryError, bounded_json
 from cloud_soc.portal.security_detail import DETAIL_FIELDS
-from cloud_soc.processing.contract import NORMALIZED, RECORDS, normalize
+from cloud_soc.processing.contract import BACKFILL_NORMALIZED, BACKFILL_RECORDS, NORMALIZED, RECORDS, normalize
 
 FIXTURE = json.loads((ROOT / "tests/fixtures/log_intake.json").read_text(encoding="utf-8"))["hits"][0]
 
@@ -184,7 +184,7 @@ class ReaderTests(unittest.TestCase):
 
     def test_suricata_list_and_detail_join_existing_results_and_keep_raw_restricted(self):
         raw_hits = hits(5)
-        stored = {RECORDS: {}, NORMALIZED: {}}
+        stored = {RECORDS: {}, NORMALIZED: {}, BACKFILL_RECORDS: {}, BACKFILL_NORMALIZED: {}}
         stamp = '2026-11-14T03:36:33Z'
         for hit, kind in zip(raw_hits, ('alert', 'stats', None, 'unprocessed', 'flow'), strict=True):
             hit['_index'] = 'soc-host-raw-linux-9.5.2-2026.11.14'
@@ -229,13 +229,90 @@ class ReaderTests(unittest.TestCase):
             {'status': 'unrecorded', 'event_type': None},
             {'status': 'unavailable', 'event_type': None},
         ])
-        self.assertEqual(self.client.mget.call_count, 2)
+        self.assertEqual(self.client.mget.call_count, 3)
         self.assertNotIn('private-signature', json.dumps(result))
         for row in result['rows']:
             detail = json.loads(self.reader.detail(row['reference'].items()))
             self.assertEqual(detail['row']['suricata'], row['suricata'])
             self.assertEqual(detail['raw_access'], 'restricted')
             self.assertNotIn('private-signature', json.dumps(detail))
+
+    def test_common_fields_join_linux_and_distinguish_windows_rule_from_stored_processing(self):
+        stamp = '2026-11-14T03:36:33Z'
+        raw = hits(5)
+        stored = {RECORDS: {}, NORMALIZED: {}, BACKFILL_RECORDS: {}, BACKFILL_NORMALIZED: {}}
+        for i, hit in enumerate(raw):
+            source = {'@timestamp': stamp, 'event': {'ingested': stamp}, 'organization': {'id': 'KOPO'}}
+            if i in (0, 1):
+                hit['_index'] = 'soc-host-raw-linux-fixture'
+                source.update(labels={'log_source': 'linux_file' if i == 0 else 'linux_journald'})
+                if i == 0:
+                    source.update(log={'file': {'path': '/var/log/syslog'}},
+                                  message='2026-11-14T03:36:33+00:00 host systemd[1]: Started demo.service.')
+                else:
+                    source.update(process={'name': 'systemd'}, message='Started demo.service.')
+            elif i == 2:
+                source.update(labels={'log_source': 'windows_event'}, winlog={
+                    'channel': 'System', 'provider_name': 'Service Control Manager', 'event_id': 7036,
+                })
+            elif i == 3:
+                hit['_index'] = 'soc-network-fixture'
+                source.update(labels={'log_source': 'network_packetbeat'}, agent={'type': 'packetbeat'},
+                              network={'protocol': 'dns'}, destination={'ip': '192.0.2.53'})
+                source['event']['dataset'] = 'dns'
+            else:
+                source.update(labels={'log_source': 'windows_file'})
+            hit['_source'] = source
+            identifier, record, event = normalize(hit, stamp)
+            if i == 2:
+                self.assertEqual(event['event']['action'], 'windows_service_state_reported')
+                old = deepcopy(hit)
+                old['_source']['winlog']['event_id'] = 65535
+                identifier, record, event = normalize(old, stamp)
+            if i == 1:
+                record['normalized']['index'] = BACKFILL_NORMALIZED
+                stored[BACKFILL_RECORDS][identifier] = record
+                stored[BACKFILL_NORMALIZED][identifier] = event
+                continue
+            stored[RECORDS][identifier] = record
+            if event:
+                stored[NORMALIZED][identifier] = event
+        self.client.search.return_value = response(raw)
+        self.client.mget.side_effect = lambda *, index, docs: {'docs': [
+            {'_index': index, '_id': d['_id'], 'found': d['_id'] in stored[index],
+             '_source': stored[index].get(d['_id'])}
+            for d in docs
+        ]}
+        page = json.loads(self.reader.page([]))
+        linux_file, journal, windows, packetbeat, metadata = [row['normalization'] for row in page['rows']]
+        for linux in (linux_file, journal):
+            self.assertEqual((linux['status'], linux['adapter'], linux['interpretation']),
+                             ('normalized', 'linux_operational_v1', 'interpreted'))
+            self.assertTrue(linux['action'].startswith('service_'))
+        self.assertEqual((windows['status'], windows['action'], windows['basis']),
+                         ('not_reprocessed', 'windows_service_state_reported', 'windows_channel_provider_event_id'))
+        self.assertEqual((packetbeat['type'], packetbeat['basis'], packetbeat['interpretation']),
+                         ('dns', 'packetbeat_structured_fields', 'partial'))
+        self.assertEqual((metadata['status'], metadata['interpretation'], metadata['action']),
+                         ('unsupported', 'metadata', None))
+
+    def test_windows_operational_rules_require_exact_provider_channel_and_consistent_id(self):
+        for channel, provider, code, action in (
+            ('Microsoft-Windows-PowerShell/Operational', 'Microsoft-Windows-PowerShell', 4104,
+             'powershell_script_block_logged'),
+            ('Microsoft-Windows-Windows Defender/Operational', 'Microsoft-Windows-Windows Defender', 5007,
+             'defender_configuration_changed'),
+        ):
+            source = {'labels': {'log_source': 'windows_event'}, 'event': {'code': str(code)},
+                      'winlog': {'channel': channel, 'provider_name': provider, 'event_id': code}}
+            from cloud_soc.portal.security_detail import security_detail
+            self.assertEqual(security_detail(source)['fields']['action'], action)
+            for path, field_name, value in (
+                ('winlog', 'provider_name', 'other'), ('winlog', 'channel', 'System'), ('event', 'code', '99'),
+            ):
+                wrong = deepcopy(source)
+                wrong[path][field_name] = value
+                self.assertEqual(security_detail(wrong)['status'], 'unsupported')
 
     def test_detail_accepts_elasticsearch_response_wrapper(self):
         from types import SimpleNamespace

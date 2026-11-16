@@ -8,6 +8,9 @@ from ipaddress import ip_address
 import re
 
 from cloud_soc.portal.log_contract import field
+from cloud_soc.parsers.eks_audit import FIELDS as EKS_FIELDS
+from cloud_soc.parsers.linux_audit import AUDITD_FIELDS
+from cloud_soc.portal.owasp import APP_ADAPTER, APP_FIELDS, APP_SOURCE, application_audit
 from cloud_soc.portal.privacy import display, REDACTED
 from cloud_soc.parsers.security_scenarios import (
     ADAPTER as SCENARIO_ADAPTER, SOURCE as SCENARIO_SOURCE,
@@ -32,9 +35,12 @@ WINDOWS_FIELDS = (
     "ObjectType", "ObjectName", "AccessMask", "TaskName", "ServiceName",
     "ProcessGuid", "ParentProcessGuid", "ParentProcessId", "Image", "ParentImage",
     "User", "Hashes", "TargetFilename", "SourceIp", "SourcePort",
-    "DestinationIp", "DestinationPort", "Protocol",
+    "DestinationIp", "DestinationPort", "Protocol", "Status", "ReturnCode",
 )
 DETAIL_FIELDS = (
+    *APP_FIELDS,
+    *EKS_FIELDS,
+    *AUDITD_FIELDS,
     "soc.schema_version", "soc.collector_id", "resource.id",
     *SCENARIO_FIELDS,
     'waf.schema', 'waf.engine_mode', 'waf.interruption', 'waf.rules', 'http.request.id',
@@ -129,6 +135,18 @@ def security_detail(source):
     if not isinstance(source, dict):
         return result
     get = lambda path: field(source, path)
+    if get('labels.log_source') == APP_SOURCE:
+        values = application_audit(source)
+        result.update(adapter=APP_ADAPTER, status='recognized' if values else 'invalid', fields=values or {})
+        return result
+    from cloud_soc.parsers.linux_audit import ADAPTER as LINUX_AUDIT, interpret as linux_audit
+    audit = linux_audit(source)
+    if audit:
+        result.update(status='recognized' if audit['outcome'] != 'unknown' else 'partial',
+                      adapter=LINUX_AUDIT, fields=audit)
+        if audit['outcome'] == 'unknown':
+            result['missing'] = ['outcome']
+        return result
     if get("soc.schema_version") is not None:
         from cloud_soc.multicloud.adapter import detail
         return detail(source)
@@ -258,6 +276,21 @@ def security_detail(source):
     code = str(raw_code) if type(raw_code) is int else raw_code
     # Reject conflicting identifiers instead of silently choosing one.
     ecs_code = get("event.code")
+    if get('labels.log_source') == 'windows_event':
+        from cloud_soc.parsers.windows_operational import ADAPTER, interpret
+        rule = interpret(channel, provider, code)
+        if rule and (ecs_code is None or str(ecs_code) == code):
+            category, action, outcome = rule
+            if code in ('4776', '5058', '5061'):
+                status = get('winlog.event_data.' + ('Status' if code == '4776' else 'ReturnCode'))
+                if isinstance(status, str) and re.fullmatch(r'0[xX][0-9a-fA-F]{1,8}', status):
+                    outcome = 'success' if int(status, 16) == 0 else 'failure'
+            result.update(status='recognized', adapter=ADAPTER, fields={
+                'category': category, 'action': action, 'outcome': outcome, 'event_code': code,
+                'provider': provider, 'channel': channel,
+            })
+            result['limitations'].append('windows_provider_event_only')
+            return result
     if channel in ("Security", "Microsoft-Windows-Sysmon/Operational") and ecs_code is not None and str(ecs_code) != code:
         result["limitations"].append("conflicting_event_code")
         return result
@@ -349,6 +382,11 @@ def security_detail(source):
     if get("agent.type") == "packetbeat" and get("labels.log_source") == "network_packetbeat":
         result.update(status="recognized", adapter="packetbeat_metadata_v1")
         values = {"category": "network", "action": "traffic_observed", "outcome": "unknown"}
+        dataset, protocol = get('event.dataset'), get('network.protocol')
+        if dataset in ('flow', 'dns', 'tls'):
+            values['event_type'] = dataset
+        elif protocol in ('dns', 'tls'):
+            values['event_type'] = protocol
         for key, path in {"source_ip": "source.ip", "destination_ip": "destination.ip"}.items():
             values[key] = address(get(path))
         for key, path, maximum in (("source_port", "source.port", 65535), ("destination_port", "destination.port", 65535),

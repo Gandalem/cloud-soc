@@ -3,9 +3,48 @@ var secretText = /-----BEGIN [^-]*(PRIVATE KEY|CERTIFICATE)-----|(password|passw
 var secretKey = /password|passwd|pwd|secret|token|authorization|cookie|private[_-]?key|command[_-]?line|task[_-]?content|script[_-]?(block[_-]?text|contents?)|(^|[._-])(api[_-]?key|args|original|xml|body|content)($|[._-])/i;
 var accessLine = /^\S+\s+\S+\s+\S+\s+\[[^\]\r\n]+\]\s+"[A-Z]+\s+[^"\r\n]+\s+HTTP\/[0-9.]+"\s+[0-9]{3}\s+/;
 
+function auditProjection(tag, raw) {
+    if (typeof raw !== 'string' || !raw.length || raw.length > 262144) { return null; }
+    if (tag === 'eks_audit') {
+        var value;
+        try { value = JSON.parse(raw); } catch (_) { return null; }
+        if (!value || value.apiVersion !== 'audit.k8s.io/v1' || value.kind !== 'Event' ||
+            typeof value.auditID !== 'string' || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(value.auditID) ||
+            typeof value.stage !== 'string' || !/^(RequestReceived|ResponseStarted|ResponseComplete|Panic)$/.test(value.stage) ||
+            typeof value.verb !== 'string' || !/^(get|list|watch|create|update|patch|delete|deletecollection|connect|proxy)$/.test(value.verb) ||
+            typeof value.stageTimestamp !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?Z$/.test(value.stageTimestamp)) { return null; }
+        var result = {schema: 1, id: value.auditID, stage: value.stage, verb: value.verb, stage_at: value.stageTimestamp};
+        var code = value.responseStatus && value.responseStatus.code;
+        if (typeof code === 'number' && Math.floor(code) === code && code >= 100 && code <= 599) { result.status = code; }
+        var decision = value.annotations && value.annotations['authorization.k8s.io/decision'];
+        if (decision === 'allow' || decision === 'forbid') { result.decision = decision; }
+        var resource = value.objectRef && value.objectRef.resource;
+        if (typeof resource === 'string' && /^[a-z0-9][a-z0-9.-]{0,127}$/.test(resource)) { result.resource = resource; }
+        return result;
+    }
+    var record = /^(?:node=[A-Za-z0-9_.-]{1,253} )?type=([A-Z_]{2,32}) +msg=audit\((\d{1,12}\.\d{1,9}:\d{1,12})\):([^\r\n]*)$/.exec(raw);
+    if (!record || /^(EXECVE|PROCTITLE|USER_CMD)$/.test(record[1])) { return null; }
+    var result = {schema: 1, type: record[1], id: record[2]};
+    if (record[1] === 'SYSCALL') {
+        // Native SYSCALL fields preceding arguments have a fixed order.
+        var syscall = /^\s*arch=([0-9a-f]{8}) syscall=(\d{1,5}) success=(yes|no)(?: |$)/.exec(record[3]);
+        if (syscall) { result.arch = syscall[1]; result.syscall = Number(syscall[2]); result.success = syscall[3]; }
+    }
+    return result;
+}
+
 function process(event) {
     try {
         var source = event.Get();
+        var tag = source.labels && source.labels.log_source;
+        if (tag === 'eks_audit' || tag === 'linux_auditd') {
+            var projected = auditProjection(tag, source.message);
+            var target = tag === 'eks_audit' ? 'eks_audit' : 'linux_audit_record';
+            if (source[target] !== undefined && event.Delete(target) === false) { throw new Error('privacy removal failed'); }
+            if (projected) { event.Put(target, projected); }
+            if (source.message !== undefined && event.Delete('message') === false) { throw new Error('privacy removal failed'); }
+            source = event.Get();
+        }
         // Web selection must not be bypassed through generic file discovery or
         // a journald/stdout duplicate. Dedicated web inputs remove message first.
         if (source.labels && /^(linux_file|linux_journald|windows_file)$/.test(source.labels.log_source || '') && typeof source.message === 'string') {

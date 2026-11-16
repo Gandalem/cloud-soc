@@ -17,10 +17,19 @@ from cloud_soc.web.modsecurity import VERSION as WAF_VERSION, ADAPTER as WAF_ADA
 from cloud_soc.parsers.security_mall import ADAPTER as MALL_ADAPTER, VERSION as MALL_VERSION
 from cloud_soc.parsers.security_mall_edge import ADAPTER as EDGE_ADAPTER, VERSION as EDGE_VERSION
 from cloud_soc.parsers.suricata import EVE_PATH, normalize_suricata
+from cloud_soc.parsers.windows_operational import ADAPTER as WINDOWS_OPERATIONAL, VERSION as WINDOWS_VERSION
+from cloud_soc.parsers.linux_audit import ADAPTER as LINUX_AUDIT, VERSION as LINUX_AUDIT_VERSION
+from cloud_soc.parsers.linux_audit import AUDITD_ADAPTER, AUDITD_VERSION, interpret_auditd
+from cloud_soc.parsers.eks_audit import ADAPTER as EKS_AUDIT, VERSION as EKS_VERSION, interpret as interpret_eks
+from cloud_soc.parsers.linux_priority import ADAPTER as LINUX_PRIORITY, VERSION as LINUX_PRIORITY_VERSION
+from cloud_soc.parsers.linux_priority import interpret as interpret_linux_priority, interpret_alb
+from cloud_soc.portal.owasp import APP_ADAPTER, normalized_signals
 
 VERSION = "intake-v1"
 NORMALIZED = "soc-normalized-v1"
 RECORDS = "soc-processing-v1"
+BACKFILL_NORMALIZED = "soc-normalized-unified-backfill-v1"
+BACKFILL_RECORDS = "soc-processing-unified-backfill-v1"
 STATUS = "soc-pipeline-status"
 
 
@@ -34,6 +43,15 @@ def raw_identity(hit):
 
 
 def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSION):
+    identifier, record, event = _normalize(hit, processed_at, ssh_v2_start=ssh_v2_start, web_version=web_version)
+    if event is not None:
+        signals = normalized_signals(event)
+        if signals:
+            event['cloud_soc']['owasp'] = signals
+    return identifier, record, event
+
+
+def _normalize(hit, processed_at, *, ssh_v2_start, web_version):
     if web_version not in (SITE_VERSION, LEGACY_VERSION):
         raise ValueError('Unsupported generic web normalizer version')
     try:
@@ -94,6 +112,18 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
             and field(source, 'log.file.path') == EVE_PATH):
         return normalize_suricata(source, reference, processed_at, received, organization)
     detail = security_detail(source)
+    if detail['status'] == 'unsupported':
+        detail = interpret_eks(source) or interpret_auditd(source) or detail
+    if detail['adapter'] == EKS_AUDIT:
+        occurred = parse_time(detail.pop('occurred_at'))
+    if detail['adapter'] == APP_ADAPTER and detail['status'] != 'recognized':
+        record.update(reason='application_security_metadata_invalid', adapter=APP_ADAPTER)
+        return identifier, record, None
+    versions = {WINDOWS_OPERATIONAL: WINDOWS_VERSION, LINUX_AUDIT: LINUX_AUDIT_VERSION,
+                EKS_AUDIT: EKS_VERSION, AUDITD_ADAPTER: AUDITD_VERSION}
+    if detail['adapter'] in versions:
+        record['version'] = versions[detail['adapter']]
+        identifier = hashlib.sha256(json.dumps([record['version'], reference], sort_keys=True).encode()).hexdigest()
     if detail['adapter']=='multicloud_audit_v1':
         record.update(reason='source_scope_mismatch')
         return identifier,record,None
@@ -162,7 +192,7 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
             event['event']['duration'] = values['duration_us'] * 1000
         record.update(status='normalized', reason='recognized', normalized={'index': NORMALIZED, 'id': identifier})
         return identifier, record, event
-    time_metadata = {"basis": "source_timestamp"}
+    time_metadata = {"basis": "kubernetes_audit_stage_timestamp" if detail['adapter'] == EKS_AUDIT else "source_timestamp"}
     mall = detail["adapter"] == MALL_ADAPTER
     if mall:
         identifier = hashlib.sha256(json.dumps([MALL_VERSION, reference], sort_keys=True).encode()).hexdigest()
@@ -218,6 +248,8 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
                   'missing': [], 'limitations': ['metadata_only', 'authentication_failure_not_attack_confirmation']}
     if detail["status"] == "unsupported":
         operational = parse_linux_operational(source)
+        if operational is None or operational['adapter'] == 'linux_unclassified_v1':
+            operational = interpret_linux_priority(source) or interpret_alb(source) or operational
         if operational:
             explicit_time = operational.pop('occurred_at', None)
             if explicit_time:
@@ -256,6 +288,10 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
                        else LINUX_OPERATIONAL_VERSION)
             if detail['adapter'] == 'linux_sudo_session_v1':
                 version = SUDO_SESSION_VERSION
+            if detail['adapter'] == LINUX_PRIORITY:
+                version = LINUX_PRIORITY_VERSION
+                if detail.get('collector_time_only'):
+                    time_metadata = {'basis': 'collector_timestamp', 'source_event_time_known': False}
             if detail["adapter"] == "linux_unclassified_v1":
                 time_metadata = {"basis": "collector_timestamp", "source_event_time_known": False}
             identifier = hashlib.sha256(json.dumps([version, reference], sort_keys=True).encode()).hexdigest()
@@ -283,6 +319,12 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
                 "linux_operational_v1": "soc-host-raw-", "linux_sudo_session_v1": "soc-host-raw-", "linux_unclassified_v1": "soc-host-raw-", "packetbeat_metadata_v1": "soc-network-", "aws_cloudtrail_metadata_v1": "soc-cloud-aws-", "oci_audit_metadata_v1": "soc-cloud-oci-"}
     expected[SITE_ADAPTER] = 'soc-host-raw-'
     expected[WAF_ADAPTER] = 'soc-host-raw-'
+    expected[WINDOWS_OPERATIONAL] = 'soc-host-raw-'
+    expected[LINUX_AUDIT] = 'soc-host-raw-'
+    expected[APP_ADAPTER] = 'soc-host-raw-'
+    expected[EKS_AUDIT] = 'soc-host-raw-'
+    expected[AUDITD_ADAPTER] = 'soc-host-raw-'
+    expected[LINUX_PRIORITY] = 'soc-host-raw-'
     if not reference["index"].startswith(expected[detail["adapter"]]):
         record.update(status="invalid", reason="source_scope_mismatch")
         return identifier, record, None
@@ -296,6 +338,11 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
                        "outcome": values["outcome"], "ingested": iso(received)},
              "cloud_soc": {"normalized_at": processed_at, "normalizer_version": record["version"], "parse_status": detail["status"],
                            "detail": detail, "provenance": {"schema_version": 1, "raw": reference, "time": time_metadata}}}
+    if detail['adapter'] == EKS_AUDIT:
+        event['event']['id'] = values['audit_id']
+        event['event']['dataset'] = 'kubernetes.audit'
+    elif detail['adapter'] == AUDITD_ADAPTER:
+        event['event']['dataset'] = 'linux.auditd'
     if mall:
         # Only the collector envelope supplies organization/host identity. Do not
         # inherit user/cloud/destination/event claims or raw text from the input.
@@ -342,7 +389,7 @@ def normalize(hit, processed_at, *, ssh_v2_start=None, web_version=LEGACY_VERSIO
         event["cloud"]["account"] = {"id": account}
     for key in ("code", "dataset", "provider"):
         value = text(field(source, "event." + key))
-        if value not in (None, REDACTED):
+        if value not in (None, REDACTED) and key not in event['event']:
             event["event"][key] = value
     if values.get("process_pid") is not None:
         event["process"] = {"pid": values["process_pid"]}

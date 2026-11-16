@@ -20,6 +20,7 @@ MAX_DETAIL_BYTES = 64 * 1024
 MAX_CURSOR_LENGTH = 8192
 TIME_FIELDS = {"ingested": "event.ingested", "event": "@timestamp"}
 HOST_SOURCES = {"security_scenario", "windows_event", "windows_file", "linux_file", "linux_journald", "web_access_metadata", "generic_web_access", "generic_modsecurity", "security_mall_audit", "security_mall_edge", "agent_health", "agent_collection_notice"}
+HOST_SOURCES.update(("application_security_audit", "eks_audit", "linux_auditd"))
 CLOUDWATCH_SOURCES = ("aws_cloudtrail", "aws_vpc_flowlogs", "aws_waf")
 SOURCE_FIELDS = (
     "input.type", "log_source",
@@ -30,7 +31,7 @@ SOURCE_FIELDS = (
     "destination.ip", "network.transport", "network.protocol", "flow.final",
     "cloud.provider", "cloud.account.id", "cloud.region", "cloud.service.name", "user.id",
     "winlog.provider_name", "winlog.event_id", "winlog.user.identifier",
-    "systemd.unit", "systemd.transport", "journald.syslog.identifier", "process.name",
+    "systemd.unit", "systemd.transport", "journald.syslog.identifier", "journald.custom.audit_type", "journald.process.name", "process.name",
     "labels.collection_policy", "labels.collection_status",
 )
 
@@ -204,7 +205,10 @@ def project_hit(hit):
         source_name = string("log_source")
         kind = source_name if source_name in CLOUDWATCH_SOURCES else "aws_cloudwatch"
         stream = "cloud"
-    os_type, os_basis = ("cloud", "input.type") if cloudwatch else operating_system(source)
+    if kind == 'eks_audit':
+        stream = 'cloud'
+    os_type, os_basis = (("cloud", "input.type") if cloudwatch else ("cloud", "labels.log_source")
+                         if kind == 'eks_audit' else operating_system(source))
     outcome = string("event.outcome")
     if outcome not in (None, "success", "failure", "unknown"):
         invalid.append("event.outcome")

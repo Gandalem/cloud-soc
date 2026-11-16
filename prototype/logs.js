@@ -6,17 +6,61 @@
   sources.generic_modsecurity = 'ModSecurity WAF 메타데이터';
   sources.security_scenario = '보안 시나리오 감사 기록';
   Object.assign(sources,{security_mall_audit:'쇼핑몰 보안 감사',security_mall_edge:'쇼핑몰 웹·WAF',agent_health:'수집 상태 보고',agent_collection_notice:'수집 입력 오류'});
+  sources.application_security_audit = '애플리케이션 보안 점검';
+  sources.eks_audit = 'EKS 감사';
+  sources.linux_auditd = 'Linux auditd';
   const osNames = { windows: "Windows", linux: "Linux", cloud: "해당 없음 (클라우드 API)", unknown: "미확인" };
   const outcomes = { success: "성공", failure: "실패", unknown: "미확인" };
   const label = (map, value, fallback = "미확인") => Object.hasOwn(map, value) ? map[value] : fallback;
-  const suricataStates = {normalized:'정규화 완료',invalid:'정규화 실패',unrecorded:'처리 기록 없음',unavailable:'처리 결과 조회 불가'};
+  const normalizationStates = {normalized:'정규화 완료',invalid:'정규화 실패',unsupported:'행위 정규화 규칙 없음',not_reprocessed:'새 규칙으로 미처리',unrecorded:'처리 기록 없음',unavailable:'처리 결과 조회 불가'};
+  const interpretationLevels = {interpreted:'행위 해석',partial:'부분 해석',metadata:'수집 메타데이터',invalid:'이벤트 필드 검증 실패'};
+  const evidenceLabels = {
+    source_contract:'수집 소스 태그와 인덱스', source_path:'수집 파일 경로', source_action:'구조화된 행위 필드',
+    journal_source:'저널 서비스·프로그램', event_channel:'Windows 이벤트 채널',
+    event_channel_and_code:'Windows 채널과 이벤트 ID', validated_windows_event:'검증된 Windows 이벤트',
+    interpreted_windows_event:'검증된 Windows 공급자와 이벤트 ID',
+    windows_channel_provider_event_id:'Windows 채널·공급자·이벤트 ID 일치',
+    linux_audit_transport_and_type:'Linux 감사 전송 유형과 감사 이벤트 코드 일치',
+    packetbeat_structured_fields:'Packetbeat 수집기·소스 태그 및 구조화된 IP·프로토콜·흐름 필드',
+    cloudwatch_source_metadata:'CloudWatch 입력 유형과 소스 태그',
+    validated_application_event:'검증된 애플리케이션 감사 필드', validated_edge_stream:'검증된 웹·WAF 수집 필드',
+    structured_security_export:'검증된 시나리오 메타데이터', normalized_document:'원본과 연결된 정규화 문서',
+    insufficient_metadata:'원본 인덱스와 문서 ID',
+  };
+  const processingReasons = {
+    application_security_metadata_invalid:'애플리케이션 보안 점검 필드 검증 실패',
+    adapter_not_supported:'이벤트 행위를 해석할 규칙이 없음',
+    missing_scope_or_time:'조직 또는 시각 필드 누락·오류',
+    source_scope_mismatch:'정규화 규칙의 소스 범위 불일치',
+    linux_time_invalid:'Linux 이벤트 시각 형식 오류',
+    linux_timezone_missing:'Linux 이벤트 시간대 누락',
+    ssh_time_invalid:'SSH 이벤트 시각 형식 오류',
+    ssh_timezone_missing:'SSH 이벤트 시간대 누락',
+    suricata_metadata_invalid:'Suricata 필수 필드 누락 또는 형식 오류',
+    suricata_host_invalid:'Suricata 수집 호스트 식별 정보 오류',
+    multicloud_metadata_invalid:'멀티클라우드 감사 필드 검증 실패',
+    security_scenario_scope_or_metadata_invalid:'시나리오 소스 범위 또는 필드 검증 실패',
+    web_collector_host_invalid:'웹 수집 호스트 식별 정보 오류',
+  };
+  const owaspEvidence = {
+    application_authorization_denied:'애플리케이션 권한 거부 기록',
+    configuration_check_failed:'보안 설정 점검 실패',
+    dependency_provenance_check_failed:'의존성 출처 검증 실패',
+    cryptographic_policy_check_failed:'암호화 정책 검증 실패',
+    validated_waf_injection_signature:'검증된 WAF 인젝션 시그니처',
+    business_invariant_check_failed:'업무 흐름 보안 조건 검증 실패',
+    authentication_failure_reported:'인증 실패 기록',
+    integrity_check_failed:'무결성 검증 실패',
+    audit_logging_disruption_reported:'감사 로깅 중단·오류 기록',
+    exception_control_failed:'예외 처리 중 접근 허용 확인',
+  };
   const escape = value => String(value ?? "미관측").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const time = value => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(new Date(value)) : "미관측";
   const environmentKinds = {
-    server: ['windows_event', 'windows_file', 'linux_file', 'linux_journald'],
-    application: ['generic_web_access', 'web_access_metadata', 'generic_modsecurity', 'security_mall_audit', 'security_mall_edge'],
+    server: ['windows_event', 'windows_file', 'linux_file', 'linux_journald', 'linux_auditd'],
+    application: ['generic_web_access', 'web_access_metadata', 'generic_modsecurity', 'security_mall_audit', 'security_mall_edge', 'application_security_audit'],
     network: ['network_packetbeat'],
-    cloud: ['aws_cloudtrail', 'aws_cloudwatch', 'aws_vpc_flowlogs', 'aws_waf', 'oci_audit', 'multicloud_audit']
+    cloud: ['aws_cloudtrail', 'aws_cloudwatch', 'aws_vpc_flowlogs', 'aws_waf', 'oci_audit', 'multicloud_audit', 'eks_audit']
   };
   function renderEnvironments(rows) {
     let classified = 0;
@@ -37,14 +81,15 @@
     if (state) state.textContent = rows === null ? '로그를 조회하면 환경별 건수가 표시됩니다.' : `현재 페이지 ${rows.length.toLocaleString('ko-KR')}건 · 기타 및 수집 상태 ${(rows.length - classified).toLocaleString('ko-KR')}건 · 조회 결과 기준`;
   }
   function rowMarkup(row, index, timeBasis = 'ingested') {
+    const normalized = row.normalization;
     const interpreted = row.interpretation || {};
     const supported = ['recognized', 'partial'].includes(interpreted.status);
     const fields = supported ? interpreted.fields || {} : {};
     const rawAction = typeof row.action === 'string' && !/^(none|null|-)$/i.test(row.action.trim()) ? row.action : null;
     const isAccess = supported && (['generic_web_access','web_access_metadata'].includes(row.source_kind) || fields.stream === 'access');
     const actionText = isAccess ? ['웹 접근',fields.http_method,fields.http_status != null ? `HTTP ${fields.http_status}` : null,fields.path].filter(Boolean).join(' · ') : row.stream === 'cloud' && rawAction ? rawAction : fields.action ? label(securityTerms,fields.action,fields.action) : rawAction || (row.event_code ? `이벤트 ${row.event_code}` : '행위 정보 없음');
-    const outcome = row.outcome && row.outcome !== 'unknown' ? row.outcome : fields.outcome || 'unknown';
-    const actor = row.user || row.actor_id || fields.actor || (fields.account_id ? `가명 계정: ${fields.account_id}` : null) || (fields.target_user ? `대상 계정: ${fields.target_user}` : null);
+    const outcome = normalized?.outcome ?? (row.outcome && row.outcome !== 'unknown' ? row.outcome : fields.outcome || 'unknown');
+    const actor = normalized?.actor || row.user || row.actor_id || fields.actor || (fields.account_id ? `가명 계정: ${fields.account_id}` : null) || (fields.target_user ? `대상 계정: ${fields.target_user}` : null);
     const interpretation = label({recognized:'형식 확인',partial:'부분 해석 · 필드 누락',unsupported:'메타데이터만 표시 · 행위 해석 미지원'},interpreted.status,'미평가 · 서버 갱신 필요');
     const cloudName = row.cloud_provider === 'azure' ? 'Azure' : row.cloud_provider === 'naver' ? 'Naver Cloud' : row.cloud_provider === 'aws' ? 'AWS' : row.cloud_provider === 'oci' ? 'OCI' : row.source_kind === 'aws_cloudtrail' ? 'AWS' : '클라우드';
     const origin = row.stream === 'cloud' ? [cloudName,row.cloud_account,row.cloud_region].filter(Boolean).join(' / ') : [row.service_name || fields.service_name,row.host_name || row.host_id,row.site_id ? `사이트 ${row.site_id}` : null].filter(Boolean).join(' / ');
@@ -54,19 +99,22 @@
       : row.os === 'windows' ? 'Windows' : row.os === 'linux' && /^Ubuntu(?:\s|$)/i.test(osName) ? 'Ubuntu'
       : row.os === 'linux' ? 'Linux' : null;
     const source = [platform, label(sources,row.source_kind,'미분류'), platform && row.event_code ? `이벤트 ID ${row.event_code}` : null].filter(Boolean).join(' · ');
-    const from = row.source_ip || fields.source_ip, to = row.destination_ip || fields.destination_ip;
+    const from = normalized?.source_ip || row.source_ip || fields.source_ip;
+    const to = normalized?.destination_ip || row.destination_ip || fields.destination_ip;
     const peer = from ? `${from}${to ? ` → ${to}` : ''}` : to ? `목적지 ${to}` : null;
     const primaryTime = timeBasis === 'event' ? row.event_at : row.received_at;
     const fallbackTime = timeBasis === 'event' ? row.received_at : row.event_at;
     const timeLabel = primaryTime ? (timeBasis === 'event' ? '로그 시각' : '수신 시각') : fallbackTime ? (timeBasis === 'event' ? '수신 시각 · 로그 시각 없음' : '로그 시각 · 수신 시각 없음') : '시각 미관측';
-    const hint = row.suricata ? label(suricataStates,row.suricata.status)
+    const hint = normalized ? label(normalizationStates,normalized.status)
+      : row.suricata ? label(normalizationStates,row.suricata.status)
       : fields.engine_mode ? label({DetectionOnly:'탐지 전용 · 차단 안함',On:'WAF 활성',Off:'WAF 비활성'},fields.engine_mode)
       : isAccess ? 'HTTP 응답 기준' : interpretation;
+    const commonAction = normalized?.action && !isAccess ? label(securityTerms,normalized.action,normalized.action) : actionText;
     const summary = row.suricata ? row.suricata.event_type || '이벤트 유형 미확인'
-      : outcome !== 'unknown' ? `${actionText} / ${label(outcomes,outcome,'결과 정보 없음')}` : actionText;
+      : outcome !== 'unknown' ? `${commonAction} / ${label(outcomes,outcome,'결과 정보 없음')}` : commonAction;
     const lines = (main,sub) => `<span class="log-cell-main" title="${escape(main)}">${escape(main)}</span>${sub ? `<small class="log-cell-sub" title="${escape(sub)}">${escape(sub)}</small>` : ''}`;
     const reference = `${row.reference.index} / ${row.reference.id}`;
-    return `<tr><td class="log-kind">${lines(row.log_type?.label || '종류 미확인',supported || row.suricata ? null : interpretation)}</td><td>${lines(primaryTime || fallbackTime ? time(primaryTime || fallbackTime) : '시각 미관측',timeLabel)}</td><td>${lines(origin || source,origin ? source : row.channel || row.file_path || row.dataset)}</td><td>${lines(peer || actor || '기록 없음',peer ? actor : null)}</td><td>${lines(summary,hint)}</td><td class="log-open-cell"><button type="button" class="log-row-open" data-row="${index}" title="${escape(reference)}" aria-label="${escape(row.log_type?.label || '로그')} 상세 보기">상세</button></td></tr>`;
+    return `<tr><td class="log-kind">${lines(row.log_type?.label || '종류 미확인',normalized ? label(interpretationLevels,normalized.interpretation) : supported || row.suricata ? null : interpretation)}</td><td>${lines(primaryTime || fallbackTime ? time(primaryTime || fallbackTime) : '시각 미관측',timeLabel)}</td><td>${lines(origin || source,origin ? source : row.channel || row.file_path || row.dataset)}</td><td>${lines(peer || actor || '기록 없음',peer ? actor : null)}</td><td>${lines(summary,hint)}</td><td class="log-open-cell"><button type="button" class="log-row-open" data-row="${index}" title="${escape(reference)}" aria-label="${escape(row.log_type?.label || '로그')} 상세 보기">상세</button></td></tr>`;
   }
   function query(values, now = Date.now()) {
     let start, end;
@@ -129,11 +177,90 @@
     request_id_is_unverified_correlation_hint:'요청 ID만으로 다른 출처의 동일 요청을 확정하지 않습니다.'
   });
   Object.assign(securityTerms, {waf_rule_match: 'WAF 규칙 관측'});
+  Object.assign(securityTerms, {
+    scheduled_job_output_observed:'예약 작업 출력 관측', package_cache_log_observed:'패키지 캐시 작업 로그',
+    alb_access_observed:'ALB 접근 관측',
+    cron_daemon_report:'cron 데몬 보고', anacron_report:'anacron 보고', kdump_service_output:'kdump 서비스 출력',
+    cloud_init_service_output:'cloud-init 서비스 출력', linux_session_service_report:'Linux 세션 서비스 보고',
+    polkit_service_report:'Polkit 서비스 보고', fail2ban_filter_match:'Fail2ban 필터 일치',
+    windows_time_source_report:'Windows 시간 원본 보고', windows_processor_power_report:'Windows 프로세서 전원 보고',
+    windows_dhcp_client_report:'Windows DHCP 클라이언트 보고', windows_key_migration_report:'Windows 키 이전 보고',
+    sshd_connection_closed:'SSH 연결 종료', sshd_invalid_user_reported:'SSH 등록되지 않은 사용자 보고',
+    polkit_agent_registered:'Polkit 인증 에이전트 등록', polkit_agent_unregistered:'Polkit 인증 에이전트 해제',
+    linux_user_created:'Linux 계정 생성 기록', linux_group_created:'Linux 그룹 생성 기록',
+    linux_session_created:'Linux 세션 생성', linux_session_removed:'Linux 세션 종료',
+    windows_filesystem_filter_registered:'Windows 파일 시스템 필터 등록', windows_system_time_changed:'Windows 시스템 시각 변경',
+    windows_kernel_general_report:'Windows 커널 운영 보고', windows_rdp_connection_manager_report:'RDP 연결 관리자 보고',
+    windows_rdp_session_manager_report:'RDP 세션 관리자 보고', powershell_operational_report:'PowerShell 운영 보고',
+    defender_cloud_intelligence_received:'Defender 클라우드 보안 인텔리전스 수신',
+    kubernetes_authorization_denied:'Kubernetes API 인가 거부',
+    kubernetes_api_get:'Kubernetes 리소스 조회', kubernetes_api_list:'Kubernetes 리소스 목록 조회',
+    kubernetes_api_watch:'Kubernetes 리소스 감시', kubernetes_api_create:'Kubernetes 리소스 생성 요청',
+    kubernetes_api_update:'Kubernetes 리소스 갱신 요청', kubernetes_api_patch:'Kubernetes 리소스 변경 요청',
+    kubernetes_api_delete:'Kubernetes 리소스 삭제 요청', kubernetes_api_deletecollection:'Kubernetes 리소스 일괄 삭제 요청',
+    kubernetes_api_connect:'Kubernetes 연결 요청', kubernetes_api_proxy:'Kubernetes 프록시 요청',
+    cron_job_invoked:'예약 작업 호출', cron_session_opened:'cron 세션 열림', cron_session_closed:'cron 세션 닫힘',
+    ssm_agent_report:'SSM 에이전트 상태 보고', ssm_agent_error:'SSM 에이전트 오류 보고',
+    sshd_authentication_failed:'SSH 인증 실패', sshd_session_opened:'SSH 세션 열림', sshd_session_closed:'SSH 세션 닫힘',
+    fail2ban_block:'Fail2ban 차단', fail2ban_unblock:'Fail2ban 차단 해제',
+    linux_audit_bpf_activity:'Linux BPF 감사', linux_audit_policy_decision:'Linux 보안 정책 감사',
+    linux_audit_syscall_record:'시스템 호출 감사 레코드', linux_audit_path_record:'대상 경로 감사 레코드',
+    linux_audit_working_directory_record:'작업 디렉터리 감사 레코드', linux_audit_exec_record:'실행 감사 레코드',
+    windows_ntlm_validation:'Windows NTLM 자격 증명 검증', windows_local_group_changed:'Windows 로컬 보안 그룹 변경',
+    windows_account_changed:'Windows 계정 변경', windows_account_renamed:'Windows 계정 이름 변경',
+    windows_object_audit_settings_changed:'Windows 객체 감사 설정 변경',
+    windows_key_file_operation:'Windows 키 파일 작업', windows_crypto_operation:'Windows 암호화 작업',
+    linux_audit_service_start:'Linux 서비스 시작 감사', linux_audit_service_stop:'Linux 서비스 중지 감사',
+    linux_audit_authentication:'Linux 인증 감사', linux_audit_authorization:'Linux 권한 감사',
+    linux_audit_login:'Linux 로그인 감사', linux_audit_daemon_error:'Linux 감사 데몬 오류',
+    linux_audit_configuration_change:'Linux 감사 설정 변경', linux_audit_integrity_check:'Linux 무결성 검증',
+    windows_security_audit_cleared:'Windows 보안 감사 로그 삭제', windows_event_log_stopped:'Windows 이벤트 로깅 서비스 종료',
+    windows_logoff_reported:'Windows 로그오프', windows_explicit_credentials_attempted:'명시적 자격 증명 사용 시도',
+    windows_user_groups_enumerated:'사용자 그룹 조회', windows_group_members_enumerated:'그룹 구성원 조회',
+    insecure_configuration_verified:'보안 설정 점검', dependency_provenance_verified:'의존성 출처 검증',
+    cryptographic_policy_verified:'암호화 정책 검증', business_invariant_verified:'업무 흐름 보안 조건 검증',
+    artifact_integrity_verified:'아티팩트 무결성 검증', exception_fail_open_verified:'예외 시 접근 통제 점검',
+    windows_service_state_reported:'서비스 상태 보고', windows_service_start_type_changed:'서비스 시작 유형 변경',
+    windows_service_installed:'서비스 설치', windows_dcom_permission_reported:'DCOM 권한 이벤트',
+    windows_uptime_reported:'시스템 가동 시간 보고', windows_update_installed:'Windows 업데이트 설치',
+    windows_update_install_failed:'Windows 업데이트 설치 실패', windows_update_install_started:'Windows 업데이트 설치 시작',
+    windows_update_download_started:'Windows 업데이트 다운로드 시작', windows_credentials_read_reported:'자격 증명 읽기 보고',
+    powershell_script_block_logged:'PowerShell 스크립트 블록 기록',
+    powershell_module_activity_logged:'PowerShell 모듈 활동 기록', powershell_runtime_event_logged:'PowerShell 런타임 이벤트',
+    defender_threat_reported:'Defender 위협 보고', defender_response_reported:'Defender 대응 보고',
+    defender_response_failed:'Defender 대응 실패', defender_service_health_reported:'Defender 서비스 상태 보고',
+    defender_health_reported:'Defender 상태 보고', defender_signatures_updated:'Defender 보안 인텔리전스 업데이트',
+    defender_signature_update_failed:'Defender 보안 인텔리전스 업데이트 실패', defender_configuration_changed:'Defender 설정 변경',
+  });
+  securityLimits.windows_provider_event_only = 'Windows 공급자가 기록한 이벤트의 의미를 표시합니다.';
+  Object.assign(securityLabels, {event_type:'센서 이벤트 유형',event_code:'해석에 사용한 이벤트 ID'});
   Object.assign(securityLabels, {service_name:'서비스',account_id:'가명 계정 ID',account_key_id:'가명 계정 키 버전',stream:'기록 종류',method:'HTTP 메서드',status_code:'HTTP 응답 코드',path:'보호된 경로 분류',duration_us:'처리 시간 (마이크로초)',engine_mode: 'ModSecurity 엔진 모드', interruption: '엔진 개입 관측', sqli_rule_ids: 'CRS SQLi 규칙 ID'});
-  function securityEntries(value, suricata) {
+  function securityEntries(value, suricata, normalized) {
+    if (normalized) {
+      const fields = [['보안 이벤트 해석',label(interpretationLevels,normalized.interpretation)],
+        ['해석 근거',label(evidenceLabels,normalized.basis)],
+        ['해석기',normalized.adapter || '미확인'],
+        ['정규화 처리 상태',label(normalizationStates,normalized.status)]];
+      if (suricata) fields.push(['Suricata 이벤트 유형',suricata.event_type || '미확인']);
+      if (normalized.action) fields.push(['공통 행위',label(securityTerms,normalized.action,normalized.action)]);
+      if (normalized.outcome !== 'unknown') fields.push(['공통 결과',label(outcomes,normalized.outcome)]);
+      if (normalized.actor) fields.push(['관측 주체',normalized.actor]);
+      if (normalized.source_ip) fields.push(['관측 출발지 IP',normalized.source_ip]);
+      if (normalized.destination_ip) fields.push(['관측 목적지 IP',normalized.destination_ip]);
+      if (normalized.status === 'normalized' && normalized.event_at) fields.push(['정규화 이벤트 시각',time(normalized.event_at)]);
+      if (normalized.reason) fields.push(['처리 사유',label(processingReasons,normalized.reason)]);
+      for (const [key, title] of Object.entries({audit_id:'감사 ID',audit_stage:'감사 단계',audit_record_type:'감사 레코드 유형',
+        resource:'대상 리소스 종류',authorization_decision:'인가 결정',http_status:'HTTP 상태',log_level:'로그 수준'})) {
+        if (normalized[key] != null) fields.push([title,normalized[key]]);
+      }
+      if (normalized.owasp?.length) fields.push(['OWASP 관련 관측',normalized.owasp.map(
+        signal=>`${signal.category} · ${label(owaspEvidence,signal.evidence)}`)]);
+      return [...fields,...(value?.status === 'recognized' || value?.status === 'partial'
+        ? securityEntries(value).slice(2) : [])];
+    }
     if (suricata) {
       return [['Suricata 이벤트 유형',suricata.event_type || '미확인'],
-        ['정규화 처리 상태',label(suricataStates,suricata.status)]];
+        ['정규화 처리 상태',label(normalizationStates,suricata.status)]];
     }
     if (!value || value.version !== 1) return [["보안 이벤트 해석", "미제공 · 서버 버전 확인 필요"]];
     const entries = [['보안 이벤트 해석',label({recognized:'형식 확인',partial:'부분 해석 · 필드 누락',unsupported:'미지원 형식 또는 근거 부족'},value.status)],['해석기',value.adapter || '없음']];
@@ -263,8 +390,8 @@
       if (ticket !== detailGeneration) return;
       if (data.contract_version !== 1 || data.raw_access !== "restricted" || data.row?.reference?.id !== row.reference.id || data.row?.reference?.index !== row.reference.index) throw new Error("상세 응답의 문서 참조가 일치하지 않습니다.");
       const observed = Object.entries(detailLabels).filter(([key])=>data.row[key]!=null && data.row[key]!=='' && (!Array.isArray(data.row[key]) || data.row[key].length));
-      const listStatus = data.row.suricata ? [] : [['목록 해석 상태',label({recognized:'형식 확인',partial:'부분 해석 · 필드 누락',unsupported:'메타데이터만 표시 · 행위 해석 미지원'},data.row.parse_status,'미평가')]];
-      const entries = [['로그 종류',data.row.log_type?.label || '종류 미확인'],['인덱스',data.row.reference.index],['문서 ID',data.row.reference.id],...securityEntries(data.security,data.row.suricata),...observed.map(([key,name])=>[name,key.endsWith('_at') ? time(data.row[key]) : key==='os' ? label(osNames,data.row[key]) : data.row[key]]),...(data.row.outcome && data.row.outcome!=='unknown' ? [['원본 표준 필드 결과',label(outcomes,data.row.outcome)]] : []),...listStatus,...(data.row.quality?.invalid_fields?.length ? [['형식 오류 필드',data.row.quality.invalid_fields]] : []),...(data.row.quality?.truncated_fields?.length ? [['표시 제한 필드',data.row.quality.truncated_fields]] : [])];
+      const listStatus = data.row.normalization || data.row.suricata ? [] : [['목록 해석 상태',label({recognized:'형식 확인',partial:'부분 해석 · 필드 누락',unsupported:'메타데이터만 표시 · 행위 해석 미지원'},data.row.parse_status,'미평가')]];
+      const entries = [['로그 종류',data.row.log_type?.label || '종류 미확인'],['인덱스',data.row.reference.index],['문서 ID',data.row.reference.id],...securityEntries(data.security,data.row.suricata,data.row.normalization),...observed.map(([key,name])=>[name,key.endsWith('_at') ? time(data.row[key]) : key==='os' ? label(osNames,data.row[key]) : data.row[key]]),...(data.row.outcome && data.row.outcome!=='unknown' ? [['원본 표준 필드 결과',label(outcomes,data.row.outcome)]] : []),...listStatus,...(data.row.quality?.invalid_fields?.length ? [['형식 오류 필드',data.row.quality.invalid_fields]] : []),...(data.row.quality?.truncated_fields?.length ? [['표시 제한 필드',data.row.quality.truncated_fields]] : [])];
       const recovery=data.cloudtrail_recovery||data.cloudwatch_recovery;
       if(recovery?.normalization==='completed'){
         entries.push([data.cloudtrail_recovery?'CloudTrail 정규화':'CloudWatch 정규화','완료']);

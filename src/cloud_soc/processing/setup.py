@@ -1,6 +1,6 @@
 """Explicit administrative preparation; the worker cannot create indices or keys."""
 
-from cloud_soc.processing.contract import NORMALIZED, RECORDS, STATUS
+from cloud_soc.processing.contract import BACKFILL_NORMALIZED, BACKFILL_RECORDS, NORMALIZED, RECORDS, STATUS
 from cloud_soc.processing.worker import DEFAULT_SOURCE_INDICES
 from cloud_soc.detection.telemetry import RUNS, EXCLUSIONS
 
@@ -52,6 +52,8 @@ def prepare(client, *, update_role=True):
                  "counts": {"type": "object", "enabled": False},
                  "state": KEYWORD, "error": KEYWORD, "detection": KEYWORD},
     }
+    mappings[BACKFILL_NORMALIZED] = mappings[NORMALIZED]
+    mappings[BACKFILL_RECORDS] = mappings[RECORDS]
     for name, properties in mappings.items():
         if not client.indices.exists(index=name):
             client.indices.create(index=name, settings={"number_of_shards": 1, "number_of_replicas": 0},

@@ -74,9 +74,13 @@ def configure_template(template):
 
 
 def reader_role():
+    from cloud_soc.processing.contract import BACKFILL_NORMALIZED, BACKFILL_RECORDS
     return {'cluster': [], 'indices': [{
         "names": INDICES.split(",") + ["soc-agent-health-*", "soc-cloud-aws-*", "soc-cloud-oci-*",
                   "soc-multicloud-*", "soc-normalized-v1", "soc-processing-v1", "soc-normalized-history-v1", "soc-processing-history-v1", "soc-pipeline-status", "soc-detection-runs-v1", "soc-detection-exclusions-v1", "soc-alert-notices-v1", "security-alerts", "normalized-events", "raw-logs-*"],
+        "privileges": ["read", "view_index_metadata"],
+    }, {
+        "names": [BACKFILL_NORMALIZED, BACKFILL_RECORDS],
         "privileges": ["read", "view_index_metadata"],
     }]}
 

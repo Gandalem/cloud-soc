@@ -32,6 +32,25 @@ test('Suricata displays the normalized event type and distinguishes missing and 
   }
 });
 
+test('common log detail explains Packetbeat evidence and separates metadata from processing', async () => {
+  const normalized = {basis:'packetbeat_structured_fields',interpretation:'partial',status:'normalized',
+    adapter:'packetbeat_metadata_v1',type:'dns',action:'traffic_observed',outcome:'unknown',destination_ip:'192.0.2.53'};
+  const network = {...row, source_kind:'network_packetbeat', log_type:{label:'DNS 통신'}, normalization:normalized};
+  const ui = browser([ok({...result,rows:[network]}),
+    ok({contract_version:1,row:network,raw_access:'restricted',security:{version:1,status:'partial',fields:{event_type:'dns'}}})]);
+  await settle();
+  assert.match(ui.get('#log-rows').innerHTML,/정규화 완료/);
+  ui.get('#log-rows').listeners.click({target:{closest:()=>({dataset:{row:'0'}})}});
+  await settle();
+  const values = ui.get('#log-detail-fields').children.map(node=>node.textContent);
+  assert.ok(values.includes('부분 해석'));
+  assert.ok(values.includes('Packetbeat 수집기·소스 태그 및 구조화된 IP·프로토콜·흐름 필드'));
+  assert.ok(values.includes('192.0.2.53'));
+  assert.ok(values.includes('dns'));
+  const metadata = {...normalized,interpretation:'metadata',status:'unsupported',basis:'event_channel'};
+  assert.match(rowMarkup({...row,normalization:metadata},0),/수집 메타데이터.*행위 정규화 규칙 없음/);
+});
+
 test('OS labels require explicit platform metadata and retain event identifiers', () => {
   const base = {...row, host_name:'host-a', os:'windows', event_code:'4625', log_type:{label:'Windows 로그인 실패'}};
   assert.match(rowMarkup({...base, os_name:'Windows Server 2022'},0), /Windows Server/);

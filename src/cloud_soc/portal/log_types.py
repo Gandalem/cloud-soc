@@ -23,15 +23,28 @@ def classification(row, detail):
                   'aws_waf': ('waf', 'AWS WAF 로그')}
         code, label = labels.get(kind, ('cloud_log', 'AWS CloudWatch 로그'))
         return result(code, label, 'cloudwatch_source_metadata')
+    if kind == 'network_packetbeat' and detail.get('adapter') == 'packetbeat_metadata_v1':
+        label = {'flow': '네트워크 흐름', 'dns': 'DNS 통신', 'tls': 'TLS 통신'}.get(fields.get('event_type'))
+        return result('network', label or '네트워크 통신', 'packetbeat_structured_fields')
     fixed={'generic_modsecurity':('waf','웹 WAF 탐지'),
            'generic_web_access':('web_access','웹 접근'), 'web_access_metadata':('web_access','웹 접근'),
            'network_packetbeat':('network','네트워크 통신'), 'aws_cloudtrail':('cloud_audit','AWS 관리 감사'),
            'multicloud_audit':('cloud_audit','멀티클라우드 감사'), 'oci_audit':('cloud_audit','OCI 관리 감사'), 'agent_health':('collection_health','에이전트 수집 상태'),
-           'agent_collection_notice':('collection_error','수집 입력 오류')}
+           'agent_collection_notice':('collection_error','수집 입력 오류'),
+           'eks_audit':('kubernetes_audit','EKS API 감사'),
+           'linux_auditd':('linux_auditd','Linux auditd 레코드')}
     if kind in fixed:
         code,label=fixed[kind];return result(code,label,'source_contract')
     if kind=='windows_event':
         channel=row.get('channel') or '';category=fields.get('category')
+        if detail.get('adapter') == 'windows_operational_v1':
+            code, label = {
+                'System': ('system_change', 'Windows 시스템 이벤트'),
+                'Security': ('security_audit', 'Windows 보안 감사'),
+                'Microsoft-Windows-Windows Defender/Operational': ('security_product', 'Windows Defender 보안'),
+            }.get(channel, ('remote_access', 'Windows 원격 데스크톱 이벤트')
+                  if channel.startswith('Microsoft-Windows-TerminalServices-') else ('script', 'PowerShell 이벤트'))
+            return result(code, label, 'windows_channel_provider_event_id')
         if detail.get('adapter') == 'windows_security_v1' and detail.get('status') in ('recognized', 'partial'):
             labels={'4624':('authentication','Windows 로그인 성공'),
                     '4625':('authentication','Windows 로그인 실패'),
@@ -65,6 +78,12 @@ def classification(row, detail):
     path=(row.get('file_path') or '').replace('\\','/')
     if kind=='windows_file' and re.search(r'/System32/LogFiles/Firewall/pfirewall(?:_(?:domain|private|public))?\.log(?:\.[0-9]+)?$',path,re.I):
         return result('firewall','Windows 방화벽','source_path')
+    if kind=='windows_file':
+        return result('windows_file','Windows 파일 기록','source_contract')
+    if kind == 'application_security_audit':
+        return result('application_security_audit','애플리케이션 보안 점검','source_contract')
+    if detail.get('adapter') == 'linux_journal_audit_v1':
+        return result('linux_journal_audit','Linux 감사 이벤트','linux_audit_transport_and_type')
     if kind in ('linux_file','linux_journald'):
         # Only classify explicitly structured action values; never inspect or expose raw messages.
         action=row.get('action');outcome=row.get('outcome')

@@ -72,6 +72,17 @@ def fake_es(store):
         if (index, id) not in store:
             raise NotFoundError('missing', None, {})
         return {'_index': index, '_id': id, '_source': deepcopy(store[index, id])}
+    def mget(*, index, docs):
+        results = []
+        for request in docs:
+            identifier = request['_id']
+            try:
+                hit = get(index, identifier)
+            except NotFoundError:
+                results.append({'_index': index, '_id': identifier, 'found': False})
+            else:
+                results.append({**hit, 'found': True})
+        return {'docs': results}
     def selected(index, query):
         rows = []
         clauses = query.get('bool', {}).get('filter', [query])
@@ -95,6 +106,7 @@ def fake_es(store):
                 'aggregations': {'trend': {'buckets': [{'key_as_string': '2026-10-01T00:00:00Z', 'doc_count': len(rows)}]}}}
     es.indices.resolve_index.side_effect = resolve
     es.get.side_effect = get
+    es.mget.side_effect = mget
     es.search.side_effect = search
     es.count.side_effect = lambda index, query, **_: {'count': len(selected(index, query)), '_shards': {'failed': 0}}
     es.field_caps.return_value = {'fields': {'@timestamp': {'date': {}}, 'event.ingested': {'date': {}}}}
