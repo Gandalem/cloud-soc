@@ -467,6 +467,13 @@ def create_app(settings=None, *, issuer=None, monitor=None):
         return case_response(lambda: cases.create(request.get_json(), g.principal,
                              request.headers.get("Idempotency-Key"), fetch_case_alert))
 
+    @app.get("/api/triage-alerts")
+    def triage_alerts():
+        def read_queue():
+            candidates, limited, window = operations_for(g.log_principal).triage_candidates(request.args.items(multi=True))
+            return {"rows": cases.unlinked(candidates, g.principal), "limited": limited, **window}
+        return case_response(read_queue)
+
     @app.get("/api/cases/<identifier>")
     def case_detail(identifier):
         if set(request.args) - {"before"} or len(request.args.getlist("before")) > 1:
@@ -602,7 +609,7 @@ def create_app(settings=None, *, issuer=None, monitor=None):
                 log_assets |= {"assets/world-countries-110m.json"}
                 log_assets |= {"soc.html", "soc/app.js", "soc/app.css", "index.html", "dashboard.html", "dashboard.js", "dashboard.css", "dashboard-builder.js", "dashboard-widgets.js", "dashboard-insights.js", "dashboard-insight-metrics.js", "dashboard-insights.css", "dashboard-builder.css", "alert-notices.js", "alert-notices.css", "operations.html", "operations.js", "operations.css", "cases.html", "cases.js", "cases.css", "workbench.html", "investigation.js", "mall-alerts.js"}
                 if principal.organizations:
-                    log_routes |= {"operations_summary", "operations_status", "alert_detail", "alert_site_context", "notice_list", "notice_detail", "insight_data", "soc_overview"}
+                    log_routes |= {"operations_summary", "operations_status", "triage_alerts", "alert_detail", "alert_site_context", "notice_list", "notice_detail", "insight_data", "soc_overview"}
             if request.endpoint not in log_routes and not (request.endpoint == "static_file" and (request.view_args or {}).get("filename") in log_assets):
                 abort(403)
 

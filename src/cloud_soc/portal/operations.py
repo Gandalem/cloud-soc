@@ -1,6 +1,6 @@
 """Read-only operational totals and exact evidence, never synthetic incidents."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import re
 from time import monotonic
 from urllib.parse import quote
@@ -17,6 +17,10 @@ from cloud_soc.portal.mall_scope import validate_scope, scope_indices
 from cloud_soc.portal.runtime_rules import public_manifest, inventory as rule_inventory
 
 ALERT = "security-alerts"
+TRIAGE_LEVELS = ("critical", "high", "medium", "low", "unknown")
+TRIAGE_LEVEL_LIMIT = 100
+TRIAGE_FIELDS = ["@timestamp", "rule.id", "rule.name", "organization.id",
+                 "cloud_soc.severity", "cloud_soc.alert_title"]
 INDEX_PATH_BUDGET = 3000
 MAX_INDEX_BATCHES = 32
 SERIES_TIMEOUT = 12
@@ -189,6 +193,70 @@ class Operations:
     def visible(self, source):
         organization = field(source, "organization.id")
         return self.organizations is None or (isinstance(organization, str) and organization in self.organizations)
+
+    def triage_candidates(self, pairs):
+        pairs = list(pairs)
+        args = dict(pairs)
+        organization = args.get("organization")
+        severity = args.get("severity")
+        if (len(args) != len(pairs) or set(args) - {"organization", "severity"}
+                or (organization is not None and (not organization or len(organization) > 128
+                                                  or text(organization) != organization))
+                or (severity is not None and severity not in TRIAGE_LEVELS)):
+            raise LogQueryError("invalid_triage_filter", 400, "기관 또는 심각도 조회 조건을 확인하세요.")
+        if organization and self.organizations is not None and organization not in self.organizations:
+            raise LogQueryError("triage_scope_forbidden", 403, "기관을 조회할 권한이 없습니다.")
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(hours=24)
+        window = {"start": iso(start), "end": iso(end)}
+        try:
+            if self.client is None:
+                raise RuntimeError("Monitor not configured")
+            if self.organizations == () or not exact_indices(self.client, [self.alert_index]):
+                return [], False, window
+            filters = [{"range": {"@timestamp": {"gte": window["start"], "lt": window["end"]}}},
+                       {"exists": {"field": "organization.id"}}]
+            if organization:
+                filters.append({"term": {"organization.id": organization}})
+            elif self.organizations is not None:
+                filters.append({"terms": {"organization.id": list(self.organizations)}})
+            levels = {name: {"term": {"cloud_soc.severity": name}} for name in TRIAGE_LEVELS[:-1]}
+            if severity == "unknown":
+                filters.append({"bool": {"must_not": list(levels.values())}})
+            elif severity:
+                filters.append(levels[severity])
+            groups = {"filters": {"filters": levels, "other_bucket": True, "other_bucket_key": "unknown"},
+                      "aggs": {"recent": {"top_hits": {"size": TRIAGE_LEVEL_LIMIT,
+                          "sort": [{"@timestamp": "desc"}], "_source": TRIAGE_FIELDS}}}}
+            response = checked(self.client.search(index=self.alert_index, size=0, track_total_hits=True,
+                query={"bool": {"filter": filters}}, aggs={"levels": groups},
+                timeout="4s", allow_partial_search_results=False))
+            total = response["hits"]["total"]
+            buckets = response["aggregations"]["levels"]["buckets"]
+            counts = {level: exact_count(buckets[level]["doc_count"]) for level in TRIAGE_LEVELS}
+            if total["relation"] != "eq" or sum(counts.values()) != exact_count(total["value"]):
+                raise ValueError("Inexact alert total")
+            candidates = []
+            seen = set()
+            for level in TRIAGE_LEVELS:
+                hits = buckets[level]["recent"]["hits"]["hits"]
+                if len(hits) != min(counts[level], TRIAGE_LEVEL_LIMIT):
+                    raise ValueError("Incomplete alert group")
+                for hit in hits:
+                    row = alert_row(hit)
+                    reported = row["severity"] if row["severity"] in levels else "unknown"
+                    stamp = parse_time(row["timestamp"])
+                    if (hit["_index"] != self.alert_index or not self.visible(hit["_source"])
+                            or not row["organization"] or (organization and row["organization"] != organization)
+                            or reported != level or (severity and reported != severity)
+                            or stamp is None or not start <= stamp < end or row["id"] in seen):
+                        raise ValueError("Unexpected alert in triage results")
+                    seen.add(row["id"])
+                    candidates.append({key: row[key] for key in ("id", "timestamp", "rule", "title", "organization")}
+                                      | {"severity": reported})
+            return candidates, any(count > TRIAGE_LEVEL_LIMIT for count in counts.values()), window
+        except Exception as error:
+            raise LogQueryError("triage_unavailable", 503, "미처리 경보를 확인하지 못했습니다.") from error
 
     def get(self, index, doc_id, fields):
         allowed=scope_indices(self.mall_scope) if self.mall_scope else ()

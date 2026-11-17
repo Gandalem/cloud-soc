@@ -53,6 +53,17 @@ def pipeline():
         return {'_source': deepcopy(value), 'found': True}
 
     client.get.side_effect = get
+    def mget(*, index, docs: list):
+        results = []
+        for reference in docs:
+            key = reference['_id']
+            try:
+                results.append({'_index': index, '_id': key, **get(index=index, id=key)})
+            except NotFoundError:
+                results.append({'_index': index, '_id': key, 'found': False})
+        return {'docs': results}
+
+    client.mget.side_effect = mget
     options = {'alert_id': 'selected-alert', 'organization': 'team-a', 'rule_id': 'AUTH-001',
                'since': since.isoformat(), 'raw_indices': ['soc-host-raw-acceptance'], 'now': now}
     return client, docs, options

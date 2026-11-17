@@ -13,7 +13,7 @@ function browser(responses) {
   const elements = new Map(), calls = [], timers = new Map();
   let timerId = 0;
   function element(tag){return dom.element(tag);}
-  const get = id => {if(!elements.has(id))elements.set(id,element());return elements.get(id);};
+  const get = id => {if(id==='triage-filter')return null;if(!elements.has(id))elements.set(id,element());return elements.get(id);};
   const context={document:{getElementById:get,createElement:element,createElementNS:element},
     window:{addEventListener(){},setTimeout(fn){timers.set(++timerId,fn);return timerId;},clearTimeout(id){timers.delete(id);}},URLSearchParams,Date,fetch:async(url,options)=>{calls.push({url,options});return responses.shift()();}};
   // operations.html loads the shared Mall alert renderer before operations.js.

@@ -18,7 +18,7 @@ READ_ENDPOINTS = {
     "multicloud.page", "multicloud.asset", "multicloud.summary",
     "soc_overview", "insight_data", "index", "static_file", "auth_me", "logout", "case_list", "case_link", "case_detail",
     "agent_status", "collection_health", "logs", "log_updates", "log_detail", "log_access", "operations_summary", "alert_detail", "alert_site_context",
-    "detection_history", "reprocessing_history", "healthz", "operations_status", "dashboard_get", "dashboards_get", "notice_list", "notice_detail",
+    "detection_history", "reprocessing_history", "healthz", "operations_status", "triage_alerts", "dashboard_get", "dashboards_get", "notice_list", "notice_detail",
 }
 CASE_WRITES = {"case_create", "case_update"}
 

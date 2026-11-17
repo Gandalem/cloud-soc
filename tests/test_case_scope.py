@@ -10,7 +10,7 @@ import pytest
 
 from cloud_soc.portal.app import create_app
 from cloud_soc.portal.cases import CaseError, CaseStore
-from cloud_soc.portal.operations import ALERT
+from cloud_soc.portal.operations import ALERT, TRIAGE_LEVELS
 from cloud_soc.processing.contract import NORMALIZED, RECORDS, STATUS
 from test_cases import alert
 from test_integration_security import login, make_session_portal
@@ -65,6 +65,64 @@ def workflow(tmp_path):
 def mutate(http, method, path, headers, body, token=None):
     return http.open(path, method=method, json=body,
                      headers={**headers, "Idempotency-Key": token or str(uuid.uuid4())})
+
+
+def triage_response(rows):
+    buckets = {}
+    for level in TRIAGE_LEVELS:
+        hits = [{"_index": ALERT, "_id": key, "_source": source} for key, source in rows
+                if source["cloud_soc"].get("severity", "unknown") == level]
+        buckets[level] = {"doc_count": len(hits), "recent": {"hits": {"hits": hits}}}
+    return {"hits": {"total": {"value": len(rows), "relation": "eq"}},
+            "aggregations": {"levels": {"buckets": buckets}}}
+
+
+def test_triage_queue_and_atomic_self_assignment(workflow):
+    app, monitor, _, docs = workflow
+    http, headers = login(app, "investigate")
+    low = deepcopy(docs[ALERT, "local"])
+    low["cloud_soc"]["severity"] = "low"
+    rows = [("low-priority", low), ("local", docs[ALERT, "local"])]
+    monitor.search.side_effect = lambda **_: triage_response(rows)
+    response = http.get("/api/triage-alerts")
+    assert response.status_code == 200
+    assert [row["id"] for row in response.json["rows"]] == ["local", "low-priority"]
+    assert response.json["limited"] is False
+    assert {"terms": {"organization.id": ["synthetic"]}} in monitor.search.call_args.kwargs["query"]["bool"]["filter"]
+    assert http.get("/api/triage-alerts?organization=foreign").status_code == 403
+    assert http.get("/api/triage-alerts?severity=invalid").status_code == 400
+    assert http.get("/api/triage-alerts?severity=high&severity=low").status_code == 400
+    monitor.search.side_effect = lambda **_: triage_response(rows[1:])
+    assert len(http.get("/api/triage-alerts?organization=synthetic&severity=high").json["rows"]) == 1
+    filters = monitor.search.call_args.kwargs["query"]["bool"]["filter"]
+    assert {"term": {"cloud_soc.severity": "high"}} in filters
+    assert {"term": {"organization.id": "synthetic"}} in filters
+
+    body = {"title": "Review", "alert_id": "local", "priority": "high", "assign_to_self": True}
+    token = str(uuid.uuid4())
+    viewer, viewer_headers = login(app, "view")
+    assert mutate(viewer, "POST", "/api/cases", viewer_headers, body).status_code == 403
+    assert mutate(http, "POST", "/api/cases", headers, {**body, "assign_to_self": 1}).status_code == 400
+    response = mutate(http, "POST", "/api/cases", headers, body, token)
+    assert response.status_code == 200
+    case = response.json
+    assert (case["owner"], case["status"]) == ("investigate", "triage")
+    assert mutate(http, "POST", "/api/cases", headers, body, token).json == case
+    assert mutate(http, "POST", "/api/cases", headers, body).status_code == 409
+    assert http.get("/api/case-link?alert_id=local").json == {"case_id": case["id"]}
+    assert http.get("/api/triage-alerts").json["rows"] == []
+    history = http.get("/api/cases/" + case["id"]).json["history"]
+    assert history[0]["changes"]["owner"]["after"] == "investigate"
+
+
+def test_unexpected_foreign_triage_search_response_is_withheld(workflow):
+    app, monitor, _, docs = workflow
+    http, _ = login(app, "investigate")
+    monitor.search.side_effect = lambda **_: triage_response([("foreign", docs[ALERT, "foreign"])])
+    response = http.get("/api/triage-alerts")
+    assert response.status_code == 503
+    assert response.json["code"] == "triage_unavailable"
+    assert "FOREIGN_CANARY" not in response.get_data(as_text=True)
 
 
 def test_scoped_analyst_can_investigate_create_note_link_and_replay(workflow):

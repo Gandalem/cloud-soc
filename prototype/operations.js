@@ -275,6 +275,126 @@
       evidencePage(data);
     } catch (error) { if (version === detailGeneration) $("ops-detail-state").textContent = error.message; }
   }
+  function setupTriage() {
+    const form = $('triage-filter');
+    if (!form) return;
+    const levels = {critical: '긴급', high: '높음', medium: '중간', low: '낮음', unknown: '미분류'};
+    const pageSize = 25;
+    const organizations = new Set(), tokens = new Map();
+    let rows = [], page = 0, controller;
+    const failure = $('triage-error');
+    const showError = message => {failure.textContent = message; failure.hidden = !message;};
+    const caseUrl = caseId => 'workbench.html?' + new URLSearchParams({
+      case: caseId, return_page: 'operations.html', return_section: 'triage-alerts',
+    });
+
+    async function claim(row, button) {
+      button.disabled = true;
+      showError('');
+      try {
+        if (!tokens.has(row.id)) tokens.set(row.id, crypto.randomUUID());
+        const response = await fetch('/api/cases', {
+          method: 'POST', credentials: 'same-origin',
+          headers: {'Content-Type': 'application/json', 'X-Cloud-SOC': 'portal', 'Idempotency-Key': tokens.get(row.id)},
+          body: JSON.stringify({alert_id: row.id, title: (row.title || row.rule || '경보 조사').slice(0, 160),
+            priority: row.severity === 'unknown' ? 'medium' : row.severity, assign_to_self: true}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (response.ok && /^[a-f0-9]{32}$/.test(data.id)) {
+          window.location.assign(caseUrl(data.id));
+          return;
+        }
+        if (response.status === 409 && data.code === 'alert_already_linked') {
+          const linked = await request('/api/case-link?' + new URLSearchParams({alert_id: row.id}));
+          if (/^[a-f0-9]{32}$/.test(linked.case_id)) {
+            const open = node('a', '기존 사건 열기');
+            open.href = caseUrl(linked.case_id);
+            button.replaceWith(open);
+            open.focus();
+            return;
+          }
+        }
+        throw new Error(data.error || '사건을 등록하지 못했습니다. 다시 시도하세요.');
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function render(canClaim) {
+      const output = $('triage-rows');
+      output.replaceChildren();
+      const totalPages = Math.ceil(rows.length / pageSize);
+      $('triage-prev').disabled = page === 0;
+      $('triage-next').disabled = page + 1 >= totalPages;
+      $('triage-page').textContent = totalPages ? (page + 1) + ' / ' + totalPages : '';
+      for (const row of rows.slice(page * pageSize, (page + 1) * pageSize)) {
+        const tr = node('tr'), actions = node('td');
+        for (const value of [levels[row.severity], fmt(row.timestamp), row.organization, row.title || row.rule || '경보']) {
+          tr.append(node('td', value));
+        }
+        const evidence = node('button', '근거 보기');
+        evidence.type = 'button';
+        evidence.addEventListener('click', () => detail(row.id));
+        actions.append(evidence);
+        if (canClaim) {
+          const assign = node('button', '사건 등록 및 내게 배정');
+          assign.type = 'button';
+          assign.addEventListener('click', () => claim(row, assign));
+          actions.append(document.createTextNode(' '), assign);
+        }
+        tr.append(actions);
+        output.append(tr);
+      }
+    }
+
+    let canClaim = false;
+    async function refreshQueue() {
+      controller?.abort();
+      const current = new AbortController();
+      controller = current;
+      const params = new URLSearchParams();
+      for (const name of ['organization', 'severity']) {
+        const value = form.querySelector('[name="' + name + '"]').value.trim();
+        if (value) params.set(name, value);
+      }
+      rows = [];
+      page = 0;
+      render(canClaim);
+      showError('');
+      $('triage-status').textContent = '조회 중';
+      try {
+        const data = await request('/api/triage-alerts?' + params, current.signal);
+        const identity = await window.portalIdentity;
+        if (current.signal.aborted) return;
+        if (!Array.isArray(data.rows) || typeof data.limited !== 'boolean') throw new Error('응답을 확인할 수 없습니다.');
+        canClaim = ['admin', 'analyst'].includes(identity?.role);
+        rows = data.rows;
+        for (const row of rows) organizations.add(row.organization);
+        $('triage-organizations').replaceChildren(...[...organizations].sort().map(name => {
+          const option = node('option');
+          option.value = name;
+          return option;
+        }));
+        $('triage-status').textContent = data.limited
+          ? '심각도별 최신 100건에서 미처리 ' + rows.length + '건을 찾았습니다. 기관으로 범위를 좁혀 확인하세요.'
+          : '미처리 경보 ' + rows.length + '건';
+        render(canClaim);
+      } catch (error) {
+        if (current.signal.aborted) return;
+        $('triage-status').textContent = '미처리 경보 조회 실패';
+        showError(error.message);
+      }
+    }
+
+    form.addEventListener('submit', event => {event.preventDefault(); refreshQueue();});
+    $('triage-prev').addEventListener('click', () => {page--; render(canClaim);});
+    $('triage-next').addEventListener('click', () => {page++; render(canClaim);});
+    window.addEventListener('pagehide', () => controller?.abort());
+    window.addEventListener('pageshow', event => {if (event.persisted) refreshQueue();});
+    refreshQueue();
+  }
   window.addEventListener('resize',()=>{if(chartSections){chart($('ops-intake-chart'),chartSections.intake);chart($('ops-alert-chart'),chartSections.alerts);}});
   let shownAlerts=null;
   const pending=window.CloudSOCLive.notice($('ops-alert-rows').closest('section')||$('ops-alert-rows').parentElement,'새 경보');
@@ -291,5 +411,6 @@
   $("ops-detail-close").addEventListener("click", () => $("ops-detail").close());
   $("ops-detail").addEventListener("close", () => {stopContext(); detailGeneration++; $("ops-detail-content").replaceChildren();});
   window.addEventListener("pagehide", () => {stopContext(); generation++; detailGeneration++; $("ops-detail-content").replaceChildren();});
+  setupTriage();
   refresh();
 })();

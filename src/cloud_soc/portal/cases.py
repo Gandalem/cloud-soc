@@ -136,11 +136,14 @@ class CaseStore:
             raise invalid()
 
     def create(self, body, actor, token, fetch_alert):
-        self.validate_body(body, {"title", "alert_id", "priority"}, {"title", "alert_id", "priority"})
+        self.validate_body(body, {"title", "alert_id", "priority", "assign_to_self"}, {"title", "alert_id", "priority"})
         title = clean(body["title"], 160)
         alert_id = identifier(body["alert_id"])
-        if body["priority"] not in PRIORITIES:
+        assign = body.get("assign_to_self", False)
+        if body["priority"] not in PRIORITIES or type(assign) is not bool:
             raise invalid()
+        if assign and actor not in self.owners:
+            raise CaseError("case_forbidden", "사건 담당자로 배정할 수 없는 계정입니다.", 403)
         def action(db):
             # Replays do not need ES availability; only the first mutation resolves it.
             alert = fetch_alert(alert_id)
@@ -153,11 +156,15 @@ class CaseStore:
                 raise CaseError("alert_already_linked", "이미 사건에 연결된 경보입니다. 사건 목록에서 확인하세요.", 409)
             timestamp = now()
             row = {"id": uuid.uuid4().hex, "title": title, "organization": organization,
-                   "priority": body["priority"], "status": "new", "owner": None, "verdict": "unreviewed",
+                   "priority": body["priority"], "status": "triage" if assign else "new",
+                   "owner": actor if assign else None, "verdict": "unreviewed",
                    "version": 1, "created_at": timestamp, "updated_at": timestamp}
             db.execute("INSERT INTO cases VALUES (:id,:title,:organization,:priority,:status,:owner,:verdict,:version,:created_at,:updated_at)", row)
             db.execute("INSERT INTO case_alerts VALUES (?,?,?,?)", (alert_id, row["id"], timestamp, json.dumps(alert, ensure_ascii=False)))
-            self.history(db, row, actor, "created", {"alert_id": alert_id, "title": title, "priority": row["priority"]})
+            changes = {"alert_id": alert_id, "title": title, "priority": row["priority"]}
+            if assign:
+                changes.update(owner={"before": None, "after": actor}, status={"before": "new", "after": "triage"})
+            self.history(db, row, actor, "created", changes)
             return row
         return self.mutation(actor, token, {"action": "create", "body": body}, action)
 
@@ -232,6 +239,18 @@ class CaseStore:
             row = db.execute("SELECT case_id FROM case_alerts JOIN cases ON cases.id=case_alerts.case_id WHERE alert_id=?" + where,  # nosec B608
                              [identifier(alert_id), *params]).fetchone()
             return {"case_id": row[0] if row else None}
+
+    def unlinked(self, alerts, actor):
+        self.authorize(actor)
+        visible = [row for row in alerts if self.visible(actor, row["organization"])]
+        if not visible:
+            return []
+        ids = [row["id"] for row in visible]
+        placeholders = ",".join("?" for _ in ids)
+        with self.connect() as db:
+            linked = {row[0] for row in db.execute(
+                "SELECT alert_id FROM case_alerts WHERE alert_id IN (" + placeholders + ")", ids)}  # nosec B608
+        return [row for row in visible if row["id"] not in linked]
 
     def listing(self, pairs, actor):
         self.authorize(actor)
