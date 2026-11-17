@@ -152,13 +152,21 @@ def build_contract(value, containers, state, *, now=None, existing=None, initial
     if (existing and existing.get('version') == value['version'] == 5
             and existing.get('policy_sha256') == '27e7c586d6185ba4b52991cec2244e2c450c163fc3d01d1b09dfef92a6bf0a58'
             and existing['policy_sha256'] != digest(value)):
-        from cloud_soc.detection.engine import SERVICE_LOGON_SCOPE_RULES, event_fingerprint
-        from cloud_soc.detection.profiles import catalog
+        revisions = {
+            'UNIFIED-WEB-HOST-001': ('9d4115cc994d07f155b35667a21da795f4780aa0213ed87ae5a06d8805927286',
+                                    '14ad18cc7d646393b346f4fc3843cf50209232e5484cf23545a3a5c32958077d'),
+            'UNIFIED-HOST-NET-001': ('707e88875fbb095ecd679df1d145053462db67d12d20778dddfa25be79ee20cf',
+                                    '48debf4e2132f7bd673b3cf838bc353009d7299669e3003a6ad4bd1711f64098'),
+            'UNIFIED-THREE-SOURCE-001': ('fff5a6e1ef4ec447baf9322bf133f6b0c7cdb7cf61111a262f8eacfcd8bba341',
+                                        '06bb42ff623941961f41cccfe5b95ab0396a501d4041a8d613a1b2f290a8bd6a'),
+            'UNIFIED-SERVER-MIN3-001': ('8c0978a25f50494939100159c403315810216d65b696b969b5b64641a87c9d22',
+                                       '56f37bc1568ca2d0be55928fa6581478a2f259316f1c7ed4a7203c697deaa783'),
+        }
         previous = deepcopy(value)
-        for rule in catalog():
-            if rule['id'] in SERVICE_LOGON_SCOPE_RULES:
-                engine = 'metadata-cardinality-v1' if rule['type'] == 'cardinality' else 'behavior-v1'
-                previous['catalog_rules'][rule['id']] = event_fingerprint({'engine': engine, 'rule': rule})
+        for rule, (old, new) in revisions.items():
+            if value['catalog_rules'].get(rule) != new:
+                raise ValueError('Unrecognized service-logon scope revision')
+            previous['catalog_rules'][rule] = old
         if (digest(previous) != existing['policy_sha256']
                 or set(existing.get('workers', {})) != set(WORKERS)
                 or existing.get('auxiliary_workers') != list(AUXILIARY)

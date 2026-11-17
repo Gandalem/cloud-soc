@@ -163,6 +163,28 @@ def test_policy_transition_pins_original_policy_and_preserves_worker_floors(tmp_
         build_contract(changed, {}, tmp_path, existing=old)
 
 
+def test_policy_transition_runs_without_site_packages():
+    import subprocess
+    import sys
+    from cloud_soc.detection.rule_loader import PROJECT_ROOT
+    code = '''
+import sys
+from pathlib import Path
+import tempfile
+sys.path.insert(0, sys.argv[1] + '/src')
+from cloud_soc.deployment.contract import build_contract, policy
+value = policy(Path(sys.argv[1]))
+with tempfile.TemporaryDirectory() as folder:
+    current, _ = build_contract(value, {}, Path(folder))
+    current['policy_sha256'] = '27e7c586d6185ba4b52991cec2244e2c450c163fc3d01d1b09dfef92a6bf0a58'
+    updated, _ = build_contract(value, {}, Path(folder), existing=current)
+    assert updated['scope_migration'] == 'windows-service-logon-v1'
+'''
+    result = subprocess.run([sys.executable, '-S', '-c', code, str(PROJECT_ROOT)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
 def client_for_review():
     record, event, raw = evidence()
     client = Mock()
