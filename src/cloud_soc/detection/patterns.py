@@ -6,7 +6,7 @@ import json
 from ipaddress import ip_address
 
 from cloud_soc.detection.engine import (build_group_key, event_evidence, event_fingerprint,
-    get_field_value, parse_event_timestamp, rule_revision, ssh_collection_mirror)
+    get_field_value, parse_event_timestamp, rule_revision, rule_engine_version, rule_applies_to_event, ssh_collection_mirror)
 from cloud_soc.detection.behavior import conditions_status, scalar
 from cloud_soc.web.scope import valid_site_id
 
@@ -53,6 +53,8 @@ def validate_pattern(rule):
 
 
 def evaluate_pattern(event, rule):
+    if not rule_applies_to_event(event, rule):
+        return 'not_matched', []
     outcome, missing = conditions_status(event, rule['conditions'])
     if outcome != 'matched':
         return outcome, missing
@@ -127,7 +129,7 @@ def detect_pattern(events, rule, runtime=None):
             evidence = [event_evidence(e) for e in pool]
             result.append({'rule_id': rule['id'], 'rule_name': rule['name'], 'severity': rule['severity'],
                 'group': dict(zip(fields, key)), 'organization_id': get_field_value(event, 'organization.id'),
-                'rule_version': rule_revision(rule), 'rule_snapshot': deepcopy(rule), 'engine_version': 'metadata-cardinality-v1',
+                'rule_version': rule_revision(rule), 'rule_snapshot': deepcopy(rule), 'engine_version': rule_engine_version(rule),
                 'event_count': len(pool), 'threshold': rule['threshold']['count'], 'time_window_seconds': rule['time_window']['seconds'],
                 'window_start': parse_event_timestamp(pool[0]).isoformat(), 'window_end': stamp.isoformat(),
                 'alert': deepcopy(rule['alert']), 'mitre': deepcopy(rule.get('mitre', {})),

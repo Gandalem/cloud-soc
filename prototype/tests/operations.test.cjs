@@ -213,3 +213,18 @@ test('stage cards distinguish processing success from lag and preserve absent wo
   assert.match(allText(cards[2]),/실행 기록 없음/);assert.match(allText(cards[2]),/미구성 또는 조회 범위 밖/);
   assert.match(allText(cards[6]),/처리 실패/);assert.match(allText(cards[6]),/processing_failed/);
 });
+
+test('exclusion review shows unresolved input gaps beside lifetime history',async()=>{
+  const pipeline={state:'success',health:'healthy',catalog_detector:{state:'success',health:'warning',excluded_total:200,
+    exclusion_review:{state:'current',total:100,reviewed:100,resolved:20,confirmed_input_gap:80,
+      unresolved:80,unreviewed:0,unaccounted_lifetime:100,last_reviewed:data.end}}};
+  const ui=browser([ok({...data,sections:{...data.sections,pipeline}})]);await settle();
+  const cards=ui.get('ops-stages').children;
+  assert.equal(cards.length,8);
+  const text=allText(cards.find(card=>card.dataset.worker==='catalog_detector'));
+  assert.match(text,/카탈로그 탐지/);
+  assert.match(text,/평가 제외 누적/);assert.match(text,/200건/);
+  assert.match(text,/대상 밖으로 확인/);assert.match(text,/20건/);
+  assert.match(text,/입력 정보 부족 확인/);assert.match(text,/미해결 제외 기록/);
+  assert.match(text,/80건/);assert.match(text,/이력 대조가 필요한 누적/);
+});

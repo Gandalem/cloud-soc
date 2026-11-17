@@ -14,9 +14,16 @@ from cloud_soc.elastic.pagination import fetch_all_hits
 
 
 ENGINE_VERSION = "threshold-v2"
+SERVICE_LOGON_SCOPE_RULES = frozenset({
+    'UNIFIED-SERVER-MIN3-001', 'UNIFIED-THREE-SOURCE-001',
+    'UNIFIED-WEB-HOST-001', 'UNIFIED-HOST-NET-001',
+})
 
 
 def rule_engine_version(rule):
+    if rule['id'] in SERVICE_LOGON_SCOPE_RULES:
+        return ('metadata-cardinality-v2-service-scope' if rule.get('type') == 'cardinality'
+                else 'behavior-v2-service-scope')
     if 'waf_sqli' in rule:
         return 'waf-metadata-threshold-v1'
     if rule.get('type') == 'cardinality':
@@ -243,6 +250,12 @@ def condition_matches(
 
 
 def rule_applies_to_event(event, rule):
+    if rule.get('id') in SERVICE_LOGON_SCOPE_RULES:
+        if (get_field_value(event, 'cloud_soc.detail.adapter') == 'windows_security_v1'
+                and get_field_value(event, 'event.action') == 'login'
+                and get_field_value(event, 'event.outcome') == 'success'
+                and get_field_value(event, 'cloud_soc.detail.fields.logon_type') == 5):
+            return False
     if rule.get('id') != 'AUTH-001':
         return True
     adapter = get_field_value(event, 'cloud_soc.detail.adapter')
@@ -356,7 +369,7 @@ def build_group_key(
 def detect_rule(events, rule, *, runtime=None, _single_event=False):
     """Dispatch through the explicit registry; unknown types fail closed."""
     from cloud_soc.detection.registry import detect
-    return detect(events, rule, runtime=runtime)
+    return detect([event for event in events if rule_applies_to_event(event, rule)], rule, runtime=runtime)
 
 
 def _detect_threshold(

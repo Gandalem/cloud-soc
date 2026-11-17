@@ -96,18 +96,23 @@ def state_compatible(row, path):
             {'additional_rule_ids': o['--additional-rules'].split(',')} if '--additional-rules' in o else {})
         rules = approved_rules(**selection)
         if '--retrospective' in o:
-            expected = event_fingerprint({'contract': 'retrospective-v1', 'rules': rules,
+            identity_payload = {'contract': 'retrospective-v1', 'rules': rules,
                 'versions': [rule_revision(r) for r in rules], 'start': stamp(o['--start']).isoformat(),
-                'source': o['--es-url'], 'lateness': int(o.get('--lateness-seconds', 900)), 'index': NORMALIZED})
+                'source': o['--es-url'], 'lateness': int(o.get('--lateness-seconds', 900)), 'index': NORMALIZED}
         else:
-            expected = event_fingerprint({'rules': rules, 'start': stamp(o['--start']).isoformat(),
+            identity_payload = {'rules': rules, 'start': stamp(o['--start']).isoformat(),
                 'lateness': int(o.get('--lateness-seconds', 900)), 'index': NORMALIZED, 'source': o['--es-url'],
                 'legacy_exclusion': bool(o.get('--accept-legacy-exclusion')), 'runtime_contract': 2,
-                'rule_versions': [rule_revision(r) for r in rules]})
+                'rule_versions': [rule_revision(r) for r in rules]}
+        expected = event_fingerprint(identity_payload)
         query = 'select body from review_state where id=1' if '--retrospective' in o else 'select body from runtime where id=1'
         saved = db.execute(query).fetchone()
         if saved and json.loads(saved[0])['identity'] != expected:
-            raise ValueError('State identity mismatch; database was not reset')
+            from cloud_soc.detection.scope_migration import previous_identity
+            body = json.loads(saved[0])
+            if (body['identity'] != previous_identity(identity_payload)
+                    or body.get('scope_identity') not in (None, expected)):
+                raise ValueError('State identity mismatch; database was not reset')
 
 
 def validate_notification_role(descriptors):

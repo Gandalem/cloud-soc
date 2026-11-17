@@ -149,6 +149,26 @@ def build_contract(value, containers, state, *, now=None, existing=None, initial
     """Adopt inspected state identities; new workers get a pinned recent floor once."""
     now = now or datetime.now(timezone.utc)
     floor = (now - timedelta(seconds=60)).isoformat()
+    if (existing and existing.get('version') == value['version'] == 5
+            and existing.get('policy_sha256') == '27e7c586d6185ba4b52991cec2244e2c450c163fc3d01d1b09dfef92a6bf0a58'
+            and existing['policy_sha256'] != digest(value)):
+        from cloud_soc.detection.engine import SERVICE_LOGON_SCOPE_RULES, event_fingerprint
+        from cloud_soc.detection.profiles import catalog
+        previous = deepcopy(value)
+        for rule in catalog():
+            if rule['id'] in SERVICE_LOGON_SCOPE_RULES:
+                engine = 'metadata-cardinality-v1' if rule['type'] == 'cardinality' else 'behavior-v1'
+                previous['catalog_rules'][rule['id']] = event_fingerprint({'engine': engine, 'rule': rule})
+        if (digest(previous) != existing['policy_sha256']
+                or set(existing.get('workers', {})) != set(WORKERS)
+                or existing.get('auxiliary_workers') != list(AUXILIARY)
+                or existing.get('catalog_rules') != sorted(value['catalog_rules'])
+                or set(existing.get('verified_rules', [])) != set(value['verified_rules'])
+                or tuple(existing.get('aws_rules', [])) != AWS_RULE_IDS):
+            raise ValueError('Unrecognized predecessor for service-logon scope migration')
+        result = deepcopy(existing)
+        result.update(policy_sha256=digest(value), scope_migration='windows-service-logon-v1')
+        return result, {}
     if existing and existing.get('version') == 4 and value['version'] == 5:
         if (existing.get('policy_sha256') != 'b09ac1ba2fb0ea9af9b83b5abe771dc777de9d8df992b77ab32449abc9d06849'
                 or existing.get('auxiliary_workers') != list(AUXILIARY_V4)

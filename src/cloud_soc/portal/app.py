@@ -290,13 +290,16 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     processing_scope=settings.get('PROCESSING_SCOPE')
     managed_config=settings.get('MANAGED_WORKER_CONFIG')
     managed_library=Path(settings['STATE_DIR'])/'cases.sqlite'
+    exclusion_reviews = Path(settings['STATE_DIR']) / 'exclusion-reviews.sqlite'
     operations = Operations(monitor, mall_scope=mall_scope, processing_scope=processing_scope,
-                            managed_library=managed_library, managed_config=managed_config)
+                            managed_library=managed_library, managed_config=managed_config,
+                            exclusion_reviews=exclusion_reviews)
     def operations_for(principal):
         # Per-request instances ensure evidence hashes are rechecked, including for admins.
         return Operations(monitor, organizations=principal.organizations, mall_scope=mall_scope,
                           mall_investigation=mall_investigation, principal=principal, processing_scope=processing_scope,
-                          managed_library=managed_library, managed_config=managed_config)
+                          managed_library=managed_library, managed_config=managed_config,
+                          exclusion_reviews=exclusion_reviews)
 
     case_organizations = None
     if users:

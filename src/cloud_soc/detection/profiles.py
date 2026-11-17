@@ -51,6 +51,9 @@ def select(*, isolated_all=False, rule_ids=None, retain_auth=True):
 
 def source_observed(event, identifier):
     """Known source family, independent of whether an attack condition matches."""
+    from cloud_soc.detection.engine import rule_applies_to_event
+    if not rule_applies_to_event(event, {'id': identifier}):
+        return False
     adapter = get_field_value(event, 'cloud_soc.detail.adapter')
     scenario_kinds = {
         'SCENARIO-SERVER-FILE-001': 'server_file',

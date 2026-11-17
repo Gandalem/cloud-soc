@@ -157,8 +157,10 @@ def alert_row(hit):
 
 class Operations:
     def __init__(self, client, *, organizations=None, mall_scope=None, mall_investigation=None, principal=None,
-                 processing_scope=None, managed_library=None, managed_config=None):
+                 processing_scope=None, managed_library=None, managed_config=None, exclusion_reviews=None):
         self.client = client.options(request_timeout=5, max_retries=0) if client is not None else None
+        self.exclusion_reviews = exclusion_reviews
+        self._review_summary = None
         self.organizations = tuple(organizations) if organizations is not None else None
         self.mall_scope = validate_scope(mall_scope)
         self.alert_index = self.mall_scope['alerts'] if self.mall_scope else ALERT
@@ -424,11 +426,38 @@ class Operations:
         pending = value.get('history_pending')
         pending = pending if type(pending) is int and pending >= 0 else 0
         early = early_status(value.get("counts")) if worker == "detector" else None
-        health = 'failed' if state == 'failed' else 'stale' if state == 'stale' else 'delayed' if lag is not None and lag > 1200 else 'warning' if late or legacy or excluded or pending or (early and early["state"] != "observed") else 'healthy'
+        review = None
+        unresolved = excluded
+        if worker.startswith('detector') and self.exclusion_reviews is not None and not self.processing_scope and not self.mall_scope:
+            try:
+                from cloud_soc.detection.exclusion_review import summary
+                if self._review_summary is None:
+                    self._review_summary = summary(self.client, self.exclusion_reviews)
+                manifest_rules = value.get('runtime', {}).get('rules', [])
+                ids = {row['id'] for row in manifest_rules}
+                if ids:
+                    rows = [row for rule, row in self._review_summary['rules'].items() if rule in ids]
+                    review = {key: sum(row[key] for row in rows) for key in
+                              ('total', 'reviewed', 'resolved', 'confirmed_input_gap', 'unresolved', 'unreviewed')}
+                    review['last_reviewed'] = self._review_summary['last_reviewed']
+                    review['snapshot_reviewed'] = sum(row.get('snapshot_reviewed', row['reviewed']) for row in rows)
+                    review['state'] = 'current' if rows and all(row['review_state'] == 'current' for row in rows) else 'review_required'
+                    review['unaccounted_lifetime'] = max(0, excluded - review['total'])
+                    if not rows and excluded:
+                        review = None
+                    elif review['state'] == 'current':
+                        unresolved = review['unresolved'] + review['unaccounted_lifetime']
+                    else:
+                        unresolved = max(excluded, review['unresolved'])
+            except Exception:
+                review = {'state': 'unavailable'}
+        health = 'failed' if state == 'failed' else 'stale' if state == 'stale' else 'delayed' if lag is not None and lag > 1200 else 'warning' if late or legacy or unresolved or pending or (early and early["state"] != "observed") else 'healthy'
         result = {"state": state, "health": health, "lag_seconds": lag, "late_total": late, "legacy_excluded": legacy, "excluded_total": excluded, "history_pending": pending,
                 "detection": text(value.get('detection')),
                 "last_success": text(value.get("last_success")), "checkpoint": text(value.get("checkpoint")),
                 "error": text(value.get('error'))}
+        if review is not None:
+            result['exclusion_review'] = review
         if early is not None:
             result["early"] = early
         manifest = public_manifest(value.get('runtime'))
@@ -539,6 +568,14 @@ class Operations:
                 workers['detector-catalog'] = self.worker_status('detector-catalog')
             except Exception:
                 workers['detector-catalog'] = {'state': 'unavailable'}
+            catalog_detector = workers['detector-catalog']
+            if catalog_detector.get('state') != 'not_started':
+                result['catalog_detector'] = catalog_detector
+                finding = analysis_coverage(result, catalog_detector)
+                priorities = {'observed': 0, 'warning': 1, 'catching_up': 2, 'delayed': 3,
+                              'not_started': 4, 'unknown': 5, 'blocked': 6}
+                if priorities[finding['state']] > priorities[result['coverage']['state']]:
+                    result['coverage'] = finding
             result['rules'] = rule_inventory(workers)
         return result
 

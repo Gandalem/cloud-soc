@@ -7,7 +7,7 @@ import re
 
 from cloud_soc.detection.engine import (
     build_group_key, condition_matches, event_evidence, event_fingerprint,
-    get_field_value, parse_event_timestamp, rule_revision, ssh_collection_mirror,
+    get_field_value, parse_event_timestamp, rule_revision, rule_engine_version, rule_applies_to_event, ssh_collection_mirror,
 )
 from cloud_soc.privacy import REDACTED
 
@@ -55,6 +55,8 @@ def conditions_status(event, conditions):
 
 
 def evaluate_behavior(event, rule):
+    if not rule_applies_to_event(event, rule):
+        return 'not_matched', []
     outcome, missing = conditions_status(event, rule['conditions'])
     if outcome != 'matched':
         return outcome, missing
@@ -258,7 +260,7 @@ def detect_behavior(events, rule, runtime=None):
             result.append({'rule_id': rule['id'], 'rule_name': rule['name'], 'severity': rule.get('severity', 'high'),
                            'group': dict(zip(fields, key)), 'organization_id': get_field_value(event, 'organization.id'),
                            'rule_version': rule_revision(rule), 'rule_snapshot': deepcopy(rule),
-                           'engine_version': 'behavior-v1', 'event_count': len(evidence_events),
+                           'engine_version': rule_engine_version(rule), 'event_count': len(evidence_events),
                            'threshold': rule['threshold']['count'], 'time_window_seconds': rule['time_window']['seconds'],
                            'window_start': evidence_events[0]['@timestamp'], 'window_end': stamp.isoformat(),
                            'alert': deepcopy(rule.get('alert', {})), 'mitre': deepcopy(rule.get('mitre', {})),

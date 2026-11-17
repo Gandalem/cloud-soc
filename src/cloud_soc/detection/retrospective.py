@@ -49,9 +49,10 @@ def run_retrospective(client, *, state_path, start, now=None, source_id='local',
         raise ValueError('invalid_retrospective_options')
     rules = approved_rules(**selection)
     by_id = {r['id']: r for r in rules}
-    identity = event_fingerprint({'contract': 'retrospective-v1', 'rules': rules,
+    identity_payload = {'contract': 'retrospective-v1', 'rules': rules,
         'versions': [rule_revision(r) for r in rules], 'start': initial.isoformat(),
-        'source': source_id, 'lateness': lateness_seconds, 'index': NORMALIZED})
+                        'source': source_id, 'lateness': lateness_seconds, 'index': NORMALIZED}
+    identity = event_fingerprint(identity_payload)
     path = Path(state_path)
     if path.is_symlink():
         raise ValueError('unsafe_state_path')
@@ -78,8 +79,9 @@ def run_retrospective(client, *, state_path, start, now=None, source_id='local',
         row = db.execute('SELECT body FROM review_state WHERE id=1').fetchone()
         saved = json.loads(row[0]) if row else {'identity': identity, 'checkpoint': initial.isoformat(),
             'last_success': None, 'reviewed_total': 0, 'excluded_total': 0}
-        if saved['identity'] != identity:
-            raise ValueError('retrospective_scope_changed_requires_new_state')
+        from cloud_soc.detection.scope_migration import migrate
+        saved = migrate(db, saved, identity_payload, now.isoformat(), table='review_state')
+        identity = saved['identity']
         current = deepcopy(saved)
         checkpoint = utc(saved['checkpoint'])
         if checkpoint > now:

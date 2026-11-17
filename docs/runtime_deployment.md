@@ -363,6 +363,19 @@ EC2의 일반 공인 IPv4는 stop/start 시 바뀔 수 있지만 기존 장치�
 
 ## 적용 후 자동 인수
 
+### 제외 기록 검토
+
+운영 이미지에 `cloud_soc.detection.exclusion_review`가 포함된 경우 Portal 컨테이너에서 제외 기록을 원본 및 정규화 해시와 대조한다. 첫 명령은 검토 계획만 출력하고, 두 번째 명령은 Portal의 `exclusion-reviews.sqlite`에 검토 이력을 저장한다. 실제 운영자 계정명을 `--actor`에 지정한다.
+
+```bash
+sudo docker exec cloud-soc-central-portal-1 python -m cloud_soc.detection.exclusion_review --actor admin
+sudo docker exec cloud-soc-central-portal-1 python -m cloud_soc.detection.exclusion_review --actor admin --apply
+```
+
+한 번의 검토는 고정한 PIT의 최대 500,000개 기록을 끝까지 읽는다. 범위를 초과하거나 일부 조회가 실패하면 적용을 중단한다. 재실행은 같은 원본·규칙 버전의 검토 이력을 중복 생성하지 않는다. 원본 제외 기록과 워커의 누적 카운터는 계속 보관한다. Windows 서비스 로그온은 승인된 네 가지 호스트/IP 상관 규칙에서 대상 밖으로 확인하며, 원본에 IP와 transport가 없는 Packetbeat 기록은 입력 정보 부족으로 검토하되 미해결에 포함한다. 원본·정규화·해시가 불일치하거나 확인할 수 없으면 검토 대기로 남긴다.
+
+관제 상세의 카탈로그 탐지 카드에서 누적 카운터, 보관 중인 기록 수, 검토 건수, 대상 밖 확인, 정보 부족, 미해결 및 검토 대기를 확인한다. 검토 이후 규칙 버전이나 해당 규칙의 보관 기록 수·최종 시각이 바뀌면 다시 검토가 필요하다. 보관 기록으로 대조할 수 없는 누적분과 지연·오류는 별도 확인 대상으로 표시한다. 검토 결과는 해당 시점의 저장 기록에 대한 판단이다.
+
 ```bash
 sudo python3 deploy/server/manage.py verify --state /실제/state/server --portal-origin https://실제주소 --wait-seconds 300
 ```

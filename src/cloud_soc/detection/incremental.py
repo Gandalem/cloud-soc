@@ -87,9 +87,10 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
     except FileExistsError:
         if not path.is_file() or (os.name != 'nt' and stat.S_IMODE(path.stat().st_mode) & 0o077):
             raise ValueError('state_file_must_be_private_and_regular')
-    identity = event_fingerprint({'rules': rules, 'start': start.isoformat(), 'lateness': lateness_seconds,
+    identity_payload = {'rules': rules, 'start': start.isoformat(), 'lateness': lateness_seconds,
                                   'index': NORMALIZED, 'source': source_id, 'legacy_exclusion': accept_legacy_exclusion,
-                                  'runtime_contract': 2, 'rule_versions': [rule_revision(rule) for rule in rules]})
+                        'runtime_contract': 2, 'rule_versions': [rule_revision(rule) for rule in rules]}
+    identity = event_fingerprint(identity_payload)
     with closing(sqlite3.connect(path, timeout=0)) as db:
         db.execute('PRAGMA journal_mode=WAL')
         db.execute('PRAGMA synchronous=FULL')
@@ -100,8 +101,9 @@ def run_incremental(client, *, state_path, start, now=None, max_documents=20000,
         saved = json.loads(row[0]) if row else {'identity': identity, 'checkpoint': start.isoformat(),
             'frontier': (start - timedelta(seconds=lateness_seconds)).isoformat(),
             'pending': {}, 'seen': {}, 'groups': {}, 'last_success': None, 'late_total': 0}
-        if saved['identity'] != identity:
-            raise ValueError('rule_or_scope_changed_requires_new_state')
+        from cloud_soc.detection.scope_migration import migrate
+        saved = migrate(db, saved, identity_payload, now.isoformat())
+        identity = saved['identity']
         state = deepcopy(saved)
         checkpoint = utc(state['checkpoint'])
         if checkpoint > now:
