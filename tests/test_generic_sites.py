@@ -35,7 +35,8 @@ def test_new_version_preserves_scope_http_and_immutable_legacy():
     assert record['version'] == event['cloud_soc']['normalizer_version'] == NORMALIZER_VERSION
     assert event['cloud_soc']['detail']['adapter'] == 'web_access_site_v2'
     assert event['service'] == hit['_source']['service'] and event['http'] == hit['_source']['http']
-    assert key != legacy[0] and legacy[1]['version'] == LEGACY_VERSION and 'service' not in legacy[2]
+    assert key != legacy[0] and legacy[1]['version'] == LEGACY_VERSION
+    assert legacy[2]['service'] == {'name': event['service']['name']}
     assert normalize(hit, BASE.isoformat()) == legacy
     assert normalize(hit, '2026-10-20T00:00:00Z', web_version=NORMALIZER_VERSION)[0] == key
     assert 'message' not in event and 'url' not in event and 'body' not in event['http']['request']

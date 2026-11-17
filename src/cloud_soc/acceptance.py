@@ -95,6 +95,10 @@ def inspect(client, *, alert_id, organization, rule_id, since, raw_indices, now=
             norm_id, _, event = normalize({'_index': raw_ref['index'], '_id': raw_ref['id'], '_source': raw},
                                           field(norm, 'cloud_soc.normalized_at'),
                                           web_version=LEGACY_VERSION if version == LEGACY_VERSION else SITE_VERSION)
+            if (version == LEGACY_VERSION and event is not None and 'service' not in norm
+                    and field(event, 'cloud_soc.detail.adapter') == 'web_access_agent_v1'):
+                # The immutable legacy event may predate service-name projection.
+                event.pop('service', None)
             reproduced &= norm_id == norm_ref['id'] and event == norm
         if stamps[0] is not None:
             received_times.append(stamps[0])

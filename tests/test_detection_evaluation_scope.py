@@ -2,9 +2,28 @@ import pytest
 
 from cloud_soc.detection.profiles import catalog
 from cloud_soc.detection.telemetry import evaluate
+from cloud_soc.processing.contract import normalize
+from test_site_agents import web_hit
 
 
 RULES = {rule["id"]: rule for rule in catalog()}
+
+
+def test_legacy_web_service_name_reaches_rule_evaluation():
+    hit = web_hit()
+    stamp = "2026-10-14T00:00:03Z"
+    identifier, _, event = normalize(hit, stamp)
+    rule = RULES["UNIFIED-APP-MIN3-001"]
+    assert evaluate(event, rule) == ("matched", [])
+
+    hit["_source"]["service"].pop("name")
+    _, record, _ = normalize(hit, stamp)
+    assert record["status"] == "unsupported"
+
+    hit["_source"]["service"]["name"] = "[REDACTED]"
+    redacted_id, _, redacted = normalize(hit, stamp)
+    assert redacted_id == identifier
+    assert evaluate(redacted, rule) == ("unknown", ["service.name"])
 
 
 @pytest.mark.parametrize(

@@ -360,6 +360,10 @@ def _normalize(hit, processed_at, *, ssh_v2_start, web_version):
         record.update(status="normalized", reason="recognized", adapter=MALL_ADAPTER,
                       normalized={"index": NORMALIZED, "id": identifier})
         return identifier, record, event
+    if detail['adapter'] == 'web_access_agent_v1':
+        service_name = text(field(source, 'service.name'))
+        if service_name not in (None, REDACTED):
+            event['service'] = {'name': service_name}
     if detail['adapter'] in (SITE_ADAPTER, WAF_ADAPTER):
         event['service'] = {'id': values['service_id']}
         service_name = text(field(source, 'service.name'))

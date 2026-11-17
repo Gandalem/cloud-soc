@@ -71,6 +71,7 @@ def test_generic_raw_to_normalized_and_portal_keeps_exact_reference():
     assert row['source_kind']=='generic_web_access' and row['interpretation']['fields']['http_status']==401
     _,record,doc=normalize(hit,processed_at='2026-10-14T00:00:03Z')
     assert record['status']=='normalized' and doc['cloud_soc']['detail']['adapter']=='web_access_agent_v1'
+    assert doc['service'] == {'name': 'DVWA'}
     assert record['raw']['id']==hit['_id']
     invalid=copy.deepcopy(hit);invalid['_source']['http']['request']['body']='PRIVATE_CANARY'
     assert normalize(invalid,processed_at='2026-10-14T00:00:03Z')[1]['status']=='unsupported'
