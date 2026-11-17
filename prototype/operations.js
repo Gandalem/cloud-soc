@@ -280,7 +280,8 @@
     if (!form) return;
     const levels = {critical: '긴급', high: '높음', medium: '중간', low: '낮음', unknown: '미분류'};
     const pageSize = 25;
-    const organizations = new Set(), tokens = new Map();
+    const organizationSelect = $('triage-organizations'), tokens = new Map();
+    const periods = {1: '최근 24시간', 7: '최근 7일', 30: '최근 30일'};
     let rows = [], page = 0, controller;
     const failure = $('triage-error');
     const showError = message => {failure.textContent = message; failure.hidden = !message;};
@@ -355,7 +356,7 @@
       const current = new AbortController();
       controller = current;
       const params = new URLSearchParams();
-      for (const name of ['organization', 'severity']) {
+      for (const name of ['organization', 'severity', 'days']) {
         const value = form.querySelector('[name="' + name + '"]').value.trim();
         if (value) params.set(name, value);
       }
@@ -368,18 +369,24 @@
         const data = await request('/api/triage-alerts?' + params, current.signal);
         const identity = await window.portalIdentity;
         if (current.signal.aborted) return;
-        if (!Array.isArray(data.rows) || typeof data.limited !== 'boolean') throw new Error('응답을 확인할 수 없습니다.');
+        if (!Array.isArray(data.rows) || !Array.isArray(data.organizations) ||
+            !Object.hasOwn(periods, data.days) || typeof data.limited !== 'boolean') throw new Error('응답을 확인할 수 없습니다.');
         canClaim = ['admin', 'analyst'].includes(identity?.role);
         rows = data.rows;
-        for (const row of rows) organizations.add(row.organization);
-        $('triage-organizations').replaceChildren(...[...organizations].sort().map(name => {
-          const option = node('option');
+        const selected = organizationSelect.value;
+        const options = data.organizations.map(name => {
+          const option = node('option', name);
           option.value = name;
           return option;
-        }));
+        });
+        const all = node('option', '전체 기관');
+        all.value = '';
+        organizationSelect.replaceChildren(all, ...options);
+        organizationSelect.value = data.organizations.includes(selected) ? selected : '';
+        const scope = periods[data.days] + ' · ' + (params.get('organization') || '전체 기관');
         $('triage-status').textContent = data.limited
-          ? '심각도별 최신 100건에서 미처리 ' + rows.length + '건을 찾았습니다. 기관으로 범위를 좁혀 확인하세요.'
-          : '미처리 경보 ' + rows.length + '건';
+          ? scope + ' · 심각도별 최신 100건 중 미처리 ' + rows.length + '건. 기관이나 기간을 좁혀 확인하세요.'
+          : scope + ' · 미처리 경보 ' + rows.length + '건';
         render(canClaim);
       } catch (error) {
         if (current.signal.aborted) return;

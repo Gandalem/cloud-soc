@@ -21,10 +21,10 @@
   <main id="main" class="main-content agents-main operations-main">
     <div class="page-heading ops-heading"><div><p class="ops-kicker">PIPELINE OBSERVABILITY</p><h1>관제 상세</h1><p>수집·정규화·탐지의 처리 위치와 경보 근거를 확인합니다.</p></div><a class="ops-overview-link" href="soc.html">종합상황판 ↗</a></div>
     <section id="triage-alerts" class="panel case-panel" aria-labelledby="triage-title">
-      <div class="section-heading"><h2 id="triage-title">미처리 경보 큐</h2><span>최근 24시간 · 심각도 우선</span></div>
+      <div class="section-heading"><h2 id="triage-title">미처리 경보 큐</h2><span>심각도 우선</span></div>
       <form id="triage-filter" class="case-toolbar">
-        <label>기관 <input name="organization" maxlength="128" list="triage-organizations" placeholder="전체 기관"></label>
-        <datalist id="triage-organizations"></datalist>
+        <label>기관 <select name="organization" id="triage-organizations"><option value="">전체 기관</option></select></label>
+        <label>기간 <select name="days"><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label>
         <label>심각도 <select name="severity"><option value="">전체</option><option value="critical">긴급</option><option value="high">높음</option><option value="medium">중간</option><option value="low">낮음</option><option value="unknown">미분류</option></select></label>
         <button type="submit" class="primary-button">조회</button>
       </form>

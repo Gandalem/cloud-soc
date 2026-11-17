@@ -1,6 +1,6 @@
 """Session case workflow and tenant boundaries using isolated synthetic data."""
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from fnmatch import fnmatchcase
 import json
 import uuid
@@ -10,7 +10,7 @@ import pytest
 
 from cloud_soc.portal.app import create_app
 from cloud_soc.portal.cases import CaseError, CaseStore
-from cloud_soc.portal.operations import ALERT, TRIAGE_LEVELS
+from cloud_soc.portal.operations import ALERT
 from cloud_soc.processing.contract import NORMALIZED, RECORDS, STATUS
 from test_cases import alert
 from test_integration_security import login, make_session_portal
@@ -68,13 +68,8 @@ def mutate(http, method, path, headers, body, token=None):
 
 
 def triage_response(rows):
-    buckets = {}
-    for level in TRIAGE_LEVELS:
-        hits = [{"_index": ALERT, "_id": key, "_source": source} for key, source in rows
-                if source["cloud_soc"].get("severity", "unknown") == level]
-        buckets[level] = {"doc_count": len(hits), "recent": {"hits": {"hits": hits}}}
-    return {"hits": {"total": {"value": len(rows), "relation": "eq"}},
-            "aggregations": {"levels": {"buckets": buckets}}}
+    return {"hits": {"total": {"value": len(rows), "relation": "eq"},
+                     "hits": [{"_index": ALERT, "_id": key, "_source": source} for key, source in rows]}}
 
 
 def test_triage_queue_and_atomic_self_assignment(workflow):
@@ -88,9 +83,11 @@ def test_triage_queue_and_atomic_self_assignment(workflow):
     assert response.status_code == 200
     assert [row["id"] for row in response.json["rows"]] == ["local", "low-priority"]
     assert response.json["limited"] is False
+    assert response.json["organizations"] == ["synthetic"]
     assert {"terms": {"organization.id": ["synthetic"]}} in monitor.search.call_args.kwargs["query"]["bool"]["filter"]
     assert http.get("/api/triage-alerts?organization=foreign").status_code == 403
     assert http.get("/api/triage-alerts?severity=invalid").status_code == 400
+    assert http.get("/api/triage-alerts?days=90").status_code == 400
     assert http.get("/api/triage-alerts?severity=high&severity=low").status_code == 400
     monitor.search.side_effect = lambda **_: triage_response(rows[1:])
     assert len(http.get("/api/triage-alerts?organization=synthetic&severity=high").json["rows"]) == 1
@@ -123,6 +120,38 @@ def test_unexpected_foreign_triage_search_response_is_withheld(workflow):
     assert response.status_code == 503
     assert response.json["code"] == "triage_unavailable"
     assert "FOREIGN_CANARY" not in response.get_data(as_text=True)
+
+
+def test_all_organizations_remain_selectable_and_small_queues_survive_high_volume_org(workflow):
+    app, monitor, _, docs = workflow
+    admin, _ = login(app, "admin")
+    recent = docs[ALERT, "local"]
+    older = deepcopy(recent)
+    older["@timestamp"] = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+    older["organization"]["id"] = "polytech"
+    rows = [(f"local-{i}", recent) for i in range(110)] + [("older", older)]
+
+    def search(**options):
+        if "organizations" in options.get("aggs", {}):
+            return {"aggregations": {"organizations": {"buckets": [
+                {"key": {"organization": name}, "doc_count": 1}
+                for name in ("polytech", "school-with-linked-alerts", "synthetic")
+            ]}}}
+        filters = options["query"]["bool"]["filter"]
+        org = next((item["term"]["organization.id"] for item in filters
+                    if "organization.id" in item.get("term", {})), None)
+        return triage_response([(key, row) for key, row in rows if org is None or row["organization"]["id"] == org])
+
+    monitor.search.side_effect = search
+    result = admin.get("/api/triage-alerts")
+    assert result.status_code == 200
+    assert result.json["days"] == 30 and not result.json["limited"]
+    assert result.json["organizations"] == ["polytech", "school-with-linked-alerts", "synthetic"]
+    assert len(result.json["rows"]) == 111 and result.json["rows"][-1]["organization"] == "polytech"
+    filtered = admin.get("/api/triage-alerts?days=7&organization=school-with-linked-alerts")
+    assert filtered.status_code == 200 and filtered.json["rows"] == []
+    assert filtered.json["organizations"] == result.json["organizations"]
+    assert admin.get("/api/triage-alerts?days=7&organization=polytech").json["rows"][0]["id"] == "older"
 
 
 def test_scoped_analyst_can_investigate_create_note_link_and_replay(workflow):

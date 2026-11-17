@@ -246,10 +246,14 @@ class CaseStore:
         if not visible:
             return []
         ids = [row["id"] for row in visible]
-        placeholders = ",".join("?" for _ in ids)
+        linked = set()
         with self.connect() as db:
-            linked = {row[0] for row in db.execute(
-                "SELECT alert_id FROM case_alerts WHERE alert_id IN (" + placeholders + ")", ids)}  # nosec B608
+            db.execute("BEGIN")
+            for offset in range(0, len(ids), 500):
+                batch = ids[offset:offset+500]
+                placeholders = ",".join("?" for _ in batch)
+                linked.update(row[0] for row in db.execute(
+                    "SELECT alert_id FROM case_alerts WHERE alert_id IN (" + placeholders + ")", batch))  # nosec B608
         return [row for row in visible if row["id"] not in linked]
 
     def listing(self, pairs, actor):
