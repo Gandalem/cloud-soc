@@ -48,6 +48,41 @@ def test_rotated_auth_cron_and_ssm_keep_command_and_result_distinct():
     assert 'PRIVATE_CANARY' not in str(ssm)
 
 
+def test_auth_rule_distinguishes_ssh_attempts_from_pam_and_other_logins():
+    from copy import deepcopy
+
+    from cloud_soc.detection.engine import event_matches_rule
+    from cloud_soc.detection.telemetry import evaluate
+    from cloud_soc.detection.worker import approved_rules
+
+    rule = next(rule for rule in approved_rules() if rule['id'] == 'AUTH-001')
+    origin = '2026-11-14T03:36:33Z host sshd[44]: '
+    path = {'file': {'path': '/var/log/auth.log.1'}}
+    raw = event('linux_file', origin + 'pam_unix(sshd:auth): authentication failure; rhost=192.0.2.42', log=path)
+    _, record, pam = normalize(raw, STAMP)
+    assert record['version'] == 'linux-ssh-pam-observation-v1'
+    assert pam['cloud_soc']['detail']['fields']['pam_protocol'] == 'ssh'
+    assert pam['cloud_soc']['detail']['fields']['pam_remote_ip'] == '192.0.2.42'
+    assert 'network' not in pam
+    assert evaluate(pam, rule) == ('not_matched', [])
+    assert not event_matches_rule(pam, rule)
+    raw['_source']['message'] += ' rhost=203.0.113.42'
+    assert 'pam_remote_ip' not in normalize(raw, STAMP)[2]['cloud_soc']['detail']['fields']
+
+    attempt = deepcopy(pam)
+    attempt['cloud_soc']['detail']['adapter'] = 'linux_ssh_v2'
+    attempt['event']['action'] = 'ssh_login'
+    attempt['network'] = {'protocol': 'ssh'}
+    attempt['source'] = {'ip': '192.0.2.42'}
+    assert evaluate(attempt, rule) == ('matched', [])
+    assert event_matches_rule(attempt, rule)
+    del attempt['network']
+    assert evaluate(attempt, rule) == ('unknown', ['network.protocol'])
+    for adapter in ('windows_security_v1', 'multicloud_audit_v1'):
+        attempt['cloud_soc']['detail']['adapter'] = adapter
+        assert evaluate(attempt, rule) == ('not_matched', [])
+
+
 def test_windows_explicit_status_and_partial_auditd_record():
     win = event('windows_event', winlog={'channel': 'Security', 'provider_name': 'Microsoft-Windows-Security-Auditing',
         'event_id': 4776, 'event_data': {'Status': '0xc000006a'}})

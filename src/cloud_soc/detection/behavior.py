@@ -13,10 +13,32 @@ from cloud_soc.privacy import REDACTED
 
 KINDS = ('ordered', 'diversity')
 FIELD = re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)+')
+HOST_ADAPTERS = frozenset({
+    'linux_journal_audit_v1', 'linux_operational_v1', 'linux_priority_v1',
+    'windows_operational_v1', 'windows_security_v1',
+})
 
 
 def scalar(value):
     return isinstance(value, str) and bool(value.strip()) and value != REDACTED
+
+
+def missing_selector_is_out_of_scope(event, condition):
+    """Use recorded source metadata to distinguish inapplicable and missing fields."""
+    adapter = get_field_value(event, 'cloud_soc.detail.adapter')
+    if not isinstance(adapter, str):
+        return False
+    field = condition['field']
+    if field == 'event.dataset' and condition['operator'] == 'equals':
+        return condition['value'] == 'aws.cloudtrail' and adapter in HOST_ADAPTERS
+    if field == 'network.protocol' and condition['operator'] == 'equals':
+        return condition['value'] == 'ssh' and adapter in ('windows_security_v1', 'windows_operational_v1')
+    if field == 'cloud_soc.detail.fields.flow_final' and adapter == 'packetbeat_metadata_v1':
+        return get_field_value(event, 'event.dataset') in ('dns', 'tls')
+    if field == 'cloud_soc.detail.fields.http_status' and adapter == 'linux_operational_v1':
+        action = get_field_value(event, 'event.action')
+        return scalar(action) and action != 'http_access'
+    return False
 
 
 def conditions_status(event, conditions):
@@ -24,6 +46,8 @@ def conditions_status(event, conditions):
     for condition in conditions:
         value = get_field_value(event, condition['field'])
         if value is None and condition['operator'] != 'exists':
+            if missing_selector_is_out_of_scope(event, condition):
+                return 'not_matched', []
             missing.append(condition['field'])
         elif not condition_matches(event, condition):
             return 'not_matched', []

@@ -242,6 +242,17 @@ def condition_matches(
     return False
 
 
+def rule_applies_to_event(event, rule):
+    if rule.get('id') != 'AUTH-001':
+        return True
+    adapter = get_field_value(event, 'cloud_soc.detail.adapter')
+    if adapter in ('windows_security_v1', 'windows_operational_v1', 'multicloud_audit_v1'):
+        return False
+    # PAM reports an authentication stage that can accompany the sshd attempt record.
+    return not (adapter == 'linux_priority_v1'
+                and get_field_value(event, 'event.action') == 'sshd_authentication_failed')
+
+
 def event_matches_rule(
     event: dict[str, Any],
     rule: dict[str, Any],
@@ -252,6 +263,8 @@ def event_matches_rule(
     모든 조건이 AND 관계다.
     """
 
+    if not rule_applies_to_event(event, rule):
+        return False
     conditions = rule.get(
         "conditions",
         [],

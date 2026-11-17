@@ -21,7 +21,7 @@ from cloud_soc.parsers.windows_operational import ADAPTER as WINDOWS_OPERATIONAL
 from cloud_soc.parsers.linux_audit import ADAPTER as LINUX_AUDIT, VERSION as LINUX_AUDIT_VERSION
 from cloud_soc.parsers.linux_audit import AUDITD_ADAPTER, AUDITD_VERSION, interpret_auditd
 from cloud_soc.parsers.eks_audit import ADAPTER as EKS_AUDIT, VERSION as EKS_VERSION, interpret as interpret_eks
-from cloud_soc.parsers.linux_priority import ADAPTER as LINUX_PRIORITY, VERSION as LINUX_PRIORITY_VERSION
+from cloud_soc.parsers.linux_priority import ADAPTER as LINUX_PRIORITY, VERSION as LINUX_PRIORITY_VERSION, SSH_PAM_VERSION
 from cloud_soc.parsers.linux_priority import interpret as interpret_linux_priority, interpret_alb
 from cloud_soc.portal.owasp import APP_ADAPTER, normalized_signals
 
@@ -290,6 +290,8 @@ def _normalize(hit, processed_at, *, ssh_v2_start, web_version):
                 version = SUDO_SESSION_VERSION
             if detail['adapter'] == LINUX_PRIORITY:
                 version = LINUX_PRIORITY_VERSION
+                if detail['fields']['action'] == 'sshd_authentication_failed':
+                    version = SSH_PAM_VERSION
                 if detail.get('collector_time_only'):
                     time_metadata = {'basis': 'collector_timestamp', 'source_event_time_known': False}
             if detail["adapter"] == "linux_unclassified_v1":

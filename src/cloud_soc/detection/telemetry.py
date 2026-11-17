@@ -2,7 +2,9 @@
 from copy import deepcopy
 import json
 from elasticsearch import ConflictError
-from cloud_soc.detection.engine import condition_matches, event_fingerprint, get_field_value, parse_event_timestamp, rule_revision, rule_engine_version
+from cloud_soc.detection.behavior import conditions_status
+from cloud_soc.detection.engine import (event_fingerprint, get_field_value,
+    parse_event_timestamp, rule_applies_to_event, rule_revision, rule_engine_version)
 
 RUNS = 'soc-detection-runs-v1'
 EXCLUSIONS = 'soc-detection-exclusions-v1'
@@ -22,6 +24,8 @@ def runtime_manifest(rules, mode):
 
 
 def evaluate(event, rule):
+    if not rule_applies_to_event(event, rule):
+        return 'not_matched', []
     if 'waf_sqli' in rule:
         from cloud_soc.detection.waf import matches_waf
         return ('matched', []) if matches_waf(event, rule) else ('not_matched', [])
@@ -31,15 +35,8 @@ def evaluate(event, rule):
     if rule.get('type') in ('ordered', 'diversity'):
         from cloud_soc.detection.behavior import evaluate_behavior
         return evaluate_behavior(event, rule)
-    missing = []
-    mismatch = False
-    for condition in rule['conditions']:
-        actual = get_field_value(event, condition['field'])
-        if actual is None and condition['operator'] != 'exists':
-            missing.append(condition['field'])
-        elif not condition_matches(event, condition):
-            mismatch = True
-    if mismatch:
+    outcome, missing = conditions_status(event, rule['conditions'])
+    if outcome == 'not_matched':
         return 'not_matched', []
     required = list(dict.fromkeys(['organization.id', *rule['group_by']]))
     missing += [field for field in required if get_field_value(event, field) in (None, '')]

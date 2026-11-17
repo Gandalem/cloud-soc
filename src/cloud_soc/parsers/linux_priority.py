@@ -1,10 +1,12 @@
 """Allowlisted Linux authentication, scheduled job and SSM observations."""
+from ipaddress import ip_address
 import re
 
 from cloud_soc.portal.log_contract import field
 from cloud_soc.parsers.linux_operational import ISO_PREFIX, PREFIX
 
 VERSION = 'linux-priority-v1'
+SSH_PAM_VERSION = 'linux-ssh-pam-observation-v1'
 ADAPTER = 'linux_priority_v1'
 AUTH_PATH = re.compile(r'/var/log/(?:auth\.log|secure)(?:\.[0-9]+)?')
 FAIL2BAN_PATH = re.compile(r'/var/log/fail2ban\.log(?:\.[0-9]+)?')
@@ -92,8 +94,19 @@ def interpret(source):
         if (operation == 'authentication_failed') != (match[2] == 'auth'):
             return None
         kind = 'cron' if app in ('cron', 'crond') else app
+        fields = {}
+        if kind == 'sshd' and operation == 'authentication_failed':
+            if tag == 'linux_journald' and unit not in ('ssh.service', 'sshd.service'):
+                return None
+            fields['pam_protocol'] = 'ssh'
+            peers = re.findall(r'(?:^|[ ;])rhost=([^\s;]*)', body[match.end():])
+            if len(peers) == 1 and '%' not in peers[0]:
+                try:
+                    fields['pam_remote_ip'] = str(ip_address(peers[0]))
+                except ValueError:
+                    pass
         return {**detail('configuration' if kind == 'cron' else 'authentication', kind + '_' + operation,
-                         'failure' if operation == 'authentication_failed' else 'unknown'), **origin}
+                         'failure' if operation == 'authentication_failed' else 'unknown', **fields), **origin}
     if app in ('cron', 'crond') and re.fullmatch(r'\([A-Za-z0-9_.@-]{1,128}\) CMD \(.+\)', body):
         return {**detail('configuration', 'cron_job_invoked'), **origin}
     for pattern, action in AUTH_OBSERVATIONS.get(app, ()):
