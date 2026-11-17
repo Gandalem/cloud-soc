@@ -76,6 +76,53 @@ def test_packetbeat_input_gap_stays_unresolved():
     assert classify(record, event, raw, RULES['UNIFIED-NET-MIN3-001']) == 'confirmed_input_gap'
 
 
+def normalized_evidence(hit, reason):
+    from cloud_soc.processing.contract import normalize
+    key, _, event = normalize(hit, '2026-11-18T00:00:00Z')
+    record = {'raw': {'index': hit['_index'], 'id': hit['_id']},
+              'normalized': {'index': NORMALIZED, 'id': key}, 'reason': reason}
+    record['event_hash'] = event_fingerprint({
+        **event, '_cloud_soc_meta': {'index': NORMALIZED, 'document_id': key}})
+    return record, event, hit['_source']
+
+
+def test_verified_old_scope_misclassification_is_resolved():
+    from test_processing import fixture
+    hit = fixture()
+    record, event, raw = normalized_evidence(hit, 'missing_condition_fields')
+    assert classify(record, event, raw, RULES['ATTACK-02']) == 'resolved_scope'
+    record['event_hash'] = '0' * 64
+    assert classify(record, event, raw, RULES['ATTACK-02']) == 'needs_review'
+
+
+def test_late_input_is_reviewed_but_requires_reprocessing():
+    from test_processing import fixture
+    hit = fixture()
+    hit['_source']['host'] = {'id': 'fixture'}
+    record, event, raw = normalized_evidence(hit, 'late_event')
+    assert classify(record, event, raw, RULES['WIN-AUTH-001']) == 'confirmed_late'
+    record['reason'] = 'missing_condition_fields'
+    assert classify(record, event, raw, RULES['WIN-AUTH-001']) == 'confirmed_reprocessing_needed'
+
+
+def test_windows_missing_remote_ip_is_a_confirmed_input_gap():
+    from test_processing import fixture
+    hit = fixture()
+    hit['_source']['host'] = {'id': 'fixture'}
+    hit['_source']['winlog']['event_data'].pop('IpAddress')
+    record, event, raw = normalized_evidence(hit, 'missing_condition_fields')
+    assert classify(record, event, raw, RULES['WIN-AUTH-001']) == 'confirmed_input_gap'
+
+
+def test_old_web_normalization_missing_service_requires_reprocessing():
+    from test_site_agents import web_hit
+    record, event, raw = normalized_evidence(web_hit(), 'missing_condition_fields')
+    event.pop('service')
+    record['event_hash'] = event_fingerprint({**event, '_cloud_soc_meta': {
+        'index': NORMALIZED, 'document_id': record['normalized']['id']}})
+    assert classify(record, event, raw, RULES['UNIFIED-APP-MIN3-001']) == 'confirmed_reprocessing_needed'
+
+
 def test_scope_migration_preserves_checkpoint_cooldown_and_scan():
     rule = RULES['UNIFIED-SERVER-MIN3-001']
     payload = {'rules': [rule], 'rule_versions': [rule_revision(rule)], 'start': 'fixed'}
@@ -215,13 +262,33 @@ def test_review_apply_is_idempotent_and_new_records_require_review(tmp_path):
             'key': 'UNIFIED-SERVER-MIN3-001', 'doc_count': count,
             'latest': {'value_as_string': '2026-11-17T12:00:00.123Z'},
         }]}}}
-    client.search.return_value = totals(1)
+    def search(**kw):
+        if 'reviews' in kw.get('aggs', {}):
+            return {'aggregations': {'reviews': {'buckets': {
+                'UNIFIED-SERVER-MIN3-001|resolved_scope': {'doc_count': 1},
+            }}}}
+        return totals(1)
+    client.search.side_effect = search
     row = summary(client, path)['rules']['UNIFIED-SERVER-MIN3-001']
     assert row['resolved'] == 1 and row['unresolved'] == 0
-    client.search.return_value = totals(2)
+    def search_with_new_record(**kw):
+        if 'reviews' in kw.get('aggs', {}):
+            return search(**kw)
+        return totals(2)
+    client.search.side_effect = search_with_new_record
     row = summary(client, path)['rules']['UNIFIED-SERVER-MIN3-001']
-    assert row['resolved'] == 0 and row['unresolved'] == 2
+    assert row['resolved'] == 1 and row['unresolved'] == 1
+    assert row['unreviewed'] == 1 and row['reviewed'] == 1
     assert row['snapshot_reviewed'] == 1
+    def search_after_retention(**kw):
+        if 'reviews' in kw.get('aggs', {}):
+            return {'aggregations': {'reviews': {'buckets': {
+                'UNIFIED-SERVER-MIN3-001|resolved_scope': {'doc_count': 0},
+            }}}}
+        return totals(1)
+    client.search.side_effect = search_after_retention
+    row = summary(client, path)['rules']['UNIFIED-SERVER-MIN3-001']
+    assert row['resolved'] == 0 and row['unresolved'] == 1
 
 
 def test_incomplete_review_never_changes_database(tmp_path):
@@ -250,7 +317,7 @@ def test_reviewed_counts_do_not_hide_unresolved_or_late_events(excluded, unresol
         'excluded_total': excluded, 'late_total': late,
         'runtime': {'rules': [{'id': 'UNIFIED-SERVER-MIN3-001'}]},
     }
-    operations._review_summary = {'last_reviewed': stamp, 'rules': {
+    operations._review_summary = {'state': 'ok', 'last_reviewed': stamp, 'rules': {
         'UNIFIED-SERVER-MIN3-001': {
             'total': 100, 'reviewed': 100, 'resolved': 100 - unresolved,
             'confirmed_input_gap': unresolved, 'unresolved': unresolved,

@@ -67,9 +67,9 @@
       const fields=[['처리 위치',fmt(value.checkpoint)],['마지막 성공',fmt(value.last_success)],['처리 지연',Number.isSafeInteger(value.lag_seconds)&&value.lag_seconds>=0?value.lag_seconds.toLocaleString('ko-KR')+'초':'미확인'],['평가 제외 누적',Number.isSafeInteger(value.excluded_total)&&value.excluded_total>=0?value.excluded_total.toLocaleString('ko-KR')+'건':'미확인']];
       const review=value.exclusion_review;
       if(review){
-        const reviewLabels={current:'현재 기록 검토 완료',review_required:'추가 검토 필요',unavailable:'검토 상태 조회 불가'};
+        const reviewLabels={current:review.unresolved>0?'검토 완료 · 미해결 있음':'현재 기록 검토 완료',review_required:'추가 검토 필요',unavailable:'검토 상태 조회 불가'};
         fields.push(['제외 기록 검토',review.state==='current'&&review.unreviewed>0?'추가 검토 필요':reviewLabels[review.state]||'미확인']);
-        for(const [key,label] of [['total','보관 중인 제외 기록'],['reviewed','검토한 기록'],['resolved','대상 밖으로 확인'],['confirmed_input_gap','입력 정보 부족 확인'],['unresolved','미해결 제외 기록'],['unreviewed','검토 대기 기록']]){
+        for(const [key,label] of [['total','보관 중인 제외 기록'],['reviewed','검토한 기록'],['resolved','대상 밖으로 확인'],['confirmed_input_gap','입력 정보 부족 확인'],['confirmed_late','지연 도착 확인'],['reprocessing_needed','재평가 필요 확인'],['unresolved','미해결 제외 기록'],['unreviewed','검토 대기 기록']]){
           fields.push([label,Number.isSafeInteger(review[key])?review[key].toLocaleString('ko-KR')+'건':'미확인']);
         }
         if(Number.isSafeInteger(review.unaccounted_lifetime)&&review.unaccounted_lifetime>0)fields.push(['이력 대조가 필요한 누적',review.unaccounted_lifetime.toLocaleString('ko-KR')+'건']);

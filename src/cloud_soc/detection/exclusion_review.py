@@ -8,15 +8,14 @@ from pathlib import Path
 import sqlite3
 import tempfile
 
-from cloud_soc.detection.engine import (
-    SERVICE_LOGON_SCOPE_RULES, event_fingerprint, get_field_value as field, rule_revision,
-)
+from cloud_soc.detection.engine import SERVICE_LOGON_SCOPE_RULES, event_fingerprint, get_field_value as field, rule_revision
 from cloud_soc.detection.profiles import catalog
 from cloud_soc.detection.telemetry import EXCLUSIONS, evaluate
 from cloud_soc.portal.log_contract import document_reference
 from cloud_soc.processing.contract import NORMALIZED
 
 DATABASE = 'exclusion-reviews.sqlite'
+REVIEWED_DECISIONS = ('resolved_scope', 'confirmed_input_gap', 'confirmed_late', 'confirmed_reprocessing_needed')
 
 
 def checked(result):
@@ -26,7 +25,7 @@ def checked(result):
 
 
 def classify(record, normalized, raw, rule):
-    """Resolve only the approved successful service-logon scope exception."""
+    """Reassess exact evidence with the current rule, keeping actual gaps unresolved."""
     if not normalized or not raw or not rule:
         return 'needs_review'
     reference = record.get('normalized', {})
@@ -37,12 +36,14 @@ def classify(record, normalized, raw, rule):
             or field(normalized, 'organization.id') != field(raw, 'organization.id')):
         return 'needs_review'
     outcome, missing = evaluate(normalized, rule)
-    if (rule['id'] in SERVICE_LOGON_SCOPE_RULES
-            and str(field(raw, 'winlog.event_id')) == '4624'
-            and str(field(raw, 'winlog.event_data.LogonType')) == '5'
-            and field(normalized, 'cloud_soc.detail.adapter') == 'windows_security_v1'
-            and field(normalized, 'cloud_soc.detail.fields.logon_type') == 5
-            and outcome == 'not_matched'):
+    if outcome == 'not_matched':
+        if (rule['id'] in SERVICE_LOGON_SCOPE_RULES
+                and field(normalized, 'cloud_soc.detail.adapter') == 'windows_security_v1'
+                and field(normalized, 'event.outcome') == 'success'
+                and field(normalized, 'cloud_soc.detail.fields.logon_type') == 5
+                and (str(field(raw, 'winlog.event_id')) != '4624'
+                     or str(field(raw, 'winlog.event_data.LogonType')) != '5')):
+            return 'needs_review'
         return 'resolved_scope'
     if (outcome == 'unknown' and missing
             and field(normalized, 'cloud_soc.detail.adapter') == 'packetbeat_metadata_v1'
@@ -50,6 +51,19 @@ def classify(record, normalized, raw, rule):
             and all(field(raw, name) in (None, '', '-') for name in missing)
             and set(missing) <= {'source.ip', 'destination.ip', 'network.transport'}):
         return 'confirmed_input_gap'
+    if outcome == 'matched' and record.get('reason') == 'late_event':
+        return 'confirmed_late'
+    if outcome == 'matched' and record.get('reason') in ('missing_condition_fields', 'missing_group_fields'):
+        return 'confirmed_reprocessing_needed'
+    if outcome == 'unknown':
+        from cloud_soc.processing.contract import normalize
+        _, processed, event = normalize({'_index': record['raw']['index'], '_id': record['raw']['id'],
+                                         '_source': raw}, datetime.now(timezone.utc).isoformat())
+        if processed['status'] == 'normalized' and event is not None:
+            fresh_outcome, fresh_missing = evaluate(event, rule)
+            if fresh_outcome == 'unknown' and set(fresh_missing) == set(missing):
+                return 'confirmed_input_gap'
+            return 'confirmed_reprocessing_needed'
     return 'needs_review'
 
 
@@ -160,7 +174,7 @@ def review(client, path, *, actor, apply=False, max_records=500000):
 
 
 def summary(client, path):
-    """Current unique record counts; repeated worker cumulative increments stay separate."""
+    """Count reviewed IDs still present, so new records do not invalidate old decisions."""
     rules = {rule['id']: rule_revision(rule) for rule in catalog()}
     result = checked(client.search(index=EXCLUSIONS, size=0, track_total_hits=True,
         aggs={'rules': {'terms': {'field': 'rule.id', 'size': 1000},
@@ -170,38 +184,56 @@ def summary(client, path):
         raise ValueError('Incomplete review totals')
     totals = {row['key']: row['doc_count'] for row in buckets['buckets']}
     reviewed = Counter()
+    snapshot = Counter()
     path = Path(path)
     last = None
-    census = {}
     if path.exists():
         if path.is_symlink():
             raise ValueError('Unsafe review database')
         with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)) as db:
-            census = {rule: (total, latest) for rule, total, latest in db.execute('SELECT * FROM review_census')}
-            for rule, decision, version, count, at in db.execute(
-                    'SELECT rule,decision,version,count(*),max(reviewed_at) FROM reviews GROUP BY rule,decision,version'):
-                if rules.get(rule) == version:
-                    reviewed[rule, decision] += count
+            db.execute('BEGIN')
+            cursor = db.execute('SELECT id,rule,decision,version,reviewed_at FROM reviews '
+                                "WHERE decision != 'needs_review' ORDER BY id")
+            while batch := cursor.fetchmany(20000):
+                groups = {}
+                for identifier, rule, decision, version, at in batch:
+                    if rules.get(rule) != version or decision not in REVIEWED_DECISIONS:
+                        continue
+                    snapshot[rule] += 1
                     last = max(last or at, at)
+                    groups.setdefault((rule, decision), []).append(identifier)
+                if not groups:
+                    continue
+                filters = {rule + '|' + decision: {'bool': {'filter': [
+                    {'ids': {'values': identifiers}}, {'term': {'rule.id': rule}},
+                ]}} for (rule, decision), identifiers in groups.items()}
+                matched = checked(client.search(index=EXCLUSIONS, size=0, track_total_hits=False,
+                    allow_partial_search_results=False,
+                    query={'ids': {'values': [identifier for ids in groups.values() for identifier in ids]}},
+                    aggs={'reviews': {'filters': {'filters': filters}}}))
+                buckets = matched['aggregations']['reviews']['buckets']
+                if set(buckets) != set(filters):
+                    raise ValueError('Incomplete reviewed record counts')
+                for (rule, decision), identifiers in groups.items():
+                    count = buckets[rule + '|' + decision]['doc_count']
+                    if type(count) is not int or not 0 <= count <= len(identifiers):
+                        raise ValueError('Invalid reviewed record counts')
+                    reviewed[rule, decision] += count
     rows = {}
     for rule, total in totals.items():
-        latest = next(row['latest'].get('value_as_string') for row in buckets['buckets'] if row['key'] == rule)
-        previous = census.get(rule)
-        def timestamp(value):
-            if not value:
-                return None
-            result = datetime.fromisoformat(value.replace('Z', '+00:00'))
-            return result.replace(microsecond=result.microsecond // 1000 * 1000)
-        current = bool(previous and previous[0] == total and timestamp(previous[1]) == timestamp(latest))
         resolved = reviewed[rule, 'resolved_scope']
         gaps = reviewed[rule, 'confirmed_input_gap']
-        snapshot_reviewed = resolved + gaps
-        if not current:
-            resolved = gaps = 0
+        late = reviewed[rule, 'confirmed_late']
+        reprocessing = reviewed[rule, 'confirmed_reprocessing_needed']
+        reviewed_count = resolved + gaps + late + reprocessing
+        if reviewed_count > total:
+            raise ValueError('Review counts changed during search; retry')
+        unreviewed = total - reviewed_count
         rows[rule] = {'total': total, 'resolved': resolved, 'confirmed_input_gap': gaps,
-                      'reviewed': resolved + gaps, 'unresolved': total - resolved,
-                      'unreviewed': total - resolved - gaps, 'snapshot_reviewed': snapshot_reviewed,
-                      'review_state': 'current' if current else 'review_required'}
+                      'confirmed_late': late, 'reprocessing_needed': reprocessing,
+                      'reviewed': reviewed_count, 'unresolved': total - resolved,
+                      'unreviewed': unreviewed, 'snapshot_reviewed': snapshot[rule],
+                      'review_state': 'current' if unreviewed == 0 else 'review_required'}
     return {'state': 'ok', 'last_reviewed': last, 'rules': rows}
 
 
