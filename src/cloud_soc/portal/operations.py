@@ -433,26 +433,23 @@ class Operations:
                 from cloud_soc.detection.exclusion_review import summary
                 if self._review_summary is None:
                     self._review_summary = summary(self.client, self.exclusion_reviews)
-                if self._review_summary.get('state') != 'ok':
-                    raise ValueError('Review summary unavailable')
                 manifest_rules = value.get('runtime', {}).get('rules', [])
                 ids = {row['id'] for row in manifest_rules}
                 if ids:
                     rows = [row for rule, row in self._review_summary['rules'].items() if rule in ids]
                     review = {key: sum(row[key] for row in rows) for key in
                               ('total', 'reviewed', 'resolved', 'confirmed_input_gap', 'unresolved', 'unreviewed')}
-                    review['confirmed_late'] = sum(row.get('confirmed_late', 0) for row in rows)
-                    review['reprocessing_needed'] = sum(row.get('reprocessing_needed', 0) for row in rows)
                     review['last_reviewed'] = self._review_summary['last_reviewed']
                     review['snapshot_reviewed'] = sum(row.get('snapshot_reviewed', row['reviewed']) for row in rows)
                     review['state'] = 'current' if rows and all(row['review_state'] == 'current' for row in rows) else 'review_required'
                     review['unaccounted_lifetime'] = max(0, excluded - review['total'])
                     if not rows and excluded:
                         review = None
-                    else:
+                    elif review['state'] == 'current':
                         unresolved = review['unresolved'] + review['unaccounted_lifetime']
+                    else:
+                        unresolved = max(excluded, review['unresolved'])
             except Exception:
-                self._review_summary = {'state': 'unavailable'}
                 review = {'state': 'unavailable'}
         health = 'failed' if state == 'failed' else 'stale' if state == 'stale' else 'delayed' if lag is not None and lag > 1200 else 'warning' if late or legacy or unresolved or pending or (early and early["state"] != "observed") else 'healthy'
         result = {"state": state, "health": health, "lag_seconds": lag, "late_total": late, "legacy_excluded": legacy, "excluded_total": excluded, "history_pending": pending,
