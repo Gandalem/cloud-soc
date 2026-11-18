@@ -9,7 +9,6 @@ import json
 import math
 import os
 from pathlib import Path
-import sqlite3
 import sys
 import time
 
@@ -173,18 +172,12 @@ def save(path, state):
     os.chmod(path, 0o600)
 
 
-def webhook(directory):
+def webhook(settings):
     """Read the existing destination without changing notification configuration."""
     from cryptography.fernet import Fernet
-    from cloud_soc.notifications.store import private
-    root = Path(directory)
-    for p in (root / 'slack.sqlite', root / 'slack.key'):
-        private(p)
-    with sqlite3.connect((root / 'slack.sqlite').resolve().as_uri() + '?mode=ro', uri=True) as db:
-        row = db.execute('SELECT enabled,secret FROM config WHERE id=1').fetchone()
-    if not row or not row[0] or not row[1]:
+    if not settings or not settings.get('enabled') or not settings.get('secret'):
         return None
-    return Fernet((root / 'slack.key').read_bytes()).decrypt(row[1].encode()).decode()
+    return Fernet(settings['key'].encode()).decrypt(settings['secret'].encode()).decode()
 
 
 def dispatch(state, path, now, *, sender, destination):
@@ -250,9 +243,9 @@ def main():
         transition(state, sample, policy)
     if not args.dry_run:
         save(path, state)
-        dispatch(state, path, now, sender=send, destination=lambda: webhook('/notifications'))
+        dispatch(state, path, now, sender=send, destination=lambda: webhook(data.get('notification')))
     try:
-        configured = bool(webhook('/notifications'))
+        configured = bool(webhook(data.get('notification')))
     except Exception:
         configured = False
     print(json.dumps({'sample': sample, 'incidents': state['incidents'],

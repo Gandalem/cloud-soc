@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from cloud_soc.health.watchdog import DEFAULTS, collect, dispatch, transition, validate_policy
+from cloud_soc.health.watchdog import DEFAULTS, collect, dispatch, transition, validate_policy, webhook
 
 
 def sample(**updates):
@@ -21,6 +21,18 @@ def advance(state, value, times=2):
 
 def test_normal_start_sends_nothing():
     assert advance({}, sample())['events'] == []
+
+
+def test_encrypted_destination_is_used_only_when_enabled():
+    from cryptography.fernet import Fernet, InvalidToken
+    key = Fernet.generate_key()
+    secret = Fernet(key).encrypt(b'destination-for-mocked-sender')
+    value = {'enabled': True, 'key': key.decode(), 'secret': secret.decode()}
+    assert webhook(value) == 'destination-for-mocked-sender'
+    assert webhook(value | {'enabled': False}) is None
+    assert webhook(None) is None
+    with pytest.raises(InvalidToken):
+        webhook(value | {'key': Fernet.generate_key().decode()})
 
 
 def test_disk_debounce_escalation_hysteresis_and_recovery():

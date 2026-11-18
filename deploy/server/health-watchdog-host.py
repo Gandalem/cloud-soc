@@ -5,7 +5,21 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import subprocess
+
+
+def notification_settings(directory):
+    """Read SQLite WAL on the host; a read-only bind mount cannot coordinate WAL."""
+    root = Path(directory)
+    for p in (root / 'slack.sqlite', root / 'slack.key'):
+        if p.is_symlink() or p.stat().st_mode & 0o077 or p.stat().st_nlink != 1:
+            raise ValueError('Unsafe notification storage')
+    with sqlite3.connect((root / 'slack.sqlite').resolve().as_uri() + '?mode=ro', uri=True, timeout=5) as db:
+        row = db.execute('SELECT enabled,secret FROM config WHERE id=1').fetchone()
+    if not row or not row[0] or not row[1]:
+        return None
+    return {'enabled': True, 'secret': row[1], 'key': (root / 'slack.key').read_text().strip()}
 
 
 def main():
@@ -37,7 +51,7 @@ def main():
                 os.close(fd)
         mounts = [(cfg['probe'], '/watchdog.py', True), (cfg['ca'], '/run/ca.crt', True),
                   (cfg['password'], '/run/monitor-password', True),
-                  (cfg['notifications'], '/notifications', True), (cfg['state'], '/health', False)]
+                  (cfg['state'], '/health', False)]
         command = ['docker', 'run', '--rm', '-i', '--name', 'cloud-soc-health-watchdog-probe',
                    '--user', f'{cfg["probe_uid"]}:{cfg["probe_gid"]}',
                    '--network', cfg['network'], '--read-only', '--cap-drop', 'ALL',
@@ -51,7 +65,13 @@ def main():
         if args.test_notification:
             command += ['--test-notification']
         try:
-            result = subprocess.run(command, input=json.dumps({'disk': disk, 'policy': cfg.get('policy', {})}),
+            notification = notification_settings(cfg['notifications'])
+        except Exception:
+            notification = None
+        try:
+            # Encrypted settings/key pass only via stdin, never argv, environment or logs.
+            result = subprocess.run(command, input=json.dumps({'disk': disk, 'policy': cfg.get('policy', {}),
+                                                               'notification': notification}),
                                     text=True, capture_output=True, timeout=150)
         except subprocess.TimeoutExpired:
             subprocess.run(['docker', 'rm', '-f', 'cloud-soc-health-watchdog-probe'],

@@ -33,8 +33,12 @@ sudo python3 deploy/server/install-health-watchdog.py --workspace "$PWD" --state
 The installer discovers the existing Portal mounts/network/image and refuses to enable
 the timer until metrics and the existing enabled Slack destination can be read. It
 does not restart SOC containers or create permissions, keys, destinations or volumes.
-The separate probe has read-only mounts for CA, monitor password and encrypted Slack
-settings; only `/health` is writable. The probe runs as the existing monitor password
+The separate probe has read-only mounts for CA and monitor password; only `/health`
+is writable. The host reads the existing enabled Slack configuration with a read-only
+SQLite query and passes the encrypted destination/key through container stdin only.
+This avoids SQLite WAL coordination errors on a read-only notification-directory mount;
+the probe cannot modify notification settings and no secret is passed in argv or logs.
+The probe runs as the existing monitor password
 and notification directory owner (UID 1000 on the central host), with all capabilities
 dropped. Its public script is mounted read-only; the host runner and configuration
 remain root-only, and only the separate data subdirectory is owned by the probe user.
