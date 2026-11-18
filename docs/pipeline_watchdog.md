@@ -35,6 +35,9 @@ the timer until metrics and the existing enabled Slack destination can be read. 
 does not restart SOC containers or create permissions, keys, destinations or volumes.
 The separate probe has read-only mounts for CA, monitor password and encrypted Slack
 settings; only `/health` is writable. It sends directly to the existing destination,
+The probe explicitly runs as UID 0 with all capabilities dropped, so it can read the
+root-owned installed script and private bind mounts even when the runtime image's
+default user is UID 1000. It never mounts the Docker socket or the host filesystem.
 independently of the security-alert scanner and ES availability. No raw events, host
 identities, webhook URL or credentials are included in its messages/journal.
 

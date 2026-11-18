@@ -39,6 +39,7 @@ def main():
                   (cfg['password'], '/run/monitor-password', True),
                   (cfg['notifications'], '/notifications', True), (cfg['state'], '/health', False)]
         command = ['docker', 'run', '--rm', '-i', '--name', 'cloud-soc-health-watchdog-probe',
+                   '--user', '0:0',  # Read the root-owned probe/private mounts; capabilities remain dropped.
                    '--network', cfg['network'], '--read-only', '--cap-drop', 'ALL',
                    '--security-opt', 'no-new-privileges:true', '--memory', '192m', '--pids-limit', '64',
                    '--tmpfs', '/tmp:rw,nosuid,noexec,size=16m']
