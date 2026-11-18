@@ -12,6 +12,7 @@
 
 # EVALUATION-SCOPE-20261117
 
+- [ ] PIPELINE-WATCHDOG-20261118 진행 중: 수신량·마지막 수신·정규화 체크포인트·호스트 디스크를 1분마다 별도 작업으로 감시한다. 기존 Slack 목적지에 장애/복구 전환을 보내되 비밀값·원문은 노출하지 않고 중복·실패·불확실한 발송을 구분한다. AWS OAuth 만료로 운영 연결 재인증 대기 중이며 구현·격리 검증을 먼저 진행한다.
 - [x] EBS-INGESTION-RECOVERY-20261118: 운영 루트 EBS `vol-074e43155bdc40867`를 암호화 gp3 80→120GiB로 확장하고 IOPS 3000·처리량 125MiB/s를 유지했다. 2026-11-18 09:43:42 KST growpart·resize2fs 온라인 확장 성공, ext4 116GiB·여유 41GiB·사용률 65%(이전 98%) 확인. 코드·데이터·키·체크포인트 초기화 및 재부팅 없이 오늘 원본/수집 상태 인덱스의 primary 할당이 자동 복구됐다. 남은 미할당 3개는 기존 replica이며 클러스터 yellow를 전체 정상으로 해석하지 않는다.
 - 실제 수신 인수(2026-11-18 09:45 KST): 확장 완료 시각 이후 저장된 Linux 2,434건·Windows 6건·Packetbeat 2,294건·수집 상태 204건 확인. 첫 확인보다 Linux 92건·Packetbeat 299건이 증가했다. Linux·Packetbeat는 확장 이후 발생한 로그, Windows 표본은 이전에 발생해 대기 중이던 로그의 새 수신이다. 각 1개 표본의 immutable 처리 ID로 원본·정규화 문서를 직접 대조해 processing normalized·normalized found·정확한 원본 참조 일치를 확인했다. 초기 provenance/raw 필드 검색은 enabled:false여서 결과가 없어 직접 ID 조회로 검증을 보완했다. 일반 정규화·우선 정규화·기본/카탈로그 탐지 모두 오류 없음 및 09:45까지 checkpoint 진행 확인. 인공 ES 문서를 삽입하지 않았다. 확장 SSM `e935256e-0f0d-46f8-b9d8-32503a7758b4`, 원본 연결 검증 `cec85dd0-7240-43f5-8275-ed5701afb1ae`, 지속 수신 검증 `4f0beeec-dfac-4a8a-bfca-1ea29da2474d`.
 - 확장 전 복구 스냅샷 `snap-0a1df331ddd817e9b` 생성 요청 성공(최종 조회 pending), EBS 변경 상태 optimizing이며 OS는 120GiB를 이미 사용 중이다. 추가 용량 40GiB와 스냅샷 보관 요금이 발생한다. 백업 완료나 AWS 후처리 완료를 주장하지 않는다. 장기 재발 방지를 위한 누적 배포 백업 46GiB의 보관 정책은 별도 작업이다.
