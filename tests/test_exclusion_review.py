@@ -264,6 +264,8 @@ def test_review_apply_is_idempotent_and_new_records_require_review(tmp_path):
         }]}}}
     def search(**kw):
         if 'reviews' in kw.get('aggs', {}):
+            assert 'record_id' in kw['query']['terms']
+            assert len(kw['query']['terms']['record_id']) <= 20000
             return {'aggregations': {'reviews': {'buckets': {
                 'UNIFIED-SERVER-MIN3-001|resolved_scope': {'doc_count': 1},
             }}}}

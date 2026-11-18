@@ -205,11 +205,11 @@ def summary(client, path):
                 if not groups:
                     continue
                 filters = {rule + '|' + decision: {'bool': {'filter': [
-                    {'ids': {'values': identifiers}}, {'term': {'rule.id': rule}},
+                    {'terms': {'record_id': identifiers}}, {'term': {'rule.id': rule}},
                 ]}} for (rule, decision), identifiers in groups.items()}
                 matched = checked(client.search(index=EXCLUSIONS, size=0, track_total_hits=False,
                     allow_partial_search_results=False,
-                    query={'ids': {'values': [identifier for ids in groups.values() for identifier in ids]}},
+                    query={'terms': {'record_id': [identifier for ids in groups.values() for identifier in ids]}},
                     aggs={'reviews': {'filters': {'filters': filters}}}))
                 buckets = matched['aggregations']['reviews']['buckets']
                 if set(buckets) != set(filters):
