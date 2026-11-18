@@ -26,7 +26,7 @@ def install(workspace, state, *, apply=False):
     sources = {'host.py': workspace / 'deploy/server/health-watchdog-host.py',
                'probe.py': workspace / 'src/cloud_soc/health/watchdog.py'}
     hashes = {k: hashlib.sha256(v.read_bytes()).hexdigest() for k, v in sources.items()}
-    cfg = {'image': portal['Image'], 'network': next(iter(networks)), 'state': str(directory),
+    cfg = {'image': portal['Image'], 'network': next(iter(networks)), 'state': str(directory / 'data'),
            'probe': str(directory / 'probe.py'), 'disk_path': str(state),
            'ca': mounts['/run/certs/ca.crt'], 'password': mounts['/run/secrets/monitor_password'],
            'notifications': mounts['/notifications']}
@@ -34,12 +34,22 @@ def install(workspace, state, *, apply=False):
         p = Path(cfg[key])
         if not p.exists() or p.is_symlink() or ',' in str(p):
             raise ValueError('Existing private mounts required')
+    identity = Path(cfg['notifications']).stat()
+    if identity.st_uid <= 0 or Path(cfg['password']).stat().st_uid != identity.st_uid:
+        raise ValueError('Matching existing private mount owner required')
+    cfg.update(probe_uid=identity.st_uid, probe_gid=identity.st_gid)
     if not apply:
         return {'apply': False, 'image': cfg['image'], 'files': hashes, 'interval_seconds': 60}
     directory.mkdir(mode=0o700, exist_ok=True)
     if directory.is_symlink():
         raise ValueError('Unsafe state directory')
     os.chmod(directory, 0o700)
+    data = directory / 'data'
+    if data.is_symlink():
+        raise ValueError('Unsafe monitor data')
+    data.mkdir(mode=0o700, exist_ok=True)
+    os.chown(data, cfg['probe_uid'], cfg['probe_gid'])
+    os.chmod(data, 0o700)
     for name, source in sources.items():
         target = directory / name
         if target.is_symlink():
@@ -48,7 +58,7 @@ def install(workspace, state, *, apply=False):
         if temp.is_symlink():
             raise ValueError('Unsafe staged file')
         shutil.copyfile(source, temp)
-        os.chmod(temp, 0o600)
+        os.chmod(temp, 0o644 if name == 'probe.py' else 0o600)
         os.replace(temp, target)
     config = directory / 'config.json'
     if config.is_symlink():

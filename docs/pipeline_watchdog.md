@@ -34,11 +34,12 @@ The installer discovers the existing Portal mounts/network/image and refuses to 
 the timer until metrics and the existing enabled Slack destination can be read. It
 does not restart SOC containers or create permissions, keys, destinations or volumes.
 The separate probe has read-only mounts for CA, monitor password and encrypted Slack
-settings; only `/health` is writable. It sends directly to the existing destination,
-The probe explicitly runs as UID 0 with all capabilities dropped, so it can read the
-root-owned installed script and private bind mounts even when the runtime image's
-default user is UID 1000. It never mounts the Docker socket or the host filesystem.
-independently of the security-alert scanner and ES availability. No raw events, host
+settings; only `/health` is writable. The probe runs as the existing monitor password
+and notification directory owner (UID 1000 on the central host), with all capabilities
+dropped. Its public script is mounted read-only; the host runner and configuration
+remain root-only, and only the separate data subdirectory is owned by the probe user.
+It never mounts the Docker socket or the host filesystem. It sends directly to the
+existing destination, independently of the security-alert scanner and ES availability. No raw events, host
 identities, webhook URL or credentials are included in its messages/journal.
 
 ```sh
