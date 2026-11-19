@@ -1,3 +1,7 @@
+# CI-REGRESSIONS-20261119
+
+- [ ] 진행 중. `JEONGRIM-SEO`의 `bcd807d`에서 확인한 Ubuntu 57건·Windows 45건을 대상으로 제품 결함과 회귀 검사 계약을 수정하고 두 플랫폼을 검증한다.
+
 # RUFF-CI-20261119
 
 - [x] 로컬 린트 수정 및 검증(2026-11-19 KST). `JEONGRIM-SEO`의 `226ffb9`에서 두 CI 작업을 중단시킨 미사용 import 8개를 `suricata_bridge.py`, `processing_setup.py`, `test_multicloud_adapter.py`, `test_secret_enforcement.py`에서 제거했다. 고정 버전 Ruff 0.16.10으로 `ruff check src tests tools`와 `git diff --check`를 통과했다.

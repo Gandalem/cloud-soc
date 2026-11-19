@@ -256,8 +256,9 @@ def test_csv_round_trip_approval_and_stale_edit(library):
 
     proposal = editor.proposals(ADMIN)[0]
     token = {'content_hash': proposal['content_hash']}
-    with pytest.raises(RuleError, match='approval_required'):
+    with pytest.raises(RuleError) as error:
         editor.transition(proposal['id'], 'apply', token, ADMIN)
+    assert (error.value.code, error.value.status) == ('approval_required', 409)
     editor.transition(proposal['id'], 'approve', token, ADMIN)
     assert editor.transition(proposal['id'], 'apply', token, ADMIN)['status'] == 'pending_deployment'
     release = editor.release(proposal['id'], ADMIN)

@@ -179,7 +179,9 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(role["cluster"], [])
         self.assertEqual(role["indices"], [{"names": INDICES.split(",") + ["soc-agent-health-*", "soc-cloud-aws-*", "soc-cloud-oci-*",
             "soc-multicloud-*", "soc-normalized-v1", "soc-processing-v1", "soc-normalized-history-v1", "soc-processing-history-v1", "soc-pipeline-status", "soc-detection-runs-v1", "soc-detection-exclusions-v1", "soc-alert-notices-v1", "security-alerts", "normalized-events", "raw-logs-*"],
-            "privileges": ["read", "view_index_metadata"]}])
+            "privileges": ["read", "view_index_metadata"]},
+            {"names": ["soc-normalized-unified-backfill-v1", "soc-processing-unified-backfill-v1"],
+             "privileges": ["read", "view_index_metadata"]}])
         self.assertEqual(client.security.put_user.call_args.kwargs["roles"], ["cloud_soc_agent_monitor"])
 
     def test_compose_only_mounts_reader_secret_into_bootstrap_and_portal(self):

@@ -124,12 +124,17 @@ class SecurityDetailTests(unittest.TestCase):
 
     def test_detail_api_allowlist_and_reference_are_preserved(self):
         es = client()
-        es.get.return_value = {**FIXTURE, "_source": windows("4625", TargetUserName="target", LogonType="10")}
+        es.mget.return_value = {"docs": [{**FIXTURE, "found": True, "_source": windows(
+            "4625", TargetUserName="target", LogonType="10")}]}
         reader = LogReader(es, secret="fixture", principal="fixture")
         response = json.loads(reader.detail([("index", FIXTURE["_index"]), ("id", FIXTURE["_id"])]))
         self.assertEqual(response["security"]["fields"]["target_user"], "target")
         self.assertEqual(response["row"]["reference"]["id"], FIXTURE["_id"])
-        fields = es.get.call_args.kwargs["source_includes"]
+        request = es.mget.call_args.kwargs
+        self.assertEqual(request["index"], FIXTURE["_index"])
+        (document,) = request["docs"]
+        self.assertEqual(document["_id"], FIXTURE["_id"])
+        fields = document["_source"]
         for forbidden in ("message", "winlog.event_data", "event.original", "process.command_line", "winlog.event_data.CommandLine", "winlog.event_data.TaskContent"):
             self.assertNotIn(forbidden, fields)
         self.assertTrue(all("*" not in item for item in DETAIL_FIELDS))

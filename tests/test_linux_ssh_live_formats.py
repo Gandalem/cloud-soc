@@ -235,7 +235,7 @@ def test_invalid_user_mirrors_count_once_per_attempt(file_origin):
 def test_invalid_user_requires_explicit_file_timezone_and_rejects_close_messages():
     hit = invalid_user_raw(origin='rfc3164')
     del hit['_source']['event']['timezone']
-    assert normalize(hit, BASE.isoformat())[1]['reason'] == 'ssh_timezone_missing'
+    assert normalize(hit, BASE.isoformat())[1]['reason'] == 'linux_timezone_missing'
     for origin in ('journald','rfc3339','rfc3164'):
         hit = invalid_user_raw(origin=origin)
         hit['_source']['message'] = hit['_source']['message'].replace(

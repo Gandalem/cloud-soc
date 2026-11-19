@@ -221,11 +221,13 @@ def test_site_context_route_permits_own_tenant_and_hides_foreign_alerts(tmp_path
     from test_integration_security import make_session_portal, login
     app, monitor, _, _ = make_session_portal(tmp_path)
     monitor.indices.resolve_index.side_effect = lambda **kw: {'indices': [{'name': kw['name']}]}
-    monitor.get.return_value = {'_source': {'organization': {'id': 'synthetic'}}}
+    monitor.mget.return_value = {'docs': [{'_index': 'security-alerts', '_id': 'own-alert', 'found': True,
+                                          '_source': {'organization': {'id': 'synthetic'}}}]}
     http, _ = login(app, 'investigate')
     own = http.get('/api/alerts/site-context?id=own-alert')
     assert own.status_code == 200 and own.json['state'] == 'unsupported'
-    monitor.get.return_value = {'_source': {'organization': {'id': 'foreign'}}}
+    monitor.mget.return_value = {'docs': [{'_index': 'security-alerts', '_id': 'foreign-alert', 'found': True,
+                                          '_source': {'organization': {'id': 'foreign'}}}]}
     assert http.get('/api/alerts/site-context?id=foreign-alert').status_code == 404
     assert http.get('/api/alerts/site-context?id=own-alert&organization=foreign').status_code == 400
     assert app.test_client().get('/api/alerts/site-context?id=own-alert').status_code == 401

@@ -12,7 +12,6 @@ import uuid
 from unittest.mock import patch
 
 import pytest
-from elasticsearch import NotFoundError
 
 from cloud_soc.detection import early
 from cloud_soc.detection.engine import event_fingerprint
@@ -191,12 +190,15 @@ def test_real_flask_alert_case_dashboard_and_scoped_denial(identifier, tmp_path)
     (tmp_path / 'portal').mkdir()
     app, monitor, settings, _ = make_session_portal(tmp_path / 'portal')
     monitor.indices.resolve_index.side_effect = lambda **options: {'indices': [{'name': options['name']}]}
-    def stub_get(**options):
-        if options['index'] == 'security-alerts' and options['id'] == key:
-            return {'_source': deepcopy(body)}
-        # Elasticsearch GET returns 404 by exception, never a {'found': False} response.
-        raise NotFoundError('not found', None, {'found': False})
-    monitor.get.side_effect = stub_get
+    def stub_mget(*, index, docs):
+        hits = []
+        for doc in docs:
+            hit = {'_index': index, '_id': doc['_id'], 'found': index == 'security-alerts' and doc['_id'] == key}
+            if hit['found']:
+                hit['_source'] = deepcopy(body)
+            hits.append(hit)
+        return {'docs': hits}
+    monitor.mget.side_effect = stub_mget
     admin, headers = login(app, 'admin')
     detail = admin.get('/api/alerts/detail', query_string={'id': key})
     assert detail.status_code == 200 and detail.json['alert']['rule'] == identifier

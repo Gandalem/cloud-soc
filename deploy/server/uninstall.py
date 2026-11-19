@@ -13,12 +13,11 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'deploy/server'))
 sys.path.insert(0, str(ROOT / 'src'))
 from server_cli import KoreanParser
+from cloud_soc.deployment.contract import SERVICES as CENTRAL_SERVICES
 
 PROJECT = 'cloud-soc-central'
 STOP_TIMEOUT = 90
-SERVICES = {'elasticsearch', 'kibana', 'gateway', 'portal', 'bootstrap', 'enrollment-cleanup',
-            'normalizer', 'normalizer-priority', 'detector', 'detector-priority',
-            'detector-additional', 'detector-retrospective', 'slack-notifier'}
+SERVICES = frozenset((*CENTRAL_SERVICES, 'bootstrap'))
 VOLUMES = {PROJECT + '_' + name for name in ('es-data', 'caddy-data', 'caddy-config')}
 AGENTS = {
     'cloud-soc-filebeat.service': '/opt/cloud-soc-agent',

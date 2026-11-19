@@ -42,7 +42,8 @@ class ReceiptPrecisionTests(unittest.TestCase):
         def search(**kw):
             if kw['search_after'] is not None:
                 return {'hits': {'hits': []}}
-            limits = kw['query']['range']['cloud_soc.normalized_at']
+            (receipt_range,) = kw['query']['bool']['filter']
+            limits = receipt_range['range']['cloud_soc.normalized_at']
             matches = [deepcopy(row) for row in rows if
                        millis(limits['gte']) <= millis(row['_source']['cloud_soc']['normalized_at']) < millis(limits['lt'])]
             for i, row in enumerate(matches): row['sort'] = [i]

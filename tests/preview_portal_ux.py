@@ -217,7 +217,10 @@ def build(directory, *, session_login=True):
             response.direct_passthrough = False
             html = response.get_data(as_text=True)
             import re
-            html = re.sub(r'(<main\b[^>]*>)', r'\1<p class="inline-note" role="status">합성 화면 검증 · 운영 데이터 아님</p>', html, count=1)
+            notice = '<p class="inline-note" role="status">합성 화면 검증 · 운영 데이터 아님</p>'
+            html, count = re.subn(r'<main\b[^>]*>', lambda match: match[0] + notice, html, count=1)
+            if not count:
+                html = re.sub(r'<body\b[^>]*>', lambda match: match[0] + notice, html, count=1)
             response.set_data(html)
         return response
 

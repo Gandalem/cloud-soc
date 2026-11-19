@@ -52,8 +52,14 @@ class ResumeTests(unittest.TestCase):
         key = kwargs['pit']['id']
         if key not in self.pits:
             raise api_error(404, NotFoundError)
-        bounds = kwargs['query']['range']['cloud_soc.normalized_at']
-        snapshot = [h for h in self.pits[key] if utc(bounds['gte']) <= utc(h['_source']['cloud_soc']['normalized_at']) < utc(bounds['lt'])]
+        query = kwargs['query']['bool']
+        (receipt_range,) = query['filter']
+        bounds = receipt_range['range']['cloud_soc.normalized_at']
+        (excluded,) = query['must_not']
+        recovery_modes = excluded['terms']['cloud_soc.recovery_mode']
+        snapshot = [h for h in self.pits[key]
+                    if utc(bounds['gte']) <= utc(h['_source']['cloud_soc']['normalized_at']) < utc(bounds['lt'])
+                    and h['_source']['cloud_soc'].get('recovery_mode') not in recovery_modes]
         start = kwargs['search_after'][0] + 1 if kwargs.get('search_after') else 0
         page = deepcopy(snapshot[start:start + kwargs['size']])
         for number, hit in enumerate(page, start):

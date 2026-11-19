@@ -57,6 +57,10 @@ MANAGED_LIBRARY_COLUMNS = {
     'managed_audit': 'seq rule_id actor action at version content_hash'.split(),
     'managed_batches': 'request_id actor content_hash result'.split(),
 }
+BUILTIN_RULE_CSV_COLUMNS = {
+    'builtin_rule_csv': ('id rule_key base_hash content_hash definition status created_by created_at '
+                         'approved_by approved_at requested_by requested_at').split(),
+}
 MANAGED_WORKER_COLUMNS = {
     'managed_worker_state':'rule_id generation body'.split(),
     'managed_alerts':'id rule_id original content_hash'.split(),
@@ -67,13 +71,15 @@ MANAGED_WORKER_COLUMNS = {
 
 def case_schema(tables):
     schema=dict(SCHEMAS['cases.sqlite'])
-    groups=[RULE_WORKFLOW_COLUMNS,MANAGED_LIBRARY_COLUMNS,MANAGED_WORKER_COLUMNS,
+    groups=[RULE_WORKFLOW_COLUMNS,MANAGED_LIBRARY_COLUMNS,BUILTIN_RULE_CSV_COLUMNS,MANAGED_WORKER_COLUMNS,
             {'managed_heartbeat':'scope at failed'.split()}]
     for group in groups:
         if set(group)&tables:
             if not set(group)<=tables:raise BackupError('Incomplete rule state schema.')
             if group is MANAGED_WORKER_COLUMNS and not set(MANAGED_LIBRARY_COLUMNS)<=tables:
                 raise BackupError('Worker state without rule library.')
+            if group is BUILTIN_RULE_CSV_COLUMNS and not set(MANAGED_LIBRARY_COLUMNS)<=tables:
+                raise BackupError('Built-in rule proposals without rule library.')
             if 'managed_heartbeat' in group and not set(MANAGED_WORKER_COLUMNS)<=tables:
                 raise BackupError('Heartbeat without worker state.')
             schema.update(group)

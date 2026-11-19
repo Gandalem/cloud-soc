@@ -83,7 +83,7 @@ def test_failed_additional_worker_cannot_appear_healthy():
 def test_absent_additional_worker_does_not_change_coverage():
     reader = Operations(None)
     values={'normalizer':{'state':'success','health':'healthy'},'detector':{'state':'success','health':'healthy'},
-            'detector-additional':{'state':'not_started'}}
+            'detector-additional':{'state':'not_started'}, 'detector-catalog':{'state':'not_started'}}
     with patch.object(reader,'worker_status',side_effect=lambda name:values[name]):
         report = reader.pipeline()
     assert report['coverage']['state'] == 'observed'
