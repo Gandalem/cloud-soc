@@ -152,6 +152,26 @@ def deliver(store, *, sender=send):
         db.execute('update control set next_send=? where id=1', (now + max(1, delay if result.code == 'slack_rate_limited' else 1),))
 
 
+def run_cycle(store, source, *, sender=send):
+    code = ''
+    try:
+        state = scan(store, source)
+    except Exception:
+        state, code = 'failed', 'notification_scan_failed'
+
+    # The outbox is durable, so a failed source scan must not stall queued deliveries.
+    try:
+        deliver(store, sender=sender)
+    except Exception:
+        state, code = 'failed', 'notification_delivery_failed' if not code else 'notification_cycle_failed'
+
+    # Record only fixed codes. Exceptions may contain protected source or webhook data.
+    try:
+        store.heartbeat(state, code)
+    except Exception:
+        pass
+
+
 @contextmanager
 def singleton(directory):
     import fcntl
@@ -175,14 +195,7 @@ def main():
                            ca_certs='/run/certs/ca.crt', request_timeout=5, max_retries=0) as client:
             source = Source(client)
             while True:
-                try:
-                    state = scan(store, source);deliver(store);store.heartbeat(state)
-                except Exception:
-                    # No exception repr, URL, token, response body or event content enters stdout/logs.
-                    try:
-                        store.heartbeat('failed', 'notification_cycle_failed')
-                    except Exception:
-                        pass
+                run_cycle(store, source)
                 time.sleep(2)
 
 

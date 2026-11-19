@@ -10,7 +10,7 @@ import pytest
 
 from cloud_soc.notifications.store import SlackStore
 from cloud_soc.notifications.transport import Result, SlackError, addresses, send, validate_url
-from cloud_soc.notifications.worker import INDICES, Source, deliver, event, scan
+from cloud_soc.notifications.worker import INDICES, Source, deliver, event, run_cycle, scan
 
 URL = 'https://hooks.slack.com/services/T00000000/B00000000/SYNTHETIC_TOKEN_1234567890'
 
@@ -160,6 +160,44 @@ def test_index_replacement_or_partial_search_never_silently_resets_a_cursor(tmp_
     with pytest.raises(SlackError,match='notification_index_or_scope_changed'):scan(store,source)
     client=Mock();client.search.return_value={'timed_out':True}
     with pytest.raises(SlackError,match='notification_search_incomplete'):Source(client).page(INDICES[0],0,0)
+
+
+@pytest.mark.parametrize('failure', ['search_timeout', 'invalid_notice'])
+def test_failed_scan_delivers_durable_alert_and_retries_without_advancing_failed_cursor(tmp_path, failure):
+    store, clock = configured(tmp_path)
+    source = MemorySource()
+    scan(store, source)
+    source.docs[INDICES[0]][0] = [final(1)]
+    scan(store, source)
+    sender = Mock(side_effect=[Result('retry', 'slack_rate_limited', 75),
+                               Result('sent', 'slack_accepted'), Result('sent', 'slack_accepted')])
+    source.docs[INDICES[1]][0] = [notice(1)]
+    if failure == 'invalid_notice':
+        source.docs[INDICES[1]][0].append(notice(2, state='unrecognized'))
+        failing_source = source
+    else:
+        failing_source = Mock(wraps=source)
+        failing_source.page.side_effect = TimeoutError(URL)
+
+    run_cycle(store, failing_source, sender=sender)
+    assert store.status()['deliveries'] == {'retry': 1}
+    assert store.status()['worker'] == {'heartbeat': clock[0], 'state': 'failed', 'code': 'notification_scan_failed'}
+    with store.connect() as db:
+        assert db.execute('select seq from cursors where scope=?', (INDICES[1] + ':0',)).fetchone()[0] == -1
+
+    clock[0] += 74
+    run_cycle(store, failing_source, sender=sender)
+    assert sender.call_count == 1
+    clock[0] += 1
+    run_cycle(store, failing_source, sender=sender)
+    assert store.status()['deliveries'] == {'sent': 1}
+    assert sender.call_count == 2
+
+    source.docs[INDICES[1]][0] = [notice(1)]
+    clock[0] += 2
+    run_cycle(store, source, sender=sender)
+    assert store.status()['deliveries'] == {'sent': 2}
+    assert store.status()['worker'] == {'heartbeat': clock[0], 'state': 'active', 'code': ''}
 
 
 def test_risk_band_is_preferred_and_old_notice_revisions_do_not_resend(tmp_path):

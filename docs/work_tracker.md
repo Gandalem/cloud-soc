@@ -1,3 +1,7 @@
+# SLACK-OUTBOX-ISOLATION-20261119
+
+- [x] 구현 및 로컬 검증 완료(2026-11-19 KST). `notifications/worker.py`에서 Elasticsearch 조회가 실패해도 같은 주기에 SQLite에 저장된 Slack 대기·재시도 알림의 발송을 수행한다. 실패한 조회의 체크포인트와 Slack 재시도 대기 시간은 유지한다. `test_slack_notifications.py`에서 조회 타임아웃·잘못된 알림 문서·조회 복구를 검증했다. 관련 Python 테스트 86건 및 Ruff 통과, 1건은 건너뛰었다. 운영 배포와 실제 Slack 수신 검증은 별도다.
+
 # CI-REGRESSIONS-20261119
 
 - [x] 기존 Ubuntu 57건·Windows 45건 해결(2026-11-19 KST). `c8507a2`의 Actions 44454829690에서 Ubuntu 전체 Python 회귀 2,860건 통과·37건 건너뜀 및 Windows의 기존 실패 단계 통과를 확인했다.
