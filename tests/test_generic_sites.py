@@ -221,6 +221,7 @@ def test_site_context_route_permits_own_tenant_and_hides_foreign_alerts(tmp_path
     from test_integration_security import make_session_portal, login
     app, monitor, _, _ = make_session_portal(tmp_path)
     monitor.indices.resolve_index.side_effect = lambda **kw: {'indices': [{'name': kw['name']}]}
+    monitor.mget.side_effect = None
     monitor.mget.return_value = {'docs': [{'_index': 'security-alerts', '_id': 'own-alert', 'found': True,
                                           '_source': {'organization': {'id': 'synthetic'}}}]}
     http, _ = login(app, 'investigate')

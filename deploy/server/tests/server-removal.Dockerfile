@@ -6,6 +6,7 @@ COPY --from=engine /bin/busybox /fixture/busybox
 COPY --from=engine /lib/ld-musl-x86_64.so.1 /fixture/ld-musl-x86_64.so.1
 WORKDIR /app
 COPY deploy/server /app/deploy/server
+COPY src /app/src
 COPY tests/manual/server_removal_docker_live.py /app/tests/manual/server_removal_docker_live.py
 ENV SOC_SERVER_DISPOSABLE_LAB=1 PYTHONDONTWRITEBYTECODE=1
 ENTRYPOINT ["python", "/app/tests/manual/server_removal_docker_live.py"]

@@ -124,13 +124,16 @@ class SecurityDetailTests(unittest.TestCase):
 
     def test_detail_api_allowlist_and_reference_are_preserved(self):
         es = client()
-        es.mget.return_value = {"docs": [{**FIXTURE, "found": True, "_source": windows(
-            "4625", TargetUserName="target", LogonType="10")}]}
+        es.mget.side_effect = None
+        source = windows("4625", TargetUserName="target", LogonType="10")
+        source["labels"] = {"log_source": "windows_event"}
+        es.mget.return_value = {"docs": [{**FIXTURE, "found": True, "_source": source}]}
         reader = LogReader(es, secret="fixture", principal="fixture")
         response = json.loads(reader.detail([("index", FIXTURE["_index"]), ("id", FIXTURE["_id"])]))
+        self.assertEqual(response["row"]["source_kind"], "windows_event")
         self.assertEqual(response["security"]["fields"]["target_user"], "target")
         self.assertEqual(response["row"]["reference"]["id"], FIXTURE["_id"])
-        request = es.mget.call_args.kwargs
+        request = es.mget.call_args_list[0].kwargs
         self.assertEqual(request["index"], FIXTURE["_index"])
         (document,) = request["docs"]
         self.assertEqual(document["_id"], FIXTURE["_id"])

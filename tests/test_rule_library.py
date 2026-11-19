@@ -9,6 +9,7 @@ import pytest
 
 from cloud_soc.detection.authoring import (AuthoringError, compile_rule, csv_template, example,
     normalize, parse_import)
+from cloud_soc.portal import backup
 from cloud_soc.portal.log_access import LogPrincipal
 from cloud_soc.portal.rule_library import RuleLibrary
 from cloud_soc.portal.rule_csv import COLUMNS, RuleCsv, decode
@@ -274,3 +275,23 @@ def csv_rows(*rows):
     writer.writeheader()
     writer.writerows(rows)
     return stream.getvalue()
+
+
+def test_portal_backup_restores_saved_builtin_csv_proposal(tmp_path):
+    source = tmp_path / 'source'
+    source.mkdir()
+    app, _, _, _ = make_session_portal(source)
+    editor = RuleCsv(app.extensions['rule_library'])
+    row = decode(editor.export(ADMIN, 'NET-PORT-001'))[0]
+    definition = json.loads(row['definition_json'])
+    definition['name'] += ' 개정'
+    row['definition_json'] = json.dumps(definition)
+    assert editor.upload({'content': csv_rows(row), 'selected_rows': [1]}, ADMIN, preview=False) == {'saved': 1}
+    proposals = editor.proposals(ADMIN)
+
+    artifact, restored = tmp_path / 'backup', tmp_path / 'restored'
+    manifest = backup.backup(source, artifact)
+    cases = next(entry for entry in manifest['files'] if entry['name'] == 'cases.sqlite')
+    assert cases['counts']['builtin_rule_csv'] == 1
+    assert backup.restore(artifact, restored) == manifest
+    assert RuleCsv(RuleLibrary(restored / 'cases.sqlite', ())).proposals(ADMIN) == proposals
