@@ -1,3 +1,7 @@
+# NAVER-LATE-REPLAY-STATUS-20261119
+
+- [x] 구현 및 로컬 검증 완료(2026-11-19 KST). `multicloud/__main__.py`는 정상 `watermark`의 진행 여부로 수집 상태를 기록한 뒤 Naver 지연 재조회를 실행한다. `multicloud/collectors.py`는 별도 `late_poll_state`·`late_last_error`에 재조회 실패를 남기며, 보존 범위를 벗어나면 `archive_recovery_required`를 기록하고 기존 지연 커서를 보존한다. `test_multicloud_integration.py`에서 수정 전 10초·20초 오류 재시도를 재현했고, 수정 후 실제 수집 루프에서 정상 30초 주기와 두 번의 모의 API 수집, 일시적 재조회 실패 후 동일 구간 재시도를 확인했다. 관련 테스트 85건 및 하위 검사 3건과 Ruff 통과, Windows 제약으로 2건을 건너뛰었다. 운영 적용은 별도다.
+
 # SLACK-WINDOWS-SYMLINK-TEST-20261119
 
 - [x] 구현 및 로컬 검증 완료(2026-11-19 KST). `test_slack_notifications.py`에서 관리자 Origin 검사와 저장소 링크 검사를 분리했다. 실제 링크를 우선 사용하고, Windows가 권한 오류를 반환하면 링크 판정만 모의해 실제 저장소 코드가 HTTP 503 오류로 거부하는지 확인한다. Windows에서 관련 테스트 92건이 건너뛰기 없이 통과했고 Ruff도 통과했다. 제품 코드는 변경하지 않았다.

@@ -64,9 +64,9 @@ def main():
         failures = 0
         while not stopped.is_set():
             try:
-                before = (state.get('watermark'), state.get('naver_late_watermark_v1'))
+                before = state.get('watermark')
                 collector.poll(scope, state, sink)
-                after = (state.get('watermark'), state.get('naver_late_watermark_v1'))
+                after = state.get('watermark')
                 failures = 0
                 now = datetime.now(timezone.utc).isoformat()
                 state.put('last_attempt', now)
@@ -83,6 +83,9 @@ def main():
                 state.put('last_error', type(exc).__name__)
                 logging.error('source=%s collection_failed type=%s checkpoint_preserved', scope['id'], type(exc).__name__)
                 delay = min(300, 5 * 2 ** min(failures, 6))
+            else:
+                if scope['provider'] == 'naver':
+                    collector.poll_late(scope, state, sink)
             stopped.wait(delay)
     finally:
         if collector:

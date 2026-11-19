@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -214,10 +215,12 @@ def test_delayed_publication_has_separate_cursor_and_never_rewinds_live_position
     with closing(State(tmp_path/'delayed.sqlite', scope)) as state:
         state.put('watermark', original.isoformat())
         collector.poll(scope, state, Mock())
+        collector.poll_late(scope, state, Mock())
         assert datetime.fromisoformat(state.get('watermark').replace('Z', '+00:00')) >= original
         assert datetime.fromisoformat(state.get('naver_late_watermark_v1').replace('Z', '+00:00')) == floor + timedelta(minutes=15)
         assert collector._collect.call_count == 2
         assert collector._collect.call_args_list[1].args[1] == floor
+        assert state.get('late_poll_state') == 'processed'
 
 
 def test_delayed_sink_failure_does_not_acknowledge_replay_range(tmp_path):
@@ -225,10 +228,72 @@ def test_delayed_sink_failure_does_not_acknowledge_replay_range(tmp_path):
     scope = {**SCOPE, 'start': (now-timedelta(days=2)).isoformat()}
     original = now - timedelta(minutes=10)
     collector = object.__new__(Naver)
-    collector._collect = Mock(side_effect=[None, RuntimeError('late write failed')])
+    collector._collect = Mock(side_effect=[None, RuntimeError('private late write failure'), None])
     with closing(State(tmp_path/'delayed.sqlite', scope)) as state:
         state.put('watermark', original.isoformat())
-        with pytest.raises(RuntimeError, match='late write'):
-            collector.poll(scope, state, Mock())
+        collector.poll(scope, state, Mock())
+        collector.poll_late(scope, state, Mock())
         assert state.get('naver_late_watermark_v1') is None
-        assert datetime.fromisoformat(state.get('watermark').replace('Z', '+00:00')) >= original
+        assert state.get('late_poll_state') == 'failed'
+        assert state.get('late_last_error') == 'RuntimeError'
+        live = state.get('watermark')
+        assert datetime.fromisoformat(live.replace('Z', '+00:00')) > original
+        collector.poll_late(scope, state, Mock())
+        assert state.get('late_poll_state') == 'processed'
+        assert state.get('late_last_error') == ''
+        assert state.get('watermark') == live
+        assert collector._collect.call_args_list[1].args[1:3] == collector._collect.call_args_list[2].args[1:3]
+
+
+@pytest.mark.parametrize('saved_late_cursor', [False, True])
+def test_naver_cli_keeps_live_status_and_cadence_when_replay_needs_archive(tmp_path, monkeypatch, caplog, saved_late_cursor):
+    from cloud_soc.multicloud import __main__ as cli, collectors
+
+    now = datetime(2026, 11, 19, tzinfo=timezone.utc)
+    floor = now - timedelta(days=35)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz)
+
+    scope = {**SCOPE, 'provider': 'naver', 'start': floor.isoformat(),
+             'access_key_env': 'NAVER_TEST_ACCESS', 'secret_key_env': 'NAVER_TEST_SECRET'}
+    state_path = tmp_path / 'audit.sqlite'
+    configured_live = now - timedelta(hours=1)
+    late = (floor + timedelta(days=2)).isoformat() if saved_late_cursor else None
+    with closing(State(state_path, scope)) as state:
+        state.put('watermark', configured_live.isoformat())
+        if late is not None:
+            state.put('naver_late_watermark_v1', late)
+    config = tmp_path / 'config.json'
+    config.write_text(json.dumps({'sources': [scope]}))
+    monkeypatch.setattr(sys, 'argv', ['multicloud', 'collect', '--config', str(config),
+                                    '--source', scope['id'], '--state-dir', str(tmp_path)])
+    monkeypatch.setitem(sys.modules, 'portalocker', SimpleNamespace(Lock=Mock()))
+    monkeypatch.setattr(cli, 'signal', SimpleNamespace(SIGINT=2, SIGTERM=15, signal=Mock()))
+    stopped = Mock()
+    stopped.is_set.side_effect = [False, False, True]
+    monkeypatch.setattr(cli, 'threading', SimpleNamespace(Event=lambda: stopped))
+    monkeypatch.setattr(cli, 'datetime', FixedDatetime)
+    monkeypatch.setattr(collectors, 'datetime', FixedDatetime)
+    monkeypatch.setattr(collectors, 'secret', lambda _: 'synthetic')
+    es = Mock()
+    monkeypatch.setattr(cli, 'create_elasticsearch_client', lambda: es)
+    response = Mock()
+    response.read.return_value = json.dumps({'items': [naver_event()], 'hasMore': False}).encode()
+
+    with patch.object(collectors, 'urlopen') as urlopen:
+        urlopen.return_value.__enter__.return_value = response
+        cli.main()
+    assert urlopen.call_count == es.create.call_count == 2
+    assert [entry.args for entry in stopped.wait.call_args_list] == [(30,), (30,)]
+    assert caplog.text.count('late_replay=archive_recovery_required') == 1
+    with closing(State(state_path, scope)) as state:
+        assert datetime.fromisoformat(state.get('watermark').replace('Z', '+00:00')) == configured_live + timedelta(minutes=30)
+        assert state.get('poll_state') == 'processed'
+        assert state.get('last_success') == now.isoformat()
+        assert state.get('last_error') == ''
+        assert state.get('naver_late_watermark_v1') == late
+        assert state.get('late_poll_state') == 'archive_recovery_required'
+        assert state.get('late_last_error') == 'naver_query_retention_exceeded'

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import json
+import logging
 import os
 import time
 from urllib.request import Request, urlopen
@@ -74,6 +75,10 @@ class AWS:
         self.sts.close()
 
 
+class NaverRetentionError(ValueError):
+    pass
+
+
 class Naver:
     def __init__(self, scope):
         self.access = secret(scope['access_key_env'])
@@ -84,20 +89,32 @@ class Naver:
         if end > cursor:
             self._collect(scope, start, end, sink)
             state.put('watermark', utc(end))
+
+    def poll_late(self, scope, state, sink):
         # User-reported publication delay: retain a separate replay cursor rather
         # than rewinding an existing live watermark or deleting the state DB.
-        late_start, late_end, late_cursor = window(scope, state,
-            cursor_key='naver_late_watermark_v1', lag=timedelta(hours=24, minutes=5))
-        if late_end > late_cursor:
-            self._collect(scope, late_start, late_end, sink)
-            state.put('naver_late_watermark_v1', utc(late_end))
-            state.put('late_poll_state', 'processed')
+        status, error = 'waiting_for_publication', ''
+        try:
+            start, end, cursor = window(scope, state,
+                cursor_key='naver_late_watermark_v1', lag=timedelta(hours=24, minutes=5))
+            if end > cursor:
+                self._collect(scope, start, end, sink)
+                status = 'processed'
+        except NaverRetentionError:
+            status, error = 'archive_recovery_required', 'naver_query_retention_exceeded'
+        except Exception as exc:
+            status, error = 'failed', type(exc).__name__
         else:
-            state.put('late_poll_state', 'waiting_for_publication')
+            if status == 'processed':
+                state.put('naver_late_watermark_v1', utc(end))
+        if error and (status != state.get('late_poll_state') or error != state.get('late_last_error')):
+            logging.warning('source=%s late_replay=%s code=%s checkpoint_preserved', scope['id'], status, error)
+        state.put('late_last_error', error)
+        state.put('late_poll_state', status)
 
     def _collect(self, scope, start, end, sink):
         if start < datetime.now(timezone.utc) - timedelta(days=30):
-            raise ValueError('Naver activity query retention exceeded; explicit archive recovery required')
+            raise NaverRetentionError('Naver activity query retention exceeded; explicit archive recovery required')
         path = '/api/v1/activities'
         for page in range(10000):
             stamp = str(int(time.time() * 1000))
