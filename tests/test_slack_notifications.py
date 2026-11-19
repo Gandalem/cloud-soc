@@ -2,6 +2,7 @@ from contextlib import closing
 from copy import deepcopy
 import json
 import logging
+from pathlib import Path
 import socket
 import sqlite3
 from unittest.mock import Mock, patch
@@ -424,7 +425,7 @@ def test_admin_session_rbac_csrf_secret_nonreturn_and_queued_test(tmp_path):
     assert http.delete(path,json={'revision':1},headers=headers).status_code==200
 
 
-def test_basic_admin_requires_origin_and_unsafe_storage_is_rejected(tmp_path):
+def test_basic_admin_requires_origin(tmp_path):
     from test_portal import AUTH,HASH,ROOT
     from cloud_soc.portal.app import create_app
     app=create_app({'STATE_DIR':tmp_path/'basic','AGENT_SOURCE':ROOT/'deploy/agents','CA_BYTES':b'SYNTHETIC CA',
@@ -434,9 +435,28 @@ def test_basic_admin_requires_origin_and_unsafe_storage_is_rejected(tmp_path):
     body={'revision':0,'enabled':False,'minimum_severity':'high'}
     assert client.post('/api/settings/notifications/slack',json=body,headers=headers).status_code==403
     assert client.post('/api/settings/notifications/slack',json=body,headers={**headers,'Origin':'http://localhost'}).status_code==200
-    # Storage hardlinks/symlinks must fail even if their contents are a valid synthetic URL/key.
-    store,_=configured(tmp_path)
-    target=tmp_path/'linked'
-    try:target.symlink_to(store.directory,target_is_directory=True)
-    except OSError:pytest.skip('Creating symlinks is unavailable on this host')
-    with pytest.raises(SlackError,match='notification_storage_unsafe'):SlackStore(target).status()
+
+
+def test_storage_rejects_symlink_to_configured_directory(tmp_path):
+    store, _ = configured(tmp_path)
+    assert store.status()['configured']
+    target = tmp_path / 'linked'
+
+    with pytest.raises(SlackError, match='notification_storage_unsafe') as rejected:
+        try:
+            target.symlink_to(store.directory, target_is_directory=True)
+        except OSError as error:
+            if getattr(error, 'winerror', None) not in (5, 1314):
+                raise
+            # Restricted Windows runners can report a link without creating one on disk.
+            is_symlink = Path.is_symlink
+
+            def linked_storage(path):
+                return path == store.directory or is_symlink(path)
+
+            with patch.object(Path, 'is_symlink', linked_storage):
+                store.status()
+        else:
+            SlackStore(target).status()
+
+    assert rejected.value.status == 503

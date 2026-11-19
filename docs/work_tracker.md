@@ -1,3 +1,7 @@
+# SLACK-WINDOWS-SYMLINK-TEST-20261119
+
+- [x] 구현 및 로컬 검증 완료(2026-11-19 KST). `test_slack_notifications.py`에서 관리자 Origin 검사와 저장소 링크 검사를 분리했다. 실제 링크를 우선 사용하고, Windows가 권한 오류를 반환하면 링크 판정만 모의해 실제 저장소 코드가 HTTP 503 오류로 거부하는지 확인한다. Windows에서 관련 테스트 92건이 건너뛰기 없이 통과했고 Ruff도 통과했다. 제품 코드는 변경하지 않았다.
+
 # WATCHDOG-RECOVERY-STATE-20261119
 
 - [x] 구현 및 로컬 검증 완료(2026-11-19 KST). `health/watchdog.py`에서 이전 실행의 `sending`을 `unknown`·`delivery_unconfirmed`로 바꾸고, 발송 제한이나 대기열을 확인하기 전에 디스크에 저장한다. `test_health_watchdog.py`에서 발송 도중 중단 후 파일을 다시 읽어, 대기 건이 없는 경우와 발송 제한 중인 경우 모두 상태가 유지되고 자동 재전송이 없음을 확인했다. 관련 테스트 90건 및 Ruff 통과, Windows 심볼릭 링크 제약으로 1건을 건너뛰었다. 운영 배포는 별도다.
