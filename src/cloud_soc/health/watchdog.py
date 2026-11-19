@@ -182,13 +182,17 @@ def webhook(settings):
 
 def dispatch(state, path, *, sender, destination, clock=time.time):
     now = clock()
-    for event in state['events']:
-        if event['status'] == 'sending':
-            event['status'] = 'unknown'  # Crash during POST: don't silently duplicate.
     if 'slack_retry_until' not in state:
         # Older watchdogs recorded rate limits only on the event that received the 429.
         state['slack_retry_until'] = max((e['next_try'] for e in state['events']
                                          if e.get('code') == 'slack_rate_limited'), default=0)
+    recovered = False
+    for event in state['events']:
+        if event['status'] == 'sending':
+            event.update(status='unknown', code='delivery_unconfirmed')
+            recovered = True
+    if recovered:
+        save(path, state)  # Persist recovery even when nothing can be sent this cycle.
     if state['slack_retry_until'] > now:
         return
     due = next((e for e in state['events'] if e['status'] in ('queued', 'retry', 'blocked') and e['next_try'] <= now), None)

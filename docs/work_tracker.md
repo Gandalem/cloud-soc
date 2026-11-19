@@ -1,3 +1,7 @@
+# WATCHDOG-RECOVERY-STATE-20261119
+
+- [x] 구현 및 로컬 검증 완료(2026-11-19 KST). `health/watchdog.py`에서 이전 실행의 `sending`을 `unknown`·`delivery_unconfirmed`로 바꾸고, 발송 제한이나 대기열을 확인하기 전에 디스크에 저장한다. `test_health_watchdog.py`에서 발송 도중 중단 후 파일을 다시 읽어, 대기 건이 없는 경우와 발송 제한 중인 경우 모두 상태가 유지되고 자동 재전송이 없음을 확인했다. 관련 테스트 90건 및 Ruff 통과, Windows 심볼릭 링크 제약으로 1건을 건너뛰었다. 운영 배포는 별도다.
+
 # WATCHDOG-SLACK-RETRY-AFTER-20261119
 
 - [x] 구현 및 로컬 검증 완료(2026-11-19 KST). `health/watchdog.py`는 Slack 429 응답 수신 시각부터 `Retry-After`까지 Watchdog 발송 큐 전체를 보류한다. 웹훅 주소 없이 마감 시각을 저장하며, 이전 상태 파일에 기록된 이벤트의 대기 시간도 이어받는다. `test_health_watchdog.py`에서 다음 타이머 실행, 마지막 재시도 실패 및 마감 시점 발송 재개를 검증했다. 관련 테스트 89건 및 Ruff 통과, Windows 심볼릭 링크 제약으로 1건을 건너뛰었다. 운영 배포는 별도다.

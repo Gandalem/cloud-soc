@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from cloud_soc.health.watchdog import DEFAULTS, collect, dispatch, transition, validate_policy, webhook
+from cloud_soc.health.watchdog import DEFAULTS, collect, dispatch, save, transition, validate_policy, webhook
 
 
 def sample(**updates):
@@ -170,11 +170,33 @@ def test_retry_after_from_legacy_event_holds_watchdog_queue(tmp_path):
     assert state['events'][1]['status'] == 'queued'
 
 
-def test_crash_during_post_is_held(tmp_path):
+@pytest.mark.parametrize('cooldown', [False, True])
+def test_crash_during_post_persists_unknown_after_restart(tmp_path, cooldown):
+    path = tmp_path / 'state.json'
     state = advance({}, sample(disk=90))
-    state['events'][0]['status'] = 'sending'
-    dispatch(state, tmp_path / 's.json', sender=lambda *_: pytest.fail('ambiguous'), destination=lambda: 'redacted', clock=lambda: 1000)
-    assert state['events'][0]['status'] == 'unknown'
+
+    def interrupted(*_):
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        dispatch(state, path, sender=interrupted, destination=lambda: 'redacted', clock=lambda: 1000)
+    state = json.loads(path.read_text())
+    original = state['events'][0].copy()
+    assert original['status'] == 'sending' and original['attempts'] == 1
+    if cooldown:
+        state['slack_retry_until'] = 1200
+        queued = advance({}, sample(disk=80))['events'][0] | {'id': 'another-alert'}
+        state['events'].append(queued)
+        save(path, state)
+
+    for now in (1060, 1120):
+        dispatch(state, path, sender=lambda *_: pytest.fail('Unexpected Slack POST'),
+                 destination=lambda: pytest.fail('Destination read before dispatch was due'), clock=lambda: now)
+        state = json.loads(path.read_text())
+        assert state['events'][0] == original | {'status': 'unknown', 'code': 'delivery_unconfirmed'}
+        if cooldown:
+            assert state['events'][1] == queued
+            assert state['slack_retry_until'] == 1200
 
 
 def test_partial_search_is_unavailable_and_worker_read_independent():
