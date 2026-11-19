@@ -12,11 +12,26 @@ import subprocess
 import sys
 import tempfile
 
+import yaml
+
 from cloud_soc.deployment import host, migrations
 from cloud_soc.deployment.contract import ALL_WORKERS, WORKERS, build_contract
 from cloud_soc.notifications.store import SlackStore
 from test_deployment_parity import FakeSetup, POLICY, NOW
 from test_slack_notifications import URL
+
+
+def mounted_worker_keys(directory):
+    runtime = Path(__file__).resolve().parents[1] / 'deploy/server/runtime.compose.yaml'
+    services = yaml.safe_load(runtime.read_text(encoding='utf-8'))['services']
+    for name in ALL_WORKERS:
+        (source,) = [mount.split(':', 1)[0] for mount in services[name]['volumes']
+                     if mount.endswith(':/run/keys/worker.key:ro')]
+        prefix = '${SOC_STATE_DIR}/runtime/keys/'
+        assert source.startswith(prefix), name
+        filename = source.removeprefix(prefix)
+        assert Path(filename).name == filename and filename.endswith('.key'), name
+        yield directory / 'keys' / filename
 
 
 def owned(path, *, uid=1000, mode=0o600):
@@ -91,15 +106,18 @@ assert [p.name for p in Path('.').iterdir()]==['contract.json']
             cfg = tuple(db.execute('select * from config').fetchone())
         client = FakeSetup();value, _ = build_contract(POLICY, {}, directory, now=NOW)
         first = migrations.prerequisites(client, POLICY, value, directory, {}, notification_directory=folder)
-        keys = {name: (directory/'keys'/(name+'.key')).read_bytes() for name in ALL_WORKERS}
-        for name in ALL_WORKERS:
-            owned(directory/'keys'/(name+'.key'));checked += 1
+        key_paths = set(mounted_worker_keys(directory))
+        keys = {path: path.read_bytes() for path in key_paths}
+        for path in key_paths:
+            owned(path);checked += 1
+        for name in set(ALL_WORKERS) - set(WORKERS) - {'slack-notifier'}:
+            owned(directory/'state'/name, mode=0o700);checked += 1
         for path in (folder/'slack.key', store.path):
             owned(path);access(path, 1000, True);access(path, 1001, False);checked += 1
         owned(folder, mode=0o700);checked += 1
         again = migrations.prerequisites(client, POLICY, value, directory, {}, notification_directory=folder)
         assert first == again and (folder/'slack.key').read_bytes() == key_bytes
-        assert all((directory/'keys'/(name+'.key')).read_bytes() == data for name, data in keys.items())
+        assert all(path.read_bytes() == data for path, data in keys.items())
         with store.connect() as db:
             assert [tuple(row) for row in db.execute('select * from outbox')] == original
             assert tuple(db.execute('select * from config').fetchone()) == cfg
