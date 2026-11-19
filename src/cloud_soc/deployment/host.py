@@ -177,10 +177,13 @@ def protected_hashes(state):
     return {str(checked_path(p, root, file=True)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
 
 
-def databases(state):
-    return [checked_path(p, state, file=True) for p in Path(state).rglob('*')
+def databases(state, *, stopped_only=False):
+    state = Path(state)
+    # Collector Compose projects own this tree and remain online during a central upgrade.
+    return [checked_path(p, state, file=True) for p in state.rglob('*')
             if p.suffix in ('.sqlite', '.sqlite3') and 'upgrades' not in p.relative_to(state).parts
-            and 'backup' not in p.relative_to(state).parts]
+            and 'backup' not in p.relative_to(state).parts
+            and not (stopped_only and p.is_relative_to(state / 'multicloud'))]
 
 
 def backup_database(source, target):
@@ -786,7 +789,7 @@ def apply(engine, plan, *, poll=None):
                 stop = [n for n in APP_SERVICES if n in old_objects]
                 engine.run(['compose', *active, 'stop', *stop])
             worker_inventory(engine, plan['project'], stopped=True)
-            for p in databases(state):
+            for p in databases(state, stopped_only=True):
                 try:
                     backup_stopped_database(p, run / 'stopped' / p.relative_to(state))
                 except sqlite3.Error as error:

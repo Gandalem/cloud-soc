@@ -1,3 +1,7 @@
+# DEPLOY-INDEPENDENT-SQLITE-20261119
+
+- [x] 구현 및 로컬 검증 완료(2026-11-19 KST). `deployment/host.py`에서 독립 AWS·Naver 수집기의 상태 디렉터리 `state/server/multicloud`는 서비스 중지 전 검증된 온라인 SQLite 백업으로 보존한다. 중앙 서비스의 DB는 중지 후 백업도 계속 생성한다. `test_deployment_parity.py`에서 실제 Naver SQLite WAL 쓰기로 수정 전 중단을 재현했고, 수정 후에는 쓰기 지속·중앙 배포 성공·백업 무결성을 확인했다. 관련 테스트 184건 및 Ruff 통과, 4건은 건너뛰었다. 운영 배포는 별도다.
+
 # SLACK-OUTBOX-ISOLATION-20261119
 
 - [x] 구현 및 로컬 검증 완료(2026-11-19 KST). `notifications/worker.py`에서 Elasticsearch 조회가 실패해도 같은 주기에 SQLite에 저장된 Slack 대기·재시도 알림의 발송을 수행한다. 실패한 조회의 체크포인트와 Slack 재시도 대기 시간은 유지한다. `test_slack_notifications.py`에서 조회 타임아웃·잘못된 알림 문서·조회 복구를 검증했다. 관련 Python 테스트 86건 및 Ruff 통과, 1건은 건너뛰었다. 운영 배포와 실제 Slack 수신 검증은 별도다.

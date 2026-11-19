@@ -317,9 +317,9 @@ def test_future_worker_success_is_not_live_acceptance():
 
 
 @pytest.mark.parametrize('fault,with_alias', [(fault, False) for fault in
-    ('none','migration','activation','interrupt','receipt','stale','modified_site','disk','ownership','stale_compose_review','compose_before_stop','recovery_health_failure')]
+    ('none','collector_write','migration','activation','interrupt','receipt','stale','modified_site','disk','ownership','stale_compose_review','compose_before_stop','recovery_health_failure')]
     + [(fault, True) for fault in ('none', 'activation', 'interrupt', 'receipt')])
-def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_path,monkeypatch,fault,with_alias,ownership_calls):
+def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_path,monkeypatch,fault,with_alias,ownership_calls,request):
     from cloud_soc.deployment import host
     # Startup state and HTTP/TLS are exercised in test_recovery_health.py.
     monkeypatch.setattr(host, 'wait_for_recovery', Mock())
@@ -328,6 +328,26 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
     state=tmp_path/'server';old=seed(state,('normalizer','detector'))
     c,adopt=build_contract(POLICY,old,state,now=NOW)
     original={n:(Path(a['state_source'])).read_bytes() for n,a in adopt.items() if 'state_source' in a}
+    if fault == 'collector_write':
+        collector = state / 'multicloud/naver-state/naver-audit.sqlite'
+        collector.parent.mkdir(parents=True)
+        writer = sqlite3.connect(collector)
+        request.addfinalizer(writer.close)
+        writer.execute('pragma journal_mode=wal')
+        writer.execute('create table events(value integer)')
+        writer.execute('insert into events values(1)')
+        writer.commit()
+        central_checkpoint = Path(adopt['normalizer']['state_source'])
+        copyfile = host.shutil.copyfile
+
+        def copy_while_collector_writes(source, target, **kwargs):
+            result = copyfile(source, target, **kwargs)
+            if source in (collector, central_checkpoint):
+                writer.execute('insert into events select max(value)+1 from events')
+                writer.commit()
+            return result
+
+        monkeypatch.setattr(host.shutil, 'copyfile', copy_while_collector_writes)
     (state/'compose.env').write_text('SOC_STATE_DIR=protected')
     (state/'secrets/elastic_password').write_text('PRIVATE_PASSWORD')
     previous_base = tmp_path / 'protected-old.json'
@@ -341,9 +361,9 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
         'compose_environment':{'SOC_STATE_DIR':str(state)}}
     if with_alias:
         from cloud_soc.deployment import access
-        request = tmp_path / 'aliases.json'
-        request.write_text(json.dumps({'version': 1, 'aliases': ['https://extra.example.test']}))
-        plan['alias_request'] = access.read_profile(request)
+        alias_path = tmp_path / 'aliases.json'
+        alias_path.write_text(json.dumps({'version': 1, 'aliases': ['https://extra.example.test']}))
+        plan['alias_request'] = access.read_profile(alias_path)
         monkeypatch.setattr(access, 'certificate_names', lambda *_: None)
     current=deepcopy(plan)
     if fault=='stale':current['fingerprint']='different'
@@ -397,12 +417,22 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
     monkeypatch.setattr(host,'containers',objects)
     monkeypatch.setattr(host,'worker_inventory',lambda *_,stopped=False: {} if stopped else {n:n for n in ALL_WORKERS})
     monkeypatch.setattr(host,'immutable_documents',lambda *_,**__: {'existing_immutable_documents_preserved':2})
-    if fault=='none':
+    if fault in ('none', 'collector_write'):
         result=host.apply(engine,plan)
         assert result['runtime_ready'] and result['live_ingestion_acceptance']=='not_yet_verified'
         assert (runtime/'current.json').is_file()
         journal = next((runtime/'upgrades').glob('*/recovery.json'))
         assert json.loads(journal.read_text())['previous_compose_sha256'] == plan['previous_compose_sha256']
+        if fault == 'collector_write':
+            run = journal.parent
+            relative = collector.relative_to(state)
+            backup = run / 'online' / relative
+            with closing(sqlite3.connect(backup.as_uri() + '?mode=ro', uri=True)) as snapshot:
+                assert snapshot.execute('select value from events').fetchall() == [(1,)]
+                assert snapshot.execute('pragma integrity_check').fetchall() == [('ok',)]
+            assert writer.execute('select count(*) from events').fetchone()[0] > 1
+            assert not (run / 'stopped' / relative).exists()
+            assert (run / 'stopped' / central_checkpoint.relative_to(state)).is_file()
         if with_alias:
             site = json.loads((runtime / 'site.json').read_text())
             assert site['services']['gateway']['environment']['SOC_PORTAL_TLS_ORIGINS'] == 'https://extra.example.test'
