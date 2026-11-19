@@ -4,7 +4,6 @@ Slack is owned by the existing notifier; this worker never reads webhook secrets
 """
 from contextlib import closing
 from copy import deepcopy
-from datetime import datetime, timezone
 import hashlib
 import json
 import os

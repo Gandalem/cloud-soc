@@ -1,5 +1,4 @@
-import json,os
-from pathlib import Path
+import json
 from unittest.mock import Mock,patch
 import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM

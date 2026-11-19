@@ -1,3 +1,8 @@
+# RUFF-CI-20261119
+
+- [x] 로컬 린트 수정 및 검증(2026-11-19 KST). `JEONGRIM-SEO`의 `226ffb9`에서 두 CI 작업을 중단시킨 미사용 import 8개를 `suricata_bridge.py`, `processing_setup.py`, `test_multicloud_adapter.py`, `test_secret_enforcement.py`에서 제거했다. 고정 버전 Ruff 0.16.10으로 `ruff check src tests tools`와 `git diff --check`를 통과했다.
+- Windows 관련 테스트 67건과 하위 검사 3건이 통과했고 1건을 건너뛰었다. 비밀 파일 권한 관련 실패 4건은 기존 `226ffb9`에서도 재현했다.
+
 # TRIAGE-ORGANIZATIONS-20261117
 
 - [x] 운영 적용 및 검증(2026-11-17 17:12 KST). 기존 24시간 미처리 94건은 모두 `kopo_aws_gyumin` 소속이었고 같은 기간의 KOPO 경보 5건은 이미 사건에 연결되어 있었다. 기관 옵션을 권한 범위 및 최근 30일 저장 경보의 기관 목록으로 제공한다. 전체 기관 기본 기간을 30일로 조정하고 7일·24시간을 선택할 수 있다.

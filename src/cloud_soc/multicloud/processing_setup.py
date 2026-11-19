@@ -19,7 +19,6 @@ def issue_key(client):
 def main(argv=None):
     import argparse
     import json
-    import os
     from pathlib import Path
     from elasticsearch import Elasticsearch
     from cloud_soc.aws.__main__ import endpoint, protected_key
