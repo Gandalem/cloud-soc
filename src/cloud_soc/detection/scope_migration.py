@@ -22,7 +22,11 @@ def previous_identity(payload):
 
 
 def migrate(db, saved, payload, stamp, *, table='runtime'):
-    if table not in ('runtime', 'review_state'):
+    if table == 'runtime':
+        update = 'UPDATE runtime SET body=? WHERE id=1'
+    elif table == 'review_state':
+        update = 'UPDATE review_state SET body=? WHERE id=1'
+    else:
         raise ValueError('Unsupported detector state table')
     identity = event_fingerprint(payload)
     if saved['identity'] == identity:
@@ -51,5 +55,5 @@ def migrate(db, saved, payload, stamp, *, table='runtime'):
                '(identity TEXT PRIMARY KEY, previous_identity TEXT NOT NULL, applied_at TEXT NOT NULL)')
     db.execute('INSERT OR IGNORE INTO scope_migrations VALUES(?,?,?)', (identity, old_identity, stamp))
     result['scope_identity'] = identity
-    db.execute(f'UPDATE {table} SET body=? WHERE id=1', (json.dumps(result),))
+    db.execute(update, (json.dumps(result),))
     return result
