@@ -21,14 +21,19 @@ class SecretError(ValueError):
 def _fail(code):
     raise SecretError(code) from None
 
+def require_private_file_support():
+    if os.name != 'posix' or not hasattr(os, 'O_NOFOLLOW'):
+        _fail('secret_file_permissions_unsupported')
+
 def private_bytes(path, limit=LIMIT):
+    require_private_file_support()
     path=Path(path)
     if path.is_symlink() or any(p.is_symlink() for p in path.parents):_fail('secret_path_unsafe')
     try:
         fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
         with os.fdopen(fd,'rb') as f:
             info=os.fstat(f.fileno())
-            if not stat.S_ISREG(info.st_mode) or info.st_size>limit or (os.name=='posix' and info.st_mode & 0o077):_fail('secret_file_unsafe')
+            if not stat.S_ISREG(info.st_mode) or info.st_size>limit or info.st_mode & 0o077:_fail('secret_file_unsafe')
             value=f.read(limit+1)
         if len(value)>limit:_fail('secret_file_too_large')
         return value
@@ -134,6 +139,7 @@ def read(path,*,purpose=None):
     except UnicodeError:_fail('secret_value_invalid')
 
 def write_new(path,value,*,uid=None):
+    require_private_file_support()
     context,backend=backend_for(path)
     payload=json.dumps(encrypt(value,context,backend),sort_keys=True).encode()+b'\n'
     path=Path(path)

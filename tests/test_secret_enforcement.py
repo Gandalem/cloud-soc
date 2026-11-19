@@ -1,4 +1,6 @@
 import json
+import os
+from pathlib import Path
 from unittest.mock import Mock,patch
 import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -7,6 +9,8 @@ from cloud_soc.secret_migrate import migrate
 
 CONTEXT={'tenant':'org-A','purpose':'elasticsearch','secret_id':'normalizer'}
 ARN='arn:aws:kms:ap-northeast-2:123456789012:key/00000000-0000-0000-0000-000000000000'
+SUPPORTS_PRIVATE_FILES = os.name == 'posix' and hasattr(os, 'O_NOFOLLOW')
+
 class MemoryBackend:
     # Test-only. No production local-key backend is implemented.
     key_id=ARN
@@ -20,6 +24,14 @@ class MemoryBackend:
 
 def private(path,content):path.write_text(content);path.chmod(0o600);return path
 
+@pytest.fixture
+def policy_input(monkeypatch):
+    # Windows exercises the policy with synthetic bytes. The filesystem tests
+    # below exercise the real permission boundary on each platform.
+    if not SUPPORTS_PRIVATE_FILES:
+        monkeypatch.setattr('cloud_soc.secret_store.private_bytes', lambda path: Path(path).read_bytes())
+    return monkeypatch
+
 def test_envelope_has_no_secret_and_is_randomized_and_bound():
     b=MemoryBackend();first=encrypt('SYNTHETIC-secret-value',CONTEXT,b);second=encrypt('SYNTHETIC-secret-value',CONTEXT,b)
     assert first['nonce']!=second['nonce'] and first['ciphertext']!=second['ciphertext']
@@ -32,25 +44,34 @@ def test_envelope_has_no_secret_and_is_randomized_and_bound():
     b.fail=True
     with pytest.raises(SecretError):decrypt(first,CONTEXT,b)
 
-def test_strict_reader_rejects_plaintext_and_never_downgrades(tmp_path,monkeypatch):
-    p=private(tmp_path/'key','SYNTHETIC');monkeypatch.setenv('SOC_SECRET_POLICY','required')
+def test_strict_reader_rejects_plaintext_and_never_downgrades(tmp_path,policy_input):
+    p=private(tmp_path/'key','SYNTHETIC');policy_input.setenv('SOC_SECRET_POLICY','required')
     with pytest.raises(SecretError,match='plaintext_secret_forbidden'):read(p)
     p.write_text('{invalid-json')
-    with pytest.raises(SecretError):read(p)
+    with pytest.raises(SecretError,match='secret_envelope_invalid'):read(p)
     p.write_text(json.dumps(encrypt('SYNTHETIC',CONTEXT,MemoryBackend())))
-    monkeypatch.delenv('SOC_SECRET_CONFIG_FILE',raising=False)
+    policy_input.delenv('SOC_SECRET_CONFIG_FILE',raising=False)
     with pytest.raises(SecretError,match='secret_policy_required'):read(p)
 
-def test_existing_common_reader_and_cloud_inline_rejected(tmp_path,monkeypatch):
+def test_existing_common_reader_and_cloud_inline_rejected(tmp_path,policy_input):
     from cloud_soc.aws.__main__ import protected_key
     from cloud_soc.multicloud.collectors import secret
-    p=private(tmp_path/'key','SYNTHETIC');monkeypatch.setenv('SOC_SECRET_POLICY','required')
-    with pytest.raises(SecretError):protected_key(p)
-    monkeypatch.setenv('SYNTHETIC_KEY','secret-canary')
+    p=private(tmp_path/'key','SYNTHETIC');policy_input.setenv('SOC_SECRET_POLICY','required')
+    with pytest.raises(SecretError,match='plaintext_secret_forbidden'):protected_key(p)
+    policy_input.setenv('SYNTHETIC_KEY','secret-canary')
     with pytest.raises(SecretError,match='inline_secret_forbidden'):secret('SYNTHETIC_KEY')
 
 def test_migration_plan_and_verified_copy_leave_source_unchanged(tmp_path):
-    tmp_path.chmod(0o700);p=private(tmp_path/'old','SYNTHETIC');out=tmp_path/'new';b=MemoryBackend()
+    tmp_path.chmod(0o700);p=private(tmp_path/'old','SYNTHETIC');out=tmp_path/'new'
+    if not SUPPORTS_PRIVATE_FILES:
+        backend=Mock()
+        with pytest.raises(SecretError,match='secret_file_permissions_unsupported'):
+            migrate(p,out,CONTEXT,None)
+        with pytest.raises(SecretError,match='secret_file_permissions_unsupported'):
+            migrate(p,out,CONTEXT,backend,apply=True)
+        assert not backend.mock_calls and not out.exists() and p.read_text()=='SYNTHETIC'
+        return
+    b=MemoryBackend()
     assert migrate(p,out,CONTEXT,None)['writes'] is False
     assert not out.exists()
     assert migrate(p,out,CONTEXT,b,apply=True)['runtime_cutover'] is False
@@ -75,9 +96,19 @@ def test_kms_context_and_key_identity_are_pinned():
 def test_encrypted_read_and_write_require_binding_and_private_files(tmp_path,monkeypatch):
     b=MemoryBackend();path=tmp_path/'key';config=private(tmp_path/'policy',json.dumps({'schema_version':1,'backend':{'type':'aws-kms','key_id':ARN,'region':'ap-northeast-2'},'bindings':{str(path):CONTEXT}}))
     monkeypatch.setenv('SOC_SECRET_CONFIG_FILE',str(config));monkeypatch.setenv('SOC_SECRET_POLICY','required')
+    if not SUPPORTS_PRIVATE_FILES:
+        existing=private(tmp_path/'existing',json.dumps(encrypt('SYNTHETIC',CONTEXT,b)))
+        with patch('cloud_soc.secret_store.KMS') as kms:
+            with pytest.raises(SecretError,match='secret_file_permissions_unsupported'):
+                read(existing)
+            with pytest.raises(SecretError,match='secret_file_permissions_unsupported'):
+                write_new(path,'SYNTHETIC')
+            kms.assert_not_called()
+        assert not path.exists()
+        return
     with patch('cloud_soc.secret_store.KMS',return_value=b):
         write_new(path,'SYNTHETIC');assert read(path,purpose='elasticsearch')=='SYNTHETIC'
-        with pytest.raises(SecretError):read(path,purpose='different')
+        with pytest.raises(SecretError,match='secret_purpose_mismatch'):read(path,purpose='different')
         with pytest.raises(FileExistsError):write_new(path,'REPLACE')
         path.chmod(0o644)
-        with pytest.raises(SecretError):read(path)
+        with pytest.raises(SecretError,match='secret_file_unsafe'):read(path)

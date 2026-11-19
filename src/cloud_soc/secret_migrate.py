@@ -8,9 +8,10 @@ import json
 import os
 from pathlib import Path
 import sys
-from cloud_soc.secret_store import SecretError,private_bytes,configuration,KMS,encrypt,decrypt
+from cloud_soc.secret_store import SecretError,private_bytes,configuration,KMS,encrypt,decrypt,require_private_file_support
 
 def migrate(source,destination,context,backend,*,apply=False):
+    require_private_file_support()
     source,destination=Path(source),Path(destination)
     if not source.is_absolute() or not destination.is_absolute() or source==destination:raise SecretError('migration_paths_invalid')
     if destination.exists() or destination.is_symlink():raise SecretError('migration_destination_exists')

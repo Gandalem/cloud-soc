@@ -658,6 +658,8 @@
 
 ## SECRET-ENFORCEMENT-20261102-18
 
+- 파일 권한 회귀 수정(2026-11-19 KST): `secret_store.py`와 `secret_migrate.py`는 POSIX 보호 권한을 사용할 수 없으면 비밀 파일 접근과 KMS 호출 전에 거부한다. Windows에서는 합성 파일로 정책을 검증하고 실제 보호 파일의 읽기·쓰기·계획·이관 거부를 확인한다. Ubuntu는 실제 POSIX 파일 권한·암호화 이관을 검증하며 두 CI 작업에 전용 테스트를 추가했다. 로컬 Windows 관련 171건 및 하위 검사 10건 통과, 2건 제외. 전용 테스트 6건, Ruff 및 diff 검사 통과.
+
 - [ ] 진행 중: 실제 키 이관 및 암호화 강제 구현 요청. 사용자 '키보호 서비스 모르겠음' 응답. 호스트 읽기전용 조사에서 TPM장치0·TPM도구없음·Vault도구/알려진설정없음·AWS설정/키보호환경없음 확인. 없는 보호계층을 임의 생성하지 않는다. 암호화 저장/읽기·강제프로필·검증후 명시 이관 도구를 구현하고 운영 키변경은 보호계층 준비 전 수행하지 않는다.
 
 - 구현·검증 진척(2026-11-02): secret_store/secret_migrate의 AES-256-GCM+KMS 데이터키/컨텍스트·키ARN고정·무fallback 읽기·검증후 별도암호문 이관 및 required 프로필을 구현했다. 공통 ES키/Portal조회키/multicloud/알림/키준비 읽기·쓰기 경로에 연결했다. 기존 운영 호환은 legacy가 기본이며 required 자동 전환은 하지 않는다. 관련106개+10subtests 및 추가multicloud/Slack87개 통과. 실제 운영 키 이관/엄격모드 배포는 미완료다. docs/secret_encryption_rollout.md에 남은 워커별 정책·배포관리자 연동·백업정리를 명시했다.

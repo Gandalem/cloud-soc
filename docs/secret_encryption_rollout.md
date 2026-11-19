@@ -14,6 +14,7 @@
 - 연결된 읽기 경로: 공통 protected_key를 사용하는 AWS/정규화/탐지 CLI, Portal 조회 API키, multicloud ES클라이언트 및 Naver/Azure 비밀파일, 알림 워커, 정규화 진단도구. AWS 수집기는 강제 모드에서 역할 신원을 요구한다.
 - 쓰기 경로: multicloud 정규화 신규키와 multicloud writer는 암호문 전용 write_new 사용. 중앙 워커/알림키 준비는 required 모드에서 암호문 기록, legacy 모드에서 기존 호환을 유지한다.
 - 파일은0600/링크거부/크기상한/배타적 생성·fsync. 키 값이나 원문 오류를 출력하지 않는다. Python 메모리 완전삭제는 보장하지 않는다.
+- 보호 파일 읽기·쓰기와 이관은 `O_NOFOLLOW`를 제공하는 POSIX 호스트에서 지원한다. Windows에서는 보호 파일을 열거나 생성하기 전에 `secret_file_permissions_unsupported` 오류를 반환한다.
 
 중요: 기존 운영을 갑자기 중단하지 않기 위해 미설정 정책은 legacy다. 따라서 이 코드만 배포해서 전체가 암호화 필수 상태가 되지는 않는다. `required` 프로필 전환 및 각 워크로드의 독립 정책/신원 배포가 필요하다. 서로 다른 워커가 모두 `/run/keys/worker.key`를 사용하므로 정책 파일은 서비스별로 분리해야 한다. 공통 정책 한 장으로 다른 워커의 키를 교환하도록 구성하면 안 된다.
 
