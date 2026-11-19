@@ -1,3 +1,7 @@
+# WATCHDOG-SLACK-RETRY-AFTER-20261119
+
+- [x] 구현 및 로컬 검증 완료(2026-11-19 KST). `health/watchdog.py`는 Slack 429 응답 수신 시각부터 `Retry-After`까지 Watchdog 발송 큐 전체를 보류한다. 웹훅 주소 없이 마감 시각을 저장하며, 이전 상태 파일에 기록된 이벤트의 대기 시간도 이어받는다. `test_health_watchdog.py`에서 다음 타이머 실행, 마지막 재시도 실패 및 마감 시점 발송 재개를 검증했다. 관련 테스트 89건 및 Ruff 통과, Windows 심볼릭 링크 제약으로 1건을 건너뛰었다. 운영 배포는 별도다.
+
 # DEPLOY-INDEPENDENT-SQLITE-20261119
 
 - [x] 구현 및 로컬 검증 완료(2026-11-19 KST). `deployment/host.py`에서 독립 AWS·Naver 수집기의 상태 디렉터리 `state/server/multicloud`는 서비스 중지 전 검증된 온라인 SQLite 백업으로 보존한다. 중앙 서비스의 DB는 중지 후 백업도 계속 생성한다. `test_deployment_parity.py`에서 실제 Naver SQLite WAL 쓰기로 수정 전 중단을 재현했고, 수정 후에는 쓰기 지속·중앙 배포 성공·백업 무결성을 확인했다. 관련 테스트 184건 및 Ruff 통과, 4건은 건너뛰었다. 운영 배포는 별도다.

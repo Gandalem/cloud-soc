@@ -180,10 +180,17 @@ def webhook(settings):
     return Fernet(settings['key'].encode()).decrypt(settings['secret'].encode()).decode()
 
 
-def dispatch(state, path, now, *, sender, destination):
+def dispatch(state, path, *, sender, destination, clock=time.time):
+    now = clock()
     for event in state['events']:
         if event['status'] == 'sending':
             event['status'] = 'unknown'  # Crash during POST: don't silently duplicate.
+    if 'slack_retry_until' not in state:
+        # Older watchdogs recorded rate limits only on the event that received the 429.
+        state['slack_retry_until'] = max((e['next_try'] for e in state['events']
+                                         if e.get('code') == 'slack_rate_limited'), default=0)
+    if state['slack_retry_until'] > now:
+        return
     due = next((e for e in state['events'] if e['status'] in ('queued', 'retry', 'blocked') and e['next_try'] <= now), None)
     if not due:
         return
@@ -202,6 +209,9 @@ def dispatch(state, path, now, *, sender, destination):
         outcome, code, delay = result.outcome, result.code, result.retry_after
     except Exception:
         outcome, code, delay = 'unknown', 'delivery_unconfirmed', 0
+    if code == 'slack_rate_limited':
+        now = clock()
+        state['slack_retry_until'] = now + delay
     if outcome not in ('sent', 'retry', 'permanent', 'unknown'):
         outcome = 'unknown'
     if outcome == 'retry' and due['attempts'] >= 8:
@@ -243,7 +253,7 @@ def main():
         transition(state, sample, policy)
     if not args.dry_run:
         save(path, state)
-        dispatch(state, path, now, sender=send, destination=lambda: webhook(data.get('notification')))
+        dispatch(state, path, sender=send, destination=lambda: webhook(data.get('notification')))
     try:
         configured = bool(webhook(data.get('notification')))
     except Exception:

@@ -95,8 +95,8 @@ def test_durable_intent_and_ambiguous_post_not_retried(tmp_path):
         assert json.loads(path.read_text())['events'][0]['status'] == 'sending'
         calls.append(payload)
         return SimpleNamespace(outcome='unknown', code='delivery_unconfirmed', retry_after=0)
-    dispatch(state, path, 1000, sender=sender, destination=lambda: 'secret-not-logged')
-    dispatch(state, path, 9999, sender=sender, destination=lambda: 'secret-not-logged')
+    dispatch(state, path, sender=sender, destination=lambda: 'secret-not-logged', clock=lambda: 1000)
+    dispatch(state, path, sender=sender, destination=lambda: 'secret-not-logged', clock=lambda: 9999)
     assert len(calls) == 1
     assert state['events'][0]['status'] == 'unknown'
     assert 'secret-not-logged' not in path.read_text()
@@ -105,23 +105,75 @@ def test_durable_intent_and_ambiguous_post_not_retried(tmp_path):
 def test_definite_retry_and_disabled_destination(tmp_path):
     state = advance({}, sample(disk=90))
     path = tmp_path / 'state.json'
-    dispatch(state, path, 1000, sender=lambda *_: pytest.fail('disabled destination'), destination=lambda: None)
+    dispatch(state, path, sender=lambda *_: pytest.fail('disabled destination'), destination=lambda: None, clock=lambda: 1000)
     assert state['events'][0]['status'] == 'blocked'
     def retry(*_):
         return SimpleNamespace(outcome='retry', code='slack_rate_limited', retry_after=120)
-    dispatch(state, path, 1060, sender=retry, destination=lambda: 'redacted')
+    dispatch(state, path, sender=retry, destination=lambda: 'redacted', clock=lambda: 1060)
     assert state['events'][0]['next_try'] == 1180
     state = json.loads(path.read_text())
     def sent(*_):
         return SimpleNamespace(outcome='sent', code='slack_accepted', retry_after=0)
-    dispatch(state, path, 1180, sender=sent, destination=lambda: 'redacted')
+    dispatch(state, path, sender=sent, destination=lambda: 'redacted', clock=lambda: 1180)
     assert state['events'][0]['status'] == 'sent'
+
+
+@pytest.mark.parametrize('attempts, outcome', [(0, 'retry'), (7, 'permanent')])
+def test_retry_after_holds_other_events_across_timer_runs(tmp_path, attempts, outcome):
+    state = advance({}, sample(disk=80))
+    advance(state, sample(disk=90))
+    first, second = state['events']
+    first['attempts'] = attempts
+    path = tmp_path / 'state.json'
+    now = 1000
+
+    def clock():
+        return now
+
+    def rate_limited(_url, payload):
+        nonlocal now
+        assert payload == first['payload']
+        now += 7  # Slack's delay starts when the response is received.
+        return SimpleNamespace(outcome='retry', code='slack_rate_limited', retry_after=120)
+
+    def destination():
+        return 'secret-not-logged'
+
+    dispatch(state, path, sender=rate_limited, destination=destination, clock=clock)
+    state = json.loads(path.read_text())
+    assert state['events'][0]['status'] == outcome
+    assert state['slack_retry_until'] == 1127
+    assert 'secret-not-logged' not in path.read_text()
+
+    for now in (1060, 1126):
+        dispatch(state, path, sender=lambda *_: pytest.fail('Slack cooldown still active'),
+                 destination=destination, clock=clock)
+        assert state['events'][1] == second
+
+    now = 1127
+    sent = []
+
+    def sender(_url, payload):
+        sent.append(payload)
+        return SimpleNamespace(outcome='sent', code='slack_accepted', retry_after=0)
+
+    dispatch(state, path, sender=sender, destination=destination, clock=clock)
+    assert sent == [first['payload'] if outcome == 'retry' else second['payload']]
+
+
+def test_retry_after_from_legacy_event_holds_watchdog_queue(tmp_path):
+    state = advance({}, sample(disk=80))
+    advance(state, sample(disk=90))
+    state['events'][0].update(status='retry', code='slack_rate_limited', next_try=1120)
+    dispatch(state, tmp_path / 'state.json', sender=lambda *_: pytest.fail('Legacy Slack cooldown still active'),
+             destination=lambda: 'redacted', clock=lambda: 1060)
+    assert state['events'][1]['status'] == 'queued'
 
 
 def test_crash_during_post_is_held(tmp_path):
     state = advance({}, sample(disk=90))
     state['events'][0]['status'] = 'sending'
-    dispatch(state, tmp_path / 's.json', 1000, sender=lambda *_: pytest.fail('ambiguous'), destination=lambda: 'redacted')
+    dispatch(state, tmp_path / 's.json', sender=lambda *_: pytest.fail('ambiguous'), destination=lambda: 'redacted', clock=lambda: 1000)
     assert state['events'][0]['status'] == 'unknown'
 
 
