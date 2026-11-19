@@ -317,7 +317,7 @@ def test_future_worker_success_is_not_live_acceptance():
 
 
 @pytest.mark.parametrize('fault,with_alias', [(fault, False) for fault in
-    ('none','collector_write','migration','activation','interrupt','receipt','stale','modified_site','disk','ownership','stale_compose_review','compose_before_stop','recovery_health_failure')]
+    ('none','collector_write','legacy_collector_write','migration','activation','interrupt','receipt','stale','modified_site','disk','ownership','stale_compose_review','compose_before_stop','recovery_health_failure')]
     + [(fault, True) for fault in ('none', 'activation', 'interrupt', 'receipt')])
 def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_path,monkeypatch,fault,with_alias,ownership_calls,request):
     from cloud_soc.deployment import host
@@ -328,8 +328,9 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
     state=tmp_path/'server';old=seed(state,('normalizer','detector'))
     c,adopt=build_contract(POLICY,old,state,now=NOW)
     original={n:(Path(a['state_source'])).read_bytes() for n,a in adopt.items() if 'state_source' in a}
-    if fault == 'collector_write':
-        collector = state / 'multicloud/naver-state/naver-audit.sqlite'
+    if fault in ('collector_write', 'legacy_collector_write'):
+        collector_dir = 'multicloud/naver-state' if fault == 'collector_write' else 'runtime/naver-audit/collector'
+        collector = state / collector_dir / 'naver-audit.sqlite'
         collector.parent.mkdir(parents=True)
         writer = sqlite3.connect(collector)
         request.addfinalizer(writer.close)
@@ -371,7 +372,7 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
     if fault=='modified_site':plan['site']={'services':{'gateway':{'ports':['0.0.0.0:9999:9999']}}}
     if fault=='disk':current['resources']['ok']=False
     monkeypatch.setattr(host,'snapshot',lambda *_,**__:deepcopy(current))
-    runtime=state/'runtime';runtime.mkdir()
+    runtime=state/'runtime';runtime.mkdir(exist_ok=True)
     previous_site=b'{"services":{"gateway":{"environment":{"SOC_PUBLIC_HOST":"existing.example"}}}}\n'
     (runtime/'site.json').write_bytes(previous_site)
     monkeypatch.setattr(host,'lock',lambda _:nullcontext())
@@ -394,6 +395,9 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
         def json(self,args,**kw):
             self.calls.append(args)
             if args[:2]==['image','inspect']:return [{'Id':args[-1]}]
+            if args == ['inspect', 'live-collector']:
+                return [{'Mounts': [{'Type': 'bind', 'Source': str(collector.parent), 'RW': True},
+                                    {'Type': 'bind', 'Source': str(central_checkpoint.parent), 'RW': False}]}]
             if 'config' in args:return {'services':{n:{'image':plan['image_id']} for n in host.SERVICES}}
             if 'cloud_soc.deployment.migrations' in args:
                 if fault=='migration':raise RuntimeError('isolated migration interruption')
@@ -401,6 +405,8 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
             raise AssertionError(args)
         def run(self,args,**kw):
             self.calls.append(args)
+            if args == ['ps', '-q'] and fault == 'legacy_collector_write':
+                return 'live-collector\n'
             if 'up' in args and str(previous_base) not in args:
                 self.phase='new'
                 if fault in ('activation', 'recovery_health_failure'):raise RuntimeError('isolated activation interruption')
@@ -417,13 +423,13 @@ def test_coordinator_stale_plan_failure_and_retry_preserve_live_databases(tmp_pa
     monkeypatch.setattr(host,'containers',objects)
     monkeypatch.setattr(host,'worker_inventory',lambda *_,stopped=False: {} if stopped else {n:n for n in ALL_WORKERS})
     monkeypatch.setattr(host,'immutable_documents',lambda *_,**__: {'existing_immutable_documents_preserved':2})
-    if fault in ('none', 'collector_write'):
+    if fault in ('none', 'collector_write', 'legacy_collector_write'):
         result=host.apply(engine,plan)
         assert result['runtime_ready'] and result['live_ingestion_acceptance']=='not_yet_verified'
         assert (runtime/'current.json').is_file()
         journal = next((runtime/'upgrades').glob('*/recovery.json'))
         assert json.loads(journal.read_text())['previous_compose_sha256'] == plan['previous_compose_sha256']
-        if fault == 'collector_write':
+        if fault in ('collector_write', 'legacy_collector_write'):
             run = journal.parent
             relative = collector.relative_to(state)
             backup = run / 'online' / relative

@@ -1,3 +1,7 @@
+# DEPLOY-LIVE-BIND-BACKUP-20261119
+
+- [x] 구현 및 로컬 검증 완료(2026-11-19 KST). 운영 SSM 사전 점검에서 독립 Naver 수집기의 기존 DB가 `runtime/naver-audit/collector` 아래에 있음을 확인했다. `deployment/host.py`에서 중앙 서비스 중지 후 실행 중인 컨테이너의 쓰기 가능 바인드 마운트를 확인해, 해당 DB는 이미 검증한 온라인 백업을 유지한다. `test_deployment_parity.py`에서 운영 경로를 재현해 기존 중단, 수정 후 백업 무결성·지속 쓰기, 읽기 전용 마운트가 중앙 DB 백업에 미치는 영향을 검증했다. 관련 테스트 185건 및 Ruff 통과, 환경 제약으로 4건을 건너뛰었다.
+
 # NAVER-LATE-REPLAY-STATUS-20261119
 
 - [x] 구현 및 로컬 검증 완료(2026-11-19 KST). `multicloud/__main__.py`는 정상 `watermark`의 진행 여부로 수집 상태를 기록한 뒤 Naver 지연 재조회를 실행한다. `multicloud/collectors.py`는 별도 `late_poll_state`·`late_last_error`에 재조회 실패를 남기며, 보존 범위를 벗어나면 `archive_recovery_required`를 기록하고 기존 지연 커서를 보존한다. `test_multicloud_integration.py`에서 수정 전 10초·20초 오류 재시도를 재현했고, 수정 후 실제 수집 루프에서 정상 30초 주기와 두 번의 모의 API 수집, 일시적 재조회 실패 후 동일 구간 재시도를 확인했다. 관련 테스트 85건 및 하위 검사 3건과 Ruff 통과, Windows 제약으로 2건을 건너뛰었다. 운영 적용은 별도다.
