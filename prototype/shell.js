@@ -119,6 +119,7 @@
   window.addEventListener('cloud-soc-themechange', syncTheme);
   function render() {
     root.innerHTML = markup(window.location.pathname, window.location.hash);
+    document.dispatchEvent(new Event("cloud-soc-shell-rendered"));
     permissions();
     syncTheme();
     root.querySelector('#portal-theme-toggle').addEventListener('click', () => {

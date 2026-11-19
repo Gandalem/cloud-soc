@@ -21,7 +21,7 @@
     if (response.status === 401 && user?.mode === "session") window.location.assign("/login");
     return response;
   };
-  document.addEventListener("DOMContentLoaded", async () => {
+  async function renderIdentity() {
     const user = await identity;
     if (!user) return;
     document.body.dataset.socRole = user.role;
@@ -48,8 +48,9 @@
         for (const control of panel?.querySelectorAll("input,select,textarea,button") || []) control.disabled = true;
       }
     }
-    if (user.mode === "session") {
+    if (user.mode === "session" && context && !document.getElementById("portal-logout")) {
       const button = document.createElement("button");
+      button.id = "portal-logout";
       button.type = "button"; button.textContent = "로그아웃";
       button.addEventListener("click", async () => {
         const response = await window.fetch("/api/auth/logout", {method:"POST",headers:{"Content-Type":"application/json","X-Cloud-SOC":"portal"},body:"{}"});
@@ -57,5 +58,8 @@
       });
       context?.after(button);
     }
-  });
+  }
+  document.addEventListener("DOMContentLoaded", renderIdentity);
+  document.addEventListener("cloud-soc-shell-rendered", renderIdentity);
+  if (document.readyState && document.readyState !== "loading") renderIdentity();
 })();
