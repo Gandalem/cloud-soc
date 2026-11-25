@@ -2,9 +2,10 @@ name: Cloud-SOC CI & GitOps Sync Pipeline
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, JEONGRIM-SEO]
   pull_request:
-    branches: [main]
+    branches: [main, JEONGRIM-SEO]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -46,12 +47,12 @@ jobs:
         run: pytest tests/ -v --ignore=tests/manual
 
   # =====================================================================
-  # 2단계: 불변(Immutable) 컨테이너 이미지 빌드 및 GHCR 푸시 (main 브랜치 전용)
+  # 2단계: 불변(Immutable) 컨테이너 이미지 빌드 및 GHCR 푸시
   # =====================================================================
   build-and-push:
     name: Build & Push Docker Images
     needs: validate-and-test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/JEONGRIM-SEO')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -89,17 +90,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # - name: Build & Push Frontend Image
-      #   uses: docker/build-push-action@v5
-      #   with:
-      #     context: frontend
-      #     file: frontend/Dockerfile
-      #     push: true
-      #     tags: |
-      #       ${{ env.FRONTEND_IMAGE }}:${{ steps.meta.outputs.short_sha }}
-      #       ${{ env.FRONTEND_IMAGE }}:latest
-      #     cache-from: type=gha
-      #     cache-to: type=gha,mode=max
+      - name: Build & Push Frontend Image
+        if: hashFiles('frontend/Dockerfile') != ''
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:${{ steps.meta.outputs.short_sha }}
+            ${{ env.FRONTEND_IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # =====================================================================
   # 3단계: GitOps 저장소 매니페스트 및 탐지 룰 자동 갱신 (ArgoCD 트리거)
@@ -107,10 +109,10 @@ jobs:
   update-gitops-manifest:
     name: Update GitOps Repository for ArgoCD
     needs: build-and-push
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/JEONGRIM-SEO')
     runs-on: ubuntu-latest
     concurrency:
-      group: gitops-sync-${{ env.GITOPS_REPO }}
+      group: gitops-sync-${{ vars.GITOPS_REPO }}
       cancel-in-progress: false
     steps:
       - name: Checkout App Repository (for latest rules/*.yml)
