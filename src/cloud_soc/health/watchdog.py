@@ -11,7 +11,9 @@ import os
 from pathlib import Path
 import sys
 import time
-
+import os
+from pathlib import Path
+import time
 DEFAULTS = {'window': 300, 'last_receipt': 300, 'checkpoint': 300,
             'disk_warning': 75, 'disk_critical': 85, 'disk_recovery': 70,
             'low_ratio': 0.2, 'baseline_minimum': 100, 'bad_cycles': 2, 'good_cycles': 2}
@@ -272,3 +274,27 @@ if __name__ == '__main__':
         main()
     except Exception:
         raise SystemExit('health_watchdog_failed; protected details omitted') from None
+
+
+
+class WorkerHeartbeat:
+    """K8s exec Liveness/Readiness Probe용 파일 기반 워커 생존 신호기"""
+
+    def __init__(self, worker_name: str, base_dir: str = "/tmp/cloud-soc-health") -> None:
+        self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.liveness_file = self.base_dir / f"{worker_name}.alive"
+        self.readiness_file = self.base_dir / f"{worker_name}.ready"
+
+    def mark_ready(self) -> None:
+        self.readiness_file.touch(exist_ok=True)
+        self.beat()
+
+    def beat(self) -> None:
+        now = time.time()
+        self.liveness_file.touch(exist_ok=True)
+        os.utime(self.liveness_file, (now, now))
+
+    def mark_unready(self) -> None:
+        if self.readiness_file.exists():
+            self.readiness_file.unlink()

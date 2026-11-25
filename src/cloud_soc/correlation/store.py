@@ -9,10 +9,13 @@ import os
 from pathlib import Path
 import sqlite3
 import stat
+import time
+from typing import Any
 from uuid import uuid4
 
 from cloud_soc.detection.engine import event_fingerprint
 from cloud_soc.correlation.security_mall import correlate, require, select_alert, select_event, VERSION
+from cloud_soc.storage_backend import get_redis_client, get_state_backend_type
 
 
 def encode(value):
@@ -158,3 +161,93 @@ class CorrelationStore:
     @property
     def binding_id(self):
         return event_fingerprint({'version': VERSION, 'scope': asdict(self.scope)})
+
+
+# ============================================================
+# K8s 다중 탐지 워커용 분산 시퀀스·상관분석 스토어 (Redis / Local)
+# ============================================================
+
+class LocalSequenceCorrelationStore:
+    """로컬 개발·단위 테스트용 인메모리 시퀀스 상관분석 스토어"""
+
+    def __init__(self) -> None:
+        self._buckets: dict[str, list[tuple[float, str]]] = {}
+
+    def append_sequence_event(
+        self,
+        rule_id: str,
+        group_key: str,
+        event_data: dict[str, Any],
+        window_seconds: int,
+        *,
+        event_ts: float | None = None,
+    ) -> list[dict[str, Any]]:
+        key = f"{rule_id}:{group_key}"
+        now = float(event_ts) if event_ts is not None else time.time()
+        cutoff = now - window_seconds
+        serialized = encode(event_data)
+        entries = [(ts, item) for ts, item in self._buckets.get(key, []) if ts >= cutoff]
+        if not any(item == serialized for _, item in entries):
+            entries.append((now, serialized))
+            entries.sort(key=lambda pair: pair[0])
+        self._buckets[key] = entries
+        return [json.loads(item) for _, item in entries]
+
+    def clear_sequence(self, rule_id: str, group_key: str) -> None:
+        self._buckets.pop(f"{rule_id}:{group_key}", None)
+
+    def claim_and_clear_sequence(self, rule_id: str, group_key: str) -> bool:
+        return self._buckets.pop(f"{rule_id}:{group_key}", None) is not None
+
+
+class DistributedCorrelationStore:
+    """K8s 다중 탐지 워커(HPA) 간 시퀀스·상관분석 상태 공유 스토어 (Redis Sorted Set)"""
+
+    def __init__(self, namespace: str = "cloud_soc:seq", redis_client: Any = None) -> None:
+        self.redis = redis_client if redis_client is not None else get_redis_client()
+        self.namespace = namespace
+
+    def _key(self, rule_id: str, group_key: str) -> str:
+        return f"{self.namespace}:{rule_id}:{group_key}"
+
+    def append_sequence_event(
+        self,
+        rule_id: str,
+        group_key: str,
+        event_data: dict[str, Any],
+        window_seconds: int,
+        *,
+        event_ts: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        특정 규칙(rule_id)과 그룹키(예: source.ip)에 이벤트를 추가하고,
+        유효 시간 창(window_seconds) 내의 누적 이벤트 목록을 단일 파이프라인으로 반환합니다.
+        """
+        redis_key = self._key(rule_id, group_key)
+        now = float(event_ts) if event_ts is not None else time.time()
+        cutoff = now - window_seconds
+        serialized = encode(event_data)
+
+        pipe = self.redis.pipeline()
+        pipe.zremrangebyscore(redis_key, "-inf", cutoff)
+        pipe.zadd(redis_key, {serialized: now})
+        pipe.zrange(redis_key, 0, -1)
+        pipe.expire(redis_key, max(int(window_seconds) + 60, 60))
+
+        _, _, raw_events, _ = pipe.execute()
+        return [json.loads(item) for item in raw_events]
+
+    def clear_sequence(self, rule_id: str, group_key: str) -> None:
+        """경보 트리거 완료 후 누적 상태 초기화 (중복 경보 방지)"""
+        self.redis.delete(self._key(rule_id, group_key))
+
+    def claim_and_clear_sequence(self, rule_id: str, group_key: str) -> bool:
+        """다중 워커 경합 시 실제로 키를 삭제(선점)한 1개 워커만 True를 반환합니다."""
+        return bool(self.redis.delete(self._key(rule_id, group_key)))
+
+
+def create_correlation_store(*, namespace: str = "cloud_soc:seq") -> DistributedCorrelationStore | LocalSequenceCorrelationStore:
+    """CLOUD_SOC_STATE_BACKEND 환경변수에 따라 Redis 또는 로컬 인메모리 스토어를 반환합니다."""
+    if get_state_backend_type() == "redis":
+        return DistributedCorrelationStore(namespace=namespace)
+    return LocalSequenceCorrelationStore()

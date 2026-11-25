@@ -40,7 +40,7 @@ from cloud_soc.portal.insight_state import InsightStore, InsightError
 from cloud_soc.portal.dashboard_insights import InsightReader, evidence_flow
 from cloud_soc.portal.agent_status import parse_time as datetime_from_iso
 from cloud_soc.portal.origins import additional_origins
-
+from cloud_soc.storage_backend import get_redis_client, get_state_backend_type
 PROJECT = Path(__file__).resolve().parents[3]
 
 
@@ -118,7 +118,9 @@ def create_app(settings=None, *, issuer=None, monitor=None):
     app = Flask(__name__, static_folder=None)
     from cloud_soc.portal.multicloud import blueprint as multicloud_blueprint
     app.register_blueprint(multicloud_blueprint)
-    app.config.update(MAX_CONTENT_LENGTH=8192, TRUSTED_HOSTS=[urlsplit(origin).hostname for origin in origins.values()])
+    probe_hosts = {h.strip().lower() for h in os.getenv("POD_IP", "").split(",") if h.strip()}
+    trusted_hosts = list(dict.fromkeys([urlsplit(origin).hostname for origin in origins.values()] + list(probe_hosts)))
+    app.config.update(MAX_CONTENT_LENGTH=8192, TRUSTED_HOSTS=trusted_hosts)
     store = PackageStore(Path(settings["STATE_DIR"]), Path(settings["AGENT_SOURCE"]), settings["CA_BYTES"], settings["ENDPOINT"],
                          portal_url=settings["PUBLIC_URL"] if settings["PUBLIC_URL"].startswith("https://") else None,
                          windows_installer_dir=settings.get('WINDOWS_INSTALLER_DIR'),
@@ -490,10 +492,20 @@ def create_app(settings=None, *, issuer=None, monitor=None):
 
     @app.before_request
     def protect():
+        if request.endpoint in ("k8s_healthz", "k8s_readyz"):
+            host_only = (request.host.split(":")[0] if not request.host.startswith("[") else request.host.split("]")[0][1:]).lower()
+            if request.method != "GET" or request.args:
+                abort(403)
+            if request.host.lower() not in origins and host_only not in probe_hosts:
+                abort(400)
+            return
         # Exact authority check also blocks DNS rebinding and unexpected ports.
         request_origin = origins.get(request.host.lower())
         if request_origin is None:
             abort(400)
+
+
+
         if request.endpoint=='insight_heartbeat':
             if (request.method!='POST' or not request.is_json or request.args or request.cookies
                     or request.headers.get('Origin') or request.headers.get('Sec-Fetch-Site')
@@ -714,6 +726,50 @@ def create_app(settings=None, *, issuer=None, monitor=None):
             return jsonify(status="unavailable"), 503
         return jsonify(status="ready")
 
+    @app.get("/healthz")
+    def k8s_healthz():
+        """K8s Liveness Probe: 외부 DB 장애와 무관하게 웹 프로세스 생존 여부만 반환합니다."""
+        response = jsonify(status="alive")
+        response.headers["Cache-Control"] = "no-store"
+        return response, 200
+
+    @app.get("/readyz")
+    def k8s_readyz():
+        """K8s Readiness Probe: Elasticsearch, 케이스 저장소, Redis(사용 시) 연결 상태를 점검합니다."""
+        checks = {"elasticsearch": False, "cases": False, "redis": True}
+        try:
+            es_client = monitor if monitor is not None else issuer
+            if es_client is None:
+                checks["elasticsearch"] = False
+            elif hasattr(es_client, "ping"):
+                checks["elasticsearch"] = bool(es_client.ping())
+            elif monitor is not None:
+                monitor.security.authenticate()
+                checks["elasticsearch"] = True
+            else:
+                issuer.info()
+                checks["elasticsearch"] = True
+        except Exception:
+            checks["elasticsearch"] = False
+
+        try:
+            with cases.connect() as db:
+                db.execute("SELECT 1").fetchone()
+            checks["cases"] = True
+        except Exception:
+            checks["cases"] = False
+
+        if get_state_backend_type() == "redis":
+            try:
+                checks["redis"] = bool(get_redis_client().ping())
+            except Exception:
+                checks["redis"] = False
+
+        is_ready = all(checks.values())
+        response = jsonify(status="ready" if is_ready else "not_ready", checks=checks)
+        response.headers["Cache-Control"] = "no-store"
+        return response, (200 if is_ready else 503)
+    
     @app.get("/api/portal")
     def portal():
         try:

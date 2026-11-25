@@ -2,16 +2,41 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
+import signal
+import tempfile
+import threading
 import time
 from urllib.parse import urlsplit
 
 from elasticsearch import Elasticsearch
+
 from cloud_soc.aws.__main__ import endpoint, protected_key
-from cloud_soc.detection.worker import approved_rules, run_once
 from cloud_soc.detection.incremental import run_incremental, utc
 from cloud_soc.detection.retrospective import run_retrospective
+from cloud_soc.detection.rule_loader import RuleReloader
+from cloud_soc.detection.worker import approved_rules, run_once
+from cloud_soc.health.watchdog import WorkerHeartbeat
 from cloud_soc.processing.errors import error_code
+
+
+class _GracefulShutdown(Exception):
+    """Internal signal used to wake up immediately during cycle sleep."""
+
+
+def _default_heartbeat_dir() -> str:
+    return os.getenv(
+        "CLOUD_SOC_HEALTH_DIR",
+        str(Path(tempfile.gettempdir()) / "cloud-soc-health"),
+    )
+
+
+def _resolve_rules_dir(cli_value: str | None) -> Path | None:
+    if cli_value:
+        return Path(cli_value)
+    env_dir = os.getenv("CLOUD_SOC_RULES_DIR")
+    return Path(env_dir) if env_dir else None
 
 
 def main(argv=None):
@@ -33,82 +58,234 @@ def main(argv=None):
     parser.add_argument("--isolated-all", action="store_true", help="All catalog rules including optional application extensions; writes require loopback HTTPS ES and separate state")
     parser.add_argument("--rules", help="Explicit comma-separated enabled rule IDs; AUTH-001 is retained; disabled candidates are refused")
     parser.add_argument("--additional-rules", help="Enabled rules excluding AUTH-001, in separate state/status; preserve existing AUTH worker")
-    parser.add_argument("--retrospective", action="store_true",
-                        help="Separate-state historical-context review for events normalized beyond the lateness allowance")
+    parser.add_argument(
+        "--rules-dir",
+        help="Optional ConfigMap/external rules directory for hot-reload (or set CLOUD_SOC_RULES_DIR)",
+    )
+    parser.add_argument(
+        "--retrospective",
+        action="store_true",
+        help="Separate-state historical-context review for events normalized beyond the lateness allowance",
+    )
     parser.add_argument("--early-auth", action="store_true", help="Opt in to separate AUTH-001 provisional notices; needs explicit notice setup/permissions")
-    parser.add_argument('--status-id', choices=('detector', 'detector-priority', 'detector-mall-login', 'detector-security-scenarios', 'detector-aws', 'detector-catalog'), default=None,
-                        help='Independent worker telemetry; explicit profiles require separate state')
+    parser.add_argument(
+        "--status-id",
+        choices=("detector", "detector-priority", "detector-mall-login", "detector-security-scenarios", "detector-aws", "detector-catalog"),
+        default=None,
+        help="Independent worker telemetry; explicit profiles require separate state",
+    )
     parser.add_argument("--es-url")
     parser.add_argument("--ca-file")
     parser.add_argument("--api-key-file")
     args = parser.parse_args(argv)
     if args.interval is None:
         args.interval = 10 if args.early_auth else 60
+
+    heartbeat = None
+    previous_sigterm = None
+    can_register_signal = threading.current_thread() is threading.main_thread()
+
     try:
-        if (not 10 <= args.interval <= 3600 or not 1 <= args.max_documents <= 100000
-                or not 1 <= args.max_active_events <= 1_000_000 or args.once and not args.run
-                or args.early_auth and args.snapshot
-                or args.status_id and (args.retrospective or args.snapshot
-                                      or args.additional_rules is not None and args.status_id not in ('detector-mall-login', 'detector-security-scenarios', 'detector-aws', 'detector-catalog'))
-                or args.status_id == 'detector-mall-login' and (args.additional_rules != 'WEB-AUTH-01' or args.early_auth)
-                or args.status_id == 'detector-priority' and args.early_auth):
+        if (
+            not 10 <= args.interval <= 3600
+            or not 1 <= args.max_documents <= 100000
+            or not 1 <= args.max_active_events <= 1_000_000
+            or args.once and not args.run
+            or args.early_auth and args.snapshot
+            or args.status_id
+            and (
+                args.retrospective
+                or args.snapshot
+                or args.additional_rules is not None
+                and args.status_id not in ("detector-mall-login", "detector-security-scenarios", "detector-aws", "detector-catalog")
+            )
+            or args.status_id == "detector-mall-login" and (args.additional_rules != "WEB-AUTH-01" or args.early_auth)
+            or args.status_id == "detector-priority" and args.early_auth
+        ):
             raise ValueError("Invalid options")
-        selection = dict(include_cloud=args.include_cloud, include_sequence=args.include_sequence,
-                         include_attacks=args.include_attacks, include_patterns=args.include_patterns,
-                         isolated_all=args.isolated_all, rule_ids=args.rules.split(',') if args.rules is not None else None)
+
+        selection = dict(
+            include_cloud=args.include_cloud,
+            include_sequence=args.include_sequence,
+            include_attacks=args.include_attacks,
+            include_patterns=args.include_patterns,
+            isolated_all=args.isolated_all,
+            rule_ids=args.rules.split(",") if args.rules is not None else None,
+        )
         if args.additional_rules is not None:
-            if (args.snapshot or args.early_auth
-                    or Path(args.state).resolve() == Path('state/detection/runtime.sqlite').resolve()):
-                raise ValueError('Additional profile requires separate explicit state and no AUTH early/snapshot mode')
-            selection['additional_rule_ids'] = args.additional_rules.split(',')
-        if args.retrospective and (args.snapshot or args.early_auth or args.isolated_all
-                or Path(args.state).resolve() == Path('state/detection/runtime.sqlite').resolve()):
-            raise ValueError('Retrospective review requires separate explicit state, no early/snapshot/isolated mode')
-        selected_rules = approved_rules(**selection)
+            if (
+                args.snapshot
+                or args.early_auth
+                or Path(args.state).resolve() == Path("state/detection/runtime.sqlite").resolve()
+            ):
+                raise ValueError("Additional profile requires separate explicit state and no AUTH early/snapshot mode")
+            selection["additional_rule_ids"] = args.additional_rules.split(",")
+        if args.retrospective and (
+            args.snapshot
+            or args.early_auth
+            or args.isolated_all
+            or Path(args.state).resolve() == Path("state/detection/runtime.sqlite").resolve()
+        ):
+            raise ValueError("Retrospective review requires separate explicit state, no early/snapshot/isolated mode")
+
+        rules_dir_path = _resolve_rules_dir(args.rules_dir)
+        reloader = (
+            RuleReloader(rules_dir_path, register_sighup=(args.run and not args.once))
+            if rules_dir_path is not None
+            else None
+        )
+        reloader_kwargs = {"reloader": reloader} if reloader is not None else {}
+
+        selected_rules = approved_rules(**selection, **reloader_kwargs)
         if args.isolated_all and args.run:
-            target = urlsplit(args.es_url or '')
-            if (target.scheme != 'https' or target.hostname not in ('127.0.0.1', '::1', 'localhost')
-                    or Path(args.state).resolve() == Path('state/detection/runtime.sqlite').resolve() or target.username or target.password
-                    or target.path or target.query or target.fragment):
-                raise ValueError('Isolated profile requires explicit loopback HTTPS and separate state')
+            target = urlsplit(args.es_url or "")
+            if (
+                target.scheme != "https"
+                or target.hostname not in ("127.0.0.1", "::1", "localhost")
+                or Path(args.state).resolve() == Path("state/detection/runtime.sqlite").resolve()
+                or target.username
+                or target.password
+                or target.path
+                or target.query
+                or target.fragment
+            ):
+                raise ValueError("Isolated profile requires explicit loopback HTTPS and separate state")
         if args.run and not args.snapshot:
             utc(args.start)
             if not 60 <= args.lateness_seconds <= 86400:
                 raise ValueError("Invalid lateness")
         if not args.run:
-            print(','.join(rule['id'] for rule in selected_rules) + " valid; source=soc-normalized-v1; offline; no writes")
+            print(",".join(rule["id"] for rule in selected_rules) + " valid; source=soc-normalized-v1; offline; no writes")
             return 0
+
         url = endpoint(args.es_url)
         key = protected_key(args.api_key_file)
         ca = Path(args.ca_file)
         if not ca.is_file():
             raise ValueError("Missing CA")
-        with Elasticsearch(url, api_key=key, ca_certs=str(ca),
-                           request_timeout=30, max_retries=0) as client:
-            while True:
+
+        if not args.once:
+            worker_name = os.getenv(
+                "CLOUD_SOC_WORKER_NAME",
+                args.status_id or ("detection-retrospective" if args.retrospective else "detection-worker"),
+            )
+            heartbeat = WorkerHeartbeat(worker_name=worker_name, base_dir=_default_heartbeat_dir())
+
+        stop_requested = False
+        in_sleep = False
+
+        def _handle_sigterm(_signum, _frame):
+            nonlocal stop_requested
+            stop_requested = True
+            if heartbeat is not None:
+                heartbeat.mark_unready()
+            if in_sleep:
+                raise _GracefulShutdown()
+
+        def _sleep_or_stop(seconds):
+            nonlocal in_sleep
+            if stop_requested:
+                raise _GracefulShutdown()
+            in_sleep = True
+            try:
+                # 기존 테스트의 time.sleep 몽키패치 호환성 유지
+                time.sleep(seconds)
+            finally:
+                in_sleep = False
+            if stop_requested:
+                raise _GracefulShutdown()
+
+        if can_register_signal and not args.once:
+            previous_sigterm = signal.signal(signal.SIGTERM, _handle_sigterm)
+
+        with Elasticsearch(
+            url,
+            api_key=key,
+            ca_certs=str(ca),
+            request_timeout=30,
+            max_retries=0,
+        ) as client:
+            if heartbeat is not None:
+                heartbeat.mark_ready()
+            while not stop_requested:
                 failed = False
                 try:
-                    result = (run_retrospective(client, state_path=args.state, start=args.start,
-                              lateness_seconds=args.lateness_seconds, max_documents=args.max_documents,
-                              source_id=url, **selection) if args.retrospective else
-                              run_once(client, max_documents=args.max_documents, **selection) if args.snapshot else
-                              run_incremental(client, state_path=args.state, start=args.start,
-                                              max_documents=args.max_documents, max_active_events=args.max_active_events,
-                                              lateness_seconds=args.lateness_seconds, source_id=url,
-                                              accept_legacy_exclusion=args.accept_legacy_exclusion, **selection, early_auth=args.early_auth,
-                                              status_id=args.status_id))
+                    if reloader is not None and not args.snapshot:
+                        reloader.reload_if_changed()
+                    result = (
+                        run_retrospective(
+                            client,
+                            state_path=args.state,
+                            start=args.start,
+                            lateness_seconds=args.lateness_seconds,
+                            max_documents=args.max_documents,
+                            source_id=url,
+                            **selection,
+                        )
+                        if args.retrospective
+                        else run_once(
+                            client,
+                            max_documents=args.max_documents,
+                            **selection,
+                            **reloader_kwargs,
+                        )
+                        if args.snapshot
+                        else run_incremental(
+                            client,
+                            state_path=args.state,
+                            start=args.start,
+                            max_documents=args.max_documents,
+                            max_active_events=args.max_active_events,
+                            lateness_seconds=args.lateness_seconds,
+                            source_id=url,
+                            accept_legacy_exclusion=args.accept_legacy_exclusion,
+                            **selection,
+                            early_auth=args.early_auth,
+                            status_id=args.status_id,
+                        )
+                    )
+                    if heartbeat is not None:
+                        heartbeat.beat()
                     print(json.dumps(result), flush=True)
+                except _GracefulShutdown:
+                    return 0
+                except KeyboardInterrupt:
+                    raise
                 except Exception as error:
                     failed = True
-                    print("detection_cycle_failed reason=" + error_code(error, "incremental_cycle_failed") + "; checkpoint retained", flush=True)
+                    if heartbeat is not None:
+                        heartbeat.beat()
+                    print(
+                        "detection_cycle_failed reason="
+                        + error_code(error, "incremental_cycle_failed")
+                        + "; checkpoint retained",
+                        flush=True,
+                    )
                 if args.once:
                     return int(failed)
-                time.sleep(args.interval)
+                if stop_requested:
+                    return 0
+                try:
+                    _sleep_or_stop(args.interval)
+                except _GracefulShutdown:
+                    return 0
+            return 0
+    except _GracefulShutdown:
+        return 0
     except KeyboardInterrupt:
         return 130
     except Exception as error:
-        print("detector_configuration_or_connection_failed reason=" + error_code(error, "configuration_failed") + "; credentials omitted")
+        print(
+            "detector_configuration_or_connection_failed reason="
+            + error_code(error, "configuration_failed")
+            + "; credentials omitted"
+        )
         return 1
+    finally:
+        if heartbeat is not None:
+            heartbeat.mark_unready()
+        if can_register_signal and previous_sigterm is not None:
+            signal.signal(signal.SIGTERM, previous_sigterm)
 
 
 if __name__ == "__main__":

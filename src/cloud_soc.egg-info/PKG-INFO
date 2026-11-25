@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: cloud-soc
+Version: 0.1.0
+Summary: Cloud SOC detection and investigation platform
+Requires-Python: >=3.12
+Requires-Dist: elasticsearch==9.5.1
+Requires-Dist: python-dotenv==1.2.4
+Requires-Dist: PyYAML==6.0.3
+Requires-Dist: cryptography==50.0.2
+Requires-Dist: redis>=5.0.0
+Provides-Extra: geo
+Requires-Dist: maxminddb==3.2.0; extra == "geo"
+Provides-Extra: multicloud
+Requires-Dist: boto3==1.43.99; extra == "multicloud"
+Requires-Dist: botocore==1.43.99; extra == "multicloud"
+Requires-Dist: azure-eventhub<6,>=5.12; extra == "multicloud"
+Requires-Dist: azure-eventhub-checkpointstoreblob<2,>=1.1; extra == "multicloud"
+Requires-Dist: portalocker<4,>=2.10; extra == "multicloud"
