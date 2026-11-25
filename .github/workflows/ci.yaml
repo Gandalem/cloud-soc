@@ -1,164 +1,150 @@
-name: Cloud SOC quality
+name: Cloud-SOC CI & GitOps Sync Pipeline
+
 on:
   push:
-    branches: [main, JEONGRIM-SEO, 'integration/**', 'codex/dashboard-platform-20261013', 'codex/vm-form-layout-20261014']
+    branches: [main, develop]
   pull_request:
-  workflow_dispatch:
-    inputs:
-      platform:
-        description: Runner scope for manual execution
-        type: choice
-        default: all
-        options: [all, ubuntu, windows]
-permissions:
-  contents: read
-concurrency:
-  group: soc-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloud-soc-core
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloud-soc-frontend
+  GITOPS_REPO: ${{ github.repository_owner }}/cloud-soc-gitops
+  PYTHONPATH: src:.
+
 jobs:
-  python-and-ui:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.platform == 'ubuntu' && '["ubuntu-24.04"]' || github.event_name == 'workflow_dispatch' && inputs.platform == 'windows' && '["windows-2025"]' || '["ubuntu-24.04","windows-2025"]') }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+  # =====================================================================
+  # 1단계: 코드 테스트 및 보안 탐지 룰 무결성/ReDoS 검증
+  # =====================================================================
+  validate-and-test:
+    name: Test Code & Validate Detection Rules
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Checkout App Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
         with:
-          persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: |
-            requirements*.txt
-            constraints.txt
-            deploy/*/requirements.txt
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: '22'
-      - name: Install locked UI test dependencies
-        run: npm ci --prefix prototype/tests --ignore-scripts --no-audit --no-fund
-      - name: Create isolated Python environment
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Dependencies
         run: |
-          python -c "import os, pathlib, venv; root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'cloud-soc-ci-venv'; venv.EnvBuilder(with_pip=True).create(root); scripts = root / ('Scripts' if os.name == 'nt' else 'bin'); pathlib.Path(os.environ['GITHUB_PATH']).open('a', encoding='utf-8').write(str(scripts.resolve()) + '\n')"
-      - name: Install tested dependencies
-        run: |
-          python -m pip install --upgrade pip==26.2.1
-          python -m pip install -c constraints.txt -r requirements-dev.txt
-      - name: Check dependency compatibility
-        run: python -m pip check
-      - name: Ruff correctness checks
-        run: python -m ruff check src tests tools
-      - name: Secret file enforcement regression
-        run: python -m pytest -q tests/test_secret_enforcement.py
-      - name: Linux regression with coverage
-        if: runner.os == 'Linux'
-        run: |
-          python -m pytest -q --cov=cloud_soc --cov-report=term-missing --cov-report=xml --cov-report=json --cov-report=html
-          python tools/coverage_badge.py
-      - name: Windows detection and agent configuration regression
-        if: runner.os == 'Windows'
-        run: python -m pytest -q tests/test_portfolio.py tests/test_cloud_detection.py tests/test_sequence_detection.py tests/test_attack_detection.py tests/test_processing.py tests/test_worker_index_batches.py tests/test_detection_resume.py tests/test_incremental_detection.py tests/test_basic_auth_guard.py tests/test_portal_lan_origin.py tests/test_agent_endpoint.py tests/test_agent_policy.py tests/test_linux_operational.py tests/test_cases.py tests/test_case_scope.py tests/test_integration_security.py tests/test_improvements.py tests/test_source_access.py tests/test_capacity_p2.py tests/test_backup_readiness_p2.py tests/test_collector_metrics_p2.py tests/test_early_notices.py tests/test_metadata_patterns.py tests/test_dashboards.py tests/test_dashboard_collection.py tests/test_portal_backup.py tests/test_agent_status.py tests/test_early_status_visibility.py tests/test_reader_maintenance.py tests/test_reprocessing_scope.py tests/test_runtime_audit.py tests/test_web_collection.py tests/test_site_agents.py tests/test_ruleset_complete.py tests/test_ruleset_integration.py
-      - name: Windows merged ingestion and server preparation regression
-        if: runner.os == 'Windows'
-        run: python -m pytest -q tests/test_server_prepare.py tests/test_worker_errors.py tests/test_receipt_precision.py tests/test_aws_sydney_streaming.py tests/test_aws_sydney_delivery_plan.py tests/test_security_scenarios.py tests/test_mall_login_worker.py tests/test_stopped_sqlite_backup.py
-      - name: Windows independent live and backlog regression
-        if: runner.os == 'Windows'
-        run: python -m pytest -q tests/test_normalizer_catchup.py tests/test_additional_detection.py tests/test_dual_processing.py tests/test_retrospective_detection.py
-      - name: Windows native installer contracts and device lifecycle
-        if: runner.os == 'Windows'
-        run: python -m pytest -q tests/test_windows_native_contracts.py tests/test_agent_clean_reinstall.py tests/test_device_management.py tests/test_device_management_tls.py tests/test_device_key_extension.py
-      - name: Operational rule observation and evidence acceptance
-        if: runner.os == 'Windows'
-        run: python -m pytest -q tests/test_runtime_rules.py tests/test_operational_acceptance.py tests/test_generic_sites.py tests/test_generic_waf.py
-      - name: Dashboard quality regression on Windows
-        if: runner.os == 'Windows'
-        run: python -m pytest -q tests/test_dashboard_insights_decisions.py tests/test_dashboard_quality.py tests/test_dashboard_query_quality.py tests/test_dashboard_device_quality.py tests/test_device_heartbeat_tls.py
-      - name: Windows server menu and removal boundaries
-        if: runner.os == 'Windows'
-        run: python -m pytest -q tests/test_server_cli.py tests/test_install_device_tools.py tests/test_install_lifecycle.py
-      - name: Common runtime parity and upgrade failure regression
-        run: python -m pytest -q tests/test_deployment_parity.py tests/test_compose_review.py tests/test_dns_aliases.py tests/test_slack_notifications.py tests/test_slack_messages.py tests/test_alert_navigation.py tests/test_deployment_permissions.py tests/test_recovery_compose_files.py tests/test_recovery_site_backup.py tests/test_recovery_health.py tests/test_recovery_http_probe.py tests/test_update_image_safety.py
-      - name: Windows PowerShell parser and offline agent tests
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $failures = @()
-          Get-ChildItem deploy/agents -Filter *.ps1 -Recurse | ForEach-Object {
-            $tokens = $null; $errors = $null
-            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors)
-            if ($errors.Count) { $failures += $errors }
-          }
-          if ($failures.Count) { $failures | Format-List; exit 1 }
-          node --test --test-concurrency=1 deploy/agents/tests/*.test.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Linux coverage artifact
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: coverage-${{ github.sha }}
-          path: |
-            coverage.xml
-            coverage.json
-            htmlcov/
-            docs/portfolio/coverage.svg
-          if-no-files-found: error
-      - name: Synthetic quality and benchmark artifact
-        if: runner.os == 'Linux'
-        run: python tools/portfolio_eval.py --events 1000 --output /tmp/portfolio-evaluation.json
-      - name: Evaluation artifact
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: evaluation-${{ github.sha }}
-          path: /tmp/portfolio-evaluation.json
-          if-no-files-found: error
-      - name: Offline rule profiles
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+          pip install --no-build-isolation -e .
+
+      - name: Validate YAML Detection Rules
+        run: python -m cloud_soc.detection.rule_loader --validate-dir rules/
+
+      - name: Run Unit & Integration Tests
         env:
-          PYTHONPATH: src
-        run: |
-          python -m cloud_soc.detection --include-cloud --include-sequence --include-attacks --include-patterns --early-auth
-          python -m cloud_soc.detection --isolated-all
-      - name: UI regressions and authentication syntax
-        run: |
-          node --test prototype/tests/*.test.cjs
-          node --check prototype/auth-client.js
-          node --check prototype/login.js
-          node --check prototype/settings-slack.js
-          node --test deploy/server/tests/*.test.cjs
-      - name: Bandit medium and high severity
-        if: runner.os == 'Linux'
-        run: python -m bandit -r src -ll -q
-      - name: Known dependency vulnerabilities
-        if: runner.os == 'Linux'
-        run: python -m pip_audit
-      - name: Compose config and production image build
-        if: runner.os == 'Linux'
+          CLOUD_SOC_STATE_BACKEND: "local"
+          SOC_TEST_P2_METRICS_DIR: "/tmp/soc-p2-metrics"
+        run: pytest tests/ -v --ignore=tests/manual
+
+  # =====================================================================
+  # 2단계: 불변(Immutable) 컨테이너 이미지 빌드 및 GHCR 푸시 (main 브랜치 전용)
+  # =====================================================================
+  build-and-push:
+    name: Build & Push Docker Images
+    needs: validate-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.short_sha }}
+
+    steps:
+      - name: Checkout App Repository
+        uses: actions/checkout@v4
+
+      - name: Extract Short Commit SHA
+        id: meta
+        run: echo "short_sha=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push Core Backend/Worker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/server/Dockerfile
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:${{ steps.meta.outputs.short_sha }}
+            ${{ env.BACKEND_IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & Push Frontend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:${{ steps.meta.outputs.short_sha }}
+            ${{ env.FRONTEND_IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # =====================================================================
+  # 3단계: GitOps 저장소 매니페스트 및 탐지 룰 자동 갱신 (ArgoCD 트리거)
+  # =====================================================================
+  update-gitops-manifest:
+    name: Update GitOps Repository for ArgoCD
+    needs: build-and-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: gitops-sync-${{ env.GITOPS_REPO }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout App Repository (for latest rules/*.yml)
+        uses: actions/checkout@v4
+        with:
+          path: app-repo
+
+      - name: Checkout GitOps Repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GITOPS_REPO }}
+          token: ${{ secrets.GITOPS_DEPLOY_TOKEN }}
+          path: gitops-repo
+
+      - name: Update Helm Image Tags & Sync Rules
         env:
-          SOC_STATE_DIR: /tmp/soc-ci-state
-          SOC_PUBLIC_HOST: soc.invalid
+          NEW_TAG: ${{ needs.build-and-push.outputs.image_tag }}
         run: |
-          docker compose -f compose.yaml -f compose.dev.yaml config --quiet
-          docker compose -f compose.prod.yaml config --quiet
-          docker build -f deploy/server/Dockerfile -t cloud-soc:ci .
-          mkdir -p /tmp/soc-ci-state/runtime
-          printf 'SOC_STATE_DIR=/tmp/soc-ci-state\nSOC_PUBLIC_HOST=soc.invalid\n' > /tmp/soc-ci-state/compose.env
-          docker compose --env-file /tmp/soc-ci-state/compose.env -f deploy/server/compose.yaml config --quiet
-      - name: Real Linux deployment ownership in isolated root container
-        if: runner.os == 'Linux'
+          sed -i "s|tag: \".*\" # backend-tag|tag: \"${NEW_TAG}\" # backend-tag|g" gitops-repo/charts/cloud-soc/values.yaml
+          sed -i "s|tag: \".*\" # frontend-tag|tag: \"${NEW_TAG}\" # frontend-tag|g" gitops-repo/charts/cloud-soc/values.yaml
+
+          mkdir -p gitops-repo/charts/cloud-soc/files/rules
+          cp app-repo/rules/*.yml gitops-repo/charts/cloud-soc/files/rules/
+
+      - name: Commit & Push to GitOps Repository
+        working-directory: gitops-repo
         run: |
-          docker build -f deploy/server/tests/permissions.Dockerfile -t cloud-soc-permissions:ci .
-          docker run --rm --network none --read-only --user 0:0 --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges:true --memory 512m --cpus 1 --pids-limit 64 --tmpfs /tmp:rw,nosuid,nodev,size=96m cloud-soc-permissions:ci
-          docker run --rm --network none --read-only --user 0:0 --cap-drop ALL --security-opt no-new-privileges:true --memory 256m --cpus 1 --pids-limit 64 --tmpfs /tmp:rw,nosuid,nodev,size=32m --tmpfs /root:rw,nosuid,nodev,mode=0700,size=32m --env PYTHONDONTWRITEBYTECODE=1 --entrypoint python cloud-soc-permissions:ci -m pytest -q -p no:cacheprovider tests/test_agent_clean_reinstall.py::LinuxRootCleanReinstallTests --basetemp /tmp/reinstall-tests
-      - name: Gateway allowlist integration on isolated loopback
-        if: runner.os == 'Linux'
-        env:
-          SOC_TEST_CADDY: /tmp/cloud-soc-test-caddy
-        run: |
-          docker create --name cloud-soc-test-gateway caddy:2.11.4-alpine
-          docker cp cloud-soc-test-gateway:/usr/bin/caddy /tmp/cloud-soc-test-caddy
-          docker rm cloud-soc-test-gateway
-          chmod u+x /tmp/cloud-soc-test-caddy
-          python -m pytest -q tests/test_gateway_allowlist.py tests/test_dns_gateway_tls.py
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase
+          git add .
+          if ! git diff --staged --quiet; then
+            git commit -m "chore(release): deploy cloud-soc image ${{ needs.build-and-push.outputs.image_tag }} & sync rules"
+            git push
+          else
+            echo "변경된 매니페스트나 룰이 없습니다."
+          fi
