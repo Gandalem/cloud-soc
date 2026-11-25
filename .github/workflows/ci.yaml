@@ -89,17 +89,17 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build & Push Frontend Image
-        uses: docker/build-push-action@v5
-        with:
-          context: frontend
-          file: frontend/Dockerfile
-          push: true
-          tags: |
-            ${{ env.FRONTEND_IMAGE }}:${{ steps.meta.outputs.short_sha }}
-            ${{ env.FRONTEND_IMAGE }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      # - name: Build & Push Frontend Image
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #     context: frontend
+      #     file: frontend/Dockerfile
+      #     push: true
+      #     tags: |
+      #       ${{ env.FRONTEND_IMAGE }}:${{ steps.meta.outputs.short_sha }}
+      #       ${{ env.FRONTEND_IMAGE }}:latest
+      #     cache-from: type=gha
+      #     cache-to: type=gha,mode=max
 
   # =====================================================================
   # 3단계: GitOps 저장소 매니페스트 및 탐지 룰 자동 갱신 (ArgoCD 트리거)
